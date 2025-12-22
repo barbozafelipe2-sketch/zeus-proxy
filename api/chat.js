@@ -43,7 +43,7 @@ Always propose the next clear action.
 
     const payload = {
       messages: [{ role: "system", content: systemPrompt }, ...messages],
-      temperature: 0.3
+      
     };
 
     const url =
