@@ -1,0 +1,27 @@
+{
+  "name": "olyhub",
+  "version": "4.3.4",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/verify.mjs",
+    "test": "node scripts/verify.mjs && node scripts/hardfix1-tests.mjs && node scripts/hardfix2-tests.mjs && node scripts/hardfix3-tests.mjs && node scripts/ui-tests.mjs && node scripts/finalfix1-tests.mjs && node scripts/finalfix2-tests.mjs && node scripts/finalfix3-tests.mjs && node scripts/polish-tests.mjs",
+    "smoke:live": "node scripts/smoke-live.mjs"
+  },
+  "dependencies": {
+    "@netlify/blobs": "10.0.0",
+    "@netlify/database": "1.0.0",
+    "docx": "9.5.1",
+    "exceljs": "4.4.0",
+    "jszip": "3.10.1",
+    "pdf-lib": "1.17.1",
+    "pdf-parse": "1.1.1",
+    "pptxgenjs": "3.12.0",
+    "@netlify/identity": "2.0.0"
+  },
+  "engines": {
+    "node": "22.x",
+    "npm": "10.9.x"
+  },
+  "packageManager": "npm@10.9.2"
+}
