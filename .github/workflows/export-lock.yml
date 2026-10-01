@@ -1,0 +1,22 @@
+name: Export OlyHub lockfile
+on:
+  push:
+    branches:
+      - chore/olyhub-lock-4.3.4
+    paths:
+      - .github/workflows/export-lock.yml
+permissions:
+  contents: read
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: chore/olyhub-lock-4.3.4
+      - uses: actions/upload-artifact@v4
+        with:
+          name: olyhub-lockfile
+          path: package-lock.json
+          if-no-files-found: error
