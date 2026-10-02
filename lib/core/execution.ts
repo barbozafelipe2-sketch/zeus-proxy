@@ -1,0 +1,4 @@
+import type {ExecutionStatus,Trace} from './contracts';
+const allowed:Record<ExecutionStatus,ExecutionStatus[]>={RECEIVED:['ROUTING','INVALID_REQUEST'],ROUTING:['MODEL_RUNNING','MODEL_FAILED'],MODEL_RUNNING:['PERSISTING','MODEL_FAILED','MODEL_TIMEOUT'],PERSISTING:['COMPLETED','PERSISTENCE_FAILED'],COMPLETED:[],MODEL_FAILED:[],MODEL_TIMEOUT:[],PERSISTENCE_FAILED:[],INVALID_REQUEST:[]};
+export function transition(trace:Trace,next:ExecutionStatus):Trace{if(!allowed[trace.status].includes(next))throw new Error(`INVALID_STATE_TRANSITION:${trace.status}->${next}`);return {...trace,status:next};}
+export function finish(trace:Trace,status:Extract<ExecutionStatus,'COMPLETED'|'MODEL_FAILED'|'MODEL_TIMEOUT'|'PERSISTENCE_FAILED'|'INVALID_REQUEST'>,errorCode?:string):Trace{const next=transition(trace,status);return {...next,errorCode,completedAt:new Date().toISOString(),latencyMs:Date.now()-Date.parse(trace.startedAt)};}
