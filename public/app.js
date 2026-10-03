@@ -66,6 +66,10 @@ async function unlock(key){
 }
 async function logout(){clearAuth();render();}
 
+const LONG_REQUEST_DROP_MS=20000;
+function apiError(message,status=0,code='',data=null){
+  const error=new Error(message);error.status=status;error.code=code||'';error.data=data;return error;
+}
 async function api(path, options={}){
   const {requestId:optionRequestId,...fetchOptions}=options;
   const headers=new Headers(fetchOptions.headers||{});
@@ -74,11 +78,16 @@ async function api(path, options={}){
   headers.set('X-OlyHub-Request-ID',apiRequestId);
   if(fetchOptions.body && !(fetchOptions.body instanceof FormData) && !headers.has('Content-Type'))headers.set('Content-Type','application/json');
   let r;
+  const startedAt=Date.now();
   setBusy(1);
   try{r=await fetch(path,{...fetchOptions,headers});}
   catch(networkError){
     if(networkError?.name==='AbortError')throw networkError;
-    throw new Error(navigator.onLine===false?'You are offline. Reconnect and try again.':'Network error — Zeus could not reach the server. Check your connection and try again.');
+    if(navigator.onLine===false)throw apiError('You are offline. Reconnect and try again.',0,'OFFLINE');
+    const elapsed=Date.now()-startedAt;
+    // A long request that drops is almost always the server's 60s function limit or iOS suspending the app, not the user's network.
+    if(elapsed>=LONG_REQUEST_DROP_MS)throw apiError(`The connection closed after ${Math.round(elapsed/1000)}s while Zeus was still working — the request likely hit the server time limit, or the app went to the background. Tap Retry: a reply that finished will be recovered.`,0,'CONNECTION_INTERRUPTED');
+    throw apiError('Network error — Zeus could not reach the server. Check your connection and try again.',0,'NETWORK_ERROR');
   }finally{setBusy(-1);}
   const contentType=r.headers.get('content-type')||'';
   let data;
@@ -86,9 +95,15 @@ async function api(path, options={}){
   catch{data=null;if(r.ok)throw new Error('The server sent an unreadable response. Try again.');}
   if(!r.ok){
     if(r.status===401){clearAuth();render();}
-    const msg=data?.error||data?.message||(typeof data==='string'?data.slice(0,180):'');
-    const ref=data?.requestId?` · ref ${String(data.requestId).slice(0,18)}`:'';
-    throw new Error(`${msg||`Request failed (${r.status}).`}${ref}`);
+    const isJson=data&&typeof data==='object';
+    let msg=isJson?(data.error||data.message||''):'';
+    if(!isJson){
+      // Non-JSON error bodies come from the platform (gateway timeout / function crash), never from Zeus itself.
+      if([502,503,504].includes(r.status))msg=`Zeus's server timed out or stopped before replying (HTTP ${r.status}). Tap Retry: a reply that finished will be recovered.`;
+      else if(typeof data==='string'&&data.trim()&&!/^\s*</.test(data))msg=data.slice(0,180);
+    }
+    const ref=isJson&&data.requestId?` · ref ${String(data.requestId).slice(0,18)}`:'';
+    throw apiError(`${msg||`Request failed (HTTP ${r.status}).`}${ref}`,r.status,isJson?data.code:'HTTP_ERROR',isJson?data:null);
   }
   return data;
 }
@@ -615,7 +630,10 @@ async function sendText(text,pendingAttachments=[],requestId=crypto.randomUUID()
     await Promise.allSettled([loadConversations(),loadFiles(scopeProjectId),loadArtifacts(scopeProjectId),loadProjects()]);
     setTimeout(()=>{if(state.execStatus==='Completed'&&!state.sending){state.execStatus='';render();}},900);
   }catch(err){
-    state.error=err.message||'Request failed.';
+    if(err?.code==='REQUEST_IN_PROGRESS'){
+      if(err.data?.conversationId&&!state.currentConversation)state.currentConversation=err.data.conversationId;
+      state.error='Zeus is still finishing this request. Wait a few seconds, then tap Retry to get the reply.';
+    }else state.error=err.message||'Request failed.';
     state.execStatus='';
     state.lastFailedText=text;
     state.lastFailedMessageId=optimistic.id;
