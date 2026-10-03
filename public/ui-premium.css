@@ -1036,3 +1036,7 @@ html.is-busy body::before{content:"";position:fixed;left:0;top:0;height:2px;widt
 @media(prefers-reduced-motion:reduce){
   *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important}
 }
+/* The later unconditional two-column .project-chat-layout rule overrode the 959px stacking rule, squeezing the Project chat into a ~110px column on phones. */
+@media(max-width:959px){
+  .project-chat-layout{grid-template-columns:minmax(0,1fr)}
+}

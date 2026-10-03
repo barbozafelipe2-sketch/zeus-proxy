@@ -64,6 +64,10 @@ assert.ok(app.includes("${icon('menu')}</button>"),'☰ navigation must remain')
 // Contrast: no known sub-AA grey text colours.
 for(const low of ['#66707d','#5a5a66','#525c69','#4f5965','#5e6875']) assert.ok(!new RegExp(`(?<![-\\w])color:\\s*${low}\\b`,'i').test(css),`low-contrast text colour ${low} returned`);
 
+// Responsive: Project chat must stack to one column on tablets/phones (cascade regression).
+const lastStack=css.lastIndexOf('.project-chat-layout{grid-template-columns:minmax(0,1fr)}');
+assert.ok(lastStack>css.lastIndexOf('.project-chat-layout{grid-template-columns:minmax(0,1.75fr)'),'mobile Project chat stacking rule must come after the desktop two-column rule');
+
 // Security headers and function hardening.
 for(const header of ['Content-Security-Policy','Strict-Transport-Security','Cross-Origin-Opener-Policy','X-Content-Type-Options','Referrer-Policy','Permissions-Policy'])
   assert.ok(toml.includes(header),`${header} header missing`);
