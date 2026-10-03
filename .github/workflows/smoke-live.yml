@@ -1,0 +1,24 @@
+name: Zeus Proxy Live Smoke
+on:
+  workflow_dispatch:
+    inputs:
+      test_ai:
+        description: 'Run one real Zeus provider turn'
+        required: false
+        default: false
+        type: boolean
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm run smoke:live
+        env:
+          ZEUS_PROXY_SMOKE_BASE_URL: ${{ secrets.ZEUS_PROXY_SMOKE_BASE_URL }}
+          ZEUS_PROXY_SMOKE_ACCESS_TOKEN: ${{ secrets.ZEUS_PROXY_SMOKE_ACCESS_TOKEN }}
+          ZEUS_PROXY_SMOKE_WRITE: '1'
+          ZEUS_PROXY_SMOKE_AI: ${{ inputs.test_ai && '1' || '0' }}

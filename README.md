@@ -1,40 +1,76 @@
-# Olympus Hub / Zeus Proxy — OH-001.2.2 Netlify Gateway Closure
+# Zeus Proxy — Personal Olympus Hub
 
-OH-001.2 closes the user-facing shells that were present in the personal Zeus Proxy: every model call runs through Netlify AI Gateway, Zeus can select an available gateway engine, Olympus runs a bounded lead/review/director council, text attachments are analyzed as untrusted data, conversations survive reloads in this browser, and assistant answers can be downloaded as Markdown artifacts.
+**Version:** OH-004.3.4 Personal Recovery
 
-## What is implemented
-- Only Zeus and Olympus are user-facing modes. Provider adapters remain internal. Each provider has a bounded same-provider model fallback chain; Claude or Gemini can then fall back to the OpenAI model chain, while OpenAI never silently switches to another provider.
-- Zeus selects the first gateway-configured provider in `ZEUS_PROVIDER_ORDER`; OpenAI remains the final cross-provider fallback. A single unavailable model no longer fails the request: safe model-level fallback is attempted first.
-- Olympus runs one lead, blind parallel reviews from other configured providers, and a director synthesis. Missing or failed reviewers are recorded; if no review completes, the lead answer is returned and the trace marks degraded mode.
-- Multi-turn conversation history: up to the most recent 20 stored messages are loaded for the same conversation/project and sent to the selected provider.
-- Supported text attachments: `.txt`, `.md`, `.csv`, `.json`, `.tsv`; 100 KB per file, 10 files maximum, 60,000 combined characters. Attachments are included as clearly delimited, untrusted text in the provider request and server conversation history; they are not uploaded to object storage.
-- Browser-local session continuity for visible messages, mode, and conversation ID. The new-conversation control clears the active session.
-- One-click Markdown download for every assistant answer.
-- Explicit execution state machine; terminal states cannot bypass transition validation.
-- `requestId` is mandatory. The database reserves it before provider execution so duplicate/concurrent requests cannot both spend provider tokens. Completed duplicates replay the saved result; an in-flight duplicate returns HTTP 409.
-- Provider calls receive an AbortSignal and are aborted on timeout. Model retries are bounded and only happen for model-specific or transient failures; auth failures, rate limits, and generic bad requests do not trigger blind retries.
-- Atomic completed-turn persistence: conversation + user message + assistant message + reserved execution trace are committed together.
-- Failure traces are updated best-effort. Reservation or history database failures degrade persistence instead of killing an otherwise valid AI request; completed answers are still returned when possible. Persistence failures also emit structured server-side audit logging.
-- RLS enabled on all application tables with no client policies yet (fail closed). Server service-role access remains server-only.
-- Provider-reported model/usage captured when exposed by the SDK; Gemini usage metadata is captured when available.
-- Attachment contents are treated as untrusted input; the server validates file extensions and size before sending them to providers.
-- Pinned dependency versions and a committed lockfile.
-- Provider SDKs use Netlify-injected API keys and gateway base URLs. No provider credentials belong in `.env` files or user setup.
-- A production-only, server-checked private access key protects the chat endpoint; it is never embedded in the client bundle and is kept in session storage for the current browser tab.
-- Behavioral core tests using Vitest.
+Zeus Proxy is Felipe's private Netlify edition of Olympus Hub. It keeps the complete OlyHub workspace foundation while preserving the personal black/gold Zeus identity. The difference from commercial OlyHub is distribution and account scope, not a reduced feature set: **OlyHub = commercial/App Store; Zeus Proxy = private/Netlify/single-owner.**
 
-## Limits still in this release
-There is no account system or per-user ownership. This remains a personal deployment: set a unique `ZEUS_PROXY_ACCESS_TOKEN` of at least 32 characters and enable the hosting platform's private deployment protection. The app's shared access key protects provider spend, but it is not multi-user authentication or a substitute for platform access controls. Supabase end-user RLS policies are not configured. Browser-local transcript continuity is per browser; server persistence requires Supabase. Attachments are text-only and are not retained as separate files. Dollar costs are not estimated because provider pricing is not sourced from a verified pricing table. There is no circuit breaker, automatic retry, Challenge pass, long-term memory write gate, or general Capability Broker yet.
+## Product contract
 
-## Netlify AI Gateway setup
-Enable AI Features for the Netlify team, and do not define your own `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `ANTHROPIC_API_KEY`, `ANTHROPIC_BASE_URL`, `GEMINI_API_KEY`, or `GOOGLE_GEMINI_BASE_URL` values. The provider SDKs read Netlify's injected gateway credentials and base URLs at runtime, so there are no AI provider keys to create, paste, or rotate. The site must have at least one production deploy before the gateway activates. Netlify bills AI Gateway usage against the site's credit balance.
+Only **Zeus** and **Olympus** are user-facing AI modes. OpenAI, Anthropic, Gemini and other configured engines are internal implementation details.
 
-For local development, authenticate with Netlify and run `npm run netlify:link` once to link this checkout, then use `npm run dev`. That command runs Netlify Dev and injects the linked site's variables; `npm run dev:next` is only for UI work without Gateway access. The Netlify CLI is downloaded by `npx` on first use and pinned to version `27.10.2`.
+The recovered workspace includes:
+- Home conversation history without Project memory leakage.
+- Projects with one canonical permanent conversation per Project.
+- Dedicated approved Project memory, tasks, goal/progress state and long-history context.
+- Private files, artifacts and output downloads.
+- Image generation/editing and image/vision inputs where the configured capability supports them.
+- Voice input with browser speech recognition and optional server transcription.
+- Durable execution traces, rate/concurrency guards, Blob cleanup and Netlify Database persistence.
+- Full Zeus and Olympus orchestration from the audited 4.3.4 foundation.
+- Live web research through the OpenAI Responses `web_search` capability, with persistent clickable source citations.
 
-**Deploy this build on Netlify.** Vercel will not inject Netlify AI Gateway credentials. Configure `ZEUS_PROXY_ACCESS_TOKEN` as a server-side Netlify environment variable. `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are optional and only needed for server-side conversation persistence; without them, conversations remain in the browser. Keep the access token and service-role key out of `NEXT_PUBLIC_*` variables and source control. Save the access token in the app's private-access control after deployment. Enable Netlify's private site protection before sharing the URL.
+## Personal access
 
-## Reliability gate
-Run `npm ci`, `npm run typecheck`, `npm test`, and `npm run build`. Database behavior (RLS, reservation concurrency, atomic RPCs) must also be integration-tested against a Supabase test project before public exposure.
+Commercial Netlify Identity is not required by Zeus Proxy. Production access is protected server-side by `ZEUS_PROXY_ACCESS_TOKEN` (32+ characters). The browser stores the entered key only in `sessionStorage` for the current tab/session and sends it as `x-zeus-access-token` to the private API.
 
-## Database migration
-Apply `supabase/schema.sql` to the target Supabase project. The migration enables RLS, adds `reserve_request`, bounded history retrieval, atomic completed-turn persistence, and explicit `service_role` execute grants for the server RPCs. Server service-role access remains server-only. Require both the app access token and Netlify's private site protection before using the deployment.
+Do not expose the access token through client-visible environment variables.
+
+## Netlify AI Gateway
+
+Provider API keys/base URLs are expected to be supplied by Netlify AI Gateway. Do not add manual provider keys unless intentionally overriding the gateway. Explicit/current-information requests can use the same Gateway-backed OpenAI Responses endpoint for live web research.
+
+### Anti-failure model policy
+
+OpenAI is not a single-model point of failure. Zeus uses a bounded same-provider OpenAI chain; an unavailable OpenAI model can advance to another compatible OpenAI model. A selected Claude/Gemini route can fall into the OpenAI chain when appropriate. OpenAI itself does **not** silently jump to Claude/Gemini.
+
+Retries are intentionally blocked for authentication, billing/quota, rate-limit, invalid-request, context-length and content-policy failures so the app does not burn credits repeating a request that cannot succeed.
+
+## UX invariants
+
+- Top navigation exposes Projects/workspace navigation through the three-dot control.
+- The composer `+` opens **Photo / Image · Video · File**.
+- `Enter` adds a new line; the arrow sends.
+- Project chat is permanent and receives its own memory/tasks/files context.
+- Home chats remain outside Project memory and never inherit a Project's dedicated memory.
+
+## Validation
+
+Run before production deployment:
+
+```sh
+npm ci
+npm test
+npm run build
+```
+
+The recovery keeps the OH-004.3.4 hard/final-fix suites and adds `scripts/zeus-personal-tests.mjs` for the personal access, two-mode UI, Project continuity, attachment chooser and OpenAI fallback invariants.
+
+## Live smoke
+
+Read-only private runtime smoke:
+
+```sh
+ZEUS_PROXY_SMOKE_BASE_URL=https://zeus-olyhub.netlify.app \
+ZEUS_PROXY_SMOKE_ACCESS_TOKEN='your-32+-character-private-key' \
+npm run smoke:live
+```
+
+Set `ZEUS_PROXY_SMOKE_WRITE=1` to test Project + Blob write/delete lifecycle. Add `ZEUS_PROXY_SMOKE_AI=1` only when you intentionally want to spend one real Zeus inference for provider + attachment-grounding verification.
+
+## Database safety
+
+The original foundation migration remains unchanged.
+
+SHA-256: `90dece71adbd153d42168585fab6988e000fec715c33a6bef3595c2096a52d70`
+
+The source line is the audited OlyHub OH-004.3.4 foundation with a personal Zeus overlay; it is no longer based on the reduced OH-001.2.x chat shell.

@@ -1,7 +1,3 @@
-node_modules/
-.netlify/
-.next/
-.env*
-!.env.example
-*.tsbuildinfo
+node_modules
+.netlify
 .DS_Store
