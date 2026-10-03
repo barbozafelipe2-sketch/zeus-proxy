@@ -7,6 +7,7 @@
 - Added a Next.js build configuration to use the TypeScript API checker; the checked-in `typecheck` script remains a release gate.
 - Clarified that this gateway build must run on Netlify and documented its required production configuration.
 - Added Netlify build and local-runtime wiring; Enter now inserts a line break and the composer grows to show the draft, while the arrow button sends it.
+- Configured the production Netlify site with a generated private app-access token; no individual AI provider keys are required.
 - Audit of other branches: the old static/Azure demo was superseded; the OlyHub 4.3.4 lockfile branch is a separate product dependency set and was intentionally not mixed into this personal proxy.
 
 ## OH-001.2.1 — Netlify AI Gateway
