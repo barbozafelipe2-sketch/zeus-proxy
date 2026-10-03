@@ -21,7 +21,11 @@ The recovered workspace includes:
 
 ## Personal access
 
-Commercial Netlify Identity is not required by Zeus Proxy. Production access is protected server-side by `ZEUS_PROXY_ACCESS_TOKEN` (32+ characters). The browser stores the entered key only in `sessionStorage` for the current tab/session and sends it as `x-zeus-access-token` to the private API.
+Commercial Netlify Identity is not required by Zeus Proxy. Production access is protected server-side by `ZEUS_PROXY_ACCESS_TOKEN` (32+ characters), compared in constant time.
+
+The browser persists the entered key in `localStorage` under `olyhub.zeusproxy.access.v3`, so the installed home-screen app and new tabs stay unlocked on the owner's device. It is sent as `x-zeus-access-token` on every private API call. Keys saved by older builds (`olyhub.zeusproxy.access.v2` in `localStorage` or `sessionStorage`) are migrated to the v3 key on first load and the legacy entries are removed. **Lock** (sidebar or Settings) and any `401` from the API clear every stored copy.
+
+Because the key is persisted, treat a device that has unlocked Zeus as trusted; use **Lock** on shared devices. `scripts/verify.mjs` and `scripts/finalfix3-tests.mjs` enforce this contract (v3 key, written with `localStorage.setItem`, never with `sessionStorage.setItem`).
 
 Do not expose the access token through client-visible environment variables.
 
@@ -37,15 +41,27 @@ Retries are intentionally blocked for authentication, billing/quota, rate-limit,
 
 ## UX invariants
 
-- Top navigation exposes Projects/workspace navigation through the three-dot control.
-- The composer `+` opens **Photo / Image · Video · File**.
-- `Enter` adds a new line; the arrow sends.
+- Navigation lives behind the top-bar **☰** menu button (the sidebar is always visible on desktop); it exposes Home, Projects, Tools, Files and Settings plus recent chats.
+- The composer `+` opens **Photo / Video · Camera · File**.
+- `Enter` adds a new line; the arrow (or `Ctrl/⌘ + Enter`) sends. An unsent draft survives re-renders.
 - Project chat is permanent and receives its own memory/tasks/files context.
 - Home chats remain outside Project memory and never inherit a Project's dedicated memory.
 
+## Accessibility & resilience
+
+- Landmarks, labelled controls, `aria-current` / `aria-pressed` / `aria-expanded` state, a skip link and a single polite live region for status and errors.
+- Keyboard: visible focus ring, focus is preserved across re-renders, `Escape` closes the `+` menu, drawer and dialogs.
+- Text colours meet WCAG AA contrast on app surfaces; `prefers-reduced-motion` is respected.
+- Network failures, offline state and unreadable responses produce clear, dismissible messages; a thin progress bar shows in-flight requests.
+- Safe-area insets are honoured for the iOS home-screen app and landscape notches.
+
+## Security headers
+
+`netlify.toml` sets a strict CSP (`script-src 'self'`, no third-party origins), HSTS, `X-Frame-Options`, `Referrer-Policy`, `Permissions-Policy`, `Cross-Origin-Opener-Policy` and `X-Content-Type-Options`. API responses are `no-store`. `index.html` is `noindex`.
+
 ## Validation
 
-Run before production deployment:
+Requires Node 22.x / npm 10.9.x (`engine-strict` is on). Run before production deployment:
 
 ```sh
 npm ci
@@ -53,7 +69,7 @@ npm test
 npm run build
 ```
 
-The recovery keeps the OH-004.3.4 hard/final-fix suites and adds `scripts/zeus-personal-tests.mjs` for the personal access, two-mode UI, Project continuity, attachment chooser and OpenAI fallback invariants.
+The recovery keeps the OH-004.3.4 hard/final-fix suites and adds `scripts/zeus-personal-tests.mjs` for the personal access, two-mode UI, Project continuity, attachment chooser and OpenAI fallback invariants, plus `scripts/a11y-polish-tests.mjs` for the accessibility, resilience, head-metadata and security-header invariants.
 
 ## Live smoke
 

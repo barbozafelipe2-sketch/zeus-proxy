@@ -3,22 +3,37 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="description" content="Zeus — a private Olympus Hub AI workspace for projects, permanent memory, files and deliverables." />
+  <meta name="robots" content="noindex, nofollow" />
+  <meta name="color-scheme" content="dark" />
   <meta name="theme-color" content="#05070a" />
+  <meta name="format-detection" content="telephone=no" />
+  <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Zeus" />
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="Olympus Hub" />
+  <meta property="og:title" content="Olympus Hub — Zeus" />
+  <meta property="og:description" content="A private AI workspace for projects, permanent memory, files and deliverables." />
+  <meta property="og:image" content="/zeus-icon-v1.png" />
+  <meta name="twitter:card" content="summary" />
   <title>Olympus Hub — Zeus</title>
   <link rel="apple-touch-icon" sizes="180x180" href="/zeus-icon-v1.png" />
   <link rel="icon" type="image/png" sizes="180x180" href="/zeus-icon-v1.png" />
-  <link rel="manifest" href="/manifest.webmanifest?v=20261003e" />
-  <link rel="stylesheet" href="/styles.css?rev=20261003e" />
-  <link rel="stylesheet" href="/ui-premium.css?rev=20261003e" />
+  <link rel="manifest" href="/manifest.webmanifest?v=20261003f" />
+  <link rel="modulepreload" href="/app.js?rev=20261003f" />
+  <link rel="stylesheet" href="/styles.css?rev=20261003f" />
+  <link rel="stylesheet" href="/ui-premium.css?rev=20261003f" />
 </head>
 <body>
-  <div id="app"></div>
-  <input id="global-file-input" type="file" hidden multiple />
-  <input id="global-media-input" type="file" hidden multiple accept="image/*,video/*" />
-  <input id="global-camera-input" type="file" hidden accept="image/*,video/*" capture="environment" />
-  <script type="module" src="/app.js?rev=20261003e"></script>
+  <a class="skip-link" href="#main-content">Skip to content</a>
+  <div id="app" aria-busy="true"><div class="boot-screen" role="status">INITIALIZING ZEUS</div></div>
+  <div id="a11y-status" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
+  <noscript><div class="boot-screen">Zeus needs JavaScript enabled to run.</div></noscript>
+  <input id="global-file-input" type="file" hidden multiple aria-label="Upload files" />
+  <input id="global-media-input" type="file" hidden multiple accept="image/*,video/*" aria-label="Upload photos or videos" />
+  <input id="global-camera-input" type="file" hidden accept="image/*,video/*" capture="environment" aria-label="Capture with camera" />
+  <script type="module" src="/app.js?rev=20261003f"></script>
 </body>
 </html>
