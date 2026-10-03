@@ -110,6 +110,7 @@ function icon(name){
     mic:svg('<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M6 11a6 6 0 0 0 12 0M12 17v4M9 21h6"/>'),
     send:svg('<path d="M5 12h14M13 6l6 6-6 6"/>'),
     image:svg('<rect x="4" y="5" width="16" height="14" rx="2"/><circle cx="9" cy="10" r="1.4"/><path d="m8 16 3-3 3 2 2-2 3 3"/>'),
+    camera:svg('<path d="M7 7.5 8.5 5h7L17 7.5h2a2 2 0 0 1 2 2V18a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V9.5a2 2 0 0 1 2-2z"/><circle cx="12" cy="13.5" r="3.2"/>'),
     doc:svg('<path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5M9 13h6M9 17h4"/>'),
     chart:svg('<path d="M5 19V9M10 19V5M15 19v-7M20 19V8"/>'),
     globe:svg('<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3.5 3 14.5 0 18M12 3c-3 3.5-3 14.5 0 18"/>'),
@@ -216,7 +217,7 @@ function composer(){
   const chips=state.attachedFiles.map(f=>`<span class="file-chip">${icon('files')} ${esc(f.filename)}<button type="button" data-remove-file="${f.id}">${icon('close')}</button></span>`).join('');
   const showMic=voiceSupported();
   const scope=state.currentProject?`Project: ${esc(state.currentProject.name)}`:'This conversation';
-  return `<div class="composer-shell">${state.attachMenu?`<div class="attach-menu" role="menu"><button type="button" id="attach-photo">${icon('image')}<span>Photo / Image</span></button><button type="button" id="attach-video"><span class="video-glyph">▶</span><span>Video</span></button><button type="button" id="attach-file">${icon('files')}<span>File</span></button></div>`:''}${chips?`<div class="attachments pending">${chips}</div>`:''}<form class="composer" id="composer"><button type="button" class="icon-btn attach-plus" id="attach" title="Add photo, video or file" aria-label="Add photo, video or file">＋</button><textarea id="composer-text" rows="1" aria-label="Message ${state.mode==='ZEUS'?'Zeus':'Olympus'}" placeholder="Message ${state.mode==='ZEUS'?'Zeus':'Olympus'}…" ${state.sending?'disabled':''}></textarea>${showMic?`<button type="button" class="icon-btn ${state.recording?'recording':''}" id="voice" title="${state.recording?'Stop recording':state.voiceBusy?'Transcribing…':'Voice input'}" aria-label="${state.recording?'Stop recording':state.voiceBusy?'Transcribing voice':'Voice input'}" ${state.voiceBusy?'disabled':''}>${icon('mic')}</button>`:''}<button type="submit" class="icon-btn send-btn" title="Send" aria-label="Send message" ${state.sending?'disabled':''}>${icon('send')}</button></form><div class="composer-meta"><span>${state.currentProject?'Permanent Project chat · dedicated memory + files':'Conversation history available · no Project memory'}</span><span>Enter adds a new line · use the arrow to send</span></div></div>`;
+  return `<div class="composer-shell">${state.attachMenu?`<div class="attach-menu" role="menu" aria-label="Add attachment"><button type="button" id="attach-media">${icon('image')}<span>Photo / Video</span></button><button type="button" id="attach-camera">${icon('camera')}<span>Camera</span></button><button type="button" id="attach-file">${icon('files')}<span>File</span></button></div>`:''}${chips?`<div class="attachments pending">${chips}</div>`:''}<form class="composer" id="composer"><button type="button" class="icon-btn attach-plus" id="attach" title="Add photo, video or file" aria-label="Add photo, video or file">＋</button><textarea id="composer-text" rows="1" aria-label="Message ${state.mode==='ZEUS'?'Zeus':'Olympus'}" placeholder="Message ${state.mode==='ZEUS'?'Zeus':'Olympus'}…" ${state.sending?'disabled':''}></textarea>${showMic?`<button type="button" class="icon-btn ${state.recording?'recording':''}" id="voice" title="${state.recording?'Stop recording':state.voiceBusy?'Transcribing…':'Voice input'}" aria-label="${state.recording?'Stop recording':state.voiceBusy?'Transcribing voice':'Voice input'}" ${state.voiceBusy?'disabled':''}>${icon('mic')}</button>`:''}<button type="submit" class="icon-btn send-btn" title="Send" aria-label="Send message" ${state.sending?'disabled':''}>${icon('send')}</button></form><div class="composer-meta"><span>${state.currentProject?'Permanent Project chat · dedicated memory + files':'Conversation history available · no Project memory'}</span><span>Enter adds a new line · use the arrow to send</span></div></div>`;
 }
 
 function projectsView(){
@@ -397,10 +398,15 @@ function bind(){
       history.replaceState({},'',location.pathname);
     }
     state.tab=next;
-    if(state.tab==='Projects'){await loadProjects();if(state.currentProject?.id)await hydrateProjectWorkspace(state.currentProject.id,{loadConversation:false});else await loadTasks();}
-    if(state.tab==='Files')await Promise.all([loadFiles(),loadArtifacts()]);
-    if(state.tab==='Tools')await Promise.all([loadHealth(),loadFiles(),loadArtifacts()]);
-    if(state.tab==='Settings')await loadHealth();
+    try{
+      if(state.tab==='Projects'){await loadProjects();if(state.currentProject?.id)await hydrateProjectWorkspace(state.currentProject.id,{loadConversation:false});else state.tasks=[];}
+      if(state.tab==='Files')await Promise.all([loadFiles(),loadArtifacts()]);
+      if(state.tab==='Tools')await Promise.all([loadHealth(),loadFiles(),loadArtifacts()]);
+      if(state.tab==='Settings')await loadHealth();
+    }catch(err){
+      console.error(`Could not load ${next}`,err);
+      state.error=err?.message||`Could not load ${next}.`;
+    }
     render();resetViewport();
   }));
   $('#new-chat')?.addEventListener('click',newChat);
@@ -410,9 +416,9 @@ function bind(){
   $$('.quick-prompts button').forEach(b=>b.addEventListener('click',()=>{const t=$('#composer-text');if(!t)return;t.value=b.dataset.prompt;t.dispatchEvent(new Event('input',{bubbles:true}));t.focus()}));
   $('#composer')?.addEventListener('submit',sendMessage); const composerText=$('#composer-text');composerText?.addEventListener('input',()=>{composerText.style.height='auto';composerText.style.height=`${Math.min(160,Math.max(26,composerText.scrollHeight))}px`;});composerText?.addEventListener('keydown',()=>{});
   $('#attach')?.addEventListener('click',()=>{state.attachMenu=!state.attachMenu;render()}); $('#upload-files')?.addEventListener('click',()=>$('#global-file-input').click());
-  $('#attach-photo')?.addEventListener('click',()=>$('#global-photo-input').click()); $('#attach-video')?.addEventListener('click',()=>$('#global-video-input').click()); $('#attach-file')?.addEventListener('click',()=>$('#global-file-input').click());
+  $('#attach-media')?.addEventListener('click',()=>$('#global-media-input').click()); $('#attach-camera')?.addEventListener('click',()=>$('#global-camera-input').click()); $('#attach-file')?.addEventListener('click',()=>$('#global-file-input').click());
   const handleUpload=async e=>{const files=[...e.target.files];e.target.value='';state.attachMenu=false;for(const f of files)await uploadFile(f);};
-  $('#global-file-input').onchange=handleUpload; $('#global-photo-input').onchange=handleUpload; $('#global-video-input').onchange=handleUpload;
+  $('#global-file-input').onchange=handleUpload; $('#global-media-input').onchange=handleUpload; $('#global-camera-input').onchange=handleUpload;
   $$('[data-remove-file]').forEach(b=>b.addEventListener('click',()=>{state.attachedFiles=state.attachedFiles.filter(f=>f.id!==b.dataset.removeFile);render()}));
   $('#voice')?.addEventListener('click',startVoice);
   $('#retry-last')?.addEventListener('click',retryLastMessage);
@@ -423,7 +429,7 @@ function bind(){
   $$('[data-project]').forEach(b=>{b.addEventListener('click',()=>openProjectWorkspace(b.dataset.project));b.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();openProjectWorkspace(b.dataset.project);}});});
   $$('[data-project-section]').forEach(b=>b.addEventListener('click',async()=>{state.projectSection=b.dataset.projectSection;if(state.projectSection==='MEMORY'&&state.currentProject)await loadMemories(state.currentProject.id);render();resetViewport()}));
   $('#edit-project')?.addEventListener('click',projectEditModal);
-  $('#back-projects')?.addEventListener('click',async()=>{state.currentProject=null;state.currentConversation=null;state.messages=[];state.chatArtifacts=[];state.attachedFiles=[];state.projectMemories=[];state.memoryPolicy=null;state.projectSection='CHAT';state.messagePage={hasMore:false,nextCursor:null};state.error='';history.replaceState({},'',location.pathname);await loadTasks();render()});
+  $('#back-projects')?.addEventListener('click',async()=>{state.currentProject=null;state.currentConversation=null;state.messages=[];state.chatArtifacts=[];state.attachedFiles=[];state.projectMemories=[];state.memoryPolicy=null;state.projectSection='CHAT';state.messagePage={hasMore:false,nextCursor:null};state.tasks=[];state.error='';history.replaceState({},'',location.pathname);render()});
   $('#task-form')?.addEventListener('submit',createTask); $$('[data-task]').forEach(b=>b.addEventListener('click',()=>toggleTask(b.dataset.task,b.dataset.status)));
   $('#memory-form')?.addEventListener('submit',createMemory); $$('[data-memory-delete]').forEach(b=>b.addEventListener('click',()=>deleteMemory(b.dataset.memoryDelete)));
   $$('[data-delete-output]').forEach(b=>b.addEventListener('click',()=>deleteOutput(b.dataset.deleteOutput,b.dataset.outputId)));
