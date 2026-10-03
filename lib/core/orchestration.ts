@@ -18,7 +18,7 @@ export function chooseZeusProvider(env:Environment=process.env):ProviderName{
 export async function callWithOpenAIFallback(provider:ProviderName,messages:ChatMessage[],signal:AbortSignal,call:ProviderCall,env:Environment=process.env){
   try{return {result:await call(provider,messages,signal),provider,fallback:undefined as {from:ProviderName;to:'openai';reason:string}|undefined};}
   catch(error){
-    if(provider==='openai'||!isProviderConfigured('openai',env))throw error;
+    if(signal.aborted||provider==='openai'||!isProviderConfigured('openai',env))throw error;
     const result=await call('openai',messages,signal);
     return {result,provider:'openai' as const,fallback:{from:provider,to:'openai' as const,reason:'Selected provider failed; OpenAI fallback succeeded.'}};
   }

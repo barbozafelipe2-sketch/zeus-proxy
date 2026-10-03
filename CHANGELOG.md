@@ -1,3 +1,13 @@
+## OH-001.2.3 — runtime resilience hardening
+- Added bounded same-provider model fallback chains for OpenAI, Anthropic and Gemini using models currently supported by Netlify AI Gateway.
+- OpenAI remains the final cross-provider fallback for Claude/Gemini; OpenAI does not silently jump to another provider.
+- Fallback retries stop on auth failures, rate limits and generic invalid requests to avoid duplicate credit burn.
+- Added model-attempt telemetry to traces and clearer provider error taxonomy.
+- Supabase reservation/history failures now degrade persistence instead of being mislabeled as MODEL_FAILED.
+- User-facing modes are now Zeus and Olympus only; provider buttons remain internal implementation details.
+- Access-key failures automatically reopen the private-access control.
+- Default provider timeout increased to 45 seconds.
+
 # Changelog
 ## OH-001.2.2 — Personal Deployment Hardening
 - Added a server-validated personal access key; production chat calls fail closed unless a 32-character-or-stronger token is configured.

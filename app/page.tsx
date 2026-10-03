@@ -1,7 +1,7 @@
 'use client';
 import {ChangeEvent,useEffect,useLayoutEffect,useRef,useState} from 'react';
 
-const modes=[['zeus','Zeus'],['olympus','Olympus'],['openai','OpenAI'],['claude','Claude'],['gemini','Gemini']] as const;
+const modes=[['zeus','Zeus'],['olympus','Olympus']] as const;
 type Mode=(typeof modes)[number][0];
 type Msg={who:'Felipe'|'Zeus';text:string;meta?:string;files?:string[]};
 type TextFile={id:string;name:string;mimeType:string;text:string};
@@ -61,7 +61,7 @@ export default function Home(){
    const result=await response.json();
    if(result.conversationId)setConversationId(result.conversationId);
    if(result.trace)setTrace(result.trace);
-   if(!response.ok)throw new Error(result.error||`HTTP_${response.status}`);
+   if(!response.ok){if(result.error==='APP_ACCESS_REQUIRED')setAccessOpen(true);throw new Error(result.error||`HTTP_${response.status}`);}
    const meta=result.trace?.fallback?`${label(result.trace.provider)} · OpenAI fallback from ${label(result.trace.fallback.from)}`:result.trace?.council?`Olympus council · lead ${label(result.trace.council.lead)} · director ${label(result.trace.council.director)}${result.trace.council.degraded?' · limited review':''}`:result.warning?`${result.warning} · response not persisted`:result.replayed?'Recovered from saved request':result.trace?.provider?`${label(result.trace.provider)} · ${result.trace.latencyMs} ms`:undefined;
    setMessages(current=>[...current,{who:'Zeus',text:result.message||friendlyError(result.error),meta}]);setFiles([]);
   }catch(error){const code=error instanceof Error?error.message:undefined;setMessages(current=>[...current,{who:'Zeus',text:friendlyError(code),meta:'Request failed'}]);}
@@ -88,5 +88,17 @@ export default function Home(){
  </main>;
 }
 function label(v?:string){return v==='openai'?'OpenAI':v==='claude'?'Claude':v==='gemini'?'Gemini':v||'Unknown'}
-function friendlyError(e?:string){if(e==='APP_ACCESS_NOT_CONFIGURED')return 'This private deployment is not configured yet. Add a strong ZEUS_PROXY_ACCESS_TOKEN in the hosting environment, then redeploy.';if(e==='APP_ACCESS_REQUIRED')return 'This private chat needs its access key. Open the lock control above to enter it.';if(e?.includes('NOT_CONFIGURED'))return 'Netlify AI Gateway is not available for this engine in this runtime. Enable AI Features for the Netlify team and use a deployed site or `netlify dev`.';if(e==='MODEL_TIMEOUT')return 'The engine exceeded its time limit. Your previous conversation is still available; try again.';if(e==='PROVIDER_BAD_REQUEST')return 'The selected AI engine rejected the request format. The request reached the provider, but the adapter needs attention.';if(e==='PROVIDER_RATE_LIMITED')return 'The provider is rate-limiting requests. Wait briefly and try again.';return `The request did not complete${e?` (${e})`:''}. Your saved conversation remains available.`}
+function friendlyError(e?:string){
+ if(e==='APP_ACCESS_NOT_CONFIGURED')return 'This private deployment is not configured yet. Add a strong ZEUS_PROXY_ACCESS_TOKEN in the hosting environment, then redeploy.';
+ if(e==='APP_ACCESS_REQUIRED')return 'This private chat needs its access key. Open the lock control above to enter it.';
+ if(e?.includes('NOT_CONFIGURED'))return 'Netlify AI Gateway is not available for this engine in this runtime. Check AI Features and the deployed runtime.';
+ if(e==='MODEL_TIMEOUT')return 'The AI request exceeded its time limit. Your conversation is still available; try again.';
+ if(e==='PROVIDER_MODEL_UNAVAILABLE')return 'The configured AI models were unavailable after the safe model fallback chain.';
+ if(e==='PROVIDER_BAD_REQUEST')return 'The AI provider rejected the request format. Zeus stopped instead of blindly retrying and wasting credits.';
+ if(e==='PROVIDER_AUTH_FAILED'||e==='PROVIDER_FORBIDDEN')return 'The AI Gateway rejected provider authorization. Check Netlify AI Features and make sure no manual provider key or base URL overrides the gateway.';
+ if(e==='PROVIDER_UNAVAILABLE')return 'The AI provider is temporarily unavailable after safe recovery attempts.';
+ if(e==='PROVIDER_RATE_LIMITED')return 'The AI Gateway or provider is rate-limiting requests. Wait briefly and try again.';
+ if(e==='EMPTY_PROVIDER_RESPONSE')return 'The provider returned no usable answer after safe recovery attempts.';
+ return 'The request did not complete'+(e?' ('+e+')':'')+'. Your saved conversation remains available.';
+}
 function downloadArtifact(text:string,index:number){const blob=new Blob([`# Zeus answer ${index+1}\n\n${text}\n`],{type:'text/markdown;charset=utf-8'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=`zeus-answer-${new Date().toISOString().slice(0,10)}-${index+1}.md`;a.click();URL.revokeObjectURL(url)}

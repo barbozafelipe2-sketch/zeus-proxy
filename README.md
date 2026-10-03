@@ -3,8 +3,8 @@
 OH-001.2 closes the user-facing shells that were present in the personal Zeus Proxy: every model call runs through Netlify AI Gateway, Zeus can select an available gateway engine, Olympus runs a bounded lead/review/director council, text attachments are analyzed as untrusted data, conversations survive reloads in this browser, and assistant answers can be downloaded as Markdown artifacts.
 
 ## What is implemented
-- Direct OpenAI / Claude / Gemini modes behind a shared adapter contract. A failed Claude or Gemini call falls back to OpenAI when Netlify AI Gateway provides the OpenAI runtime configuration.
-- Zeus selects the first gateway-configured provider in `ZEUS_PROVIDER_ORDER`, then OpenAI; default order is OpenAI, Claude, Gemini.
+- Only Zeus and Olympus are user-facing modes. Provider adapters remain internal. Each provider has a bounded same-provider model fallback chain; Claude or Gemini can then fall back to the OpenAI model chain, while OpenAI never silently switches to another provider.
+- Zeus selects the first gateway-configured provider in `ZEUS_PROVIDER_ORDER`; OpenAI remains the final cross-provider fallback. A single unavailable model no longer fails the request: safe model-level fallback is attempted first.
 - Olympus runs one lead, blind parallel reviews from other configured providers, and a director synthesis. Missing or failed reviewers are recorded; if no review completes, the lead answer is returned and the trace marks degraded mode.
 - Multi-turn conversation history: up to the most recent 20 stored messages are loaded for the same conversation/project and sent to the selected provider.
 - Supported text attachments: `.txt`, `.md`, `.csv`, `.json`, `.tsv`; 100 KB per file, 10 files maximum, 60,000 combined characters. Attachments are included as clearly delimited, untrusted text in the provider request and server conversation history; they are not uploaded to object storage.
@@ -12,9 +12,9 @@ OH-001.2 closes the user-facing shells that were present in the personal Zeus Pr
 - One-click Markdown download for every assistant answer.
 - Explicit execution state machine; terminal states cannot bypass transition validation.
 - `requestId` is mandatory. The database reserves it before provider execution so duplicate/concurrent requests cannot both spend provider tokens. Completed duplicates replay the saved result; an in-flight duplicate returns HTTP 409.
-- Provider calls receive an AbortSignal and are aborted on timeout.
+- Provider calls receive an AbortSignal and are aborted on timeout. Model retries are bounded and only happen for model-specific or transient failures; auth failures, rate limits, and generic bad requests do not trigger blind retries.
 - Atomic completed-turn persistence: conversation + user message + assistant message + reserved execution trace are committed together.
-- Failure traces are updated best-effort. Persistence failures also emit structured server-side audit logging because a database outage cannot honestly guarantee a database trace.
+- Failure traces are updated best-effort. Reservation or history database failures degrade persistence instead of killing an otherwise valid AI request; completed answers are still returned when possible. Persistence failures also emit structured server-side audit logging.
 - RLS enabled on all application tables with no client policies yet (fail closed). Server service-role access remains server-only.
 - Provider-reported model/usage captured when exposed by the SDK; Gemini usage metadata is captured when available.
 - Attachment contents are treated as untrusted input; the server validates file extensions and size before sending them to providers.

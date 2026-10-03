@@ -1,5 +1,5 @@
 import { z } from 'zod';
-export const ModeSchema=z.enum(['openai','claude','gemini','zeus','olympus']);
+export const ModeSchema=z.enum(['zeus','olympus']);
 export const ProviderSchema=z.enum(['openai','claude','gemini']);
 export const ExecutionStatusSchema=z.enum(['RECEIVED','ROUTING','MODEL_RUNNING','PERSISTING','COMPLETED','MODEL_FAILED','MODEL_TIMEOUT','PERSISTENCE_FAILED','INVALID_REQUEST']);
 export const AttachmentSchema=z.object({id:z.string().min(1).max(80),name:z.string().min(1).max(255),mimeType:z.string().min(1).max(127),text:z.string().max(50000)}).refine(a=>/\.(txt|md|csv|json|tsv)$/i.test(a.name),'Only .txt, .md, .csv, .json, and .tsv files are supported.');
@@ -7,4 +7,4 @@ export const ChatRequestSchema=z.object({requestId:z.string().uuid(),message:z.s
 export type ChatRequest=z.infer<typeof ChatRequestSchema>; export type ProviderName=z.infer<typeof ProviderSchema>; export type ExecutionStatus=z.infer<typeof ExecutionStatusSchema>;
 export type Usage={inputTokens?:number;outputTokens?:number};
 export type ChatMessage={role:'user'|'assistant';content:string};
-export type Trace={traceId:string;requestId:string;projectId:string;conversationId:string;mode:z.infer<typeof ModeSchema>;provider?:ProviderName;model?:string;startedAt:string;completedAt?:string;latencyMs:number;status:ExecutionStatus;usage?:Usage;estimatedCostUSD?:number;retryCount:number;errorCode?:string;fallback?:{from:ProviderName;to:ProviderName;reason:string};council?:{lead:ProviderName;reviewers:Array<{provider:ProviderName;model?:string;status:'completed'|'unavailable'|'failed'}>;director:ProviderName;degraded:boolean}};
+export type Trace={traceId:string;requestId:string;projectId:string;conversationId:string;mode:z.infer<typeof ModeSchema>;provider?:ProviderName;model?:string;modelAttempts?:string[];startedAt:string;completedAt?:string;latencyMs:number;status:ExecutionStatus;usage?:Usage;estimatedCostUSD?:number;retryCount:number;errorCode?:string;fallback?:{from:ProviderName;to:ProviderName;reason:string};council?:{lead:ProviderName;reviewers:Array<{provider:ProviderName;model?:string;status:'completed'|'unavailable'|'failed'}>;director:ProviderName;degraded:boolean}};
