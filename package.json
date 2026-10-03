@@ -22,5 +22,10 @@
     "node": "22.x",
     "npm": "10.9.x"
   },
-  "packageManager": "npm@10.9.2"
+  "packageManager": "npm@10.9.2",
+  "overrides": {
+    "exceljs": {
+      "uuid": "11.1.1"
+    }
+  }
 }
