@@ -43,7 +43,8 @@ async function handler(req,context){
   }
   if(req.method!=='POST')return errorJson('Method not allowed.',405,'METHOD_NOT_ALLOWED',requestId);
   await consumeEndpointRate(db,user.id,'upload',requestId);
-  const form=await req.formData();const file=form.get('file');
+  let form;try{form=await req.formData();}catch{return errorJson('Upload a valid file.',400,'INVALID_UPLOAD',requestId);}
+  const file=form.get('file');
   if(!(file instanceof File))return errorJson('A file is required.',400,'FILE_REQUIRED',requestId);
   if(file.size>4*1024*1024)return errorJson('File exceeds the safe 4 MB buffered upload limit. Use a smaller file or split the source archive.',413,'FILE_TOO_LARGE',requestId);
   let projectId=form.get('projectId')||null,conversationId=form.get('conversationId')||null;

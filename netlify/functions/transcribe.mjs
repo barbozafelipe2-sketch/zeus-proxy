@@ -4,9 +4,8 @@ import { json, getRequestId, errorJson } from './_shared/http.mjs';
 import { createExecutionBudget } from './_shared/runtime.mjs';
 import { consumeEndpointRate } from './_shared/limits.mjs';
 
-export default async (req, context) => {
+async function handler(req, context, requestId) {
   const startedAt=Date.now();
-  const requestId=getRequestId(req,context,null);
   const auth = await requireUser(req,requestId);
   if (auth.error) return auth.error;
   const {user,db}=auth;
@@ -15,7 +14,8 @@ export default async (req, context) => {
 
   try {
     await consumeEndpointRate(db,user.id,'transcribe',requestId);
-    const form = await req.formData();
+    let form;
+    try { form = await req.formData(); } catch { return errorJson('Upload a valid audio recording.', 400, 'INVALID_AUDIO_UPLOAD', requestId); }
     const file = form.get('audio');
     if (!(file instanceof File)) return errorJson('Audio recording is required.', 400, 'AUDIO_REQUIRED', requestId);
     if (file.size > 4 * 1024 * 1024) return errorJson('Voice recording is too large. Keep it under about one minute.', 413, 'AUDIO_TOO_LARGE', requestId);
@@ -26,6 +26,15 @@ export default async (req, context) => {
   } catch (error) {
     const status=Number(error?.status)||503;
     return errorJson(error?.message || 'Voice transcription failed.',status,error?.code||'TRANSCRIPTION_FAILED',requestId,error?.retryAfter?{retryAfter:error.retryAfter}:{});
+  }
+};
+
+export default async (req, context) => {
+  const requestId=getRequestId(req,context,null);
+  try { return await handler(req, context, requestId); }
+  catch (error) {
+    console.error('Transcribe API failure', requestId, error?.stack || error?.message || error);
+    return errorJson('Voice transcription could not complete.', 500, 'TRANSCRIBE_RUNTIME_FAILURE', requestId);
   }
 };
 

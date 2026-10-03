@@ -1,12 +1,19 @@
 {
+  "id": "/",
   "name": "Olympus Hub — Zeus",
   "short_name": "Zeus",
   "description": "Private Olympus Hub AI workspace",
+  "lang": "en",
+  "dir": "ltr",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
-  "background_color": "#000000",
+  "orientation": "any",
+  "background_color": "#05070a",
   "theme_color": "#05070a",
+  "categories": [
+    "productivity"
+  ],
   "icons": [
     {
       "src": "/zeus-icon-v1.png",
