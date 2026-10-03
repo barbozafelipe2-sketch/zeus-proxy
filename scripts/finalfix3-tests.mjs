@@ -9,11 +9,11 @@ const toml=readFileSync('netlify.toml','utf8');
 const npmrc=readFileSync('.npmrc','utf8');
 const pkg=JSON.parse(readFileSync('package.json','utf8'));
 
-// Personal auth/session hardening: the private deployment uses a server-side
-// token and keeps the user-entered access value only for the browser tab.
-assert.ok(app.includes("const accessStoreKey='olyhub.zeusproxy.access.v2'"),'personal session store key missing');
-assert.ok(app.includes('sessionStorage.setItem(accessStoreKey'),'private access key must use sessionStorage');
-assert.ok(!app.includes('localStorage.setItem(accessStoreKey'),'private access key must not be written to localStorage');
+// Personal auth persistence: the private deployment uses a server-side token and
+// persists the user-entered access value in localStorage under the v3 key.
+assert.ok(app.includes("const accessStoreKey='olyhub.zeusproxy.access.v3'"),'personal access store key (v3) missing');
+assert.ok(app.includes('localStorage.setItem(accessStoreKey'),'private access key must persist to localStorage');
+assert.ok(!app.includes('sessionStorage.setItem(accessStoreKey'),'private access key must not be written to sessionStorage');
 assert.ok(toml.includes('Cache-Control = "no-store"'),'API responses should remain no-store at the CDN layer');
 
 // PDF layout should use measured widths and degrade unsupported glyphs safely instead

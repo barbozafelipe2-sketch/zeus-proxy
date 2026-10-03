@@ -234,9 +234,9 @@ if (!chat.includes('selectMemoryContext(memories)')) throw new Error('Project me
 if (!storage.includes("attempts < 8") || !storage.includes("interval '5 minutes' * LEAST(attempts,6)")) throw new Error('Blob GC retry bound/backoff missing.');
 if (!fileDownload.includes('X-OlyHub-Request-Id') || !artifactDownload.includes('X-OlyHub-Request-Id')) throw new Error('Download success responses are missing correlation ids.');
 
-if (!app.includes("const accessStoreKey='olyhub.zeusproxy.access.v2'")) throw new Error('Personal access session key missing.');
-if (!app.includes('sessionStorage.setItem(accessStoreKey')) throw new Error('Private access key must remain session-scoped.');
-if (app.includes('localStorage.setItem(accessStoreKey')) throw new Error('Private access key must not persist to localStorage.');
+if (!app.includes("const accessStoreKey='olyhub.zeusproxy.access.v3'")) throw new Error('Personal access store key (v3) missing.');
+if (!app.includes('localStorage.setItem(accessStoreKey')) throw new Error('Private access key must persist to localStorage.');
+if (app.includes('sessionStorage.setItem(accessStoreKey')) throw new Error('Private access key must not be written to sessionStorage.');
 if (!app.includes("dialog.setAttribute('role','dialog')") || !app.includes("dialog.setAttribute('aria-modal','true')")) throw new Error('Accessible modal semantics missing.');
 if (!app.includes("if(e.key==='Escape')") || !app.includes("if(e.key!=='Tab')return")) throw new Error('Modal keyboard controls missing.');
 if (!app.includes("status==='TODO'?'IN_PROGRESS':status==='IN_PROGRESS'?'DONE':'TODO'")) throw new Error('Task three-state UI missing.');
