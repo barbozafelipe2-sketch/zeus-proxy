@@ -151,7 +151,7 @@ OH-004.2.9 adds no database migration. If this AI-runtime pass regresses product
 5. Tools: enabled tools open their prompt flow; unsupported tools are disabled and do not trigger navigation.
 6. Files: verify long filenames truncate cleanly and download controls remain reachable on phone width.
 7. Settings: verify provider/capability diagnostics remain readable at desktop and phone widths.
-8. Mobile: confirm header + bottom navigation, Project tabs, composer, safe-area padding and drawer do not overlap content.
+8. Mobile: confirm header + ☰ drawer navigation, Project tabs, composer, safe-area padding and drawer do not overlap content.
 9. Accessibility: tab through primary controls and confirm visible focus; with reduced-motion enabled, transitions/animations should become effectively instant.
 
 

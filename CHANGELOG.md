@@ -1,5 +1,14 @@
 # Zeus Proxy Personal Recovery
 
+## OH-004.3.4-personal polish — 2026-10-03
+- Access key persists in `localStorage` as `olyhub.zeusproxy.access.v3` (legacy v2 keys migrate automatically); build verifier and tests updated to match.
+- Accessibility: landmarks, labels, ARIA state, skip link, live region, focus preservation, `Escape` handling, focus ring, reduced motion and AA text contrast.
+- Resilience: drafts survive re-renders, friendly offline/network errors, dismissible error banners on every page, busy indicator, offline status, no stale status timers.
+- Mobile: safe-area insets for the iOS home-screen app and landscape notches.
+- Head metadata (description, noindex, Open Graph, color-scheme), boot placeholder and `<noscript>` fallback.
+- Security: HSTS, COOP, explicit `manifest-src`/`worker-src`; transcribe/files return JSON 400s for malformed uploads.
+- Removed dead bottom-nav code and unused CSS; fixed an invalid `transition` declaration; replaced exceljs's deprecated `uuid@8` with `uuid@11` via npm override.
+
 ## OH-004.3.4-personal — 2026-10-03
 - Restored the complete audited OH-004.3.4 workspace after the OH-001.2.x reduced chat-shell regression.
 - Preserved the personal black/gold Zeus identity while restoring Projects, one permanent chat per Project, dedicated memory, tasks, files, artifacts, image/vision, voice and durable execution state.
