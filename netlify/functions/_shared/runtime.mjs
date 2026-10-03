@@ -1,3 +1,12 @@
+// Netlify synchronous Functions are hard-killed at 60 s (not configurable). A killed function returns
+// nothing useful to the browser (iOS reports it as a network failure), so the chat deadline leaves
+// headroom for cold start, artifact/ZIP building and the final database writes.
+export const NETLIFY_SYNC_LIMIT_MS = 60000;
+export const CHAT_TIMEOUT_MS = 47000;
+export const CHAT_WEB_TIMEOUT_MS = 51000;
+// No execution can still be running after the platform limit; older non-terminal rows are orphans.
+export const STALE_EXECUTION_MS = 90000;
+
 export function createExecutionBudget({ startedAt = Date.now(), timeoutMs = 48000, maxCalls = 5, reserveMs = 2500 } = {}) {
   const deadlineAt = startedAt + timeoutMs;
   let calls = 0;
