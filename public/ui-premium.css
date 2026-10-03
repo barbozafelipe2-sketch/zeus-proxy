@@ -835,3 +835,220 @@ body{background:var(--zeus-black)}
 .message-sources a:hover,.message-sources a:focus-visible{border-color:rgba(216,181,106,.38);background:rgba(216,181,106,.09);outline:none}
 .message-sources a strong{display:grid;place-items:center;min-width:18px;height:18px;border-radius:50%;background:rgba(216,181,106,.13);color:#d8b56a;font-size:10px}
 .message-sources a span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* OH-004.3.5 — restore clean chat UI */
+.chat-page{
+  display:flex;
+  flex-direction:column;
+  min-height:0;
+  overflow:hidden;
+}
+.chat-page>.chat-scroll{
+  flex:1 1 auto;
+  min-height:0;
+  overflow-y:auto;
+  overscroll-behavior-y:contain;
+  padding-bottom:132px;
+}
+.chat-page>.composer-shell{
+  position:fixed;
+  left:var(--sidebar);
+  right:0;
+  bottom:0;
+  z-index:28;
+  padding:12px max(14px,7vw) 14px;
+  background:linear-gradient(180deg,rgba(7,9,13,0),rgba(7,9,13,.94) 28%,rgba(7,9,13,.99) 60%);
+  border-top:0;
+  pointer-events:none;
+}
+.chat-page>.composer-shell>*{pointer-events:auto}
+.chat-page>.composer-shell .composer{
+  max-width:860px;
+  margin:0 auto;
+  min-height:54px;
+  padding:6px 7px 6px 9px;
+  border:1px solid #303946;
+  border-radius:26px;
+  background:#0d1218;
+  box-shadow:0 12px 34px rgba(0,0,0,.34);
+}
+.chat-page>.composer-shell #composer-text{
+  min-height:40px;
+  max-height:180px;
+  padding:9px 7px;
+  font-size:15px;
+  line-height:1.45;
+}
+.chat-page>.composer-shell .attach-plus{
+  width:38px;
+  height:38px;
+  font-size:27px;
+  color:#8d97a5;
+}
+.chat-page>.composer-shell .icon-btn{
+  flex:0 0 auto;
+}
+.chat-page>.composer-shell .send-btn{
+  width:40px;
+  height:40px;
+  border-radius:50%!important;
+}
+.chat-page>.composer-shell .composer-meta{
+  max-width:860px;
+  margin:6px auto 0;
+  padding:0 4px;
+  font-size:9px;
+  opacity:.58;
+}
+.chat-page>.composer-shell .attachments.pending{
+  max-width:860px;
+  margin:0 auto 7px;
+}
+
+/* Keep attachment choices small and visually attached to the + control. */
+.chat-page>.composer-shell .attach-menu{
+  left:max(14px,7vw);
+  bottom:76px;
+  min-width:178px;
+  width:auto;
+  gap:2px;
+  padding:6px;
+  border-radius:14px;
+  border:1px solid #303946;
+  background:rgba(13,16,21,.985);
+  box-shadow:0 14px 34px rgba(0,0,0,.48);
+}
+.chat-page>.composer-shell .attach-menu button{
+  min-height:40px;
+  gap:10px;
+  padding:0 10px;
+  border-radius:9px;
+  font-size:13px;
+}
+.chat-page>.composer-shell .attach-menu .ico{
+  width:18px;
+  height:18px;
+}
+.chat-page>.composer-shell .attach-menu .video-glyph{
+  width:18px;
+  font-size:12px;
+}
+
+/* ChatGPT-like reading surface: user is compact; Zeus/Olympus answer is plain text, never a card/bubble. */
+.message-list{
+  width:min(860px,100%);
+  max-width:860px;
+  margin-left:auto;
+  margin-right:auto;
+}
+.message.user{
+  width:fit-content;
+  max-width:min(78%,720px);
+  margin-left:auto;
+  padding:0!important;
+  border:0!important;
+  background:transparent!important;
+  box-shadow:none!important;
+}
+.message.user .message-label{
+  display:none;
+}
+.message.user .message-body{
+  margin-left:auto;
+  padding:10px 14px!important;
+  border:1px solid #29323d!important;
+  border-radius:18px 18px 5px 18px!important;
+  background:#141a22!important;
+  box-shadow:none!important;
+}
+.message.assistant{
+  width:100%;
+  max-width:860px;
+  margin-left:auto;
+  margin-right:auto;
+  padding:0!important;
+  border:0!important;
+  border-left:0!important;
+  border-radius:0!important;
+  background:transparent!important;
+  box-shadow:none!important;
+}
+.message.assistant:before{display:none!important}
+.message.assistant .message-label{
+  margin:0 0 7px;
+  font-size:9px;
+  letter-spacing:.12em;
+  opacity:.72;
+}
+.message.assistant .message-body{
+  padding:0!important;
+  border:0!important;
+  border-radius:0!important;
+  background:transparent!important;
+  box-shadow:none!important;
+  font-size:15px;
+  line-height:1.68;
+}
+
+/* Empty state stays centered without pushing the composer into the middle of the screen. */
+.chat-page .welcome{
+  margin-top:clamp(28px,7vh,72px);
+}
+.chat-page .quick-prompts{
+  margin-bottom:18px;
+}
+
+@media(max-width:900px){
+  .chat-page{
+    height:calc(100dvh - 127px);
+  }
+  .chat-page>.chat-scroll{
+    padding:14px 13px 112px;
+  }
+  .chat-page>.composer-shell{
+    left:0;
+    right:0;
+    bottom:63px;
+    padding:9px 10px calc(9px + env(safe-area-inset-bottom));
+  }
+  .chat-page>.composer-shell .composer{
+    max-width:none;
+    min-height:50px;
+    border-radius:24px;
+  }
+  .chat-page>.composer-shell #composer-text{
+    font-size:16px; /* prevents iOS focus zoom */
+  }
+  .chat-page>.composer-shell .composer-meta{
+    display:none;
+  }
+  .chat-page>.composer-shell .attach-menu{
+    left:10px;
+    bottom:66px;
+    min-width:166px;
+  }
+  .chat-page>.composer-shell .attach-menu button{
+    min-height:38px;
+    font-size:13px;
+  }
+  .message.user{
+    max-width:88%;
+  }
+  .message.assistant .message-label{
+    display:none;
+  }
+}
+
+@media(min-width:901px){
+  .chat-page>.composer-shell{
+    bottom:0;
+  }
+}
+
+@supports(padding:max(0px)){
+  @media(max-width:900px){
+    .chat-page>.composer-shell{
+      bottom:calc(63px + env(safe-area-inset-bottom));
+    }
+  }
+}
