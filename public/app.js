@@ -166,7 +166,7 @@ function topbar(){
   const tone=chatReady?'ready':hasHealth?'limited':'syncing';
   const title=chatReady?'AI runtime and workspace services are available.':hasHealth?'Workspace loaded, but AI runtime is not fully available.':'Checking workspace runtime…';
   return `<header class="topbar">
-    <button class="hamburger personal-more" id="hamburger" aria-label="Open projects and navigation" title="Projects and navigation">⋮</button>
+    <button class="hamburger personal-more" id="hamburger" aria-label="Open navigation" title="Navigation">${icon('menu')}</button>
     <div class="topbar-context" aria-label="Current workspace"><span>${esc(state.currentProject?'PROJECT':'WORKSPACE')}</span><strong>${esc(context)}</strong></div>
     <div class="brand-center"><div class="personal-bolt small">ϟ</div><div class="brand-copy"><span class="logo-word">OLYMPUS HUB</span><span class="logo-sub">PERSONAL · ZEUS</span></div></div>
     <div class="topbar-actions"><span class="system-indicator ${tone}" title="${esc(title)}"><i></i>${status}</span><button class="avatar ghost" id="profile-avatar" aria-label="Open account settings">${esc(initials())}</button></div>
@@ -333,11 +333,6 @@ function toolsView(){const h=state.health?.capabilities||{};const chat=capabilit
   return `<section class="page tools-page">
     <div class="page-head tight"><div><h1>Tools & Capabilities</h1><p class="eyebrow">REAL CAPABILITIES. REAL OUTPUTS.</p></div><button class="text-gold" data-tab="Files">Explore All ></button></div>
     <div class="tool-grid">${tools.map(([kind,title,sub,ico,ok,label,prompt])=>`<button class="tool-card ${ok?'':'disabled'}" data-kind="${kind}" ${ok?`data-tool-prompt="${esc(prompt)}"`:'disabled aria-disabled="true"'}><div class="tool-ico">${ico}</div><div class="tool-copy"><strong>${title}</strong><span>${sub}</span></div><span class="tool-state">${esc(label)}</span><span class="chev">›</span></button>`).join('')}</div>
-    <div class="panel">
-      <div class="panel-head"><h2>Recent Outputs</h2><button class="text-gold" data-tab="Files">View All ></button></div>
-      <p class="eyebrow dim">FILES STAY CONNECTED TO YOUR PROJECTS AND CHATS.</p>
-      ${outputsList()}
-    </div>
     <button class="panel library-card" data-tab="Files"><div class="tool-ico">${icon('folder')}</div><div><strong>Files & Library</strong><p>Upload, analyze, and keep everything in context across all your projects and conversations.</p></div><span class="chev">›</span></button>
   </section>`;
 }
@@ -381,7 +376,7 @@ function showModal(markup,{initialFocus}={}){
 }
 function setModalError(message){const el=$('#modal-notice');if(!el)return;el.textContent=message||'';el.classList.toggle('hidden',!message);}
 
-function appView(){const page=state.tab==='Home'?homeView():state.tab==='Projects'?projectsView():state.tab==='Tools'?toolsView():state.tab==='Files'?filesView():settingsView();return `<div class="app-shell">${sidebar()}<main class="main">${topbar()}${page}</main>${bottomNav()}<div id="modal-root"></div></div>`}
+function appView(){const page=state.tab==='Home'?homeView():state.tab==='Projects'?projectsView():state.tab==='Tools'?toolsView():state.tab==='Files'?filesView():settingsView();return `<div class="app-shell">${sidebar()}<main class="main">${topbar()}${page}</main><div id="modal-root"></div></div>`}
 function render(){ clearModalLifecycle();modalReturnFocus=null;if(!state.authReady){app.innerHTML='<div style="min-height:100dvh;display:grid;place-items:center;color:#929ba8;letter-spacing:.2em">INITIALIZING ZEUS</div>';return;} app.innerHTML=state.user?appView():authView();bind(); requestAnimationFrame(()=>{const s=$('#chat-scroll');if(!s)return;if(state.chatRestore){const r=state.chatRestore;state.chatRestore=null;s.scrollTop=Math.max(0,s.scrollHeight-r.height+r.top);}else s.scrollTop=s.scrollHeight;}); }
 
 function bind(){
@@ -580,16 +575,60 @@ async function startVoice(){
   if(state.voiceBusy&&state.voiceRecognition){try{state.voiceRecognition.stop()}catch{}return;}
   if(state.recording&&state.voiceRecorder){try{state.voiceRecorder.stop()}catch{}return;}
 
-  // Prefer native browser speech recognition on iOS/Safari/Chrome. This avoids
-  // pretending Netlify AI Gateway exposes audio transcription models when it does not.
+  // Prefer server transcription when available. It receives raw audio and
+  // automatically detects the spoken language, including code-switching.
+  const canRecord=Boolean(navigator.mediaDevices?.getUserMedia&&window.MediaRecorder);
+  if(state.health?.capabilities?.serverTranscription&&canRecord){
+    try{
+      const stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}});
+      const choices=['audio/mp4','audio/aac','audio/webm;codecs=opus','audio/webm'];
+      const mime=choices.find(x=>MediaRecorder.isTypeSupported?.(x))||'';
+      const recorder=new MediaRecorder(stream,mime?{mimeType:mime}:undefined);
+      state.voiceStream=stream;state.voiceRecorder=recorder;state.voiceChunks=[];
+      recorder.ondataavailable=e=>{if(e.data?.size)state.voiceChunks.push(e.data)};
+      recorder.onerror=()=>{state.error='Voice recording failed. Check microphone permission.';cleanupVoice();render();};
+      recorder.onstop=async()=>{
+        clearTimeout(state.voiceStopTimer);
+        const chunks=state.voiceChunks.slice();
+        const type=recorder.mimeType||'audio/webm';
+        cleanupVoice();
+        if(!chunks.length){state.error='No voice audio was captured.';render();return;}
+        state.voiceBusy=true;state.execStatus='Detecting language and transcribing…';render();
+        try{
+          const blob=new Blob(chunks,{type});
+          const ext=type.includes('mp4')||type.includes('aac')?'m4a':'webm';
+          const fd=new FormData();fd.append('audio',blob,`voice-${Date.now()}.${ext}`);
+          const d=await api('/api/transcribe',{method:'POST',body:fd});
+          state.voiceBusy=false;state.execStatus='';render();
+          if(d.text)await sendText(d.text,[]); else throw new Error('No speech was detected.');
+        }catch(error){
+          state.voiceBusy=false;state.execStatus='';
+          state.error=error.message||'Voice transcription failed.';
+          render();
+        }
+      };
+      recorder.start(250);
+      state.recording=true;state.error='';state.execStatus='Listening… tap the mic when finished';
+      state.voiceStopTimer=setTimeout(()=>{if(state.recording&&state.voiceRecorder?.state==='recording')state.voiceRecorder.stop()},60000);
+      render();return;
+    }catch(error){
+      if(error?.name==='NotAllowedError'){state.error='Microphone permission was denied. Enable it for this site and try again.';render();return;}
+      console.warn('Server voice capture unavailable; falling back to browser recognition.',error);
+    }
+  }
+
+  // Browser fallback. Browsers do not expose true per-utterance language
+  // detection, so use the device locale only if server transcription is unavailable.
   const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
   if(SR){
     try{
       const r=new SR();
       state.voiceRecognition=r;state.voiceBusy=true;state.error='';state.execStatus='Listening…';
-      r.lang=navigator.language||'pt-BR';r.interimResults=false;r.continuous=false;r.maxAlternatives=1;
+      r.lang=navigator.language||'en-US';r.interimResults=false;r.continuous=false;r.maxAlternatives=3;
       r.onresult=async e=>{
-        const text=e.results?.[0]?.[0]?.transcript?.trim();
+        const alternatives=[...(e.results?.[0]||[])];
+        const best=alternatives.sort((a,b)=>(Number(b.confidence)||0)-(Number(a.confidence)||0))[0];
+        const text=best?.transcript?.trim();
         state.voiceBusy=false;state.voiceRecognition=null;state.execStatus='';render();
         if(text) await sendText(text,[]); else {state.error='No speech was detected.';render();}
       };
@@ -604,48 +643,6 @@ async function startVoice(){
       r.onend=()=>{if(state.voiceRecognition===r){state.voiceBusy=false;state.voiceRecognition=null;state.execStatus='';render();}};
       r.start();render();return;
     }catch{}
-  }
-
-  // Fallback for browsers without SpeechRecognition: only record when the backend
-  // explicitly reports a configured transcription endpoint. Do not record audio just
-  // to send it to a gateway that cannot transcribe it.
-  if(!state.health?.capabilities?.serverTranscription){
-    state.error='Voice dictation is not available in this browser. Browser speech recognition is unavailable and server transcription is not configured for this deploy.';
-    render();return;
-  }
-  if(navigator.mediaDevices?.getUserMedia&&window.MediaRecorder){
-    try{
-      const stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true}});
-      const choices=['audio/mp4','audio/aac','audio/webm;codecs=opus','audio/webm'];
-      const mime=choices.find(x=>MediaRecorder.isTypeSupported?.(x))||'';
-      const recorder=new MediaRecorder(stream,mime?{mimeType:mime}:undefined);
-      state.voiceStream=stream;state.voiceRecorder=recorder;state.voiceChunks=[];
-      recorder.ondataavailable=e=>{if(e.data?.size)state.voiceChunks.push(e.data)};
-      recorder.onerror=()=>{state.error='Voice recording failed. Check microphone permission.';cleanupVoice();render();};
-      recorder.onstop=async()=>{
-        clearTimeout(state.voiceStopTimer);
-        const chunks=state.voiceChunks.slice();
-        const type=recorder.mimeType||'audio/webm';
-        cleanupVoice();
-        if(!chunks.length){state.error='No voice audio was captured.';render();return;}
-        state.voiceBusy=true;state.execStatus='Transcribing voice…';render();
-        try{
-          const blob=new Blob(chunks,{type});
-          const ext=type.includes('mp4')||type.includes('aac')?'m4a':'webm';
-          const fd=new FormData();fd.append('audio',blob,`voice-${Date.now()}.${ext}`);
-          const d=await api('/api/transcribe',{method:'POST',body:fd});
-          state.voiceBusy=false;state.execStatus='';render();
-          if(d.text)await sendText(d.text,[]); else throw new Error('No speech was detected.');
-        }catch(error){state.voiceBusy=false;state.execStatus='';state.error=error.message||'Voice transcription failed.';render();}
-      };
-      recorder.start(250);
-      state.recording=true;state.error='';state.execStatus='Recording… tap the mic to stop';
-      state.voiceStopTimer=setTimeout(()=>{if(state.recording&&state.voiceRecorder?.state==='recording')state.voiceRecorder.stop()},60000);
-      render();return;
-    }catch(error){
-      state.error=error?.name==='NotAllowedError'?'Microphone permission was denied. Enable it for this site and try again.':'Could not start microphone recording.';
-      render();return;
-    }
   }
 
   state.error='Voice input is not supported by this browser.';render();

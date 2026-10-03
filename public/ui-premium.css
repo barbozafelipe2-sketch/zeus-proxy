@@ -1052,3 +1052,18 @@ body{background:var(--zeus-black)}
     }
   }
 }
+
+/* OH-004.3.7 — simplified navigation and reliable message wrapping */
+.personal-more .ico{width:24px;height:24px;stroke-width:1.8}
+.message.user{width:100%!important;max-width:100%!important;display:flex;justify-content:flex-end}
+.message.user .message-body{width:auto!important;min-width:0!important;max-width:min(82%,720px)!important;white-space:pre-wrap!important;overflow-wrap:break-word!important;word-break:normal!important;hyphens:none!important}
+.message.assistant .message-body{white-space:pre-wrap;overflow-wrap:break-word;word-break:normal}
+@media(max-width:900px){
+  .page{padding-bottom:28px}
+  .chat-page{height:calc(100dvh - 72px)!important;padding-bottom:0!important}
+  .chat-page>.chat-scroll{padding-bottom:112px!important}
+  .chat-page>.composer-shell{bottom:0!important;padding-bottom:calc(9px + env(safe-area-inset-bottom))!important}
+  .chat-page>.composer-shell .attach-menu{bottom:64px!important}
+  .message.user .message-body{max-width:86%!important}
+  .project-workspace-page{padding-bottom:28px!important}
+}

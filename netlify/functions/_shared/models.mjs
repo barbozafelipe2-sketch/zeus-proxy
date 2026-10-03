@@ -51,9 +51,12 @@ function openrouterBase() {
 }
 function audioBase() { return env('OLYHUB_AUDIO_BASE_URL'); }
 function audioKey() { return env('OLYHUB_AUDIO_API_KEY'); }
+function explicitAudioConfigured() {
+  return String(env('OLYHUB_SERVER_TRANSCRIPTION')).toLowerCase() === 'true' && Boolean(audioBase() && audioKey());
+}
 
 export function serverTranscriptionConfigured() {
-  return String(env('OLYHUB_SERVER_TRANSCRIPTION')).toLowerCase() === 'true' && Boolean(audioBase() && audioKey());
+  return explicitAudioConfigured() || providerStatus().gemini;
 }
 
 export function providerStatus() {
@@ -548,36 +551,70 @@ export async function runOlympus({ text, context = '', images = [], budget = nul
 }
 
 export async function transcribeAudio(audioBytes, filename = 'voice.webm', mimeType = 'audio/webm', { budget = null } = {}) {
-  if (!serverTranscriptionConfigured()) throw new Error('Server transcription requires an explicit OLYHUB_AUDIO_BASE_URL and OLYHUB_AUDIO_API_KEY on this deploy.');
-  const localBudget = budget || createExecutionBudget({ timeoutMs: 42000, maxCalls: 2 });
-  const base = apiRoot(audioBase());
-  const key = audioKey();
-  const configured = env('OLYHUB_AUDIO_MODEL').trim();
-  const candidates = [...new Set([configured, 'gpt-4o-mini-transcribe', 'gpt-4o-transcribe'].filter(Boolean))].slice(0, 2);
+  const localBudget = budget || createExecutionBudget({ timeoutMs: 42000, maxCalls: 3 });
   let last;
-  for (const model of candidates) {
-    if (!localBudget.canCall()) break;
-    try {
-      localBudget.reserveCall(`transcription:${model}`);
-      const form = new FormData();
-      form.append('model', model);
-      form.append('file', new Blob([audioBytes], { type: mimeType || 'audio/webm' }), filename || 'voice.webm');
-      const res = await fetch(`${base}/audio/transcriptions`, {
-        method: 'POST',
-        signal: localBudget.signal(18000),
-        headers: { Authorization: `Bearer ${key}` },
-        body: form,
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw providerError(data.error?.message || `Transcription ${res.status}`, res.status);
-      const text = String(data.text || '').trim();
-      if (!text) throw providerError('Transcription provider returned no text.');
-      return { text, model };
-    } catch (error) { last = error; }
-  }
-  throw last || new Error('Voice transcription failed within the execution budget.');
-}
 
+  if (explicitAudioConfigured()) {
+    const base = apiRoot(audioBase());
+    const key = audioKey();
+    const configured = env('OLYHUB_AUDIO_MODEL').trim();
+    const candidates = [...new Set([configured, 'gpt-4o-mini-transcribe', 'gpt-4o-transcribe'].filter(Boolean))].slice(0, 2);
+    for (const model of candidates) {
+      if (!localBudget.canCall()) break;
+      try {
+        localBudget.reserveCall(`transcription:${model}`);
+        const form = new FormData();
+        form.append('model', model);
+        form.append('file', new Blob([audioBytes], { type: mimeType || 'audio/webm' }), filename || 'voice.webm');
+        const res = await fetch(`${base}/audio/transcriptions`, {
+          method: 'POST',
+          signal: localBudget.signal(18000),
+          headers: { Authorization: `Bearer ${key}` },
+          body: form,
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw providerError(data.error?.message || `Transcription ${res.status}`, res.status);
+        const text = String(data.text || '').trim();
+        if (!text) throw providerError('Transcription provider returned no text.');
+        return { text, model, language: data.language || null };
+      } catch (error) { last = error; }
+    }
+  }
+
+  const providers=providerStatus();
+  if (providers.gemini && localBudget.canCall()) {
+    const model=env('OLYHUB_AUDIO_GEMINI_MODEL').trim()||'gemini-2.5-flash';
+    try {
+      localBudget.reserveCall(`transcription:gemini:${model}`);
+      const base=geminiBase().replace(/\/$/,'');
+      const key=env('GEMINI_API_KEY');
+      const data64=Buffer.from(audioBytes).toString('base64');
+      const res=await fetch(`${base}/v1beta/models/${encodeURIComponent(model)}:generateContent`,{
+        method:'POST',
+        signal:localBudget.signal(22000),
+        headers:{'Content-Type':'application/json','x-goog-api-key':key},
+        body:JSON.stringify({
+          contents:[{role:'user',parts:[
+            {text:'Transcribe this audio verbatim. Automatically detect the spoken language. Preserve the original language, punctuation, names, numbers, and any code-switching between languages. Return only the transcript with no commentary or labels.'},
+            {inlineData:{mimeType:mimeType||'audio/webm',data:data64}}
+          ]}],
+          generationConfig:{temperature:0,maxOutputTokens:3000}
+        })
+      });
+      const data=await res.json().catch(()=>({}));
+      if(!res.ok)throw providerError(data.error?.message||`Gemini transcription ${res.status}`,res.status);
+      const text=String(data.candidates?.[0]?.content?.parts?.map(p=>p.text||'').join('')||'').trim();
+      if(!text)throw providerError('Multilingual transcription returned no text.');
+      recordProviderSuccess('gemini');
+      return {text,model:`gemini:${model}`,language:'auto'};
+    } catch(error){
+      last=error;
+      if(countsAsProviderFailure(error))recordProviderFailure('gemini',error);
+    }
+  }
+
+  throw last || new Error('Automatic multilingual transcription is not available on this deploy.');
+}
 export async function generateImage(prompt, { budget = null } = {}) {
   if (!providerStatus().openai || circuitOpen('openai')) throw new Error('Image generation provider is not currently available.');
   const localBudget = budget || createExecutionBudget({ timeoutMs: 46000, maxCalls: 2 });

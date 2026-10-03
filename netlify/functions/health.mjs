@@ -84,7 +84,7 @@ async function handler(req,context){
       imageEditing:Boolean(providers.openai&&!runtime.openai?.circuitOpen),
       imageUnderstanding:availableModels({vision:true}).length>0,
       webSearch:Boolean(providers.openai&&!runtime.openai?.circuitOpen),
-      voiceInput:'browser_native',
+      voiceInput:serverTranscriptionConfigured()?'automatic_multilingual':'browser_native',
       serverTranscription:serverTranscriptionConfigured(),
       paginatedHistory:true,
       archiveSafety:true,
