@@ -11,12 +11,14 @@ const state = {
   projectSection:'CHAT', projectMemories:[], memoryPolicy:null,
   messagePage:{hasMore:false,nextCursor:null}, filesPage:{scope:'global',hasMore:false,nextCursor:null}, artifactsPage:{scope:'global',hasMore:false,nextCursor:null}, chatRestore:null,
   voiceBusy:false, voiceRecorder:null, voiceStream:null, voiceChunks:[], voiceStopTimer:null, voiceRecognition:null,
+  draft:'', offline:typeof navigator!=='undefined'&&navigator.onLine===false,
   lastFailedText:'', lastFailedMessageId:null, lastFailedAttachments:[], lastFailedRequestId:null,
 };
 
 const esc = (v='') => String(v).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const fmtSize = n => { n=Number(n||0); if(n<1024)return `${n} B`; if(n<1048576)return `${(n/1024).toFixed(1)} KB`; return `${(n/1048576).toFixed(1)} MB`; };
 const fmtDate = v => { if(!v)return ''; const d=new Date(v); return Number.isNaN(d.getTime())?'':d.toLocaleDateString(undefined,{month:'short',day:'numeric',year:d.getFullYear()!==new Date().getFullYear()?'numeric':undefined}); };
+const fmtDateTime = v => { if(!v)return ''; const d=new Date(v); return Number.isNaN(d.getTime())?'':d.toLocaleString(undefined,{dateStyle:'medium',timeStyle:'short'}); };
 const resetViewport = () => requestAnimationFrame(() => window.scrollTo({ top: 0, left: 0, behavior: 'auto' }));
 const initials = () => (state.user?.user_metadata?.full_name || state.user?.email || 'O').trim().split(/\s+/).map(x=>x[0]).join('').slice(0,2).toUpperCase();
 const accessStoreKey='olyhub.zeusproxy.access.v3';
@@ -71,9 +73,17 @@ async function api(path, options={}){
   const apiRequestId=optionRequestId||crypto.randomUUID();
   headers.set('X-OlyHub-Request-ID',apiRequestId);
   if(fetchOptions.body && !(fetchOptions.body instanceof FormData) && !headers.has('Content-Type'))headers.set('Content-Type','application/json');
-  const r=await fetch(path,{...fetchOptions,headers});
+  let r;
+  setBusy(1);
+  try{r=await fetch(path,{...fetchOptions,headers});}
+  catch(networkError){
+    if(networkError?.name==='AbortError')throw networkError;
+    throw new Error(navigator.onLine===false?'You are offline. Reconnect and try again.':'Network error — Zeus could not reach the server. Check your connection and try again.');
+  }finally{setBusy(-1);}
   const contentType=r.headers.get('content-type')||'';
-  const data=contentType.includes('application/json')?await r.json():await r.text();
+  let data;
+  try{data=contentType.includes('application/json')?await r.json():await r.text();}
+  catch{data=null;if(r.ok)throw new Error('The server sent an unreadable response. Try again.');}
   if(!r.ok){
     if(r.status===401){clearAuth();render();}
     const msg=data?.error||data?.message||(typeof data==='string'?data.slice(0,180):'');
@@ -83,6 +93,24 @@ async function api(path, options={}){
   return data;
 }
 
+let inflightRequests=0;
+function setBusy(delta){
+  inflightRequests=Math.max(0,inflightRequests+delta);
+  const busy=inflightRequests>0;
+  document.documentElement.classList.toggle('is-busy',busy);
+  app?.setAttribute('aria-busy',String(busy));
+}
+let lastAnnouncement='';
+function announce(text){
+  const region=document.getElementById('a11y-status');const value=String(text||'').trim();
+  if(!region||!value||value===lastAnnouncement)return;
+  lastAnnouncement=value;region.textContent=value;
+}
+function dismissError(){state.error='';state.lastFailedText='';state.lastFailedMessageId=null;state.lastFailedAttachments=[];state.lastFailedRequestId=null;render();}
+function errorBanner(extraClass=''){
+  if(!state.error)return '';
+  return `<div class="chat-error ${extraClass}"><span>${esc(state.error)}</span><div class="error-actions">${state.lastFailedText?`<button type="button" id="retry-last">Retry</button>`:''}<button type="button" class="error-dismiss" data-dismiss-error aria-label="Dismiss message">${icon('close')}</button></div></div>`;
+}
 async function bootstrapApp(){
   state.authReady=true; render();
   const jobs=[
@@ -116,7 +144,7 @@ async function loadArtifacts(projectId=null,{append=false}={}){
   const d=await api(`/api/artifacts?${qs}`);const incoming=d.artifacts||[];
   state.artifacts=append?mergeById(state.artifacts,incoming):incoming;state.artifactsPage={scope,hasMore:Boolean(d.page?.hasMore),nextCursor:d.page?.nextCursor||null};
 }
-async function loadHealth(){ state.health=await api('/api/health'); }
+async function loadHealth(){ try{state.health=await api('/api/health');state.healthError=false;}catch(error){state.healthError=true;throw error;} }
 async function loadTasks(projectId){ const d=await api(`/api/tasks?projectId=${encodeURIComponent(projectId)}`);state.tasks=d.tasks||[]; }
 async function loadMemories(projectId){ if(!projectId){state.projectMemories=[];state.memoryPolicy=null;return;} const d=await api(`/api/memories?projectId=${encodeURIComponent(projectId)}`);state.projectMemories=d.memories||[];state.memoryPolicy=d.policy||null; }
 
@@ -159,27 +187,27 @@ function authView(){
       <p>Projects, permanent memory, files, artifacts and Olympus orchestration stay together. Provider keys stay behind Netlify.</p>
       <div class="auth-proof" aria-label="Zeus capabilities"><span>Projects + dedicated memory</span><span>Files, images and outputs</span><span>Zeus + Olympus</span></div>
     </section>
-    <section class="auth-panel"><div class="auth-card">
+    <main class="auth-panel" id="main-content" tabindex="-1"><div class="auth-card">
       <div class="personal-bolt small">ϟ</div><div class="eyebrow">PRIVATE ACCESS</div><h2>Unlock Zeus</h2><p>Use the same private access key configured in Netlify.</p>
-      <form id="auth-form" class="form-grid"><div class="field"><label>Private key</label><input id="auth-key" type="password" autocomplete="current-password" minlength="32" required></div><div id="auth-notice" class="notice hidden"></div><button class="primary" type="submit" id="auth-submit">Unlock Zeus</button></form>
-    </div></section>
+      <form id="auth-form" class="form-grid"><div class="field"><label for="auth-key">Private key</label><input id="auth-key" type="password" autocomplete="current-password" minlength="32" required spellcheck="false" autocapitalize="off"></div><div id="auth-notice" class="notice hidden" role="alert" aria-live="assertive"></div><button class="primary" type="submit" id="auth-submit">Unlock Zeus</button></form>
+    </div></main>
   </div>`;
 }
 
 function sidebar(){
-  const recents=homeChats().slice(0,18).map(c=>`<button class="recent-item ${c.id===state.currentConversation?'active':''}" data-conv="${c.id}" title="${esc(c.title)}">${esc(c.title||'Conversation')}</button>`).join('') || `<div class="muted tiny" style="padding:8px 10px">Home chats appear here. Project chats stay inside each project.</div>`;
-  return `<aside class="sidebar ${state.drawer?'open':''}">
+  const recents=homeChats().slice(0,18).map(c=>`<button class="recent-item ${c.id===state.currentConversation?'active':''}" data-conv="${esc(c.id)}" title="${esc(c.title)}" ${c.id===state.currentConversation?'aria-current="true"':''}>${esc(c.title||'Conversation')}</button>`).join('') || `<div class="muted tiny" style="padding:8px 10px">Home chats appear here. Project chats stay inside each project.</div>`;
+  return `<aside class="sidebar ${state.drawer?'open':''}" id="app-sidebar" aria-label="Workspace navigation">
     <div class="logo-row"><div class="personal-bolt small">ϟ</div><div><div class="logo-word">OLYMPUS HUB</div><div class="logo-sub">PERSONAL · ZEUS</div></div></div>
     <button class="new-chat" id="new-chat">${icon('chat')} <span><strong>New chat</strong><small class="muted" style="display:block;margin-top:2px">Start a clean execution</small></span></button>
-    <div class="search-box">${icon('search')}<input id="chat-search" placeholder="Search chats"></div>
-    <div class="side-nav">${navButtons()}</div>
-    <div class="side-section"><div class="side-title">Recent chats</div><div class="recent-list" id="recent-list">${recents}</div></div>
-    <div class="sidebar-foot"><div class="user-chip"><div class="avatar">${esc(initials())}</div><div style="min-width:0"><strong style="font-size:12px">${esc(state.user?.user_metadata?.full_name||state.user?.email||'Felipe')}</strong><div class="muted tiny">Memory & persistence connected</div></div></div><button class="ghost" id="logout" style="text-align:left;padding:0">Lock</button></div>
+    <div class="search-box" role="search">${icon('search')}<input id="chat-search" type="search" placeholder="Search chats" aria-label="Search chats" autocomplete="off"></div>
+    <nav class="side-nav" aria-label="Primary">${navButtons()}</nav>
+    <div class="side-section"><div class="side-title">Recent chats</div><div class="recent-list" id="recent-list">${recents}<div class="muted tiny recent-empty hidden" id="recent-empty" style="padding:8px 10px">No chats match your search.</div></div></div>
+    <div class="sidebar-foot"><div class="user-chip"><div class="avatar">${esc(initials())}</div><div style="min-width:0"><strong style="font-size:12px">${esc(state.user?.user_metadata?.full_name||state.user?.email||'Felipe')}</strong><div class="muted tiny">Memory & persistence connected</div></div></div><button class="ghost" id="logout" style="text-align:left;padding:0" title="Lock Zeus on this device">Lock</button></div>
   </aside>${state.drawer?'<button class="scrim" id="scrim" aria-label="Close menu"></button>':''}`;
 }
 function navButtons(){
   const items=[['Home','home'],['Projects','projects'],['Tools','tools'],['Files','files'],['Settings','settings']];
-  return items.map(([label,ico])=>`<button data-tab="${label}" class="${state.tab===label?'active':''}">${icon(ico)}<span>${label}</span></button>`).join('');
+  return items.map(([label,ico])=>`<button data-tab="${label}" class="${state.tab===label?'active':''}" ${state.tab===label?'aria-current="page"':''}>${icon(ico)}<span>${label}</span></button>`).join('');
 }
 function homeChats(){ return (state.conversations||[]).filter(c=>!c.project_id); }
 function projectChats(){ return (state.conversations||[]).filter(c=>c.project_id); }
@@ -187,31 +215,31 @@ function topbar(){
   const context=state.currentProject?.name||(state.tab==='Home'?(state.currentConversation?'Conversation':'Home'):state.tab);
   const hasHealth=Boolean(state.health);
   const chatReady=Boolean(state.health?.capabilities?.chat);
-  const status=chatReady?'READY':hasHealth?'LIMITED':'SYNCING';
-  const tone=chatReady?'ready':hasHealth?'limited':'syncing';
-  const title=chatReady?'AI runtime and workspace services are available.':hasHealth?'Workspace loaded, but AI runtime is not fully available.':'Checking workspace runtime…';
+  const status=state.offline?'OFFLINE':chatReady?'READY':(hasHealth||state.healthError)?'LIMITED':'SYNCING';
+  const tone=state.offline?'offline':chatReady?'ready':(hasHealth||state.healthError)?'limited':'syncing';
+  const title=state.offline?'You are offline. Changes will fail until the connection returns.':state.healthError&&!hasHealth?'Runtime diagnostics did not load. Refresh to retry.':chatReady?'AI runtime and workspace services are available.':hasHealth?'Workspace loaded, but AI runtime is not fully available.':'Checking workspace runtime…';
   return `<header class="topbar">
-    <button class="hamburger personal-more" id="hamburger" aria-label="Open navigation" title="Navigation">${icon('menu')}</button>
+    <button class="hamburger personal-more" aria-controls="app-sidebar" aria-expanded="${state.drawer}" id="hamburger" aria-label="Open navigation" title="Navigation">${icon('menu')}</button>
     <div class="topbar-context" aria-label="Current workspace"><span>${esc(state.currentProject?'PROJECT':'WORKSPACE')}</span><strong>${esc(context)}</strong></div>
     <div class="brand-center"><div class="personal-bolt small">ϟ</div><div class="brand-copy"><span class="logo-word">OLYMPUS HUB</span><span class="logo-sub">PERSONAL · ZEUS</span></div></div>
-    <div class="topbar-actions"><span class="system-indicator ${tone}" title="${esc(title)}"><i></i>${status}</span><button class="avatar ghost" id="profile-avatar" aria-label="Open account settings">${esc(initials())}</button></div>
+    <div class="topbar-actions"><span class="system-indicator ${tone}" title="${esc(title)}" role="status" aria-label="${esc(`${status}: ${title}`)}"><i aria-hidden="true"></i>${status}</span><button class="avatar ghost" id="profile-avatar" aria-label="Open account settings">${esc(initials())}</button></div>
   </header>`;
 }
 
 function homeView(){
   const isEmpty=!state.messages.length;
   const msgs=state.messages.map(m=>messageHtml(m)).join('');
-  const exec=state.execStatus?`<div class="exec-card live"><div class="exec-head"><span class="exec-pulse"></span><div><strong>${state.mode==='OLYMPUS'?'Olympus is working':'Zeus is working'}</strong><div class="muted tiny">${esc(state.execStatus)}</div></div></div><div class="exec-foot">Live execution status — no simulated timings.</div></div>`:'';
+  const exec=state.execStatus?`<div class="exec-card live" aria-hidden="true"><div class="exec-head"><span class="exec-pulse"></span><div><strong>${state.mode==='OLYMPUS'?'Olympus is working':'Zeus is working'}</strong><div class="muted tiny">${esc(state.execStatus)}</div></div></div><div class="exec-foot">Live execution status — no simulated timings.</div></div>`:'';
   return `<section class="page chat-page">
-    <div class="mode-strip">
-      <button class="mode-card ${state.mode==='ZEUS'?'selected':''}" data-mode="ZEUS" aria-pressed="${state.mode==='ZEUS'}"><div class="mode-icon">${icon('auto')}</div><div><strong>Zeus <em>DEFAULT</em></strong><small>Fast execution<br>Lead model + bounded review.</small></div></button>
-      <button class="mode-card ${state.mode==='OLYMPUS'?'selected':''}" data-mode="OLYMPUS" aria-pressed="${state.mode==='OLYMPUS'}"><div class="mode-icon">${icon('globe')}</div><div><strong>Olympus <em>SPECIALIST</em></strong><small>Multi-specialist synthesis<br>Complex work. One final answer.</small></div></button>
+    <div class="mode-strip" role="group" aria-label="Execution mode">
+      <button type="button" class="mode-card ${state.mode==='ZEUS'?'selected':''}" data-mode="ZEUS" aria-pressed="${state.mode==='ZEUS'}"><div class="mode-icon">${icon('auto')}</div><div><strong>Zeus <em>DEFAULT</em></strong><small>Fast execution<br>Lead model + bounded review.</small></div></button>
+      <button type="button" class="mode-card ${state.mode==='OLYMPUS'?'selected':''}" data-mode="OLYMPUS" aria-pressed="${state.mode==='OLYMPUS'}"><div class="mode-icon">${icon('globe')}</div><div><strong>Olympus <em>SPECIALIST</em></strong><small>Multi-specialist synthesis<br>Complex work. One final answer.</small></div></button>
     </div>
     <p class="mode-blurb">${state.mode==='ZEUS'?'Default for daily work: one lead, fallback when needed, and a bounded review on complex requests.':'For broad work: a small specialist team contributes in parallel and a Director produces one canonical answer.'}</p>
     <div class="chat-scroll" id="chat-scroll">
       ${isEmpty?`<div class="welcome"><div class="eyebrow">${state.currentProject?esc(state.currentProject.name):'ONE AI ENVIRONMENT. REAL RESULTS.'}</div><h1>Turn the request into a result.</h1><p>Attach the source, give the goal, and keep the conversation, files and deliverables together.</p><div class="quick-prompts"><button data-prompt="Analyze the attached file and ground every important claim in the source. Call out anything the source does not support.">Review a source</button><button data-prompt="Create the next professional deliverable for this work and keep it connected to the conversation.">Create a deliverable</button><button data-prompt="Build this as runnable code. Include focused tests and tell me clearly which tests were not actually executed.">Build with tests</button><button data-prompt="Turn this goal into a project plan with clear tasks, risks, and milestones.">Plan a project</button></div></div>`:`${state.messagePage?.hasMore?'<div class="history-more"><button class="secondary compact" id="load-older-messages">Load older messages</button></div>':''}<div class="message-list">${msgs}</div>`}
       ${exec}
-      ${state.error?`<div class="chat-error"><span>${esc(state.error)}</span>${state.lastFailedText?`<button type="button" id="retry-last">Retry</button>`:''}</div>`:''}
+      ${errorBanner()}
     </div>
     ${composer()}
   </section>`;
@@ -237,10 +265,10 @@ function voiceSupported(){
   return Boolean(window.SpeechRecognition||window.webkitSpeechRecognition||(navigator.mediaDevices&&window.MediaRecorder));
 }
 function composer(){
-  const chips=state.attachedFiles.map(f=>`<span class="file-chip">${icon('files')} ${esc(f.filename)}<button type="button" data-remove-file="${f.id}">${icon('close')}</button></span>`).join('');
+  const chips=state.attachedFiles.map(f=>`<span class="file-chip">${icon('files')} ${esc(f.filename)}<button type="button" data-remove-file="${esc(f.id)}" aria-label="Remove ${esc(f.filename)}" title="Remove attachment">${icon('close')}</button></span>`).join('');
   const showMic=voiceSupported();
   const scope=state.currentProject?`Project: ${esc(state.currentProject.name)}`:'This conversation';
-  return `<div class="composer-shell">${state.attachMenu?`<div class="attach-menu" role="menu" aria-label="Add attachment"><button type="button" id="attach-media">${icon('image')}<span>Photo / Video</span></button><button type="button" id="attach-camera">${icon('camera')}<span>Camera</span></button><button type="button" id="attach-file">${icon('files')}<span>File</span></button></div>`:''}${chips?`<div class="attachments pending">${chips}</div>`:''}<form class="composer" id="composer"><button type="button" class="icon-btn attach-plus" id="attach" title="Add photo, video or file" aria-label="Add photo, video or file">＋</button><textarea id="composer-text" rows="1" aria-label="Message ${state.mode==='ZEUS'?'Zeus':'Olympus'}" placeholder="Message ${state.mode==='ZEUS'?'Zeus':'Olympus'}…" ${state.sending?'disabled':''}></textarea>${showMic?`<button type="button" class="icon-btn ${state.recording?'recording':''}" id="voice" title="${state.recording?'Stop recording':state.voiceBusy?'Transcribing…':'Voice input'}" aria-label="${state.recording?'Stop recording':state.voiceBusy?'Transcribing voice':'Voice input'}" ${state.voiceBusy?'disabled':''}>${icon('mic')}</button>`:''}<button type="submit" class="icon-btn send-btn" title="Send" aria-label="Send message" ${state.sending?'disabled':''}>${icon('send')}</button></form><div class="composer-meta"><span>${state.currentProject?'Permanent Project chat · dedicated memory + files':'Conversation history available · no Project memory'}</span><span>Enter adds a new line · use the arrow to send</span></div></div>`;
+  return `<div class="composer-shell">${state.attachMenu?`<div class="attach-menu" role="menu" id="attach-menu" aria-label="Add attachment"><button type="button" role="menuitem" id="attach-media">${icon('image')}<span>Photo / Video</span></button><button type="button" role="menuitem" id="attach-camera">${icon('camera')}<span>Camera</span></button><button type="button" role="menuitem" id="attach-file">${icon('files')}<span>File</span></button></div>`:''}${chips?`<div class="attachments pending">${chips}</div>`:''}<form class="composer" id="composer"><button type="button" class="icon-btn attach-plus" id="attach" title="Add photo, video or file" aria-label="Add photo, video or file" aria-haspopup="menu" aria-expanded="${state.attachMenu}" ${state.attachMenu?'aria-controls="attach-menu"':''}>＋</button><textarea id="composer-text" rows="1" aria-label="Message ${state.mode==='ZEUS'?'Zeus':'Olympus'}" placeholder="Message ${state.mode==='ZEUS'?'Zeus':'Olympus'}…" ${state.sending?'disabled':''}>${esc(state.draft)}</textarea>${showMic?`<button type="button" class="icon-btn ${state.recording?'recording':''}" id="voice" title="${state.recording?'Stop recording':state.voiceBusy?'Transcribing…':'Voice input'}" aria-label="${state.recording?'Stop recording':state.voiceBusy?'Transcribing voice':'Voice input'}" ${state.voiceBusy?'disabled':''}>${icon('mic')}</button>`:''}<button type="submit" class="icon-btn send-btn" title="Send (Ctrl/⌘+Enter)" aria-label="Send message" ${state.sending?'disabled':''}>${icon('send')}</button></form><div class="composer-meta"><span>${state.currentProject?'Permanent Project chat · dedicated memory + files':'Conversation history available · no Project memory'}</span><span>Enter adds a new line · use the arrow to send</span></div></div>`;
 }
 
 function projectsView(){
@@ -249,16 +277,16 @@ function projectsView(){
   const upcoming=state.tasks.filter(t=>t.status!=='DONE').slice(0,6);
   const projectSection=projects.length?`<div class="project-grid">${projects.map(projectCard).join('')}</div>`:`<div class="card" style="padding:44px;text-align:center;margin-top:18px"><div class="eyebrow">No projects yet</div><h2>Create your first real workspace.</h2><p class="muted">A project connects its conversation, tasks, files, artifacts and memory.</p><button class="primary" id="create-project-empty">${icon('plus')} New project</button></div>`;
   const tasksSection=upcoming.length?`<h2 class="section-title">Upcoming tasks</h2><div class="card" style="padding:14px"><div class="task-list">${upcoming.map(taskHtml).join('')}</div></div>`:'';
-  return `<section class="page projects-page"><div class="page-head"><div><div class="eyebrow">Projects</div><h1>Projects</h1><p>Turn ideas into real projects. Each project has one independent conversation.</p></div><button class="primary" id="create-project">${icon('plus')} New project</button></div><div class="project-tabs"><button data-filter="ALL" class="${state.projectFilter==='ALL'?'active':''}">All Projects</button><button data-filter="IN_PROGRESS" class="${state.projectFilter==='IN_PROGRESS'?'active':''}">In Progress</button><button data-filter="COMPLETED" class="${state.projectFilter==='COMPLETED'?'active':''}">Completed</button></div>${projectSection}${tasksSection}</section>`;
+  return `<section class="page projects-page"><div class="page-head"><div><div class="eyebrow">Projects</div><h1>Projects</h1><p>Turn ideas into real projects. Each project has one independent conversation.</p></div><button class="primary" id="create-project">${icon('plus')} New project</button></div><div class="project-tabs" role="group" aria-label="Filter projects">${[['ALL','All Projects'],['IN_PROGRESS','In Progress'],['COMPLETED','Completed']].map(([key,label])=>`<button type="button" data-filter="${key}" class="${state.projectFilter===key?'active':''}" aria-pressed="${state.projectFilter===key}">${label}</button>`).join('')}</div>${errorBanner('page-alert')}${projectSection}${tasksSection}</section>`;
 }
-function projectCard(p){const status=String(p.status||'IN_PROGRESS').replaceAll('_',' ');return `<article class="proj-row" data-project="${p.id}" tabindex="0" role="button" aria-label="Open project ${esc(p.name)}"><div class="proj-card-top"><div class="proj-thumb">${icon('folder')}</div><span class="proj-status ${esc(String(p.status||'IN_PROGRESS').toLowerCase())}">${esc(status)}</span></div><div class="proj-body"><strong>${esc(p.name)}</strong><span>${esc(p.description||p.goal||'OlyHub project')}</span><div class="progress"><span style="width:${Math.max(0,Math.min(100,Number(p.progress||0)))}%"></span></div><div class="proj-meta"><span>${Number(p.task_count||0)} tasks</span><span>${Number(p.file_count||0)} files</span><span>${Number(p.memory_count||0)} memories</span></div></div><div class="proj-foot"><em>${Number(p.progress||0)}%</em><span class="proj-open">Open workspace ›</span></div></article>`}
+function projectCard(p){const status=String(p.status||'IN_PROGRESS').replaceAll('_',' ');return `<article class="proj-row" data-project="${esc(p.id)}" tabindex="0" role="button" aria-label="Open project ${esc(p.name)}"><div class="proj-card-top"><div class="proj-thumb">${icon('folder')}</div><span class="proj-status ${esc(String(p.status||'IN_PROGRESS').toLowerCase())}">${esc(status)}</span></div><div class="proj-body"><strong>${esc(p.name)}</strong><span>${esc(p.description||p.goal||'OlyHub project')}</span><div class="progress"><span style="width:${Math.max(0,Math.min(100,Number(p.progress||0)))}%"></span></div><div class="proj-meta"><span>${Number(p.task_count||0)} tasks</span><span>${Number(p.file_count||0)} files</span><span>${Number(p.memory_count||0)} memories</span></div></div><div class="proj-foot"><em>${Number(p.progress||0)}%</em><span class="proj-open">Open workspace ›</span></div></article>`}
 function projectWorkspace(){
   const p=state.currentProject;
   const section=state.projectSection||'CHAT';
   const tabs=[['CHAT','Chat'],['OVERVIEW','Overview'],['TASKS','Tasks'],['FILES','Files'],['MEMORY','Memory']];
   return `<section class="page project-workspace-page">
     <div class="project-workspace-head">
-      <button class="ghost project-back" id="back-projects">← All projects</button>
+      <button type="button" class="ghost project-back" id="back-projects">← All projects</button>
       <div class="project-title-row">
         <div>
           <div class="eyebrow">PROJECT WORKSPACE</div>
@@ -274,9 +302,9 @@ function projectWorkspace(){
           <button class="secondary compact" id="edit-project">Edit project</button>
         </div>
       </div>
-      <div class="workspace-tabs">${tabs.map(([key,label])=>`<button data-project-section="${key}" class="${section===key?'active':''}">${label}</button>`).join('')}</div>
+      <nav class="workspace-tabs" aria-label="Project sections">${tabs.map(([key,label])=>`<button type="button" data-project-section="${key}" class="${section===key?'active':''}" ${section===key?'aria-current="page"':''}>${label}</button>`).join('')}</nav>
     </div>
-    ${state.error&&section!=='CHAT'?`<div class="project-alert"><div class="chat-error"><span>${esc(state.error)}</span></div></div>`:''}
+    ${state.error&&section!=='CHAT'?`<div class="project-alert">${errorBanner()}</div>`:''}
     ${projectSectionView(section)}
   </section>`;
 }
@@ -291,18 +319,18 @@ function projectChatView(){
   const p=state.currentProject;
   const isEmpty=!state.messages.length;
   const msgs=state.messages.map(m=>messageHtml(m)).join('');
-  const exec=state.execStatus?`<div class="exec-card live"><div class="exec-head"><span class="exec-pulse"></span><div><strong>Working inside ${esc(p.name)}</strong><div class="muted tiny">${esc(state.execStatus)}</div></div></div><div class="exec-foot">Project context remains attached to this conversation.</div></div>`:'';
+  const exec=state.execStatus?`<div class="exec-card live" aria-hidden="true"><div class="exec-head"><span class="exec-pulse"></span><div><strong>Working inside ${esc(p.name)}</strong><div class="muted tiny">${esc(state.execStatus)}</div></div></div><div class="exec-foot">Project context remains attached to this conversation.</div></div>`:'';
   return `<div class="project-chat-layout">
     <div class="project-chat-panel">
       <div class="project-chat-toolbar">
         <div><div class="eyebrow">PERMANENT PROJECT CHAT</div><strong>Everything here stays attached to ${esc(p.name)}</strong></div>
-        <div class="project-mode-toggle"><button class="project-mode ${state.mode==='ZEUS'?'selected':''}" data-mode="ZEUS">⚡ Zeus</button><button class="project-mode ${state.mode==='OLYMPUS'?'selected':''}" data-mode="OLYMPUS">△ Olympus</button></div>
+        <div class="project-mode-toggle" role="group" aria-label="Execution mode"><button type="button" class="project-mode ${state.mode==='ZEUS'?'selected':''}" data-mode="ZEUS" aria-pressed="${state.mode==='ZEUS'}"><span aria-hidden="true">⚡</span> Zeus</button><button type="button" class="project-mode ${state.mode==='OLYMPUS'?'selected':''}" data-mode="OLYMPUS" aria-pressed="${state.mode==='OLYMPUS'}"><span aria-hidden="true">△</span> Olympus</button></div>
       </div>
       <div class="project-context-ribbon">${icon('memory')} <span>Goal, tasks, project files, approved memory and conversation history are injected into every turn.</span></div>
       <div class="chat-scroll project-chat-scroll" id="chat-scroll">
         ${isEmpty?`<div class="project-chat-empty"><div class="seal">${icon('chat')}</div><h2>Start working inside ${esc(p.name)}</h2><p>This is the permanent conversation for this project. Leaving and returning keeps its history and context.</p><div class="quick-prompts"><button data-prompt="Review this project and tell me the next highest-impact step">Next step</button><button data-prompt="Summarize where this project stands using its tasks, files and conversation history">Project status</button><button data-prompt="Create the next deliverable for this project">Create deliverable</button></div></div>`:`${state.messagePage?.hasMore?'<div class="history-more"><button class="secondary compact" id="load-older-messages">Load older messages</button></div>':''}<div class="message-list">${msgs}</div>`}
         ${exec}
-        ${state.error?`<div class="chat-error"><span>${esc(state.error)}</span>${state.lastFailedText?`<button type="button" id="retry-last">Retry</button>`:''}</div>`:''}
+        ${errorBanner()}
       </div>
       ${composer()}
     </div>
@@ -327,7 +355,7 @@ function projectOverviewView(){
   </div>`;
 }
 function projectTasksView(){
-  return `<div class="project-single-column"><div class="panel"><div class="panel-head"><div><h2>Project tasks</h2><p class="muted tiny">Completing tasks updates project progress automatically.</p></div><span class="eyebrow">${state.tasks.length} TOTAL</span></div><form id="task-form" class="task-create-rich"><input id="task-title" placeholder="Add a task…" required><select id="task-priority"><option value="MEDIUM">Medium</option><option value="HIGH">High</option><option value="LOW">Low</option></select><input id="task-due" type="date"><button class="primary compact">Add task</button></form><div class="task-list full">${state.tasks.length?state.tasks.map(taskHtml).join(''):`<div class="empty-mini">No tasks yet. Add the first one.</div>`}</div></div></div>`;
+  return `<div class="project-single-column"><div class="panel"><div class="panel-head"><div><h2>Project tasks</h2><p class="muted tiny">Completing tasks updates project progress automatically.</p></div><span class="eyebrow">${state.tasks.length} TOTAL</span></div><form id="task-form" class="task-create-rich"><input id="task-title" placeholder="Add a task…" aria-label="Task title" maxlength="200" required><select id="task-priority" aria-label="Priority"><option value="MEDIUM">Medium</option><option value="HIGH">High</option><option value="LOW">Low</option></select><input id="task-due" type="date" aria-label="Due date (optional)"><button class="primary compact">Add task</button></form><div class="task-list full">${state.tasks.length?state.tasks.map(taskHtml).join(''):`<div class="empty-mini">No tasks yet. Add the first one.</div>`}</div></div></div>`;
 }
 function projectFilesView(){
   const p=state.currentProject;
@@ -339,7 +367,7 @@ function projectFilesView(){
 }
 function projectMemoryView(){
   const policy=state.memoryPolicy;const policyText=policy?`At most ${Number(policy.maxItems||40)} approved memories are selected for each turn within a ${Math.round(Number(policy.maxChars||15000)/1000)}k-character memory budget. Explicit instructions and high-confidence items rank first, then recency.`:'Approved memory is selected deterministically by priority and recency within the AI context budget.';
-  return `<div class="project-single-column"><div class="panel"><div class="panel-head"><div><h2>Permanent project memory</h2><p class="muted tiny">Saved here means durable project memory. ${esc(policyText)}</p></div><span class="eyebrow">${state.projectMemories.length} SAVED</span></div><form id="memory-form" class="memory-create"><textarea id="memory-content" rows="2" placeholder="Add a durable fact, preference, rule, or decision for this project…" required></textarea><button class="primary compact">Save memory</button></form><div class="memory-list">${state.projectMemories.length?state.projectMemories.map(memoryItem).join(''):`<div class="empty-mini">No permanent memories yet. You can add one here or tell Zeus “remember this…” inside the project chat.</div>`}</div></div></div>`;
+  return `<div class="project-single-column"><div class="panel"><div class="panel-head"><div><h2>Permanent project memory</h2><p class="muted tiny">Saved here means durable project memory. ${esc(policyText)}</p></div><span class="eyebrow">${state.projectMemories.length} SAVED</span></div><form id="memory-form" class="memory-create"><textarea id="memory-content" rows="2" aria-label="New project memory" maxlength="5000" placeholder="Add a durable fact, preference, rule, or decision for this project…" required></textarea><button class="primary compact">Save memory</button></form><div class="memory-list">${state.projectMemories.length?state.projectMemories.map(memoryItem).join(''):`<div class="empty-mini">No permanent memories yet. You can add one here or tell Zeus “remember this…” inside the project chat.</div>`}</div></div></div>`;
 }
 function memoryItem(m){return `<article class="memory-item"><div class="memory-icon">${icon('memory')}</div><div><strong>${esc(m.type==='manual_note'?'Project memory':String(m.type||'Memory').replaceAll('_',' '))}</strong><p>${esc(m.content)}</p><small>${fmtDate(m.created_at)} · ${esc(m.source||'manual')}</small></div><button class="ghost danger memory-delete" data-memory-delete="${m.id}" title="Delete memory" aria-label="Delete this memory">${icon('close')}</button></article>`}
 function taskHtml(t){const status=String(t.status||'TODO');const next=status==='TODO'?'IN_PROGRESS':status==='IN_PROGRESS'?'DONE':'TODO';const label=status==='TODO'?'Start task':status==='IN_PROGRESS'?'Mark task done':'Reopen task';const mark=status==='DONE'?icon('check'):status==='IN_PROGRESS'?'<span class="task-state-dot" aria-hidden="true"></span>':'';return `<div class="task-item"><button class="task-check ${status==='DONE'?'done':status==='IN_PROGRESS'?'in-progress':''}" data-task="${t.id}" data-status="${status}" data-next-status="${next}" aria-label="${label}: ${esc(t.title)}" title="${label}">${mark}</button><div><strong style="font-size:13px">${esc(t.title)}</strong><div class="muted tiny">${esc(status.replaceAll('_',' '))}${t.due_at?` · ${fmtDate(t.due_at)}`:''}</div></div><span class="priority ${esc(t.priority)}">${esc(t.priority)}</span></div>`}
@@ -355,14 +383,14 @@ function toolsView(){const h=state.health?.capabilities||{};const chat=capabilit
 ];
   return `<section class="page tools-page">
     <div class="page-head tight"><div><h1>Tools & Capabilities</h1><p class="eyebrow">REAL CAPABILITIES. REAL OUTPUTS.</p></div><button class="text-gold" data-tab="Files">Explore All ></button></div>
-    <div class="tool-grid">${tools.map(([kind,title,sub,ico,ok,label,prompt])=>`<button class="tool-card ${ok?'':'disabled'}" data-kind="${kind}" ${ok?`data-tool-prompt="${esc(prompt)}"`:'disabled aria-disabled="true"'}><div class="tool-ico">${ico}</div><div class="tool-copy"><strong>${title}</strong><span>${sub}</span></div><span class="tool-state">${esc(label)}</span><span class="chev">›</span></button>`).join('')}</div>
+    ${errorBanner('page-alert')}<div class="tool-grid">${tools.map(([kind,title,sub,ico,ok,label,prompt])=>`<button class="tool-card ${ok?'':'disabled'}" data-kind="${kind}" ${ok?`data-tool-prompt="${esc(prompt)}"`:'disabled aria-disabled="true"'}><div class="tool-ico">${ico}</div><div class="tool-copy"><strong>${title}</strong><span>${sub}</span></div><span class="tool-state">${esc(label)}</span><span class="chev">›</span></button>`).join('')}</div>
     <button class="panel library-card" data-tab="Files"><div class="tool-ico">${icon('folder')}</div><div><strong>Files & Library</strong><p>Upload, analyze, and keep everything in context across all your projects and conversations.</p></div><span class="chev">›</span></button>
   </section>`;
 }
 function outputsList(limit=12){let all=[...state.artifacts.map(a=>({...a,kind:'artifact'})),...state.files.map(f=>({...f,kind:'file',type:(f.mime_type||'file').split('/').pop()}))].sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));if(Number.isFinite(limit))all=all.slice(0,limit);return all.length?`<div class="output-list">${all.map(outputItem).join('')}</div>`:`<div class="card" style="padding:24px"><strong>Your library starts with the first source or deliverable.</strong><p class="muted">Upload a source for analysis, or ask Zeus/Olympus to create a document, image, spreadsheet, presentation or ZIP.</p></div>`}
-function outputItem(o){const tag=String(o.type||o.mime_type||'FILE').split('/').pop().toUpperCase().slice(0,4);const kind=o.kind==='artifact'?'artifact':'file';return `<article class="out-row"><div class="out-badge ${tag.toLowerCase()}">${esc(tag)}</div><div><strong>${esc(o.filename)}</strong><small>${fmtSize(o.size)} · ${new Date(o.created_at).toLocaleString()}</small></div><div class="out-actions"><a class="chev-link" href="${esc(o.downloadUrl)}" target="_blank" rel="noopener">Download</a><button class="icon-danger" type="button" data-delete-output="${kind}" data-output-id="${o.id}" aria-label="Delete ${kind}" title="Delete ${kind}">${icon('close')}</button></div></article>`}
-function filesView(){const more=Boolean(state.filesPage?.hasMore||state.artifactsPage?.hasMore);return `<section class="page files-page"><div class="page-head"><div><div class="eyebrow">Files</div><h1>Files & Library</h1><p>Upload, analyze, and keep files and generated artifacts connected to your conversations and projects.</p></div><button class="primary" id="upload-files">${icon('plus')} Upload files</button></div><div class="project-tabs" style="margin-bottom:18px"><button class="active">All outputs</button></div>${outputsList(null)}${more?'<div class="history-more"><button class="secondary compact" id="load-older-outputs">Load older</button></div>':''}</section>`}
-function settingsView(){const providers=state.health?.providerReadiness||{};const statusLabel=(v)=>String(v||'not_configured').toUpperCase().replaceAll('_',' ');const statusGood=(v)=>v==='observed_healthy';return `<section class="page"><div class="page-head"><div><div class="eyebrow">Settings</div><h1>Workspace settings</h1><p>Account and advanced runtime diagnostics.</p></div></div><div class="settings-grid"><article class="card settings-card"><h3>Account</h3><div class="user-chip"><div class="avatar">${esc(initials())}</div><div><strong>${esc(state.user?.user_metadata?.full_name||'Felipe')}</strong><div class="muted tiny">${esc(state.user?.email||'')}</div></div></div><button class="secondary" id="settings-logout" style="margin-top:18px">Lock</button></article><article class="card settings-card"><h3>AI provider diagnostics</h3><div class="diag-list">${['openai','anthropic','gemini','openrouter'].map(p=>{const v=providers[p]?.status||'not_configured';return `<div class="diag-row"><span>${p}</span><strong class="${statusGood(v)?'status-good':'status-warn'}">${esc(statusLabel(v))}</strong></div>`}).join('')}</div><p class="muted tiny" style="line-height:1.55;margin-top:14px">Diagnostics are runtime-local evidence. CONFIGURED UNVERIFIED means credentials/models were detected but this warm Function runtime has not observed a successful call yet. DEGRADED means the temporary circuit breaker is open.</p></article><article class="card settings-card"><h3>Capabilities</h3><div class="diag-list">${Object.entries(state.health?.capabilityReadiness||{}).map(([k,v])=>`<div class="diag-row"><span>${esc(k)}</span><strong class="${v==='observed_healthy'?'status-good':'status-warn'}">${esc(statusLabel(v))}</strong></div>`).join('')}</div></article></div></section>`}
+function outputItem(o){const tag=String(o.type||o.mime_type||'FILE').split('/').pop().toUpperCase().slice(0,4);const kind=o.kind==='artifact'?'artifact':'file';return `<article class="out-row"><div class="out-badge ${tag.toLowerCase()}">${esc(tag)}</div><div><strong>${esc(o.filename)}</strong><small>${fmtSize(o.size)}${fmtDateTime(o.created_at)?` · ${fmtDateTime(o.created_at)}`:''}</small></div><div class="out-actions"><a class="chev-link" href="${esc(o.downloadUrl)}" target="_blank" rel="noopener" aria-label="Download ${esc(o.filename)}">Download</a><button class="icon-danger" type="button" data-delete-output="${kind}" data-output-id="${esc(o.id)}" aria-label="Delete ${kind} ${esc(o.filename)}" title="Delete ${kind}">${icon('close')}</button></div></article>`}
+function filesView(){const more=Boolean(state.filesPage?.hasMore||state.artifactsPage?.hasMore);return `<section class="page files-page"><div class="page-head"><div><div class="eyebrow">Files</div><h1>Files & Library</h1><p>Upload, analyze, and keep files and generated artifacts connected to your conversations and projects.</p></div><button class="primary" id="upload-files">${icon('plus')} Upload files</button></div><div class="project-tabs" style="margin-bottom:18px"><button type="button" class="active" aria-pressed="true">All outputs</button></div>${errorBanner('page-alert')}${outputsList(null)}${more?'<div class="history-more"><button class="secondary compact" id="load-older-outputs">Load older</button></div>':''}</section>`}
+function settingsView(){const providers=state.health?.providerReadiness||{};const statusLabel=(v)=>String(v||'not_configured').toUpperCase().replaceAll('_',' ');const statusGood=(v)=>v==='observed_healthy';return `<section class="page"><div class="page-head"><div><div class="eyebrow">Settings</div><h1>Workspace settings</h1><p>Account and advanced runtime diagnostics.</p></div></div>${errorBanner('page-alert')}<div class="settings-grid"><article class="card settings-card"><h3>Account</h3><div class="user-chip"><div class="avatar">${esc(initials())}</div><div><strong>${esc(state.user?.user_metadata?.full_name||'Felipe')}</strong><div class="muted tiny">${esc(state.user?.email||'')}</div></div></div><button class="secondary" id="settings-logout" style="margin-top:18px">Lock</button></article><article class="card settings-card"><h3>AI provider diagnostics</h3><div class="diag-list">${['openai','anthropic','gemini','openrouter'].map(p=>{const v=providers[p]?.status||'not_configured';return `<div class="diag-row"><span>${p}</span><strong class="${statusGood(v)?'status-good':'status-warn'}">${esc(statusLabel(v))}</strong></div>`}).join('')}</div><p class="muted tiny" style="line-height:1.55;margin-top:14px">Diagnostics are runtime-local evidence. CONFIGURED UNVERIFIED means credentials/models were detected but this warm Function runtime has not observed a successful call yet. DEGRADED means the temporary circuit breaker is open.</p></article><article class="card settings-card"><h3>Capabilities</h3><div class="diag-list">${Object.keys(state.health?.capabilityReadiness||{}).length?'':`<div class="muted tiny">${state.health?'No capability diagnostics reported.':'Diagnostics load when the workspace runtime responds.'}</div>`}${Object.entries(state.health?.capabilityReadiness||{}).map(([k,v])=>`<div class="diag-row"><span>${esc(k)}</span><strong class="${v==='observed_healthy'?'status-good':'status-warn'}">${esc(statusLabel(v))}</strong></div>`).join('')}</div></article></div></section>`}
 
 
 let modalKeydownHandler=null;
@@ -399,12 +427,29 @@ function showModal(markup,{initialFocus}={}){
 }
 function setModalError(message){const el=$('#modal-notice');if(!el)return;el.textContent=message||'';el.classList.toggle('hidden',!message);}
 
-function appView(){const page=state.tab==='Home'?homeView():state.tab==='Projects'?projectsView():state.tab==='Tools'?toolsView():state.tab==='Files'?filesView():settingsView();return `<div class="app-shell">${sidebar()}<main class="main">${topbar()}${page}</main><div id="modal-root"></div></div>`}
-function render(){ clearModalLifecycle();modalReturnFocus=null;if(!state.authReady){app.innerHTML='<div style="min-height:100dvh;display:grid;place-items:center;color:#929ba8;letter-spacing:.2em">INITIALIZING ZEUS</div>';return;} app.innerHTML=state.user?appView():authView();bind(); requestAnimationFrame(()=>{const s=$('#chat-scroll');if(!s)return;if(state.chatRestore){const r=state.chatRestore;state.chatRestore=null;s.scrollTop=Math.max(0,s.scrollHeight-r.height+r.top);}else s.scrollTop=s.scrollHeight;}); }
+function appView(){const page=state.tab==='Home'?homeView():state.tab==='Projects'?projectsView():state.tab==='Tools'?toolsView():state.tab==='Files'?filesView():settingsView();return `<div class="app-shell">${sidebar()}<main class="main" id="main-content" tabindex="-1">${topbar()}${page}</main><div id="modal-root"></div></div>`}
+function focusKey(el){
+  if(!el||el===document.body||!app.contains(el))return null;
+  if(el.id)return `#${CSS.escape(el.id)}`;
+  for(const attr of ['data-tab','data-mode','data-conv','data-project','data-project-section','data-filter','data-task','data-prompt','data-tool-prompt']){
+    if(el.hasAttribute(attr))return `[${attr}="${CSS.escape(el.getAttribute(attr))}"]`;
+  }
+  return null;
+}
+function render(){
+  const active=document.activeElement;const key=focusKey(active);
+  const selection=active?.id==='composer-text'?{start:active.selectionStart,end:active.selectionEnd}:null;
+  const scopeSidebar=Boolean(active?.closest?.('.sidebar'));
+  clearModalLifecycle();modalReturnFocus=null;if(!state.authReady){app.innerHTML='<div class="boot-screen" role="status">INITIALIZING ZEUS</div>';return;} app.innerHTML=state.user?appView():authView();bind();
+  const offCanvasSidebar=scopeSidebar&&!state.drawer&&window.matchMedia('(max-width:900px)').matches;
+  if(key&&offCanvasSidebar){$('#main-content')?.focus({preventScroll:true});}
+  else if(key){const candidates=$$(key,app);const next=candidates.find(el=>Boolean(el.closest('.sidebar'))===scopeSidebar)||candidates[0];if(next&&!next.disabled){next.focus({preventScroll:true});if(selection&&next.setSelectionRange){try{next.setSelectionRange(selection.start,selection.end)}catch{}}}}
+  announce(state.error||state.execStatus);
+  requestAnimationFrame(()=>{const s=$('#chat-scroll');if(!s)return;if(state.chatRestore){const r=state.chatRestore;state.chatRestore=null;s.scrollTop=Math.max(0,s.scrollHeight-r.height+r.top);}else s.scrollTop=s.scrollHeight;}); }
 
 function bind(){
   if(!state.user){ bindAuth(); return; }
-  $('#hamburger')?.addEventListener('click',()=>{state.drawer=true;render()}); $('#scrim')?.addEventListener('click',()=>{state.drawer=false;render()});
+  $('#hamburger')?.addEventListener('click',()=>{state.drawer=true;render();requestAnimationFrame(()=>$('.sidebar .side-nav button.active,.sidebar .side-nav button')?.focus())}); $('#scrim')?.addEventListener('click',()=>{state.drawer=false;render()});
   $('#profile-avatar')?.addEventListener('click',()=>{state.tab='Settings';render()});
   $$('#logout,#settings-logout').forEach(b=>b.addEventListener('click',logout));
   $$('[data-tab]').forEach(b=>b.addEventListener('click',async()=>{
@@ -426,12 +471,13 @@ function bind(){
     render();resetViewport();
   }));
   $('#new-chat')?.addEventListener('click',newChat);
-  $('#chat-search')?.addEventListener('input',e=>{const q=e.target.value.toLowerCase();$$('.recent-item').forEach(x=>x.style.display=x.textContent.toLowerCase().includes(q)?'block':'none')});
+  $('#chat-search')?.addEventListener('input',e=>{const q=e.target.value.toLowerCase();let shown=0;$$('.recent-item').forEach(x=>{const match=x.textContent.toLowerCase().includes(q);x.style.display=match?'block':'none';if(match)shown++;});$('#recent-empty')?.classList.toggle('hidden',!q||shown>0||!$$('.recent-item').length);});
+  $$('[data-dismiss-error]').forEach(b=>b.addEventListener('click',dismissError));
   $$('[data-conv]').forEach(b=>b.addEventListener('click',()=>openConversation(b.dataset.conv)));
   $$('[data-mode]').forEach(b=>b.addEventListener('click',()=>{state.mode=b.dataset.mode;render()}));
   $$('.quick-prompts button').forEach(b=>b.addEventListener('click',()=>{const t=$('#composer-text');if(!t)return;t.value=b.dataset.prompt;t.dispatchEvent(new Event('input',{bubbles:true}));t.focus()}));
-  $('#composer')?.addEventListener('submit',sendMessage); const composerText=$('#composer-text');composerText?.addEventListener('input',()=>{composerText.style.height='auto';composerText.style.height=`${Math.min(160,Math.max(26,composerText.scrollHeight))}px`;});
-  $('#attach')?.addEventListener('click',()=>{state.attachMenu=!state.attachMenu;render()}); $('#upload-files')?.addEventListener('click',()=>$('#global-file-input').click());
+  $('#composer')?.addEventListener('submit',sendMessage); const composerText=$('#composer-text');const sizeComposer=()=>{if(!composerText)return;composerText.style.height='auto';composerText.style.height=`${Math.min(160,Math.max(26,composerText.scrollHeight))}px`;};composerText?.addEventListener('input',()=>{state.draft=composerText.value;sizeComposer();});composerText?.addEventListener('keydown',e=>{if(e.key==='Enter'&&(e.metaKey||e.ctrlKey)){e.preventDefault();$('#composer')?.requestSubmit();}});if(composerText?.value)sizeComposer();
+  $('#attach')?.addEventListener('click',()=>{state.attachMenu=!state.attachMenu;render();if(state.attachMenu)requestAnimationFrame(()=>$('#attach-media')?.focus());}); $('#upload-files')?.addEventListener('click',()=>$('#global-file-input').click());
   $('#attach-media')?.addEventListener('click',()=>$('#global-media-input').click()); $('#attach-camera')?.addEventListener('click',()=>$('#global-camera-input').click()); $('#attach-file')?.addEventListener('click',()=>$('#global-file-input').click());
   const handleUpload=async e=>{const files=[...e.target.files];e.target.value='';state.attachMenu=false;for(const f of files)await uploadFile(f);};
   $('#global-file-input').onchange=handleUpload; $('#global-media-input').onchange=handleUpload; $('#global-camera-input').onchange=handleUpload;
@@ -443,28 +489,36 @@ function bind(){
   $('#create-project')?.addEventListener('click',projectModal); $('#create-project-empty')?.addEventListener('click',projectModal);
   $$('[data-filter]').forEach(b=>b.addEventListener('click',()=>{state.projectFilter=b.dataset.filter;render()}));
   $$('[data-project]').forEach(b=>{b.addEventListener('click',()=>openProjectWorkspace(b.dataset.project));b.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();openProjectWorkspace(b.dataset.project);}});});
-  $$('[data-project-section]').forEach(b=>b.addEventListener('click',async()=>{state.projectSection=b.dataset.projectSection;if(state.projectSection==='MEMORY'&&state.currentProject)await loadMemories(state.currentProject.id);render();resetViewport()}));
+  $$('[data-project-section]').forEach(b=>b.addEventListener('click',async()=>{state.projectSection=b.dataset.projectSection;try{if(state.projectSection==='MEMORY'&&state.currentProject)await loadMemories(state.currentProject.id);}catch(err){state.error=err?.message||'Could not load project memory.';}render();resetViewport()}));
   $('#edit-project')?.addEventListener('click',projectEditModal);
   $('#back-projects')?.addEventListener('click',async()=>{state.currentProject=null;state.currentConversation=null;state.messages=[];state.chatArtifacts=[];state.attachedFiles=[];state.projectMemories=[];state.memoryPolicy=null;state.projectSection='CHAT';state.messagePage={hasMore:false,nextCursor:null};state.tasks=[];state.error='';history.replaceState({},'',location.pathname);render()});
-  $('#task-form')?.addEventListener('submit',createTask); $$('[data-task]').forEach(b=>b.addEventListener('click',()=>toggleTask(b.dataset.task,b.dataset.status)));
+  $('#task-form')?.addEventListener('submit',createTask); $$('[data-task]').forEach(b=>b.addEventListener('click',()=>{if(b.disabled)return;b.disabled=true;b.setAttribute('aria-busy','true');toggleTask(b.dataset.task,b.dataset.status);}));
   $('#memory-form')?.addEventListener('submit',createMemory); $$('[data-memory-delete]').forEach(b=>b.addEventListener('click',()=>deleteMemory(b.dataset.memoryDelete)));
   $$('[data-delete-output]').forEach(b=>b.addEventListener('click',()=>deleteOutput(b.dataset.deleteOutput,b.dataset.outputId)));
   $('#delete-project')?.addEventListener('click',deleteCurrentProject);
   $('#upload-project-file')?.addEventListener('click',()=>$('#global-file-input').click());
-  $$('[data-tool-prompt]').forEach(b=>b.addEventListener('click',()=>{state.currentProject=null;state.currentConversation=null;state.messages=[];state.chatArtifacts=[];state.attachedFiles=[];state.messagePage={hasMore:false,nextCursor:null};state.error='';state.tab='Home';history.replaceState({},'',location.pathname);render();setTimeout(()=>{const t=$('#composer-text');if(t){t.value=b.dataset.toolPrompt;t.focus()}},0)}));
+  $$('[data-tool-prompt]').forEach(b=>b.addEventListener('click',()=>{state.currentProject=null;state.currentConversation=null;state.messages=[];state.chatArtifacts=[];state.attachedFiles=[];state.messagePage={hasMore:false,nextCursor:null};state.error='';state.tab='Home';history.replaceState({},'',location.pathname);state.draft=b.dataset.toolPrompt;render();setTimeout(()=>{const t=$('#composer-text');if(t){t.focus();t.setSelectionRange(t.value.length,t.value.length)}},0)}));
 }
+document.addEventListener('keydown',e=>{
+  if(e.key!=='Escape'||$('#modal-root')?.childElementCount)return;
+  if(state.attachMenu){state.attachMenu=false;render();$('#attach')?.focus();return;}
+  if(state.drawer){state.drawer=false;render();$('#hamburger')?.focus();}
+});
+window.addEventListener('online',()=>{state.offline=false;if(state.user)render();});
+window.addEventListener('offline',()=>{state.offline=true;if(state.user)render();});
+window.addEventListener('unhandledrejection',e=>{console.error('Unhandled Zeus error',e.reason);if(state.user&&!state.error){state.error=e.reason?.message||'Something went wrong. Try again.';render();}});
 function bindAuth(){
   const form=$('#auth-form');
   form?.addEventListener('submit',async e=>{
     e.preventDefault();const notice=$('#auth-notice');notice.classList.add('hidden');$('#auth-submit').disabled=true;
     try{await unlock($('#auth-key').value);render();}
-    catch(err){clearAuth();notice.textContent=err.message||'Could not unlock Zeus.';notice.className='notice error-notice';}
+    catch(err){clearAuth();render();const n=$('#auth-notice');if(n){n.textContent=err.message||'Could not unlock Zeus.';n.className='notice error-notice';}$('#auth-key')?.focus();}
     finally{if($('#auth-submit'))$('#auth-submit').disabled=false;}
   });
 }
 
 async function newChat(){
-  state.currentConversation=null;state.currentProject=null;state.messages=[];state.chatArtifacts=[];state.attachedFiles=[];
+  state.currentConversation=null;state.currentProject=null;state.messages=[];state.chatArtifacts=[];state.attachedFiles=[];state.draft='';
   state.error='';state.lastFailedText='';state.lastFailedMessageId=null;state.lastFailedAttachments=[];state.lastFailedRequestId=null;state.messagePage={hasMore:false,nextCursor:null};
   state.tab='Home';state.drawer=false;history.replaceState({},'',location.pathname);render();resetViewport();
 }
@@ -488,7 +542,7 @@ async function openConversation(id,doRender=true){
     state.artifacts=mergeById(state.artifacts,d.artifacts||[]);
     state.messagePage={hasMore:Boolean(d.page?.hasMore),nextCursor:d.page?.nextCursor||null};
     state.tab=state.currentProject?'Projects':'Home';state.drawer=false;
-    history.replaceState({},'',state.currentProject?`/?project=${encodeURIComponent(state.currentProject.id)}`:`/?conversation=${id}`);
+    history.replaceState({},'',state.currentProject?`/?project=${encodeURIComponent(state.currentProject.id)}`:`/?conversation=${encodeURIComponent(id)}`);
     if(doRender){render();resetViewport();}
   }catch(e){state.error=e.message;if(doRender)render();}
 }
@@ -534,7 +588,7 @@ async function sendText(text,pendingAttachments=[],requestId=crypto.randomUUID()
   const pending=[...(pendingAttachments||[])];
   const optimistic={id:crypto.randomUUID(),role:'user',mode:state.mode,content:text,artifacts:[],attachments:pending};
   state.messages.push(optimistic);
-  state.attachedFiles=[];
+  state.attachedFiles=[];state.draft='';
   state.sending=true;state.error='';state.lastFailedText='';state.lastFailedMessageId=null;state.lastFailedAttachments=[];state.lastFailedRequestId=null;
   state.execStatus=state.mode==='OLYMPUS'?'Assembling the Olympus team…':'Executing your request…';render();
   const timer=setTimeout(()=>{
@@ -550,7 +604,7 @@ async function sendText(text,pendingAttachments=[],requestId=crypto.randomUUID()
       requestId
     }),requestId});
     state.currentConversation=d.conversationId;
-    history.replaceState({},'',state.currentProject?.id?`/?project=${encodeURIComponent(state.currentProject.id)}`:`/?conversation=${d.conversationId}`);
+    history.replaceState({},'',state.currentProject?.id?`/?project=${encodeURIComponent(state.currentProject.id)}`:`/?conversation=${encodeURIComponent(d.conversationId)}`);
     if(d.userMessage){
       const idx=state.messages.findIndex(m=>m.id===optimistic.id);
       if(idx>=0)state.messages[idx]={...d.userMessage,attachments:pending,artifacts:[]};
@@ -559,7 +613,7 @@ async function sendText(text,pendingAttachments=[],requestId=crypto.randomUUID()
     state.execStatus='Completed';
     const scopeProjectId=state.currentProject?.id||null;
     await Promise.allSettled([loadConversations(),loadFiles(scopeProjectId),loadArtifacts(scopeProjectId),loadProjects()]);
-    setTimeout(()=>{state.execStatus='';render()},900);
+    setTimeout(()=>{if(state.execStatus==='Completed'&&!state.sending){state.execStatus='';render();}},900);
   }catch(err){
     state.error=err.message||'Request failed.';
     state.execStatus='';
@@ -590,7 +644,7 @@ async function uploadFile(file){
     state.attachedFiles.push(d.file);await loadFiles(inProjectWorkspace?state.currentProject.id:null);
     state.execStatus=d.file.extracted?'File uploaded and ready for analysis.':'File uploaded. It will remain available as a binary artifact.';
   }catch(e){state.error=e.message;state.execStatus='';}
-  finally{render();setTimeout(()=>{state.execStatus='';render()},1200)}
+  finally{render();const shown=state.execStatus;setTimeout(()=>{if(state.execStatus===shown&&!state.sending){state.execStatus='';render();}},1200)}
 }
 async function startVoice(){
   if(state.voiceBusy&&state.voiceRecognition){try{state.voiceRecognition.stop()}catch{}return;}
