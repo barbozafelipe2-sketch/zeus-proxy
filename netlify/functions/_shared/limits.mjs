@@ -36,7 +36,7 @@ export async function guardAiExecution(client, ownerId, mode, requestId) {
      FROM executions
      WHERE owner_id=$1
        AND state NOT IN ('COMPLETED','PARTIAL','FAILED','CANCELLED')
-       AND started_at > now() - interval '15 minutes'`,
+       AND started_at > now() - interval '90 seconds'`, // Netlify kills sync functions at 60 s; older non-terminal rows are orphans
     [ownerId]
   )).rows[0] || { total:0, olympus:0 };
   if (mode === 'OLYMPUS' && Number(active.olympus || 0) >= limits.concurrent) throw limitError('An Olympus execution is already running. Wait for it to finish before starting another.', 'AI_CONCURRENCY_LIMIT', 15);

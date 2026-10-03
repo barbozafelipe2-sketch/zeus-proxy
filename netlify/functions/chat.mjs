@@ -8,7 +8,7 @@ import { resolveOwnedScope } from './_shared/relations.mjs';
 import { classifyIntent } from './_shared/intent.mjs';
 import { redactSecrets } from './_shared/security.mjs';
 import { assembleContext, relevanceScore } from './_shared/context.mjs';
-import { createExecutionBudget } from './_shared/runtime.mjs';
+import { createExecutionBudget, CHAT_TIMEOUT_MS, CHAT_WEB_TIMEOUT_MS, STALE_EXECUTION_MS } from './_shared/runtime.mjs';
 import { guardAiExecution } from './_shared/limits.mjs';
 import { pageLimit, decodeCursor, pageResult } from './_shared/pagination.mjs';
 import { queueBlobGc } from './_shared/storage.mjs';
@@ -144,7 +144,7 @@ async function initializeTurn({db,userId,conversationId,projectId,mode,content,f
       return {kind:'new',execution,userMessage};
     }
 
-    const existing=(await client.query(`SELECT id,conversation_id,mode,state,request_id FROM executions WHERE owner_id=$1 AND request_id=$2 FOR UPDATE`,[userId,requestId])).rows[0];
+    const existing=(await client.query(`SELECT id,conversation_id,mode,state,request_id,started_at FROM executions WHERE owner_id=$1 AND request_id=$2 FOR UPDATE`,[userId,requestId])).rows[0];
     if(!existing)throw codedError('Request id conflict could not be resolved.',409,'REQUEST_ID_CONFLICT');
     if(String(existing.conversation_id)!==String(conversationId))throw codedError('This request id is already bound to another conversation.',409,'REQUEST_ID_REUSED');
     if(existing.mode!==mode)throw codedError('This request id is already bound to another intelligence mode.',409,'REQUEST_ID_REUSED');
@@ -155,9 +155,12 @@ async function initializeTurn({db,userId,conversationId,projectId,mode,content,f
     if(prior && !sameIds(priorIds,fileIds))throw codedError('This request id was already used with different attachments.',409,'REQUEST_ID_REUSED');
 
     if(existing.state==='COMPLETED'||existing.state==='PARTIAL')return {kind:'replay',execution:existing,userMessage:prior};
-    if(existing.state!=='FAILED'&&existing.state!=='CANCELLED')return {kind:'in_progress',execution:existing,userMessage:prior};
+    // A run killed by the platform timeout never reaches FAILED; once it is older than any possible
+    // live run, let Retry (same request id) restart it instead of reporting 'already running' forever.
+    const orphaned=existing.started_at&&Date.now()-new Date(existing.started_at).getTime()>STALE_EXECUTION_MS;
+    if(existing.state!=='FAILED'&&existing.state!=='CANCELLED'&&!orphaned)return {kind:'in_progress',execution:existing,userMessage:prior};
 
-    await client.query(`UPDATE executions SET state='UNDERSTANDING',error_code=NULL,trace='{}'::jsonb,completed_at=NULL,lead_model=NULL WHERE id=$1 AND owner_id=$2`,[existing.id,userId]);
+    await client.query(`UPDATE executions SET state='UNDERSTANDING',error_code=NULL,trace='{}'::jsonb,completed_at=NULL,lead_model=NULL,started_at=now() WHERE id=$1 AND owner_id=$2`,[existing.id,userId]);
     if(prior)await client.query(`UPDATE messages SET metadata=COALESCE(metadata,'{}'::jsonb)-'failed' WHERE id=$1 AND owner_id=$2`,[prior.id,userId]);
     let userMessage=prior?{...prior,metadata:{...(prior.metadata||{})}}:prior;
     if(userMessage?.metadata)delete userMessage.metadata.failed;
@@ -233,6 +236,12 @@ async function chatHandler(req, context, startedAt){
   const scope=await resolveOwnedScope(db,user.id,{projectId,conversationId});
   if(scope.error)return errorJson(scope.error.message,scope.error.status,scope.error.code,requestId);
   projectId=scope.projectId;conversationId=scope.conversationId;
+  if(!conversationId&&!projectId){
+    // A retry of a first message whose response was lost (timeout/backgrounded app) has no conversation id yet;
+    // reuse the conversation already bound to this request id instead of failing with REQUEST_ID_REUSED.
+    const prior=await db.sql`SELECT conversation_id FROM executions WHERE owner_id=${user.id} AND request_id=${requestId} LIMIT 1`;
+    if(prior.length&&prior[0].conversation_id)conversationId=prior[0].conversation_id;
+  }
   if(!conversationId){const c=await canonicalConversation(db,user.id,projectId,titleFrom(content));conversationId=c.id;}
 
   const fileIds=normalizedIds(body.fileIds);
@@ -257,8 +266,8 @@ async function chatHandler(req, context, startedAt){
     }
 
     const webIntent=intent.action==='CHAT'&&shouldSearchWeb(modelText);
-    const maxCalls=(intent.action==='IMAGE_CREATE'||intent.action==='IMAGE_EDIT'?2:(mode==='OLYMPUS'?7:6))+(webIntent?1:0);
-    executionBudget=createExecutionBudget({startedAt,timeoutMs:webIntent?58000:52000,maxCalls,reserveMs:6500});
+    const maxCalls=(intent.action==='IMAGE_CREATE'||intent.action==='IMAGE_EDIT'?3:(mode==='OLYMPUS'?7:6))+(webIntent?1:0);
+    executionBudget=createExecutionBudget({startedAt,timeoutMs:webIntent?CHAT_WEB_TIMEOUT_MS:CHAT_TIMEOUT_MS,maxCalls,reserveMs:6500});
     const vision=hasImage?await loadVisionInputs(attachmentRows):{images:[],skipped:[]};
     const web=webIntent?await runWebSearch(modelText,{budget:executionBudget,reserveAfterMs:mode==='OLYMPUS'?17000:12000}):{requested:false,context:'',sources:[],trace:null};
     const enrichedContext=`${aiContext}${web.context||''}`;
@@ -289,7 +298,14 @@ async function chatHandler(req, context, startedAt){
         }
       }else result=await runZeus({text:modelText,context:enrichedContext,images:vision.images,budget:executionBudget});
       if(intent.action==='ARTIFACT_CREATE'&&intent.artifactType){
-        stagedArtifacts.push(await stageArtifact({ownerId:user.id,type:intent.artifactType,title:titleFrom(content),content:result.content,metadata:{title:titleFrom(content),intent:intent.reason}}));
+        try{
+          stagedArtifacts.push(await stageArtifact({ownerId:user.id,type:intent.artifactType,title:titleFrom(content),content:result.content,metadata:{title:titleFrom(content),intent:intent.reason}}));
+        }catch(artifactError){
+          // Keep the model's answer (it usually still contains the code) instead of failing the whole turn.
+          if(!String(artifactError?.code||'').startsWith('ZIP_'))throw artifactError;
+          result.content=`${result.content}\n\n---\n⚠️ ${artifactError.message}`;
+          result.trace={...(result.trace||{}),artifactError:{code:artifactError.code,message:String(artifactError.message).slice(0,220)}};
+        }
       }
     }
 
