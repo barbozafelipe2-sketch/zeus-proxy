@@ -19,10 +19,36 @@ const fmtSize = n => { n=Number(n||0); if(n<1024)return `${n} B`; if(n<1048576)r
 const fmtDate = v => { if(!v)return ''; const d=new Date(v); return Number.isNaN(d.getTime())?'':d.toLocaleDateString(undefined,{month:'short',day:'numeric',year:d.getFullYear()!==new Date().getFullYear()?'numeric':undefined}); };
 const resetViewport = () => requestAnimationFrame(() => window.scrollTo({ top: 0, left: 0, behavior: 'auto' }));
 const initials = () => (state.user?.user_metadata?.full_name || state.user?.email || 'O').trim().split(/\s+/).map(x=>x[0]).join('').slice(0,2).toUpperCase();
-const accessStoreKey='olyhub.zeusproxy.access.v2';
-function writeAccessKey(value){try{if(value)sessionStorage.setItem(accessStoreKey,value);else sessionStorage.removeItem(accessStoreKey)}catch{}}
-function readAccessKey(){try{return sessionStorage.getItem(accessStoreKey)||''}catch{return ''}}
-function clearAuth(){writeAccessKey('');state.user=null;state.accessKey='';state.token=null;state.refreshToken=null;state.currentConversation=null;state.messages=[];}
+const accessStoreKey='olyhub.zeusproxy.access.v3';
+const legacyAccessStoreKey='olyhub.zeusproxy.access.v2';
+function writeAccessKey(value){
+  try{
+    if(value)localStorage.setItem(accessStoreKey,value);
+    else localStorage.removeItem(accessStoreKey);
+    sessionStorage.removeItem(accessStoreKey);
+    sessionStorage.removeItem(legacyAccessStoreKey);
+  }catch{}
+}
+function readAccessKey(){
+  try{
+    const saved=localStorage.getItem(accessStoreKey)||localStorage.getItem(legacyAccessStoreKey)||sessionStorage.getItem(legacyAccessStoreKey)||'';
+    if(saved){
+      localStorage.setItem(accessStoreKey,saved);
+      localStorage.removeItem(legacyAccessStoreKey);
+      sessionStorage.removeItem(legacyAccessStoreKey);
+    }
+    return saved;
+  }catch{return ''}
+}
+function clearAuth(){
+  try{
+    localStorage.removeItem(accessStoreKey);
+    localStorage.removeItem(legacyAccessStoreKey);
+    sessionStorage.removeItem(accessStoreKey);
+    sessionStorage.removeItem(legacyAccessStoreKey);
+  }catch{}
+  state.user=null;state.accessKey='';state.token=null;state.refreshToken=null;state.currentConversation=null;state.messages=[];
+}
 async function bootAuth(){
   state.authReady=true;
   state.accessKey=readAccessKey();
