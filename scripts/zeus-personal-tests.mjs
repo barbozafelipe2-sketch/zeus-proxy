@@ -11,12 +11,12 @@ const health=readFileSync('netlify/functions/health.mjs','utf8');
 
 assert.ok(app.includes('data-mode="ZEUS"')&&app.includes('data-mode="OLYMPUS"'),'Zeus/Olympus modes missing');
 assert.ok(!/data-mode=["'](?:OPENAI|CLAUDE|GEMINI|GOOGLE)/i.test(app),'direct provider mode leaked into UI');
-assert.ok(app.includes('>⋮</button>')&&app.includes("['Home','home'],['Projects','projects']"),'three-dot Projects navigation missing');
+assert.ok(app.includes('id="hamburger" aria-label="Open navigation" title="Navigation">${icon(\'menu\')}</button>')&&app.includes("['Home','home'],['Projects','projects']"),'simplified menu navigation with Projects missing');
 assert.ok(app.includes('PERMANENT PROJECT CHAT'),'permanent Project chat missing');
 assert.ok(app.includes('Permanent project memory')&&app.includes('memory-form'),'Project memory missing');
 assert.ok(app.includes('task-form')&&app.includes('upload-project-file'),'Project tasks/files missing');
-assert.ok(app.includes('attach-photo')&&app.includes('attach-video')&&app.includes('attach-file'),'plus attachment chooser missing');
-assert.ok(html.includes('global-photo-input')&&html.includes('global-video-input')&&html.includes('global-file-input'),'attachment inputs missing');
+assert.ok(app.includes('attach-media')&&app.includes('attach-camera')&&app.includes('attach-file'),'plus attachment chooser missing');
+assert.ok(html.includes('global-media-input')&&html.includes('global-camera-input')&&html.includes('global-file-input'),'attachment inputs missing');
 assert.ok(app.includes('Enter adds a new line · use the arrow to send'),'multiline composer guidance missing');
 assert.ok(!app.includes("e.key==='Enter'&&!e.shiftKey"),'Enter still submits instead of newline');
 assert.ok(app.includes("headers.set('x-zeus-access-token',state.accessKey)"),'private access header missing');
