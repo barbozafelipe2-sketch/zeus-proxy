@@ -8,6 +8,7 @@ import {callWithOpenAIFallback,chooseZeusProvider,runOlympus} from '../../../lib
 import {auditPersistenceFailure,loadConversationHistory,persistCompletedTurn,persistFailureTrace,reserveRequest} from '../../../lib/db/supabase';
 import {transition,finish} from '../../../lib/core/execution';
 import {errorCode,httpStatus} from '../../../lib/core/errors';
+import {checkPrivateAccess} from '../../../lib/core/access';
 export const runtime='nodejs';
 
 function addAttachments(message:string,attachments:Array<{name:string;text:string}>){
@@ -17,6 +18,9 @@ function addAttachments(message:string,attachments:Array<{name:string;text:strin
 }
 
 export async function POST(req:Request){
+ const access=checkPrivateAccess(process.env.ZEUS_PROXY_ACCESS_TOKEN,req.headers.get('x-zeus-access-token'),process.env.NODE_ENV==='production');
+ if(access==='not_configured')return NextResponse.json({error:'APP_ACCESS_NOT_CONFIGURED'},{status:503});
+ if(access==='invalid')return NextResponse.json({error:'APP_ACCESS_REQUIRED'},{status:401});
  const startedAt=new Date().toISOString();let trace:Trace|undefined;
  try{
   const body=ChatRequestSchema.parse(await req.json());

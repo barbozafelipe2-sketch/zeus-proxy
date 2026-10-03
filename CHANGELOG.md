@@ -1,4 +1,13 @@
 # Changelog
+## OH-001.2.2 — Personal Deployment Hardening
+- Added a server-validated personal access key; production chat calls fail closed unless a 32-character-or-stronger token is configured.
+- Added a premium dark-and-gold chat interface, working prompt starters, private-access controls, and clearer attachment-limit feedback.
+- Enforced response-language continuity in Zeus's system identity.
+- Granted the Supabase `service_role` explicit execute permissions for the three server-only RPCs.
+- Added a Next.js build configuration to use the TypeScript API checker; the checked-in `typecheck` script remains a release gate.
+- Clarified that this gateway build must run on Netlify and documented its required production configuration.
+- Audit of other branches: the old static/Azure demo was superseded; the OlyHub 4.3.4 lockfile branch is a separate product dependency set and was intentionally not mixed into this personal proxy.
+
 ## OH-001.2.1 — Netlify AI Gateway
 - Removed the expectation that Felipe supplies individual provider credentials.
 - Provider adapters now require Netlify-injected gateway keys and gateway base URLs; SDK clients read the runtime configuration instead of receiving user-managed keys.

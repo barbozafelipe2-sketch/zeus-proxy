@@ -72,3 +72,6 @@ begin
   if not found then raise exception 'TRACE_RESERVATION_MISSING'; end if;
 end; $$;
 revoke all on function persist_completed_turn(uuid,text,text,text,jsonb) from public,anon,authenticated;
+grant execute on function persist_completed_turn(uuid,text,text,text,jsonb) to service_role;
+grant execute on function reserve_request(uuid,uuid,uuid,text,text) to service_role;
+grant execute on function get_conversation_history(uuid,text,integer) to service_role;

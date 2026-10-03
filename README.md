@@ -20,16 +20,19 @@ OH-001.2 closes the user-facing shells that were present in the personal Zeus Pr
 - Attachment contents are treated as untrusted input; the server validates file extensions and size before sending them to providers.
 - Pinned dependency versions and a committed lockfile.
 - Provider SDKs use Netlify-injected API keys and gateway base URLs. No provider credentials belong in `.env` files or user setup.
+- A production-only, server-checked private access key protects the chat endpoint; it is never embedded in the client bundle and is kept in session storage for the current browser tab.
 - Behavioral core tests using Vitest.
 
 ## Limits still in this release
-There is no sign-in or user ownership, so deploy only behind private access controls. Supabase end-user RLS policies are not configured. Browser-local transcript continuity is per browser; server persistence requires Supabase. Attachments are text-only and are not retained as separate files. Dollar costs are not estimated because provider pricing is not sourced from a verified pricing table. There is no circuit breaker, automatic retry, Challenge pass, long-term memory write gate, or general Capability Broker yet.
+There is no account system or per-user ownership. This remains a personal deployment: set a unique `ZEUS_PROXY_ACCESS_TOKEN` of at least 32 characters and enable the hosting platform's private deployment protection. The app's shared access key protects provider spend, but it is not multi-user authentication or a substitute for platform access controls. Supabase end-user RLS policies are not configured. Browser-local transcript continuity is per browser; server persistence requires Supabase. Attachments are text-only and are not retained as separate files. Dollar costs are not estimated because provider pricing is not sourced from a verified pricing table. There is no circuit breaker, automatic retry, Challenge pass, long-term memory write gate, or general Capability Broker yet.
 
 ## Netlify AI Gateway setup
 Enable AI Features for the Netlify team, and do not define your own `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `ANTHROPIC_API_KEY`, `ANTHROPIC_BASE_URL`, `GEMINI_API_KEY`, or `GOOGLE_GEMINI_BASE_URL` values. Netlify injects gateway credentials and base URLs at runtime. The site must have at least one production deploy before the gateway activates. For local development, use the linked site's `netlify dev` runtime rather than plain `next dev`; no individual provider key setup is required. Netlify bills AI Gateway usage against the site's credit balance.
+
+**Deploy this build on Netlify.** The repository homepage still points at an older Vercel URL, but Vercel will not inject Netlify AI Gateway credentials. Configure `ZEUS_PROXY_ACCESS_TOKEN`, `SUPABASE_URL`, and `SUPABASE_SERVICE_ROLE_KEY` as server-side Netlify environment variables. Keep the access token and service-role key out of `NEXT_PUBLIC_*` variables and source control. Save the access token in the app's private-access control after deployment.
 
 ## Reliability gate
 Run `npm ci`, `npm run typecheck`, `npm test`, and `npm run build`. Database behavior (RLS, reservation concurrency, atomic RPCs) must also be integration-tested against a Supabase test project before public exposure.
 
 ## Database migration
-Apply `supabase/schema.sql` to the target Supabase project. The migration enables RLS, adds `reserve_request`, bounded history retrieval, and atomic completed-turn persistence. Server service-role access remains server-only. Do not expose this unauthenticated release publicly.
+Apply `supabase/schema.sql` to the target Supabase project. The migration enables RLS, adds `reserve_request`, bounded history retrieval, atomic completed-turn persistence, and explicit `service_role` execute grants for the server RPCs. Server service-role access remains server-only. Require both the app access token and Netlify's private site protection before using the deployment.
