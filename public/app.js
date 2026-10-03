@@ -7,7 +7,7 @@ const state = {
   tab:'Home', mode:'ZEUS', drawer:false,
   conversations:[], currentConversation:null, messages:[], chatArtifacts:[], sending:false, execStatus:'', error:'',
   attachedFiles:[], projects:[], projectFilter:'ALL', currentProject:null, tasks:[],
-  files:[], artifacts:[], health:null, chatsMenu:false, recording:false,
+  files:[], artifacts:[], health:null, recording:false,
   projectSection:'CHAT', projectMemories:[], memoryPolicy:null,
   messagePage:{hasMore:false,nextCursor:null}, filesPage:{scope:'global',hasMore:false,nextCursor:null}, artifactsPage:{scope:'global',hasMore:false,nextCursor:null}, chatRestore:null,
   voiceBusy:false, voiceRecorder:null, voiceStream:null, voiceChunks:[], voiceStopTimer:null, voiceRecognition:null,
@@ -171,16 +171,15 @@ function sidebar(){
   return `<aside class="sidebar ${state.drawer?'open':''}">
     <div class="logo-row"><div class="personal-bolt small">ϟ</div><div><div class="logo-word">OLYMPUS HUB</div><div class="logo-sub">PERSONAL · ZEUS</div></div></div>
     <button class="new-chat" id="new-chat">${icon('chat')} <span><strong>New chat</strong><small class="muted" style="display:block;margin-top:2px">Start a clean execution</small></span></button>
-    <button id="new-chat-top" class="hidden">New chat</button>
     <div class="search-box">${icon('search')}<input id="chat-search" placeholder="Search chats"></div>
-    <div class="side-nav">${navButtons(true)}</div>
+    <div class="side-nav">${navButtons()}</div>
     <div class="side-section"><div class="side-title">Recent chats</div><div class="recent-list" id="recent-list">${recents}</div></div>
     <div class="sidebar-foot"><div class="user-chip"><div class="avatar">${esc(initials())}</div><div style="min-width:0"><strong style="font-size:12px">${esc(state.user?.user_metadata?.full_name||state.user?.email||'Felipe')}</strong><div class="muted tiny">Memory & persistence connected</div></div></div><button class="ghost" id="logout" style="text-align:left;padding:0">Lock</button></div>
   </aside>${state.drawer?'<button class="scrim" id="scrim" aria-label="Close menu"></button>':''}`;
 }
-function navButtons(side=false){
+function navButtons(){
   const items=[['Home','home'],['Projects','projects'],['Tools','tools'],['Files','files'],['Settings','settings']];
-  return items.map(([label,ico])=>`<button data-tab="${label}" class="${state.tab===label?'active':''}">${icon(ico)}${side?`<span>${label}</span>`:`<span>${label}</span>`}</button>`).join('');
+  return items.map(([label,ico])=>`<button data-tab="${label}" class="${state.tab===label?'active':''}">${icon(ico)}<span>${label}</span></button>`).join('');
 }
 function homeChats(){ return (state.conversations||[]).filter(c=>!c.project_id); }
 function projectChats(){ return (state.conversations||[]).filter(c=>c.project_id); }
@@ -196,10 +195,8 @@ function topbar(){
     <div class="topbar-context" aria-label="Current workspace"><span>${esc(state.currentProject?'PROJECT':'WORKSPACE')}</span><strong>${esc(context)}</strong></div>
     <div class="brand-center"><div class="personal-bolt small">ϟ</div><div class="brand-copy"><span class="logo-word">OLYMPUS HUB</span><span class="logo-sub">PERSONAL · ZEUS</span></div></div>
     <div class="topbar-actions"><span class="system-indicator ${tone}" title="${esc(title)}"><i></i>${status}</span><button class="avatar ghost" id="profile-avatar" aria-label="Open account settings">${esc(initials())}</button></div>
-    <button id="chats-menu" class="hidden" tabindex="-1">chats</button>
   </header>`;
 }
-function bottomNav(){return `<nav class="bottom-nav">${navButtons(false)}</nav>`;}
 
 function homeView(){
   const isEmpty=!state.messages.length;
@@ -407,9 +404,7 @@ function render(){ clearModalLifecycle();modalReturnFocus=null;if(!state.authRea
 
 function bind(){
   if(!state.user){ bindAuth(); return; }
-  $('#hamburger')?.addEventListener('click',()=>{state.drawer=true;render()}); $('#scrim')?.addEventListener('click',()=>{state.drawer=false;state.chatsMenu=false;render()});
-  $('#chats-menu')?.addEventListener('click',()=>{state.drawer=true;render()});
-  $('#new-chat-top')?.addEventListener('click',newChat);
+  $('#hamburger')?.addEventListener('click',()=>{state.drawer=true;render()}); $('#scrim')?.addEventListener('click',()=>{state.drawer=false;render()});
   $('#profile-avatar')?.addEventListener('click',()=>{state.tab='Settings';render()});
   $$('#logout,#settings-logout').forEach(b=>b.addEventListener('click',logout));
   $$('[data-tab]').forEach(b=>b.addEventListener('click',async()=>{
@@ -435,7 +430,7 @@ function bind(){
   $$('[data-conv]').forEach(b=>b.addEventListener('click',()=>openConversation(b.dataset.conv)));
   $$('[data-mode]').forEach(b=>b.addEventListener('click',()=>{state.mode=b.dataset.mode;render()}));
   $$('.quick-prompts button').forEach(b=>b.addEventListener('click',()=>{const t=$('#composer-text');if(!t)return;t.value=b.dataset.prompt;t.dispatchEvent(new Event('input',{bubbles:true}));t.focus()}));
-  $('#composer')?.addEventListener('submit',sendMessage); const composerText=$('#composer-text');composerText?.addEventListener('input',()=>{composerText.style.height='auto';composerText.style.height=`${Math.min(160,Math.max(26,composerText.scrollHeight))}px`;});composerText?.addEventListener('keydown',()=>{});
+  $('#composer')?.addEventListener('submit',sendMessage); const composerText=$('#composer-text');composerText?.addEventListener('input',()=>{composerText.style.height='auto';composerText.style.height=`${Math.min(160,Math.max(26,composerText.scrollHeight))}px`;});
   $('#attach')?.addEventListener('click',()=>{state.attachMenu=!state.attachMenu;render()}); $('#upload-files')?.addEventListener('click',()=>$('#global-file-input').click());
   $('#attach-media')?.addEventListener('click',()=>$('#global-media-input').click()); $('#attach-camera')?.addEventListener('click',()=>$('#global-camera-input').click()); $('#attach-file')?.addEventListener('click',()=>$('#global-file-input').click());
   const handleUpload=async e=>{const files=[...e.target.files];e.target.value='';state.attachMenu=false;for(const f of files)await uploadFile(f);};
@@ -471,7 +466,7 @@ function bindAuth(){
 async function newChat(){
   state.currentConversation=null;state.currentProject=null;state.messages=[];state.chatArtifacts=[];state.attachedFiles=[];
   state.error='';state.lastFailedText='';state.lastFailedMessageId=null;state.lastFailedAttachments=[];state.lastFailedRequestId=null;state.messagePage={hasMore:false,nextCursor:null};
-  state.tab='Home';state.drawer=false;state.chatsMenu=false;history.replaceState({},'',location.pathname);render();resetViewport();
+  state.tab='Home';state.drawer=false;history.replaceState({},'',location.pathname);render();resetViewport();
 }
 async function openConversation(id,doRender=true){
   try{
@@ -492,7 +487,7 @@ async function openConversation(id,doRender=true){
     state.chatArtifacts=d.artifacts||[];
     state.artifacts=mergeById(state.artifacts,d.artifacts||[]);
     state.messagePage={hasMore:Boolean(d.page?.hasMore),nextCursor:d.page?.nextCursor||null};
-    state.tab=state.currentProject?'Projects':'Home';state.drawer=false;state.chatsMenu=false;
+    state.tab=state.currentProject?'Projects':'Home';state.drawer=false;
     history.replaceState({},'',state.currentProject?`/?project=${encodeURIComponent(state.currentProject.id)}`:`/?conversation=${id}`);
     if(doRender){render();resetViewport();}
   }catch(e){state.error=e.message;if(doRender)render();}
@@ -769,7 +764,7 @@ async function deleteCurrentProject(){
 async function openProjectWorkspace(projectId){
   try{
     const changing=state.currentProject?.id!==projectId;
-    state.tab='Projects';state.drawer=false;state.chatsMenu=false;if(changing)state.projectSection='CHAT';
+    state.tab='Projects';state.drawer=false;if(changing)state.projectSection='CHAT';
     state.currentProject=state.projects.find(p=>p.id===projectId)||null;
     if(!state.currentProject)return render();
     await hydrateProjectWorkspace(projectId);
