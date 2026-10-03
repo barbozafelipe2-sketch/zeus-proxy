@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "node scripts/verify.mjs",
-    "test": "node scripts/verify.mjs && node scripts/hardfix1-tests.mjs && node scripts/hardfix2-tests.mjs && node scripts/hardfix3-tests.mjs && node scripts/ui-tests.mjs && node scripts/finalfix1-tests.mjs && node scripts/finalfix2-tests.mjs && node scripts/finalfix3-tests.mjs && node scripts/polish-tests.mjs && node scripts/zeus-personal-tests.mjs && node scripts/a11y-polish-tests.mjs",
+    "test": "node scripts/verify.mjs && node scripts/hardfix1-tests.mjs && node scripts/hardfix2-tests.mjs && node scripts/hardfix3-tests.mjs && node scripts/ui-tests.mjs && node scripts/finalfix1-tests.mjs && node scripts/finalfix2-tests.mjs && node scripts/finalfix3-tests.mjs && node scripts/polish-tests.mjs && node scripts/zeus-personal-tests.mjs && node scripts/a11y-polish-tests.mjs && node scripts/chat-reliability-tests.mjs",
     "smoke:live": "node scripts/smoke-live.mjs"
   },
   "dependencies": {
