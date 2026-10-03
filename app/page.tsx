@@ -1,5 +1,5 @@
 'use client';
-import {ChangeEvent,useEffect,useRef,useState} from 'react';
+import {ChangeEvent,useEffect,useLayoutEffect,useRef,useState} from 'react';
 
 const modes=[['zeus','Zeus'],['olympus','Olympus'],['openai','OpenAI'],['claude','Claude'],['gemini','Gemini']] as const;
 type Mode=(typeof modes)[number][0];
@@ -30,6 +30,13 @@ export default function Home(){
   setReady(true);ta.current?.focus();
  },[]);
  useEffect(()=>{if(ready)try{localStorage.setItem(STORE_KEY,JSON.stringify({mode,messages,conversationId}));}catch{}},[ready,mode,messages,conversationId]);
+ useLayoutEffect(()=>{
+  const el=ta.current;if(!el)return;
+  const maxHeight=window.innerWidth<=640?128:160;
+  el.style.height='auto';
+  el.style.height=`${Math.min(el.scrollHeight,maxHeight)}px`;
+  el.style.overflowY=el.scrollHeight>maxHeight?'auto':'hidden';
+ },[input]);
 
  async function addFiles(event:ChangeEvent<HTMLInputElement>){
   const selected=Array.from(event.target.files||[]);event.target.value='';setFileError('');
@@ -74,8 +81,8 @@ export default function Home(){
    {files.length>0&&<div className="file-list">{files.map(file=><span className="file-chip" key={file.id}>{file.name}<button aria-label={`Remove ${file.name}`} onClick={()=>removeFile(file.id)}>×</button></span>)}</div>}
    {fileError&&<div className="file-error" role="alert">{fileError}</div>}
    <div className="modebar">{modes.map(([id,name])=><button key={id} onClick={()=>setMode(id)} className={mode===id?`selected ${id}`:''}><span className={`dot ${id}`}></span>{name}</button>)}</div>
-   <div className="composer"><button className="attach" title="Attach a text file" aria-label="Attach a text file" onClick={()=>picker.current?.click()} disabled={busy}>＋</button><input ref={picker} type="file" hidden multiple accept=".txt,.md,.csv,.json,.tsv,text/plain,text/markdown,text/csv,application/json" onChange={addFiles}/><textarea aria-label="Message Zeus" ref={ta} rows={1} value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send()}}} placeholder="Ask Zeus anything…"/><button className="send" aria-label="Send message" disabled={!input.trim()||busy} onClick={send}>↑</button></div>
-   <div className="hint">{mode==='zeus'?'Zeus uses an available engine and falls back to OpenAI.':mode==='olympus'?'Lead answer · blind review · director synthesis.':`${modes.find(x=>x[0]===mode)?.[1]} is active. OpenAI is the fallback.`} Text attachments are sent with your prompt.</div>
+   <div className="composer"><button className="attach" title="Attach a text file" aria-label="Attach a text file" onClick={()=>picker.current?.click()} disabled={busy}>＋</button><input ref={picker} type="file" hidden multiple accept=".txt,.md,.csv,.json,.tsv,text/plain,text/markdown,text/csv,application/json" onChange={addFiles}/><textarea aria-label="Message Zeus" ref={ta} rows={1} value={input} onChange={e=>setInput(e.target.value)} placeholder="Ask Zeus anything…"/><button className="send" aria-label="Send message" title="Send message" disabled={!input.trim()||busy} onClick={send}>↑</button></div>
+   <div className="hint">Enter adds a new line · use the arrow to send. {mode==='zeus'?'Zeus uses an available engine and falls back to OpenAI.':mode==='olympus'?'Lead answer · blind review · director synthesis.':`${modes.find(x=>x[0]===mode)?.[1]} is active. OpenAI is the fallback.`} Text attachments are sent with your prompt.</div>
   </section>
   {trace&&<details className="trace"><summary>Intelligence trace <span>{trace.status}</span></summary><div className="tracegrid"><div><b>Engine</b><span>{label(trace.provider)}</span></div><div><b>Model</b><span>{trace.model||'—'}</span></div><div><b>Latency</b><span>{trace.latencyMs} ms</span></div><div><b>Trace</b><span>{trace.traceId?.slice(0,12)}…</span></div>{trace.council&&<div><b>Reviews</b><span>{trace.council.reviewers.filter((x:any)=>x.status==='completed').length} completed</span></div>}</div></details>}
  </main>;
