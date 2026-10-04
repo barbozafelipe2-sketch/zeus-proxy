@@ -606,7 +606,7 @@ export async function runOlympus({ text, context = '', images = [], history = []
   return {content:finalContent,leadModel:`${director.model.provider}:${director.model.id}`,verificationLabel:verificationLabel(text,Boolean(auditorInfo&&!auditorInfo.error)),trace:{strategy:'scoped_specialists_director_adversary_patch',requirements:checklist,scopes:parts.map((p,index)=>({scope:index===0?'A':'B',requirements:p.scope.map(x=>x.id),provider:p.model.provider,model:p.model.id})),director:{provider:director.model.provider,model:director.model.id,fallbacks:director.attempts},auditor:auditorInfo,acceptedFindings:accepted,verification,budget:localBudget.snapshot(),visionInputs:images.length}};
 }
 
-export async function transcribeAudioexport async function transcribeAudio(audioBytes, filename = 'voice.webm', mimeType = 'audio/webm', { budget = null } = {}) {
+export async function transcribeAudio(audioBytes, filename = 'voice.webm', mimeType = 'audio/webm', { budget = null } = {}) {
   const localBudget = budget || createExecutionBudget({ timeoutMs: 42000, maxCalls: 3 });
   let last;
 
