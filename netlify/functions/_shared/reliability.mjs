@@ -40,13 +40,13 @@ export function extractRequirementChecklist(text='', {action='CHAT',artifactType
   const limited=items.slice(0,12).map((x,i)=>({...x,id:`R${i+1}`}));
   return {items:limited,ambiguous:raw.length>0&&limited.length<2&&(RISK.test(raw)||CODE_DELIVERY.test(raw)||RESEARCH.test(raw)||action==='ARTIFACT_CREATE'),hasFiles:Boolean(hasFiles),hasImage:Boolean(hasImage)};
 }
-export function shouldVerifyDelivery(text='', {action='CHAT',route='fast',hasFiles=false}={}){
+export function shouldVerifyDelivery(text='', {action='CHAT',route='fast',hasFiles=false,hasImage=false}={}){
   const t=normalize(text);
   if(action==='IMAGE_CREATE'||action==='IMAGE_EDIT')return false;
   if(RISK.test(t)||action==='ARTIFACT_CREATE'||route==='research'||RESEARCH.test(t))return true;
   if(route==='coding'&&CODE_DELIVERY.test(t))return true;
   if(route==='hard')return true;
-  if(action==='ANALYZE'&&(hasFiles||/\b(audit|review|security|auditar|revisar|seguranca)\b/i.test(t)))return true;
+  if(action==='ANALYZE'&&((hasFiles&&!hasImage)||/\b(audit|review|security|auditar|revisar|seguranca)\b/i.test(t)))return true;
   return false;
 }
 export function isWhatMissingIntent(text=''){return /\b(what(?:'s| is) missing|what did (?:you|we) miss|anything missing|what else is missing|o que falta|faltou algo|o que ficou faltando|tem algo faltando)\b/i.test(String(text||''));}
