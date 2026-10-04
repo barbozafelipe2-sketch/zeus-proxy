@@ -247,7 +247,7 @@ function liveMode(){
 }
 function modeStrip(){
   const olympus=liveMode()==='OLYMPUS';
-  return `<div class="mode-strip" role="status" aria-live="polite" aria-label="Execution mode"><div class="mode-card selected"><div class="mode-icon">${icon(olympus?'globe':'auto')}</div><div><strong>${olympus?'Olympus':'Zeus'} <em>${olympus?'TEAM':'ONE MODEL'}</em></strong><small>${olympus?'Multi-specialist synthesis. One final answer.':'Zeus chooses. Simple work uses a cheaper model.'}</small></div></div></div>`;
+  return `<div class="mode-strip" role="status" aria-live="polite" aria-label="Execution mode"><div class="mode-card selected"><div class="mode-icon">${icon(olympus?'globe':'auto')}</div><div><strong>${olympus?'Olympus':'Zeus'} <em>${olympus?'TEAM':'ONE MODEL'}</em></strong><small>${olympus?'Multi-specialist synthesis · scoped adversarial audit · one final answer.':'Zeus chooses. Simple work uses a cheaper model.'}</small></div></div></div>`;
 }
 
 function homeView(){
@@ -278,8 +278,9 @@ function messageHtml(m){
   const attached=(m.attachments||[]).map(f=>`<span class="file-chip static">${icon('files')} ${esc(f.filename||f.name||'file')}</span>`).join('');
   const sources=safeSources(m);
   const sourceHtml=sources.length?`<div class="message-sources"><span>Sources</span><div>${sources.map((source,i)=>`<a href="${esc(source.url)}" target="_blank" rel="noreferrer noopener" title="${esc(source.title)}"><strong>${i+1}</strong><span>${esc(source.title)}</span></a>`).join('')}</div></div>`:'';
-  const lead=m.role==='assistant'&&m.metadata?.leadModel?String(m.metadata.leadModel).split(':').slice(1).join(':'):'';
-  const note=[m.metadata?.modeExplanation,lead,m.metadata?.fallback?'fallback':''].filter(Boolean).join(' · ');
+  const leadRaw=m.role==='assistant'&&m.metadata?.leadModel?String(m.metadata.leadModel):'';
+  const lead=leadRaw.includes(':')?`${leadRaw.slice(0,leadRaw.indexOf(':'))} · ${leadRaw.slice(leadRaw.indexOf(':')+1)}`:leadRaw;
+  const note=[m.metadata?.modeExplanation,lead,m.metadata?.fallback?'fallback':'',m.metadata?.verificationLabel].filter(Boolean).join(' · ');
   return `<article class="message ${m.role==='user'?'user':'assistant'}"><div class="message-label">${m.role==='user'?'YOU':esc(m.mode||'ZEUS')}</div><div class="message-body">${esc(m.content||'')}</div>${note?`<div class="message-model">${esc(note)}</div>`:''}${sourceHtml}${attached?`<div class="attachments in-message">${attached}</div>`:''}${artifacts?`<div class="artifact-row">${artifacts}</div>`:''}</article>`;
 }
 function artifactCard(a){const tag=esc((a.type||'FILE').toUpperCase().slice(0,4));return `<div class="artifact-card"><div class="out-badge">${tag}</div><div><strong>${esc(a.filename||'OlyHub output')}</strong><small>${fmtSize(a.size)} · ${esc(a.mime_type||a.type||'Artifact')}</small></div><div class="artifact-actions"><a href="${esc(a.downloadUrl)}" target="_blank" rel="noopener">Open</a><a class="ghost-a" href="${esc(a.downloadUrl)}" download>Download</a></div></div>`}

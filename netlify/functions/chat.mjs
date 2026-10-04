@@ -1,6 +1,6 @@
 import { requireUser } from './_shared/auth.mjs';
 import { json, readJson, cleanText, isUuid, getRequestId, errorJson } from './_shared/http.mjs';
-import { runZeus, runOlympus, generateImage, editImage } from './_shared/models.mjs';
+import { runZeus, runOlympus, generateImage, editImage, routeFor } from './_shared/models.mjs';
 import { stageArtifact, stageBinaryArtifact, discardStagedArtifact } from './_shared/artifact.mjs';
 import { blobStore } from './_shared/blob.mjs';
 import { withTransaction } from './_shared/db.mjs';
@@ -14,6 +14,7 @@ import { pageLimit, decodeCursor, pageResult } from './_shared/pagination.mjs';
 import { queueBlobGc } from './_shared/storage.mjs';
 import { MEMORY_POLICY, selectMemoryContext, formatMemoryContext } from './_shared/memory.mjs';
 import { runWebSearch, shouldSearchWeb } from './_shared/web-search.mjs';
+import { extractRequirementChecklist, formatChecklist, isWhatMissingIntent, shouldVerifyDelivery } from './_shared/reliability.mjs';
 
 function titleFrom(text){return text.replace(/\s+/g,' ').trim().slice(0,72) || 'OlyHub output';}
 function clip(value,max=6000){const text=String(value||'');return text.length>max?`${text.slice(0,max)}\n[truncated]`:text;}
@@ -205,12 +206,19 @@ async function finalizeTurn({db,userId,projectId,conversationId,execution,mode,r
     await client.query(`UPDATE executions SET state='SAVING',lead_model=$1,trace=$2::jsonb WHERE id=$3 AND owner_id=$4`,[result.leadModel||null,JSON.stringify(result.trace||{}),execution.id,userId]);
     const assistant=(await client.query(
       `INSERT INTO messages(owner_id,conversation_id,execution_id,role,mode,content,metadata) VALUES($1,$2,$3,'assistant',$4,$5,$6::jsonb) RETURNING id,role,mode,content,metadata,created_at`,
-      [userId,conversationId,execution.id,mode,result.content,JSON.stringify({artifacts:artifacts.map(a=>a.id),sources:Array.isArray(result.sources)?result.sources.slice(0,12):[],capabilities:Array.isArray(result.capabilities)?result.capabilities:[],leadModel:result.leadModel||null,fallback:Array.isArray(result.trace?.fallbacks)&&result.trace.fallbacks.length>0,modeExplanation:result.modeExplanation||null})]
+      [userId,conversationId,execution.id,mode,result.content,JSON.stringify({artifacts:artifacts.map(a=>a.id),sources:Array.isArray(result.sources)?result.sources.slice(0,12):[],capabilities:Array.isArray(result.capabilities)?result.capabilities:[],leadModel:result.leadModel||null,fallback:Array.isArray(result.trace?.fallbacks)&&result.trace.fallbacks.length>0,modeExplanation:result.modeExplanation||null,verificationLabel:result.verificationLabel||null})]
     )).rows[0];
     await client.query(`UPDATE executions SET state='COMPLETED',completed_at=now() WHERE id=$1 AND owner_id=$2`,[execution.id,userId]);
     await client.query(`UPDATE conversations SET updated_at=now() WHERE id=$1 AND owner_id=$2`,[conversationId,userId]);
     return {assistant,artifacts};
   });
+}
+
+async function loadPriorRequirements(db,userId,conversationId,currentExecutionId){
+  if(!conversationId)return [];
+  const rows=await db.sql`SELECT trace FROM executions WHERE owner_id=${userId} AND conversation_id=${conversationId} AND id<>${currentExecutionId} AND state='COMPLETED' ORDER BY completed_at DESC NULLS LAST, started_at DESC LIMIT 1`;
+  const items=rows?.[0]?.trace?.requirements;
+  return Array.isArray(items)?items.slice(0,12):[];
 }
 
 async function dispatchOlympus(req, payload){
@@ -277,7 +285,11 @@ async function chatHandler(req, context, startedAt){
   const attachmentRows=await validateAttachedFiles(db,user.id,projectId,fileIds);
   const hasImage=attachmentRows.some(r=>(r.mime_type||'').startsWith('image/'));
   const intent=classifyIntent(content,{hasImage,hasFiles:attachmentRows.length>0});
-  const decision=decideExecutionMode(modelText,{action:intent.action});
+  const requirementSpec=extractRequirementChecklist(modelText,{action:intent.action,artifactType:intent.artifactType,hasImage,hasFiles:attachmentRows.length>0});
+  const route=routeFor(modelText,{vision:hasImage});
+  const verify=shouldVerifyDelivery(modelText,{action:intent.action,route,hasFiles:attachmentRows.length>0});
+  let decision=decideExecutionMode(modelText,{action:intent.action});
+  if(decision.mode==='OLYMPUS'&&requirementSpec.items.length<3)decision={...decision,mode:'ZEUS',reason:'fewer_than_three_requirements'};
   const mode=decision.mode;
   const modeExplanation=explainExecutionMode(decision);
 
@@ -296,7 +308,11 @@ async function chatHandler(req, context, startedAt){
     }
     const execution=init.execution,userMessage=init.userMessage;
     const built=await buildContext({db,userId:user.id,projectId,conversationId,currentMessageId:userMessage.id,currentText:modelText,attachmentRows});
-    const aiContext=built.context,history=built.history;
+    let aiContext=built.context;const history=built.history;
+    if(isWhatMissingIntent(content)){
+      const priorRequirements=await loadPriorRequirements(db,user.id,conversationId,execution.id);
+      if(priorRequirements.length)aiContext+=`${aiContext?'\n\n---\n\n':''}PREVIOUS EXECUTION REQUIREMENTS\n${formatChecklist(priorRequirements)}\nOnly evaluate coverage against this saved list. Do not invent new requirements unless the user added a new request in the current message.`;
+    }
 
     if(projectId && explicitMemoryIntent(content)){
       const memoryContent=redactSecrets(content);
@@ -305,7 +321,7 @@ async function chatHandler(req, context, startedAt){
     }
 
     const webIntent=shouldSearchWeb(modelText)&&intent.action!=='IMAGE_CREATE'&&intent.action!=='IMAGE_EDIT';
-    const maxCalls=(intent.action==='IMAGE_CREATE'||intent.action==='IMAGE_EDIT'?3:(mode==='OLYMPUS'?7:6))+(webIntent?1:0);
+    const maxCalls=(intent.action==='IMAGE_CREATE'||intent.action==='IMAGE_EDIT'?3:(mode==='OLYMPUS'?8:(verify?9:5)))+(webIntent?1:0);
     const timeoutMs=worker?150000:(webIntent?CHAT_WEB_TIMEOUT_MS:CHAT_TIMEOUT_MS);
     executionBudget=createExecutionBudget({startedAt,timeoutMs,maxCalls,reserveMs:6500});
     const vision=hasImage?await loadVisionInputs(attachmentRows):{images:[],skipped:[]};
@@ -329,14 +345,14 @@ async function chatHandler(req, context, startedAt){
     }else{
       await db.sql`UPDATE executions SET state='RUNNING' WHERE id=${execution.id} AND owner_id=${user.id}`;
       if(mode==='OLYMPUS'){
-        try{result=await runOlympus({text:modelText,context:enrichedContext,images:vision.images,history,budget:executionBudget});}
+        try{result=await runOlympus({text:modelText,context:enrichedContext,images:vision.images,history,requirements:requirementSpec,budget:executionBudget});}
         catch(olympusError){
           if(!executionBudget.canCall())throw olympusError;
-          const fallback=await runZeus({text:modelText,context:enrichedContext,images:vision.images,history,budget:executionBudget});
+          const fallback=await runZeus({text:modelText,context:enrichedContext,images:vision.images,history,requirements:requirementSpec,verify:true,budget:executionBudget});
           fallback.trace={...(fallback.trace||{}),olympusFallback:String(olympusError?.message||olympusError).slice(0,220)};
           result=fallback;
         }
-      }else result=await runZeus({text:modelText,context:enrichedContext,images:vision.images,history,budget:executionBudget});
+      }else result=await runZeus({text:modelText,context:enrichedContext,images:vision.images,history,requirements:requirementSpec,verify,budget:executionBudget});
       if(intent.action==='ARTIFACT_CREATE'&&intent.artifactType){
         try{
           stagedArtifacts.push(await stageArtifact({ownerId:user.id,type:intent.artifactType,title:titleFrom(content),content:result.content,metadata:{title:titleFrom(content),intent:intent.reason}}));
@@ -351,9 +367,10 @@ async function chatHandler(req, context, startedAt){
 
     result.sources=web.sources||[];
     result.capabilities=web.trace?[web.trace]:[];
-    result.trace={...(result.trace||{}),intent,modeDecision:decision,secretsRedacted,visionSkipped:vision.skipped,webSearch:web.trace||null};
+    result.trace={...(result.trace||{}),intent,modeDecision:decision,route,verificationRequested:verify,secretsRedacted,visionSkipped:vision.skipped,webSearch:web.trace||null};
     result.modeExplanation=modeExplanation;
-    const final=await finalizeTurn({db,userId:user.id,projectId,conversationId,execution,mode,result,stagedArtifacts});
+    const finalMode=result.effectiveMode||mode;
+    const final=await finalizeTurn({db,userId:user.id,projectId,conversationId,execution,mode:finalMode,result,stagedArtifacts});
     return json({conversationId,message:final.assistant,userMessage,artifacts:final.artifacts,execution:{id:execution.id,state:'COMPLETED'},requestId,replayed:false});
   }catch(error){
     for(const staged of stagedArtifacts){const removed=await discardStagedArtifact(staged);if(!removed){try{await queueBlobGc(db,user.id,'olyhub-artifacts',staged.blobKey,'failed-chat-artifact');}catch{}}}

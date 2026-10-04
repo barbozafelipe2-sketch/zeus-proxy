@@ -7,12 +7,12 @@ const required = [
   'netlify/functions/chat.mjs','netlify/functions/projects.mjs','netlify/functions/tasks.mjs','netlify/functions/memories.mjs',
   'netlify/functions/files.mjs','netlify/functions/file-download.mjs',
   'netlify/functions/artifacts.mjs','netlify/functions/artifact-download.mjs','netlify/functions/health.mjs','netlify/functions/transcribe.mjs',
-  'netlify/functions/_shared/models.mjs','netlify/functions/_shared/web-search.mjs','netlify/functions/_shared/memory.mjs','netlify/functions/_shared/artifact.mjs','netlify/functions/_shared/artifact-limits.mjs','netlify/functions/_shared/pdf-layout.mjs','netlify/functions/_shared/extract.mjs','netlify/functions/_shared/auth.mjs','netlify/functions/_shared/db.mjs','netlify/functions/_shared/relations.mjs','netlify/functions/_shared/intent.mjs','netlify/functions/_shared/security.mjs','netlify/functions/_shared/context.mjs','netlify/functions/_shared/runtime.mjs','netlify/functions/_shared/archive-safety.mjs','netlify/functions/_shared/zip-output.mjs','netlify/functions/_shared/pagination.mjs','netlify/functions/_shared/limits.mjs','netlify/functions/_shared/storage.mjs',
+  'netlify/functions/_shared/models.mjs','netlify/functions/_shared/reliability.mjs','netlify/functions/_shared/web-search.mjs','netlify/functions/_shared/memory.mjs','netlify/functions/_shared/artifact.mjs','netlify/functions/_shared/artifact-limits.mjs','netlify/functions/_shared/pdf-layout.mjs','netlify/functions/_shared/extract.mjs','netlify/functions/_shared/auth.mjs','netlify/functions/_shared/db.mjs','netlify/functions/_shared/relations.mjs','netlify/functions/_shared/intent.mjs','netlify/functions/_shared/security.mjs','netlify/functions/_shared/context.mjs','netlify/functions/_shared/runtime.mjs','netlify/functions/_shared/archive-safety.mjs','netlify/functions/_shared/zip-output.mjs','netlify/functions/_shared/pagination.mjs','netlify/functions/_shared/limits.mjs','netlify/functions/_shared/storage.mjs',
   'netlify/database/migrations/20260930044607_create_olyhub_foundation/migration.sql',
   'netlify/database/migrations/20260930080000_add_files/migration.sql',
   'netlify/database/migrations/20261001030000_hard-fix-1-integrity/migration.sql',
   'netlify/database/migrations/20261001043000_hard-fix-3-operations/migration.sql',
-  'scripts/hardfix1-tests.mjs','scripts/hardfix2-tests.mjs','scripts/hardfix3-tests.mjs','scripts/finalfix1-tests.mjs','scripts/finalfix2-tests.mjs','scripts/finalfix3-tests.mjs','scripts/polish-tests.mjs','scripts/smoke-live.mjs','.npmrc','netlify/functions/storage-maintenance.mjs','.github/workflows/verify.yml','.github/workflows/smoke-live.yml',
+  'scripts/hardfix1-tests.mjs','scripts/hardfix2-tests.mjs','scripts/hardfix3-tests.mjs','scripts/reliability-engine-tests.mjs','scripts/finalfix1-tests.mjs','scripts/finalfix2-tests.mjs','scripts/finalfix3-tests.mjs','scripts/polish-tests.mjs','scripts/smoke-live.mjs','.npmrc','netlify/functions/storage-maintenance.mjs','.github/workflows/verify.yml','.github/workflows/smoke-live.yml',
   'netlify.toml','package-lock.json','README.md','CHANGELOG.md','SMOKE-TEST.md'
 ];
 for (const file of required) if (!existsSync(file)) throw new Error(`Missing required file: ${file}`);
@@ -22,6 +22,7 @@ const app = read('public/app.js');
 const css = read('public/ui-premium.css');
 const chat = read('netlify/functions/chat.mjs');
 const models = read('netlify/functions/_shared/models.mjs');
+const reliability = read('netlify/functions/_shared/reliability.mjs');
 const webSearch = read('netlify/functions/_shared/web-search.mjs');
 const health = read('netlify/functions/health.mjs');
 const projects = read('netlify/functions/projects.mjs');
@@ -121,6 +122,7 @@ const mustContain = [
   [models,'reviewedAfterFallback','Zeus review survives lead fallback'],
   [models,'OLYMPUS_DIRECTOR_RESERVE_MS','Olympus Director time reserve'],
   [models,'DIVERSITY_SCORE_TOLERANCE','quality-bounded provider diversity'],
+  [reliability,'validateAdversaryFindings','mechanical quoted-evidence adversary filter'],
   [memoryPolicy,'selectMemoryContext','deterministic project memory selection'],
   [health,"started_at > now() - interval '24 hours'",'persisted provider readiness evidence'],
   [health,'opportunisticDrainBlobGc','automatic queued Blob maintenance'],
@@ -129,14 +131,14 @@ const mustContain = [
   [models,'PROVIDER_CIRCUIT_OPEN','provider circuit breaker'],
   [models,'image_url','OpenAI-compatible vision input'],
   [models,'inlineData','Gemini vision input'],
-  [models,'bounded_specialists','bounded Olympus orchestration'],
+  [models,'scoped_specialists_director_adversary_patch','scoped Olympus orchestration'],
   [health,'serverTranscriptionConfigured()','health reports actual transcription readiness'],
   [auth,'ZEUS_PROXY_ACCESS_TOKEN','server-side private access verification'],
   [auth,'timingSafeEqual','constant-time private access comparison'],
   [auth,'DATABASE_UNAVAILABLE','controlled database bootstrap failure'],
   [chat,'olympusFallback','Olympus to Zeus fallback'],
   [models,'planSpecialists','domain planner'],
-  [models,'bounded_specialists','Olympus bounded specialist strategy'],
+  [models,'scoped_specialists_director_adversary_patch','Olympus scoped specialist strategy'],
   [models,'Director','Olympus Director synthesis'],
   [projects,'INSERT INTO projects','project persistence'],
   [tasks,'syncProjectProgress','task completion updates project progress'],
@@ -228,7 +230,7 @@ if (!app.includes("if(state.tab==='Tools')await Promise.all([loadHealth(),loadFi
 if (!app.includes('await hydrateProjectWorkspace(state.currentProject.id,{loadConversation:false})')) throw new Error('Opening a Project conversation does not hydrate the full workspace.');
 
 if (models.includes('level >= 2 && lead.attempts.length === 0')) throw new Error('Zeus review is still disabled after a lead fallback.');
-if (!models.includes('reserveAfterMs: OLYMPUS_DIRECTOR_RESERVE_MS')) throw new Error('Olympus specialist/critic work can still consume Director time.');
+if (!models.includes('splitRequirementScopes(checklist)')) throw new Error('Olympus no longer splits persisted requirements into distinct scopes.');
 if (models.includes("ui_ux: 'writing'")) throw new Error('UI/UX specialist routing regressed to writing-only need.');
 if (!chat.includes('selectMemoryContext(memories)')) throw new Error('Project memory no longer uses deterministic selection policy.');
 if (!storage.includes("attempts < 8") || !storage.includes("interval '5 minutes' * LEAST(attempts,6)")) throw new Error('Blob GC retry bound/backoff missing.');
