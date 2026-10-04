@@ -9,7 +9,7 @@ const models=readFileSync('netlify/functions/_shared/models.mjs','utf8');
 const chat=readFileSync('netlify/functions/chat.mjs','utf8');
 const health=readFileSync('netlify/functions/health.mjs','utf8');
 
-assert.ok(app.includes('activeMode')&&app.includes('Zeus chooses'),'automatic Zeus/Olympus display missing');
+assert.ok(app.includes('activeMode')&&app.includes('Zeus chooses one author'),'automatic Zeus/Olympus display missing');
 assert.ok(!/data-mode=["'](?:OPENAI|CLAUDE|GEMINI|GOOGLE)/i.test(app),'direct provider mode leaked into UI');
 assert.ok(app.includes('id="hamburger" aria-label="Open navigation" title="Navigation">${icon(\'menu\')}</button>')&&app.includes("['Home','home'],['Projects','projects']"),'simplified menu navigation with Projects missing');
 assert.ok(app.includes('PERMANENT PROJECT CHAT'),'permanent Project chat missing');
@@ -48,3 +48,5 @@ assert.equal(shouldAdvanceOpenAIModel(Object.assign(new Error('invalid request')
 assert.equal(shouldAdvanceOpenAIModel(Object.assign(new Error('unauthorized'),{status:401})),false,'auth errors must not burn another model');
 assert.equal(shouldAdvanceOpenAIModel(Object.assign(new Error('rate limit'),{status:429})),false,'rate limits must not burn another model');
 console.log('Zeus personal regression tests: PASS');
+
+assert.ok(app.includes('data-open-output')&&app.includes('downloadPrivateOutput'),'private artifact viewer/download flow missing');

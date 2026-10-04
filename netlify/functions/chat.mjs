@@ -15,6 +15,8 @@ import { queueBlobGc } from './_shared/storage.mjs';
 import { MEMORY_POLICY, selectMemoryContext, formatMemoryContext } from './_shared/memory.mjs';
 import { runWebSearch, shouldSearchWeb } from './_shared/web-search.mjs';
 import { extractRequirementChecklist, formatChecklist, isWhatMissingIntent, shouldVerifyDelivery } from './_shared/reliability.mjs';
+import { hasGitHubRepoUrl, loadGitHubContext } from './_shared/github-context.mjs';
+import { stripStructuredZipManifest } from './_shared/zip-output.mjs';
 
 function titleFrom(text){return text.replace(/\s+/g,' ').trim().slice(0,72) || 'OlyHub output';}
 function clip(value,max=6000){const text=String(value||'');return text.length>max?`${text.slice(0,max)}\n[truncated]`:text;}
@@ -321,12 +323,15 @@ async function chatHandler(req, context, startedAt){
     }
 
     const webIntent=shouldSearchWeb(modelText)&&intent.action!=='IMAGE_CREATE'&&intent.action!=='IMAGE_EDIT';
+    const githubIntent=hasGitHubRepoUrl(modelText);
     const maxCalls=(intent.action==='IMAGE_CREATE'||intent.action==='IMAGE_EDIT'?3:(mode==='OLYMPUS'?8:(verify?9:5)))+(webIntent?1:0);
-    const timeoutMs=worker?150000:(webIntent?CHAT_WEB_TIMEOUT_MS:CHAT_TIMEOUT_MS);
+    const timeoutMs=worker?150000:((webIntent||githubIntent)?CHAT_WEB_TIMEOUT_MS:CHAT_TIMEOUT_MS);
     executionBudget=createExecutionBudget({startedAt,timeoutMs,maxCalls,reserveMs:6500});
     const vision=hasImage?await loadVisionInputs(attachmentRows):{images:[],skipped:[]};
     const web=webIntent?await runWebSearch(modelText,{budget:executionBudget,reserveAfterMs:mode==='OLYMPUS'?17000:12000}):{requested:false,context:'',sources:[],trace:null};
-    const enrichedContext=`${aiContext}${web.context||''}`;
+    const github=githubIntent?await loadGitHubContext(modelText,{timeoutMs:worker?12000:7000,maxFiles:worker?14:10,maxChars:worker?62000:42000}):{requested:false,context:'',sources:[],trace:null};
+    const deliveryContract=intent.action==='ARTIFACT_CREATE'&&intent.artifactType==='zip'?'For a ZIP deliverable, include exactly one machine-readable block delimited by <olyhub_zip_manifest> and </olyhub_zip_manifest>. Inside it output valid JSON with shape {"files":[{"path":"relative/path.ext","content":"complete file contents"}]}. Include every file required to run/deploy the requested project, use safe relative paths, no placeholders, no omitted-file prose, and keep any human summary outside the manifest.':'';
+    const enrichedContext=`${aiContext}${web.context||''}${github.context||''}`;
 
     let result;
     if(intent.action==='IMAGE_EDIT'){
@@ -345,7 +350,7 @@ async function chatHandler(req, context, startedAt){
     }else{
       await db.sql`UPDATE executions SET state='RUNNING' WHERE id=${execution.id} AND owner_id=${user.id}`;
       if(mode==='OLYMPUS'){
-        try{result=await runOlympus({text:modelText,context:enrichedContext,images:vision.images,history,requirements:requirementSpec,budget:executionBudget});}
+        try{result=await runOlympus({text:modelText,context:enrichedContext,images:vision.images,history,requirements:requirementSpec,deliveryContract,budget:executionBudget});}
         catch(olympusError){
           if(!executionBudget.canCall())throw olympusError;
           const fallback=await runZeus({text:modelText,context:enrichedContext,images:vision.images,history,requirements:requirementSpec,verify:true,budget:executionBudget});
@@ -356,6 +361,7 @@ async function chatHandler(req, context, startedAt){
       if(intent.action==='ARTIFACT_CREATE'&&intent.artifactType){
         try{
           stagedArtifacts.push(await stageArtifact({ownerId:user.id,type:intent.artifactType,title:titleFrom(content),content:result.content,metadata:{title:titleFrom(content),intent:intent.reason}}));
+          if(intent.artifactType==='zip')result.content=stripStructuredZipManifest(result.content).trim()||'ZIP created, structurally validated, and saved to OlyHub Files.';
         }catch(artifactError){
           // Keep the model's answer (it usually still contains the code) instead of failing the whole turn.
           if(!String(artifactError?.code||'').startsWith('ZIP_'))throw artifactError;
@@ -365,13 +371,13 @@ async function chatHandler(req, context, startedAt){
       }
     }
 
-    result.sources=web.sources||[];
-    result.capabilities=web.trace?[web.trace]:[];
-    result.trace={...(result.trace||{}),intent,modeDecision:decision,route,verificationRequested:verify,secretsRedacted,visionSkipped:vision.skipped,webSearch:web.trace||null};
+    result.sources=[...(web.sources||[]),...(github.sources||[])].slice(0,12);
+    result.capabilities=[web.trace,github.trace].filter(Boolean);
+    result.trace={...(result.trace||{}),intent,modeDecision:decision,route,verificationRequested:verify,secretsRedacted,visionSkipped:vision.skipped,webSearch:web.trace||null,githubRepository:github.trace||null};
     result.modeExplanation=modeExplanation;
     const finalMode=result.effectiveMode||mode;
     const final=await finalizeTurn({db,userId:user.id,projectId,conversationId,execution,mode:finalMode,result,stagedArtifacts});
-    return json({conversationId,message:final.assistant,userMessage,artifacts:final.artifacts,execution:{id:execution.id,state:'COMPLETED'},requestId,replayed:false});
+    return json({conversationId,message:final.assistant,userMessage,artifacts:final.artifacts,mode:finalMode,modeExplanation,execution:{id:execution.id,state:'COMPLETED'},requestId,replayed:false});
   }catch(error){
     for(const staged of stagedArtifacts){const removed=await discardStagedArtifact(staged);if(!removed){try{await queueBlobGc(db,user.id,'olyhub-artifacts',staged.blobKey,'failed-chat-artifact');}catch{}}}
     const trace={error:String(error?.message||error).slice(0,500),attempts:error?.attempts||[],budget:executionBudget?.snapshot?.()||null};

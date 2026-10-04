@@ -46,7 +46,7 @@ assert.ok(css.includes('prefers-reduced-motion:reduce'),'reduced-motion support 
 
 // Resilience.
 assert.ok(app.includes('state.draft=composerText.value')&&app.includes('${esc(state.draft)}</textarea>'),'composer draft must survive re-render');
-assert.ok(app.includes("You are offline. Reconnect and try again.")&&app.includes('Network error — Zeus could not reach the server.'),'friendly network errors missing');
+assert.ok(app.includes("You are offline. Reconnect and try again.")&&app.includes('Connection to Zeus ended before the server returned an HTTP response.'),'friendly network errors missing');
 assert.ok(app.includes("document.documentElement.classList.toggle('is-busy',busy)"),'busy indicator missing');
 assert.ok(app.includes("window.addEventListener('offline'"),'offline detection missing');
 assert.ok(app.includes('function errorBanner(')&&app.includes('data-dismiss-error'),'dismissible error banner missing');

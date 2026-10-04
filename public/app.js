@@ -14,6 +14,8 @@ const state = {
   draft:'', offline:typeof navigator!=='undefined'&&navigator.onLine===false,
   lastFailedText:'', lastFailedMessageId:null, lastFailedAttachments:[], lastFailedRequestId:null,
 };
+const privateBlobUrls=new Map();
+function revokePrivateBlobUrls(){for(const url of privateBlobUrls.values())try{URL.revokeObjectURL(url)}catch{}privateBlobUrls.clear();}
 
 const esc = (v='') => String(v).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const fmtSize = n => { n=Number(n||0); if(n<1024)return `${n} B`; if(n<1048576)return `${(n/1024).toFixed(1)} KB`; return `${(n/1048576).toFixed(1)} MB`; };
@@ -49,7 +51,7 @@ function clearAuth(){
     sessionStorage.removeItem(accessStoreKey);
     sessionStorage.removeItem(legacyAccessStoreKey);
   }catch{}
-  state.user=null;state.accessKey='';state.token=null;state.refreshToken=null;state.currentConversation=null;state.messages=[];
+  revokePrivateBlobUrls();state.user=null;state.accessKey='';state.token=null;state.refreshToken=null;state.currentConversation=null;state.messages=[];
 }
 async function bootAuth(){
   state.authReady=true;
@@ -87,7 +89,7 @@ async function api(path, options={}){
     const elapsed=Date.now()-startedAt;
     // A long request that drops is almost always the server's 60s function limit or iOS suspending the app, not the user's network.
     if(elapsed>=LONG_REQUEST_DROP_MS)throw apiError(`The connection closed after ${Math.round(elapsed/1000)}s while Zeus was still working — the request likely hit the server time limit, or the app went to the background. Tap Retry: a reply that finished will be recovered.`,0,'CONNECTION_INTERRUPTED');
-    throw apiError('Network error — Zeus could not reach the server. Check your connection and try again.',0,'NETWORK_ERROR');
+    throw apiError('Connection to Zeus ended before the server returned an HTTP response. Your internet may still be fine; retry once, then check Runtime diagnostics if it repeats.',0,'NETWORK_ERROR');
   }finally{setBusy(-1);}
   const contentType=r.headers.get('content-type')||'';
   let data;
@@ -103,9 +105,41 @@ async function api(path, options={}){
       else if(typeof data==='string'&&data.trim()&&!/^\s*</.test(data))msg=data.slice(0,180);
     }
     const ref=isJson&&data.requestId?` · ref ${String(data.requestId).slice(0,18)}`:'';
-    throw apiError(`${msg||`Request failed (HTTP ${r.status}).`}${ref}`,r.status,isJson?data.code:'HTTP_ERROR',isJson?data:null);
+    const code=isJson?data.code:'HTTP_ERROR';
+    const friendly={AI_PROVIDER_AUTH:'AI Gateway/provider authentication failed for this runtime.',AI_PROVIDER_QUOTA:'AI Gateway credits or provider quota are exhausted.',AI_PROVIDER_RATE_LIMIT:'The selected AI provider is rate-limiting Zeus right now.',AI_MODEL_UNAVAILABLE:'A configured model is unavailable; Zeus could not complete fallback safely.',EXECUTION_DEADLINE:'The AI request exceeded Zeus’s execution budget before a provider completed it.',AI_PROVIDERS_FAILED:'No configured AI provider completed this request.',APP_ACCESS_REQUIRED:'Your private Zeus access is no longer valid on this screen. Unlock Zeus again.'}[code];
+    throw apiError(`${friendly||msg||`Request failed (HTTP ${r.status}).`}${ref}`,r.status,code,isJson?data:null);
   }
   return data;
+}
+
+async function fetchPrivateBlob(url){
+  const headers=new Headers();if(state.accessKey)headers.set('x-zeus-access-token',state.accessKey);headers.set('X-OlyHub-Request-ID',crypto.randomUUID());
+  const r=await fetch(url,{headers,cache:'no-store'});
+  if(!r.ok){
+    let data=null;try{data=await r.json()}catch{}
+    if(r.status===401){clearAuth();render();}
+    throw apiError(data?.error||`Could not load private output (HTTP ${r.status}).`,r.status,data?.code||'PRIVATE_OUTPUT_FAILED',data);
+  }
+  return await r.blob();
+}
+async function privateObjectUrl(url){
+  if(privateBlobUrls.has(url))return privateBlobUrls.get(url);
+  const blob=await fetchPrivateBlob(url),objectUrl=URL.createObjectURL(blob);privateBlobUrls.set(url,objectUrl);return objectUrl;
+}
+async function downloadPrivateOutput(url,filename='OlyHub-output'){
+  const blob=await fetchPrivateBlob(url),objectUrl=URL.createObjectURL(blob),a=document.createElement('a');
+  a.href=objectUrl;a.download=filename||'OlyHub-output';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(objectUrl),1500);
+}
+async function openPrivateOutput(url,filename='OlyHub output',mime='application/octet-stream'){
+  const blob=await fetchPrivateBlob(url),objectUrl=URL.createObjectURL(blob),type=blob.type||mime||'application/octet-stream';
+  const body=type.startsWith('image/')?`<img class="private-preview-image" src="${objectUrl}" alt="${esc(filename)}">`:type==='application/pdf'?`<iframe class="private-preview-frame" src="${objectUrl}" title="${esc(filename)}"></iframe>`:`<div class="private-preview-generic">${icon('files')}<strong>${esc(filename)}</strong><p>This file is private. Use Download to save it to your device.</p></div>`;
+  showModal(`<div class="modal-backdrop private-preview-backdrop"><section class="modal private-preview-modal"><header class="private-preview-head"><button class="secondary compact" id="private-preview-close" type="button">← Back</button><strong>${esc(filename)}</strong><button class="secondary compact" id="private-preview-download" type="button">Download</button></header><div class="private-preview-body">${body}</div></section></div>`,{initialFocus:'#private-preview-close',onClose:()=>URL.revokeObjectURL(objectUrl)});
+  $('#private-preview-close')?.addEventListener('click',()=>closeModal());
+  $('#private-preview-download')?.addEventListener('click',()=>downloadPrivateOutput(url,filename).catch(e=>{state.error=e.message;closeModal();render();}));
+}
+async function hydratePrivateImages(){
+  const nodes=$$('[data-private-image]');
+  await Promise.allSettled(nodes.map(async node=>{const url=node.dataset.privateImage;if(!url||node.src)return;try{node.src=await privateObjectUrl(url);node.classList.add('loaded');}catch{node.closest('.artifact-thumb-wrap')?.classList.add('thumb-failed');}}));
 }
 
 let inflightRequests=0;
@@ -247,7 +281,7 @@ function liveMode(){
 }
 function modeStrip(){
   const olympus=liveMode()==='OLYMPUS';
-  return `<div class="mode-strip" role="status" aria-live="polite" aria-label="Execution mode"><div class="mode-card selected"><div class="mode-icon">${icon(olympus?'globe':'auto')}</div><div><strong>${olympus?'Olympus':'Zeus'} <em>${olympus?'TEAM':'ONE MODEL'}</em></strong><small>${olympus?'Multi-specialist synthesis · scoped adversarial audit · one final answer.':'Zeus chooses. Simple work uses a cheaper model.'}</small></div></div></div>`;
+  return `<div class="mode-strip" role="status" aria-live="polite" aria-label="Execution mode"><div class="mode-card selected"><div class="mode-icon">${icon(olympus?'globe':'auto')}</div><div><strong>${olympus?'Olympus':'Zeus'} <em>${olympus?'TEAM':'AUTHOR'}</em></strong><small>${olympus?'Two scoped specialists · Director · adversarial audit.':'Zeus chooses one author; important work is independently verified.'}</small></div></div></div>`;
 }
 
 function homeView(){
@@ -283,7 +317,7 @@ function messageHtml(m){
   const note=[m.metadata?.modeExplanation,lead,m.metadata?.fallback?'fallback':'',m.metadata?.verificationLabel].filter(Boolean).join(' · ');
   return `<article class="message ${m.role==='user'?'user':'assistant'}"><div class="message-label">${m.role==='user'?'YOU':esc(m.mode||'ZEUS')}</div><div class="message-body">${esc(m.content||'')}</div>${note?`<div class="message-model">${esc(note)}</div>`:''}${sourceHtml}${attached?`<div class="attachments in-message">${attached}</div>`:''}${artifacts?`<div class="artifact-row">${artifacts}</div>`:''}</article>`;
 }
-function artifactCard(a){const tag=esc((a.type||'FILE').toUpperCase().slice(0,4));return `<div class="artifact-card"><div class="out-badge">${tag}</div><div><strong>${esc(a.filename||'OlyHub output')}</strong><small>${fmtSize(a.size)} · ${esc(a.mime_type||a.type||'Artifact')}</small></div><div class="artifact-actions"><a href="${esc(a.downloadUrl)}" target="_blank" rel="noopener">Open</a><a class="ghost-a" href="${esc(a.downloadUrl)}" download>Download</a></div></div>`}
+function artifactCard(a){const tag=esc((a.type||'FILE').toUpperCase().slice(0,4)),url=esc(a.downloadUrl||''),name=esc(a.filename||'OlyHub output'),mime=esc(a.mime_type||a.type||'application/octet-stream'),isImage=String(a.mime_type||'').startsWith('image/');return `<div class="artifact-card">${isImage?`<button type="button" class="artifact-thumb-wrap" data-open-output="${url}" data-output-name="${name}" data-output-mime="${mime}" aria-label="Open ${name}"><img class="artifact-thumb" data-private-image="${url}" alt=""></button>`:`<div class="out-badge">${tag}</div>`}<div><strong>${name}</strong><small>${fmtSize(a.size)} · ${mime}</small></div><div class="artifact-actions"><button type="button" data-open-output="${url}" data-output-name="${name}" data-output-mime="${mime}">Open</button><button type="button" class="ghost-a" data-download-output="${url}" data-output-name="${name}">Download</button></div></div>`}
 function voiceSupported(){
   return Boolean(window.SpeechRecognition||window.webkitSpeechRecognition||(navigator.mediaDevices&&window.MediaRecorder));
 }
@@ -411,7 +445,7 @@ function toolsView(){const h=state.health?.capabilities||{};const chat=capabilit
   </section>`;
 }
 function outputsList(limit=12){let all=[...state.artifacts.map(a=>({...a,kind:'artifact'})),...state.files.map(f=>({...f,kind:'file',type:(f.mime_type||'file').split('/').pop()}))].sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));if(Number.isFinite(limit))all=all.slice(0,limit);return all.length?`<div class="output-list">${all.map(outputItem).join('')}</div>`:`<div class="card" style="padding:24px"><strong>Your library starts with the first source or deliverable.</strong><p class="muted">Upload a source for analysis, or ask Zeus/Olympus to create a document, image, spreadsheet, presentation or ZIP.</p></div>`}
-function outputItem(o){const tag=String(o.type||o.mime_type||'FILE').split('/').pop().toUpperCase().slice(0,4);const kind=o.kind==='artifact'?'artifact':'file';return `<article class="out-row"><div class="out-badge ${tag.toLowerCase()}">${esc(tag)}</div><div><strong>${esc(o.filename)}</strong><small>${fmtSize(o.size)}${fmtDateTime(o.created_at)?` · ${fmtDateTime(o.created_at)}`:''}</small></div><div class="out-actions"><a class="chev-link" href="${esc(o.downloadUrl)}" target="_blank" rel="noopener" aria-label="Download ${esc(o.filename)}">Download</a><button class="icon-danger" type="button" data-delete-output="${kind}" data-output-id="${esc(o.id)}" aria-label="Delete ${kind} ${esc(o.filename)}" title="Delete ${kind}">${icon('close')}</button></div></article>`}
+function outputItem(o){const tag=String(o.type||o.mime_type||'FILE').split('/').pop().toUpperCase().slice(0,4),kind=o.kind==='artifact'?'artifact':'file',url=esc(o.downloadUrl||''),name=esc(o.filename||'Output'),mime=esc(o.mime_type||o.type||'application/octet-stream');return `<article class="out-row"><div class="out-badge ${tag.toLowerCase()}">${esc(tag)}</div><div><strong>${name}</strong><small>${fmtSize(o.size)}${fmtDateTime(o.created_at)?` · ${fmtDateTime(o.created_at)}`:''}</small></div><div class="out-actions"><button class="chev-link" type="button" data-open-output="${url}" data-output-name="${name}" data-output-mime="${mime}">Open</button><button class="chev-link" type="button" data-download-output="${url}" data-output-name="${name}">Download</button><button class="icon-danger" type="button" data-delete-output="${kind}" data-output-id="${esc(o.id)}" aria-label="Delete ${kind} ${name}" title="Delete ${kind}">${icon('close')}</button></div></article>`}
 function filesView(){const more=Boolean(state.filesPage?.hasMore||state.artifactsPage?.hasMore);return `<section class="page files-page"><div class="page-head"><div><div class="eyebrow">Files</div><h1>Files & Library</h1><p>Upload, analyze, and keep files and generated artifacts connected to your conversations and projects.</p></div><button class="primary" id="upload-files">${icon('plus')} Upload files</button></div><div class="project-tabs" style="margin-bottom:18px"><button type="button" class="active" aria-pressed="true">All outputs</button></div>${errorBanner('page-alert')}${outputsList(null)}${more?'<div class="history-more"><button class="secondary compact" id="load-older-outputs">Load older</button></div>':''}</section>`}
 function settingsView(){const providers=state.health?.providerReadiness||{};const statusLabel=(v)=>String(v||'not_configured').toUpperCase().replaceAll('_',' ');const statusGood=(v)=>v==='observed_healthy';return `<section class="page"><div class="page-head"><div><div class="eyebrow">Settings</div><h1>Workspace settings</h1><p>Account and advanced runtime diagnostics.</p></div></div>${errorBanner('page-alert')}<div class="settings-grid"><article class="card settings-card"><h3>Account</h3><div class="user-chip"><div class="avatar">${esc(initials())}</div><div><strong>${esc(state.user?.user_metadata?.full_name||'Felipe')}</strong><div class="muted tiny">${esc(state.user?.email||'')}</div></div></div><button class="secondary" id="settings-logout" style="margin-top:18px">Lock</button></article><article class="card settings-card"><h3>AI provider diagnostics</h3><div class="diag-list">${['openai','anthropic','gemini','openrouter'].map(p=>{const v=providers[p]?.status||'not_configured';return `<div class="diag-row"><span>${p}</span><strong class="${statusGood(v)?'status-good':'status-warn'}">${esc(statusLabel(v))}</strong></div>`}).join('')}</div><p class="muted tiny" style="line-height:1.55;margin-top:14px">Diagnostics are runtime-local evidence. CONFIGURED UNVERIFIED means credentials/models were detected but this warm Function runtime has not observed a successful call yet. DEGRADED means the temporary circuit breaker is open.</p></article><article class="card settings-card"><h3>Capabilities</h3><div class="diag-list">${Object.keys(state.health?.capabilityReadiness||{}).length?'':`<div class="muted tiny">${state.health?'No capability diagnostics reported.':'Diagnostics load when the workspace runtime responds.'}</div>`}${Object.entries(state.health?.capabilityReadiness||{}).map(([k,v])=>`<div class="diag-row"><span>${esc(k)}</span><strong class="${v==='observed_healthy'?'status-good':'status-warn'}">${esc(statusLabel(v))}</strong></div>`).join('')}</div></article></div></section>`}
 
@@ -419,8 +453,10 @@ function settingsView(){const providers=state.health?.providerReadiness||{};cons
 let modalKeydownHandler=null;
 let modalReturnFocus=null;
 let modalPreviousOverflow='';
+let modalCleanup=null;
 function clearModalLifecycle(){
   if(modalKeydownHandler){document.removeEventListener('keydown',modalKeydownHandler,true);modalKeydownHandler=null;}
+  if(modalCleanup){try{modalCleanup()}catch{}modalCleanup=null;}
   if(modalPreviousOverflow!==''){document.documentElement.style.overflow=modalPreviousOverflow;modalPreviousOverflow='';}
 }
 function closeModal({restoreFocus=true}={}){
@@ -429,9 +465,9 @@ function closeModal({restoreFocus=true}={}){
   const target=modalReturnFocus;modalReturnFocus=null;
   if(restoreFocus&&target?.isConnected)requestAnimationFrame(()=>target.focus?.());
 }
-function showModal(markup,{initialFocus}={}){
+function showModal(markup,{initialFocus,onClose}={}){
   const root=$('#modal-root');if(!root)return null;
-  clearModalLifecycle();modalReturnFocus=document.activeElement;modalPreviousOverflow=document.documentElement.style.overflow||'visible';document.documentElement.style.overflow='hidden';root.innerHTML=markup;
+  clearModalLifecycle();modalReturnFocus=document.activeElement;modalPreviousOverflow=document.documentElement.style.overflow||'visible';modalCleanup=typeof onClose==='function'?onClose:null;document.documentElement.style.overflow='hidden';root.innerHTML=markup;
   const backdrop=$('.modal-backdrop',root),dialog=$('.modal',root);if(!dialog)return null;
   dialog.setAttribute('role','dialog');dialog.setAttribute('aria-modal','true');dialog.setAttribute('tabindex','-1');
   backdrop?.addEventListener('click',e=>{if(e.target===backdrop)closeModal()});
@@ -496,6 +532,9 @@ function bind(){
   $('#new-chat')?.addEventListener('click',newChat);
   $('#chat-search')?.addEventListener('input',e=>{const q=e.target.value.toLowerCase();let shown=0;$$('.recent-item').forEach(x=>{const match=x.textContent.toLowerCase().includes(q);x.style.display=match?'block':'none';if(match)shown++;});$('#recent-empty')?.classList.toggle('hidden',!q||shown>0||!$$('.recent-item').length);});
   $$('[data-dismiss-error]').forEach(b=>b.addEventListener('click',dismissError));
+  $$('[data-open-output]').forEach(b=>b.addEventListener('click',()=>openPrivateOutput(b.dataset.openOutput,b.dataset.outputName,b.dataset.outputMime).catch(e=>{state.error=e.message;render();})));
+  $$('[data-download-output]').forEach(b=>b.addEventListener('click',()=>downloadPrivateOutput(b.dataset.downloadOutput,b.dataset.outputName).catch(e=>{state.error=e.message;render();})));
+  hydratePrivateImages();
   $$('[data-conv]').forEach(b=>b.addEventListener('click',()=>openConversation(b.dataset.conv)));
   $$('.quick-prompts button').forEach(b=>b.addEventListener('click',()=>{const t=$('#composer-text');if(!t)return;t.value=b.dataset.prompt;t.dispatchEvent(new Event('input',{bubbles:true}));t.focus()}));
   $('#composer')?.addEventListener('submit',sendMessage); const composerText=$('#composer-text');const sizeComposer=()=>{if(!composerText)return;composerText.style.height='auto';composerText.style.height=`${Math.min(160,Math.max(26,composerText.scrollHeight))}px`;};composerText?.addEventListener('input',()=>{state.draft=composerText.value;sizeComposer();});composerText?.addEventListener('keydown',e=>{if(e.key==='Enter'&&(e.metaKey||e.ctrlKey)){e.preventDefault();$('#composer')?.requestSubmit();}});if(composerText?.value)sizeComposer();
@@ -625,7 +664,7 @@ async function sendText(text,pendingAttachments=[],requestId=crypto.randomUUID()
   const optimistic={id:crypto.randomUUID(),role:'user',mode:'ZEUS',content:text,artifacts:[],attachments:pending};
   state.messages.push(optimistic);
   state.attachedFiles=[];state.draft='';
-  state.sending=true;state.error='';state.lastFailedText='';state.lastFailedMessageId=null;state.lastFailedAttachments=[];state.lastFailedRequestId=null;
+  state.sending=true;state.activeMode='ZEUS';state.error='';state.lastFailedText='';state.lastFailedMessageId=null;state.lastFailedAttachments=[];state.lastFailedRequestId=null;
   state.execTitle='Zeus is working';
   state.execStatus='Choosing the model for this request…';render();
   const timer=setTimeout(()=>{
@@ -671,7 +710,7 @@ async function sendText(text,pendingAttachments=[],requestId=crypto.randomUUID()
       if(err.data?.conversationId&&!state.currentConversation)state.currentConversation=err.data.conversationId;
       state.error='Zeus is still finishing this request. Wait a few seconds, then tap Retry to get the reply.';
     }else state.error=err.message||'Request failed.';
-    state.execStatus='';
+    state.execStatus='';state.activeMode='ZEUS';
     state.lastFailedText=text;
     state.lastFailedMessageId=optimistic.id;
     state.lastFailedAttachments=pending;

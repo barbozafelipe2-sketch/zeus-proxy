@@ -7,7 +7,7 @@ const required = [
   'netlify/functions/chat.mjs','netlify/functions/projects.mjs','netlify/functions/tasks.mjs','netlify/functions/memories.mjs',
   'netlify/functions/files.mjs','netlify/functions/file-download.mjs',
   'netlify/functions/artifacts.mjs','netlify/functions/artifact-download.mjs','netlify/functions/health.mjs','netlify/functions/transcribe.mjs',
-  'netlify/functions/_shared/models.mjs','netlify/functions/_shared/reliability.mjs','netlify/functions/_shared/web-search.mjs','netlify/functions/_shared/memory.mjs','netlify/functions/_shared/artifact.mjs','netlify/functions/_shared/artifact-limits.mjs','netlify/functions/_shared/pdf-layout.mjs','netlify/functions/_shared/extract.mjs','netlify/functions/_shared/auth.mjs','netlify/functions/_shared/db.mjs','netlify/functions/_shared/relations.mjs','netlify/functions/_shared/intent.mjs','netlify/functions/_shared/security.mjs','netlify/functions/_shared/context.mjs','netlify/functions/_shared/runtime.mjs','netlify/functions/_shared/archive-safety.mjs','netlify/functions/_shared/zip-output.mjs','netlify/functions/_shared/pagination.mjs','netlify/functions/_shared/limits.mjs','netlify/functions/_shared/storage.mjs',
+  'netlify/functions/_shared/models.mjs','netlify/functions/_shared/reliability.mjs','netlify/functions/_shared/web-search.mjs','netlify/functions/_shared/github-context.mjs','netlify/functions/_shared/memory.mjs','netlify/functions/_shared/artifact.mjs','netlify/functions/_shared/artifact-limits.mjs','netlify/functions/_shared/pdf-layout.mjs','netlify/functions/_shared/extract.mjs','netlify/functions/_shared/auth.mjs','netlify/functions/_shared/db.mjs','netlify/functions/_shared/relations.mjs','netlify/functions/_shared/intent.mjs','netlify/functions/_shared/security.mjs','netlify/functions/_shared/context.mjs','netlify/functions/_shared/runtime.mjs','netlify/functions/_shared/archive-safety.mjs','netlify/functions/_shared/zip-output.mjs','netlify/functions/_shared/pagination.mjs','netlify/functions/_shared/limits.mjs','netlify/functions/_shared/storage.mjs',
   'netlify/database/migrations/20260930044607_create_olyhub_foundation/migration.sql',
   'netlify/database/migrations/20260930080000_add_files/migration.sql',
   'netlify/database/migrations/20261001030000_hard-fix-1-integrity/migration.sql',
@@ -22,6 +22,7 @@ const app = read('public/app.js');
 const css = read('public/ui-premium.css');
 const chat = read('netlify/functions/chat.mjs');
 const models = read('netlify/functions/_shared/models.mjs');
+const githubContext = read('netlify/functions/_shared/github-context.mjs');
 const reliability = read('netlify/functions/_shared/reliability.mjs');
 const webSearch = read('netlify/functions/_shared/web-search.mjs');
 const health = read('netlify/functions/health.mjs');
@@ -280,3 +281,5 @@ if(baselineHash!==expected) throw new Error(`Applied baseline migration changed:
 console.log('OlyHub OH-004.3.4 POLISH CANDIDATE verification: PASS');
 console.log(`Baseline migration SHA-256: ${baselineHash}`);
 console.log('Verified: hardened foundation and Final Fix invariants preserved; 4.3.4 product-polish, source-grounding, long-document and release-gate invariants present.');
+
+if (!githubContext.includes('loadGitHubContext')) throw new Error('GitHub repository ingestion missing.');

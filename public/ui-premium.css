@@ -1040,3 +1040,28 @@ html.is-busy body::before{content:"";position:fixed;left:0;top:0;height:2px;widt
 @media(max-width:959px){
   .project-chat-layout{grid-template-columns:minmax(0,1fr)}
 }
+
+/* OH-004.4.1 — mobile mode strip + authenticated private output viewer */
+.mode-strip{display:flex!important;grid-template-columns:none!important;flex:0 0 auto;width:min(520px,calc(100% - 24px))!important;max-width:520px!important;margin:10px auto 0!important;padding:4px!important;position:relative;z-index:3}
+.mode-strip .mode-card{width:100%;min-width:0!important}
+.artifact-thumb-wrap{grid-column:1/-1;width:100%;padding:0;border:0;border-radius:13px;overflow:hidden;background:#080b0f;cursor:pointer}
+.artifact-thumb{display:block;width:100%;max-height:320px;object-fit:contain;background:#080b0f;opacity:0;transition:opacity .18s ease}
+.artifact-thumb.loaded{opacity:1}
+.artifact-thumb-wrap.thumb-failed{min-height:80px;border:1px dashed #394352}
+.private-preview-backdrop{padding:max(12px,env(safe-area-inset-top)) max(10px,env(safe-area-inset-right)) max(12px,env(safe-area-inset-bottom)) max(10px,env(safe-area-inset-left))}
+.private-preview-modal{width:min(1100px,100%);height:min(92dvh,900px);max-height:92dvh;padding:0!important;overflow:hidden;display:flex;flex-direction:column;background:#07090c!important}
+.private-preview-head{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:10px;padding:12px;border-bottom:1px solid #252d37}
+.private-preview-head strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:center}
+.private-preview-body{flex:1;min-height:0;display:grid;place-items:center;overflow:auto;background:#05070a}
+.private-preview-image{display:block;max-width:100%;max-height:100%;object-fit:contain}
+.private-preview-frame{width:100%;height:100%;border:0;background:#fff}
+.private-preview-generic{display:grid;justify-items:center;gap:12px;max-width:440px;padding:28px;text-align:center;color:#cbd1d9}
+.private-preview-generic .ico{width:42px;height:42px;color:var(--gold2)}
+.out-actions .chev-link{border:0;background:transparent;cursor:pointer}
+@media(max-width:900px){
+  .mode-strip{margin-top:6px!important;width:calc(100% - 20px)!important}
+  .chat-page>.chat-scroll{padding-top:10px!important}
+  .private-preview-modal{height:calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 14px);max-height:none;border-radius:18px!important}
+  .private-preview-head{padding:10px 8px}
+  .private-preview-head .compact{padding:8px 10px}
+}

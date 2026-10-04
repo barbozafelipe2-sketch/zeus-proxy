@@ -8,7 +8,8 @@ globalThis.Netlify = { env: { get: (k) => envVars[k] } };
 
 const models = await import('../netlify/functions/_shared/models.mjs');
 const runtime = await import('../netlify/functions/_shared/runtime.mjs');
-const { filesFromModelText, looksLikeFilePath } = await import('../netlify/functions/_shared/zip-output.mjs');
+const { filesFromModelText, looksLikeFilePath, stripStructuredZipManifest } = await import('../netlify/functions/_shared/zip-output.mjs');
+const { parseGitHubRepoUrl, hasGitHubRepoUrl } = await import('../netlify/functions/_shared/github-context.mjs');
 const read = (p) => readFileSync(new URL(`../${p}`, import.meta.url), 'utf8');
 const zipCode = (fn) => { try { fn(); return null; } catch (e) { return e.code; } };
 const paths = (text) => filesFromModelText('App', text).map((f) => f.path);
@@ -30,6 +31,11 @@ assert.equal(zipCode(() => filesFromModelText('App', '```md README.md\n# only\n`
 assert.match((() => { try { filesFromModelText('App', '```js\nlet a\n```'); } catch (e) { return e.message; } })(), /1 code block had no file name/);
 assert.ok(!paths('```js ../../etc/passwd\nx\n```\n```js ok.js\ny\n```').some((p) => p.includes('..')), 'path traversal rejected');
 assert.ok(looksLikeFilePath('src/index.html') && looksLikeFilePath('netlify.toml') && !looksLikeFilePath('javascript') && !looksLikeFilePath('Example'));
+const structured='<olyhub_zip_manifest>'+JSON.stringify({files:[{path:'index.html',content:'<h1>ok</h1>'},{path:'app.js',content:'console.log(1)'}]})+'</olyhub_zip_manifest>';
+assert.deepEqual(filesFromModelText('Structured',structured).map(f=>f.path),['README.md','index.html','app.js'],'structured ZIP manifest must be preferred over Markdown parsing');
+assert.equal(stripStructuredZipManifest('Done\n'+structured),'Done');
+assert.equal(parseGitHubRepoUrl('Review https://github.com/acme/demo/tree/main/src').owner,'acme');
+assert.equal(hasGitHubRepoUrl('https://github.com/acme/demo'),true);
 
 // ---- Provider timeouts are transient and advance the fallback chain ----
 const timeoutErr = Object.assign(new Error('The operation was aborted due to timeout'), { name: 'TimeoutError' });
@@ -114,3 +120,9 @@ assert.ok(app.includes("err?.code==='REQUEST_IN_PROGRESS'"));
 assert.ok(app.includes('You are offline. Reconnect and try again.') && app.includes('Network error — Zeus could not reach the server.'));
 
 console.log('Chat reliability tests: PASS');
+
+const appSource=read('public/app.js');
+assert.ok(appSource.includes('fetchPrivateBlob')&&appSource.includes("headers.set('x-zeus-access-token',state.accessKey)"),'private output fetch must carry access token');
+assert.ok(!appSource.includes('href="${esc(a.downloadUrl)}" target="_blank"'),'artifact Open must not navigate to a protected API URL');
+assert.ok(appSource.includes('private-preview-close')&&appSource.includes('← Back'),'standalone PWA private preview needs an in-app back control');
+assert.ok(appSource.includes("state.sending=true;state.activeMode='ZEUS'"),'automatic mode display must reset before each request');
