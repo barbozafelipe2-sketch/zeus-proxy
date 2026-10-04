@@ -178,7 +178,7 @@ const mustContain = [
   [css,'OH-004.2.10 — operational pagination controls','4.2.10 pagination UI'],
   [css,'OH-004.3.0 — premium product UI refinement','4.3.0 premium UI refinement'],
   [css,'OH-004.3.4 — final product polish','4.3.4 final polish layer'],
-  [app,'Multi-specialist synthesis','truthful Olympus product positioning'],
+  [app,'Two scoped specialists · Director · adversarial audit.','truthful Olympus product positioning'],
   [app,'OLYMPUS HUB · PERSONAL','personal Zeus product identity'],
   [app,'composer-meta','composer persistence guidance'],
   [chat,'queryAwareExcerpt','query-aware long attachment excerpts'],
