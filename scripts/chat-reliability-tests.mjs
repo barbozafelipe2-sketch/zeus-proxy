@@ -117,7 +117,7 @@ const app = read('public/app.js');
 assert.ok(app.includes('LONG_REQUEST_DROP_MS') && app.includes('CONNECTION_INTERRUPTED'));
 assert.ok(app.includes('[502,503,504].includes(r.status)'), 'non-JSON gateway errors get a server-timeout message');
 assert.ok(app.includes("err?.code==='REQUEST_IN_PROGRESS'"));
-assert.ok(app.includes('You are offline. Reconnect and try again.') && app.includes('Network error — Zeus could not reach the server.'));
+assert.ok(app.includes('You are offline. Reconnect and try again.') && app.includes('Connection to Zeus ended before the server returned an HTTP response.'));
 
 console.log('Chat reliability tests: PASS');
 
