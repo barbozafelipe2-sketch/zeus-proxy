@@ -9,7 +9,7 @@ const lock=JSON.parse(read('package-lock.json'));
 const checks=[
   [app.includes('ONE AI ENVIRONMENT. REAL RESULTS.'),'polished home promise'],
   [!app.includes('Deep research & analysis.'),'no fake deep-research copy'],
-  [app.includes('Multi-specialist synthesis'),'truthful Olympus copy'],
+  [app.includes('Two scoped specialists · Director · adversarial audit.'),'truthful Olympus copy'],
   [app.includes('system-indicator ${tone}'),'runtime-aware topbar state'],
   [app.includes('composer-meta'),'composer persistence/help copy'],
   [css.includes('OH-004.3.4 — final product polish'),'final polish CSS layer'],
