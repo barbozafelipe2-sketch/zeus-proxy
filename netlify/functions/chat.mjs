@@ -287,7 +287,7 @@ async function chatHandler(req, context, startedAt){
   const intent=classifyIntent(content,{hasImage,hasFiles:attachmentRows.length>0});
   const requirementSpec=extractRequirementChecklist(modelText,{action:intent.action,artifactType:intent.artifactType,hasImage,hasFiles:attachmentRows.length>0});
   const route=routeFor(modelText,{vision:hasImage});
-  const verify=shouldVerifyDelivery(modelText,{action:intent.action,route,hasFiles:attachmentRows.length>0});
+  const verify=shouldVerifyDelivery(modelText,{action:intent.action,route,hasFiles:attachmentRows.length>0,hasImage});
   let decision=decideExecutionMode(modelText,{action:intent.action});
   if(decision.mode==='OLYMPUS'&&requirementSpec.items.length<3)decision={...decision,mode:'ZEUS',reason:'fewer_than_three_requirements'};
   const mode=decision.mode;
