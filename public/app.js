@@ -4,7 +4,7 @@ const app = $('#app');
 
 const state = {
   user:null, token:null, refreshToken:null, authReady:false, accessKey:'', attachMenu:false,
-  tab:'Home', mode:'ZEUS', drawer:false,
+  tab:'Home', mode:'ZEUS', activeMode:'ZEUS', drawer:false,
   conversations:[], currentConversation:null, messages:[], chatArtifacts:[], sending:false, execStatus:'', error:'',
   attachedFiles:[], projects:[], projectFilter:'ALL', currentProject:null, tasks:[],
   files:[], artifacts:[], health:null, recording:false,
@@ -241,16 +241,21 @@ function topbar(){
   </header>`;
 }
 
+function liveMode(){
+  const last=[...state.messages].reverse().find(m=>m.role==='assistant'&&(m.mode==='OLYMPUS'||m.mode==='ZEUS'));
+  return state.activeMode||last?.mode||'ZEUS';
+}
+function modeStrip(){
+  const olympus=liveMode()==='OLYMPUS';
+  return `<div class="mode-strip" role="status" aria-live="polite" aria-label="Execution mode"><div class="mode-card selected"><div class="mode-icon">${icon(olympus?'globe':'auto')}</div><div><strong>${olympus?'Olympus':'Zeus'} <em>${olympus?'TEAM':'ONE MODEL'}</em></strong><small>${olympus?'Multi-specialist synthesis. One final answer.':'Zeus chooses. Simple work uses a cheaper model.'}</small></div></div></div>`;
+}
+
 function homeView(){
   const isEmpty=!state.messages.length;
   const msgs=state.messages.map(m=>messageHtml(m)).join('');
-  const exec=state.execStatus?`<div class="exec-card live" aria-hidden="true"><div class="exec-head"><span class="exec-pulse"></span><div><strong>${state.mode==='OLYMPUS'?'Olympus is working':'Zeus is working'}</strong><div class="muted tiny">${esc(state.execStatus)}</div></div></div><div class="exec-foot">Live execution status — no simulated timings.</div></div>`:'';
+  const exec=state.execStatus?`<div class="exec-card live" aria-hidden="true"><div class="exec-head"><span class="exec-pulse"></span><div><strong>${esc(state.execTitle||'Zeus is working')}</strong><div class="muted tiny">${esc(state.execStatus)}</div></div></div><div class="exec-foot">Live execution status — no simulated timings.</div></div>`:'';
   return `<section class="page chat-page">
-    <div class="mode-strip" role="group" aria-label="Execution mode">
-      <button type="button" class="mode-card ${state.mode==='ZEUS'?'selected':''}" data-mode="ZEUS" aria-pressed="${state.mode==='ZEUS'}"><div class="mode-icon">${icon('auto')}</div><div><strong>Zeus <em>DEFAULT</em></strong><small>Fast execution<br>Lead model + bounded review.</small></div></button>
-      <button type="button" class="mode-card ${state.mode==='OLYMPUS'?'selected':''}" data-mode="OLYMPUS" aria-pressed="${state.mode==='OLYMPUS'}"><div class="mode-icon">${icon('globe')}</div><div><strong>Olympus <em>SPECIALIST</em></strong><small>Multi-specialist synthesis<br>Complex work. One final answer.</small></div></button>
-    </div>
-    <p class="mode-blurb">${state.mode==='ZEUS'?'Default for daily work: one lead, fallback when needed, and a bounded review on complex requests.':'For broad work: a small specialist team contributes in parallel and a Director produces one canonical answer.'}</p>
+    ${modeStrip()}
     <div class="chat-scroll" id="chat-scroll">
       ${isEmpty?`<div class="welcome"><div class="eyebrow">${state.currentProject?esc(state.currentProject.name):'ONE AI ENVIRONMENT. REAL RESULTS.'}</div><h1>Turn the request into a result.</h1><p>Attach the source, give the goal, and keep the conversation, files and deliverables together.</p><div class="quick-prompts"><button data-prompt="Analyze the attached file and ground every important claim in the source. Call out anything the source does not support.">Review a source</button><button data-prompt="Create the next professional deliverable for this work and keep it connected to the conversation.">Create a deliverable</button><button data-prompt="Build this as runnable code. Include focused tests and tell me clearly which tests were not actually executed.">Build with tests</button><button data-prompt="Turn this goal into a project plan with clear tasks, risks, and milestones.">Plan a project</button></div></div>`:`${state.messagePage?.hasMore?'<div class="history-more"><button class="secondary compact" id="load-older-messages">Load older messages</button></div>':''}<div class="message-list">${msgs}</div>`}
       ${exec}
@@ -273,7 +278,9 @@ function messageHtml(m){
   const attached=(m.attachments||[]).map(f=>`<span class="file-chip static">${icon('files')} ${esc(f.filename||f.name||'file')}</span>`).join('');
   const sources=safeSources(m);
   const sourceHtml=sources.length?`<div class="message-sources"><span>Sources</span><div>${sources.map((source,i)=>`<a href="${esc(source.url)}" target="_blank" rel="noreferrer noopener" title="${esc(source.title)}"><strong>${i+1}</strong><span>${esc(source.title)}</span></a>`).join('')}</div></div>`:'';
-  return `<article class="message ${m.role==='user'?'user':'assistant'}"><div class="message-label">${m.role==='user'?'YOU':esc(m.mode||state.mode)}</div><div class="message-body">${esc(m.content||'')}</div>${sourceHtml}${attached?`<div class="attachments in-message">${attached}</div>`:''}${artifacts?`<div class="artifact-row">${artifacts}</div>`:''}</article>`;
+  const lead=m.role==='assistant'&&m.metadata?.leadModel?String(m.metadata.leadModel).split(':').slice(1).join(':'):'';
+  const note=[m.metadata?.modeExplanation,lead,m.metadata?.fallback?'fallback':''].filter(Boolean).join(' · ');
+  return `<article class="message ${m.role==='user'?'user':'assistant'}"><div class="message-label">${m.role==='user'?'YOU':esc(m.mode||'ZEUS')}</div><div class="message-body">${esc(m.content||'')}</div>${note?`<div class="message-model">${esc(note)}</div>`:''}${sourceHtml}${attached?`<div class="attachments in-message">${attached}</div>`:''}${artifacts?`<div class="artifact-row">${artifacts}</div>`:''}</article>`;
 }
 function artifactCard(a){const tag=esc((a.type||'FILE').toUpperCase().slice(0,4));return `<div class="artifact-card"><div class="out-badge">${tag}</div><div><strong>${esc(a.filename||'OlyHub output')}</strong><small>${fmtSize(a.size)} · ${esc(a.mime_type||a.type||'Artifact')}</small></div><div class="artifact-actions"><a href="${esc(a.downloadUrl)}" target="_blank" rel="noopener">Open</a><a class="ghost-a" href="${esc(a.downloadUrl)}" download>Download</a></div></div>`}
 function voiceSupported(){
@@ -283,7 +290,7 @@ function composer(){
   const chips=state.attachedFiles.map(f=>`<span class="file-chip">${icon('files')} ${esc(f.filename)}<button type="button" data-remove-file="${esc(f.id)}" aria-label="Remove ${esc(f.filename)}" title="Remove attachment">${icon('close')}</button></span>`).join('');
   const showMic=voiceSupported();
   const scope=state.currentProject?`Project: ${esc(state.currentProject.name)}`:'This conversation';
-  return `<div class="composer-shell">${state.attachMenu?`<div class="attach-menu" role="menu" id="attach-menu" aria-label="Add attachment"><button type="button" role="menuitem" id="attach-media">${icon('image')}<span>Photo / Video</span></button><button type="button" role="menuitem" id="attach-camera">${icon('camera')}<span>Camera</span></button><button type="button" role="menuitem" id="attach-file">${icon('files')}<span>File</span></button></div>`:''}${chips?`<div class="attachments pending">${chips}</div>`:''}<form class="composer" id="composer"><button type="button" class="icon-btn attach-plus" id="attach" title="Add photo, video or file" aria-label="Add photo, video or file" aria-haspopup="menu" aria-expanded="${state.attachMenu}" ${state.attachMenu?'aria-controls="attach-menu"':''}>＋</button><textarea id="composer-text" rows="1" aria-label="Message ${state.mode==='ZEUS'?'Zeus':'Olympus'}" placeholder="Message ${state.mode==='ZEUS'?'Zeus':'Olympus'}…" ${state.sending?'disabled':''}>${esc(state.draft)}</textarea>${showMic?`<button type="button" class="icon-btn ${state.recording?'recording':''}" id="voice" title="${state.recording?'Stop recording':state.voiceBusy?'Transcribing…':'Voice input'}" aria-label="${state.recording?'Stop recording':state.voiceBusy?'Transcribing voice':'Voice input'}" ${state.voiceBusy?'disabled':''}>${icon('mic')}</button>`:''}<button type="submit" class="icon-btn send-btn" title="Send (Ctrl/⌘+Enter)" aria-label="Send message" ${state.sending?'disabled':''}>${icon('send')}</button></form><div class="composer-meta"><span>${state.currentProject?'Permanent Project chat · dedicated memory + files':'Conversation history available · no Project memory'}</span><span>Enter adds a new line · use the arrow to send</span></div></div>`;
+  return `<div class="composer-shell">${state.attachMenu?`<div class="attach-menu" role="menu" id="attach-menu" aria-label="Add attachment"><button type="button" role="menuitem" id="attach-media">${icon('image')}<span>Photo / Video</span></button><button type="button" role="menuitem" id="attach-camera">${icon('camera')}<span>Camera</span></button><button type="button" role="menuitem" id="attach-file">${icon('files')}<span>File</span></button></div>`:''}${chips?`<div class="attachments pending">${chips}</div>`:''}<form class="composer" id="composer"><button type="button" class="icon-btn attach-plus" id="attach" title="Add photo, video or file" aria-label="Add photo, video or file" aria-haspopup="menu" aria-expanded="${state.attachMenu}" ${state.attachMenu?'aria-controls="attach-menu"':''}>＋</button><textarea id="composer-text" rows="1" aria-label="Message Zeus" placeholder="Message Zeus…" ${state.sending?'disabled':''}>${esc(state.draft)}</textarea>${showMic?`<button type="button" class="icon-btn ${state.recording?'recording':''}" id="voice" title="${state.recording?'Stop recording':state.voiceBusy?'Transcribing…':'Voice input'}" aria-label="${state.recording?'Stop recording':state.voiceBusy?'Transcribing voice':'Voice input'}" ${state.voiceBusy?'disabled':''}>${icon('mic')}</button>`:''}<button type="submit" class="icon-btn send-btn" title="Send (Ctrl/⌘+Enter)" aria-label="Send message" ${state.sending?'disabled':''}>${icon('send')}</button></form><div class="composer-meta"><span>${state.currentProject?'Permanent Project chat · dedicated memory + files':'Conversation history available · no Project memory'}</span><span>Enter adds a new line · use the arrow to send</span></div></div>`;
 }
 
 function projectsView(){
@@ -339,7 +346,7 @@ function projectChatView(){
     <div class="project-chat-panel">
       <div class="project-chat-toolbar">
         <div><div class="eyebrow">PERMANENT PROJECT CHAT</div><strong>Everything here stays attached to ${esc(p.name)}</strong></div>
-        <div class="project-mode-toggle" role="group" aria-label="Execution mode"><button type="button" class="project-mode ${state.mode==='ZEUS'?'selected':''}" data-mode="ZEUS" aria-pressed="${state.mode==='ZEUS'}"><span aria-hidden="true">⚡</span> Zeus</button><button type="button" class="project-mode ${state.mode==='OLYMPUS'?'selected':''}" data-mode="OLYMPUS" aria-pressed="${state.mode==='OLYMPUS'}"><span aria-hidden="true">△</span> Olympus</button></div>
+        <div class="project-mode-toggle" aria-label="Execution mode"><span class="project-mode selected">${liveMode()==='OLYMPUS'?'Olympus':'Zeus'}</span></div>
       </div>
       <div class="project-context-ribbon">${icon('memory')} <span>Goal, tasks, project files, approved memory and conversation history are injected into every turn.</span></div>
       <div class="chat-scroll project-chat-scroll" id="chat-scroll">
@@ -489,7 +496,6 @@ function bind(){
   $('#chat-search')?.addEventListener('input',e=>{const q=e.target.value.toLowerCase();let shown=0;$$('.recent-item').forEach(x=>{const match=x.textContent.toLowerCase().includes(q);x.style.display=match?'block':'none';if(match)shown++;});$('#recent-empty')?.classList.toggle('hidden',!q||shown>0||!$$('.recent-item').length);});
   $$('[data-dismiss-error]').forEach(b=>b.addEventListener('click',dismissError));
   $$('[data-conv]').forEach(b=>b.addEventListener('click',()=>openConversation(b.dataset.conv)));
-  $$('[data-mode]').forEach(b=>b.addEventListener('click',()=>{state.mode=b.dataset.mode;render()}));
   $$('.quick-prompts button').forEach(b=>b.addEventListener('click',()=>{const t=$('#composer-text');if(!t)return;t.value=b.dataset.prompt;t.dispatchEvent(new Event('input',{bubbles:true}));t.focus()}));
   $('#composer')?.addEventListener('submit',sendMessage); const composerText=$('#composer-text');const sizeComposer=()=>{if(!composerText)return;composerText.style.height='auto';composerText.style.height=`${Math.min(160,Math.max(26,composerText.scrollHeight))}px`;};composerText?.addEventListener('input',()=>{state.draft=composerText.value;sizeComposer();});composerText?.addEventListener('keydown',e=>{if(e.key==='Enter'&&(e.metaKey||e.ctrlKey)){e.preventDefault();$('#composer')?.requestSubmit();}});if(composerText?.value)sizeComposer();
   $('#attach')?.addEventListener('click',()=>{state.attachMenu=!state.attachMenu;render();if(state.attachMenu)requestAnimationFrame(()=>$('#attach-media')?.focus());}); $('#upload-files')?.addEventListener('click',()=>$('#global-file-input').click());
@@ -598,37 +604,67 @@ async function sendMessage(e){
   if(!text||state.sending)return;
   await sendText(text,[...state.attachedFiles]);
 }
+async function pollForReply(conversationId, executionId){
+  const deadline=Date.now()+180000;
+  while(Date.now()<deadline){
+    await new Promise(r=>setTimeout(r,2000));
+    const page=await api(`/api/chat?conversationId=${encodeURIComponent(conversationId)}&limit=30`);
+    const assistant=(page.messages||[]).find(m=>m.role==='assistant'&&m.execution_id===executionId);
+    if(assistant)return {page,assistant};
+    const userRow=(page.messages||[]).find(m=>m.role==='user'&&m.execution_id===executionId);
+    if(userRow?.metadata?.failed)throw apiError('Olympus could not finish that request. Tap Retry.',503,'AI_EXECUTION_FAILED');
+    state.execStatus='Olympus is still writing one answer…';
+    render();
+  }
+  throw apiError('Olympus is still working. Wait a moment, then tap Retry to collect the reply.',503,'REQUEST_IN_PROGRESS');
+}
 async function sendText(text,pendingAttachments=[],requestId=crypto.randomUUID()){
   if(!text||state.sending)return;
   const pending=[...(pendingAttachments||[])];
-  const optimistic={id:crypto.randomUUID(),role:'user',mode:state.mode,content:text,artifacts:[],attachments:pending};
+  const optimistic={id:crypto.randomUUID(),role:'user',mode:'ZEUS',content:text,artifacts:[],attachments:pending};
   state.messages.push(optimistic);
   state.attachedFiles=[];state.draft='';
   state.sending=true;state.error='';state.lastFailedText='';state.lastFailedMessageId=null;state.lastFailedAttachments=[];state.lastFailedRequestId=null;
-  state.execStatus=state.mode==='OLYMPUS'?'Assembling the Olympus team…':'Executing your request…';render();
+  state.execTitle='Zeus is working';
+  state.execStatus='Choosing the model for this request…';render();
   const timer=setTimeout(()=>{
-    state.execStatus=state.mode==='OLYMPUS'?'Specialists working — Director review next…':'Selecting intelligence, tools and execution path…';render();
+    if(!state.sending)return;
+    state.execStatus=state.activeMode==='OLYMPUS'?'Olympus is drafting, then writing one answer…':'Running the selected model…';render();
   },1400);
   try{
     const d=await api('/api/chat',{method:'POST',body:JSON.stringify({
       conversationId:state.currentConversation,
       projectId:state.currentProject?.id||null,
-      mode:state.mode,
       content:text,
       fileIds:pending.map(f=>f.id),
       requestId
     }),requestId});
     state.currentConversation=d.conversationId;
+    if(d.mode)state.activeMode=d.mode;
+    state.execTitle=d.mode==='OLYMPUS'?'Olympus is working':'Zeus is working';
+    if(d.modeExplanation)state.execStatus=d.modeExplanation;
     history.replaceState({},'',state.currentProject?.id?`/?project=${encodeURIComponent(state.currentProject.id)}`:`/?conversation=${encodeURIComponent(d.conversationId)}`);
     if(d.userMessage){
       const idx=state.messages.findIndex(m=>m.id===optimistic.id);
       if(idx>=0)state.messages[idx]={...d.userMessage,attachments:pending,artifacts:[]};
     }
-    if(d.message)state.messages.push({...d.message,artifacts:d.artifacts||[]});
+    let assistant=d.message||null;
+    if(d.pending){
+      state.execTitle='Olympus is working';
+      state.execStatus=d.modeExplanation||'Olympus is drafting, then writing one answer…';
+      render();
+      const polled=await pollForReply(d.conversationId,d.execution?.id);
+      assistant=polled.assistant;
+      if(assistant?.mode)state.activeMode=assistant.mode;
+    }
+    if(assistant){
+      if(assistant.mode)state.activeMode=assistant.mode;
+      state.messages.push({...assistant,artifacts:d.artifacts||assistant.artifacts||[]});
+    }
     state.execStatus='Completed';
     const scopeProjectId=state.currentProject?.id||null;
     await Promise.allSettled([loadConversations(),loadFiles(scopeProjectId),loadArtifacts(scopeProjectId),loadProjects()]);
-    setTimeout(()=>{if(state.execStatus==='Completed'&&!state.sending){state.execStatus='';render();}},900);
+    setTimeout(()=>{if(state.execStatus==='Completed'&&!state.sending){state.execStatus='';state.execTitle='';render();}},900);
   }catch(err){
     if(err?.code==='REQUEST_IN_PROGRESS'){
       if(err.data?.conversationId&&!state.currentConversation)state.currentConversation=err.data.conversationId;

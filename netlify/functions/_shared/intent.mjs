@@ -58,3 +58,51 @@ export function classifyIntent(text = '', { hasImage = false, hasFiles = false }
 
   return { action: 'CHAT', artifactType: null, reason: 'default_chat' };
 }
+
+const WORKSTREAMS = [
+  ['security', /\b(security|secure|auth(?:entication)?|oauth|privacy|gdpr|encryption|vulnerabilit|seguranca|autenticacao|privacidade|criptografia)\b/i],
+  ['architecture', /\b(architecture|architect|system design|schema|data model|arquitetura|modelo de dados)\b/i],
+  ['implementation', /\b(implement|code|coding|api|database|backend|refactor|debug|bug|codigo|banco de dados|implementar|depurar)\b/i],
+  ['interface', /\b(ui|ux|user interface|frontend|front-end|layout|screens?|wireframe|tela|telas|interface)\b/i],
+  ['research', /\b(research|compare|comparison|market|competitors|benchmark|pesquisa|comparar|mercado|concorrentes)\b/i],
+  ['writing', /\b(write|rewrite|essay|email|copywriting|story|book|blog|escreva|reescreva|historia|e-?mail)\b/i],
+];
+
+const FORCE_FAST = /\b(quick|quickly|briefly|short answer|just answer|one model|zeus only|be brief|rapido|resposta curta|so responde|sem time|direto ao ponto)\b/i;
+const FORCE_TEAM = /\b(olympus|specialist team|use the team|full team|think harder|go deep|vai fundo|time de especialistas|modo olympus|usa o time)\b/i;
+const BUILD = /\b(build|design|architect|plan|audit|ship|create|develop|construir|projetar|auditar|planejar|planeje)\b/i;
+
+function workstreamsIn(text = '') {
+  const found = [];
+  for (const [name, re] of WORKSTREAMS) if (re.test(text)) found.push(name);
+  return found;
+}
+
+// Zeus is the default. Olympus is only for a request that really crosses kinds of work,
+// or when you explicitly ask for the team. Length alone never promotes a turn.
+export function decideExecutionMode(text = '', { action = 'CHAT' } = {}) {
+  const value = normalize(String(text || ''));
+  const streams = workstreamsIn(value);
+  if (action === 'IMAGE_CREATE' || action === 'IMAGE_EDIT') {
+    return { mode: 'ZEUS', reason: 'image_is_one_model', workstreams: streams };
+  }
+  if (FORCE_FAST.test(value)) return { mode: 'ZEUS', reason: 'you_asked_for_a_direct_answer', workstreams: streams };
+  if (FORCE_TEAM.test(value)) return { mode: 'OLYMPUS', reason: 'you_asked_for_the_team', workstreams: streams };
+  const broadBuild = streams.length >= 3 && (value.length > 80 || BUILD.test(value));
+  const longCross = streams.length >= 2 && value.length > 360;
+  if (broadBuild || longCross) return { mode: 'OLYMPUS', reason: `spans_${streams.slice(0, 3).join('_')}`, workstreams: streams };
+  return { mode: 'ZEUS', reason: streams.length ? 'one_kind_of_work' : 'ordinary_turn', workstreams: streams };
+}
+
+export function explainExecutionMode(decision = {}) {
+  if (decision.mode !== 'OLYMPUS') {
+    if (decision.reason === 'you_asked_for_a_direct_answer') return 'Direct answer, one model.';
+    if (decision.reason === 'image_is_one_model') return 'Image work, one model.';
+    return 'One model is enough for this.';
+  }
+  if (decision.reason === 'you_asked_for_the_team') return 'You asked for the team. Olympus drafts, then one answer.';
+  const names = (decision.workstreams || []).slice(0, 3).join(', ');
+  return names
+    ? `This spans ${names}. Olympus drafts those parts, then one answer.`
+    : 'This is broad. Olympus drafts it, then one answer.';
+}

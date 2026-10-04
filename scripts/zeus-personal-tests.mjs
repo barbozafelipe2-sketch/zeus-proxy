@@ -9,7 +9,7 @@ const models=readFileSync('netlify/functions/_shared/models.mjs','utf8');
 const chat=readFileSync('netlify/functions/chat.mjs','utf8');
 const health=readFileSync('netlify/functions/health.mjs','utf8');
 
-assert.ok(app.includes('data-mode="ZEUS"')&&app.includes('data-mode="OLYMPUS"'),'Zeus/Olympus modes missing');
+assert.ok(app.includes('activeMode')&&app.includes('Zeus chooses'),'automatic Zeus/Olympus display missing');
 assert.ok(!/data-mode=["'](?:OPENAI|CLAUDE|GEMINI|GOOGLE)/i.test(app),'direct provider mode leaked into UI');
 assert.ok(app.includes('id="hamburger" aria-label="Open navigation" title="Navigation">${icon(\'menu\')}</button>')&&app.includes("['Home','home'],['Projects','projects']"),'simplified menu navigation with Projects missing');
 assert.ok(app.includes('PERMANENT PROJECT CHAT'),'permanent Project chat missing');
@@ -30,8 +30,8 @@ assert.equal(shouldSearchWeb('What is the current price and release status?'),tr
 assert.equal(shouldSearchWeb('Write a short poem about rain'),false,'ordinary writing should not trigger paid web search');
 assert.ok(app.includes("$('#voice')?.addEventListener('click',startVoice)"),'voice input missing');
 assert.ok(models.includes("'gpt-5.6-sol'")&&models.includes("'gpt-5.6-luna'")&&models.includes("'gpt-5'")&&models.includes("'gpt-4.1-mini'"),'OpenAI model chain incomplete');
-assert.ok(models.includes('shouldAdvanceOpenAIModel')&&models.includes('buildFallbackOrder'),'OpenAI same-provider fallback missing');
-assert.ok(models.includes("if (model.provider === 'openai' && !shouldAdvanceOpenAIModel(error)) break"),'OpenAI anti-blind-retry guard missing');
+assert.ok(models.includes('shouldAdvanceOpenAIModel')&&models.includes('buildFallbackOrder')&&models.includes('blockedProviders'),'provider fallback missing');
+assert.ok(models.includes('if (!shouldAdvanceOpenAIModel(error)) blockedProviders.add(model.provider)'),'fatal provider errors must skip that provider only');
 const ranked=[
   {id:'claude-sonnet',provider:'anthropic'},
   {id:'gpt-5.6-sol',provider:'openai'},
@@ -39,9 +39,9 @@ const ranked=[
   {id:'gemini',provider:'gemini'},
   {id:'gpt-5.6-luna',provider:'openai'},
 ];
-assert.deepEqual(buildFallbackOrder(ranked,4).map(x=>x.id),['claude-sonnet','gpt-5.6-sol','gpt-5.6-terra','gpt-5.6-luna'],'selected non-OpenAI provider must fall into the OpenAI model chain');
+assert.deepEqual(buildFallbackOrder(ranked,4).map(x=>x.id),['claude-sonnet','gpt-5.6-sol','gpt-5.6-terra','gemini'],'fallback must keep route order instead of collapsing onto OpenAI');
 const openaiFirst=[ranked[1],ranked[2],ranked[0],ranked[4]];
-assert.deepEqual(buildFallbackOrder(openaiFirst,4).map(x=>x.id),['gpt-5.6-sol','gpt-5.6-terra','gpt-5.6-luna'],'OpenAI must stay inside OpenAI for model fallback');
+assert.deepEqual(buildFallbackOrder(openaiFirst,4).map(x=>x.id),['gpt-5.6-sol','gpt-5.6-terra','claude-sonnet','gpt-5.6-luna'],'a GPT lead must still be allowed to fall through to another provider');
 assert.equal(shouldAdvanceOpenAIModel(Object.assign(new Error('model unavailable'),{status:404})),true,'404 model availability should advance OpenAI model');
 assert.equal(shouldAdvanceOpenAIModel(Object.assign(new Error('temporary upstream'),{status:503})),true,'transient provider errors may advance OpenAI model');
 assert.equal(shouldAdvanceOpenAIModel(Object.assign(new Error('invalid request'),{status:400})),false,'invalid requests must not burn another model');

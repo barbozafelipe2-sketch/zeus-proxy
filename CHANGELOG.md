@@ -1,5 +1,12 @@
 # Zeus Proxy Personal Recovery
 
+## OH-004.3.4-router — 2026-10-03
+- Zeus chooses Zeus or Olympus per message. The chat shows the active mode; there is no mode picker.
+- Simple turns prefer Gemini Flash. Coding prefers DeepSeek, writing and hard work prefer Claude, research prefers Grok. GPT is fallback only.
+- A fatal provider error skips that provider and continues. Conversation history is sent as real turns, not one pasted transcript.
+- Web research also runs when the deliverable is a file. Olympus model work can run in a Netlify background function.
+
+
 ## OH-004.3.4-personal polish — 2026-10-03
 - Access key persists in `localStorage` as `olyhub.zeusproxy.access.v3` (legacy v2 keys migrate automatically); build verifier and tests updated to match.
 - Accessibility: landmarks, labels, ARIA state, skip link, live region, focus preservation, `Escape` handling, focus ring, reduced motion and AA text contrast.

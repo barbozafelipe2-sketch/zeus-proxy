@@ -33,11 +33,9 @@ Do not expose the access token through client-visible environment variables.
 
 Provider API keys/base URLs are expected to be supplied by Netlify AI Gateway. Do not add manual provider keys unless intentionally overriding the gateway. Explicit/current-information requests can use the same Gateway-backed OpenAI Responses endpoint for live web research.
 
-### Anti-failure model policy
+Zeus picks the execution mode. Ordinary and single-skill requests stay on one model. A request that crosses several kinds of work, or an explicit ask for the team, runs Olympus in the background. The top of the chat shows which mode is in use.
 
-OpenAI is not a single-model point of failure. Zeus uses a bounded same-provider OpenAI chain; an unavailable OpenAI model can advance to another compatible OpenAI model. A selected Claude/Gemini route can fall into the OpenAI chain when appropriate. OpenAI itself does **not** silently jump to Claude/Gemini.
-
-Retries are intentionally blocked for authentication, billing/quota, rate-limit, invalid-request, context-length and content-policy failures so the app does not burn credits repeating a request that cannot succeed.
+Simple replies prefer Gemini Flash. Coding prefers DeepSeek, writing and hard work prefer Claude, research prefers Grok. GPT models are fallbacks, not the default. A fatal error (auth, billing, rate limit, bad request) skips the rest of that provider and tries the next one. Transient failures and missing model ids still walk the route.
 
 ## UX invariants
 

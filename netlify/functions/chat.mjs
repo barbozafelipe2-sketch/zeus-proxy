@@ -5,7 +5,7 @@ import { stageArtifact, stageBinaryArtifact, discardStagedArtifact } from './_sh
 import { blobStore } from './_shared/blob.mjs';
 import { withTransaction } from './_shared/db.mjs';
 import { resolveOwnedScope } from './_shared/relations.mjs';
-import { classifyIntent } from './_shared/intent.mjs';
+import { classifyIntent, decideExecutionMode, explainExecutionMode } from './_shared/intent.mjs';
 import { redactSecrets } from './_shared/security.mjs';
 import { assembleContext, relevanceScore } from './_shared/context.mjs';
 import { createExecutionBudget, CHAT_TIMEOUT_MS, CHAT_WEB_TIMEOUT_MS, STALE_EXECUTION_MS } from './_shared/runtime.mjs';
@@ -52,7 +52,7 @@ function normalizedIds(value){return [...new Set((Array.isArray(value)?value:[])
 function sameIds(a,b){const aa=normalizedIds(a).sort(),bb=normalizedIds(b).sort();return aa.length===bb.length&&aa.every((v,i)=>v===bb[i]);}
 
 async function buildContext({db,userId,projectId,conversationId,currentMessageId,currentText,attachmentRows=[]}){
-  let identity='',tasksText='',memoriesText='',historyText='',projectFilesText='';
+  let identity='',tasksText='',memoriesText='',projectFilesText='';
   if(projectId){
     const projects=await db.sql`SELECT id,name,description,goal,status,progress FROM projects WHERE id=${projectId} AND owner_id=${userId}`;
     if(projects.length){const p=projects[0];identity=`Name: ${p.name}\nGoal: ${p.goal||'[not set]'}\nDescription: ${p.description||'[not set]'}\nStatus: ${p.status}\nProgress: ${p.progress}%`;}
@@ -71,16 +71,25 @@ async function buildContext({db,userId,projectId,conversationId,currentMessageId
     if(relevant.length)projectFilesText=relevant.map(f=>`PROJECT FILE: ${f.filename} (${f.mime_type})\n${clip(f.extracted_text||'[No text extraction available]',6500)}`).join('\n\n');
   }
 
+  const history=[];
   if(conversationId){
-    const history=await db.sql`SELECT role,mode,content,created_at FROM messages WHERE conversation_id=${conversationId} AND owner_id=${userId} AND id<>${currentMessageId} AND COALESCE(metadata->>'failed','false')<>'true' ORDER BY created_at DESC LIMIT 30`;
-    if(history.length){history.reverse();historyText=history.map(m=>`${m.role.toUpperCase()}${m.mode?` [${m.mode}]`:''}: ${clip(m.content,5000)}`).join('\n\n');}
+    const rows=await db.sql`SELECT role,mode,content,created_at FROM messages WHERE conversation_id=${conversationId} AND owner_id=${userId} AND id<>${currentMessageId} AND COALESCE(metadata->>'failed','false')<>'true' ORDER BY created_at DESC LIMIT 30`;
+    rows.reverse();
+    let chars=0;
+    for(const m of rows){
+      if(m.role!=='user'&&m.role!=='assistant')continue;
+      const content=clip(m.content,4000);
+      if(chars+content.length>18000)break;
+      history.push({role:m.role,content});
+      chars+=content.length;
+    }
   }
 
   const attachmentsText=attachmentRows.length
     ? attachmentRows.map(f=>`FILE: ${f.filename} (${f.mime_type})\n${queryAwareExcerpt(f.extracted_text||'[No text extraction available for this file type.]',currentText,18000)}`).join('\n\n')
     : '';
 
-  return assembleContext({attachments:attachmentsText,memories:memoriesText,history:historyText,identity,tasks:tasksText,projectFiles:projectFilesText,maxChars:90000});
+  return {context:assembleContext({attachments:attachmentsText,memories:memoriesText,history:'',identity,tasks:tasksText,projectFiles:projectFilesText,maxChars:90000}),history};
 }
 
 async function canonicalConversation(db,userId,projectId,title){
@@ -127,7 +136,7 @@ async function loadVisionInputs(attachmentRows){
   return {images,skipped};
 }
 
-async function initializeTurn({db,userId,conversationId,projectId,mode,content,fileIds,requestId}){
+async function initializeTurn({db,userId,conversationId,projectId,mode,content,fileIds,requestId,worker=false}){
   return withTransaction(db,async(client)=>{
     await guardAiExecution(client,userId,mode,requestId);
     const inserted=await client.query(
@@ -158,7 +167,8 @@ async function initializeTurn({db,userId,conversationId,projectId,mode,content,f
     // A run killed by the platform timeout never reaches FAILED; once it is older than any possible
     // live run, let Retry (same request id) restart it instead of reporting 'already running' forever.
     const orphaned=existing.started_at&&Date.now()-new Date(existing.started_at).getTime()>STALE_EXECUTION_MS;
-    if(existing.state!=='FAILED'&&existing.state!=='CANCELLED'&&!orphaned)return {kind:'in_progress',execution:existing,userMessage:prior};
+    const resumable=worker&&['QUEUED','UNDERSTANDING','RUNNING'].includes(existing.state);
+    if(existing.state!=='FAILED'&&existing.state!=='CANCELLED'&&!orphaned&&!resumable)return {kind:'in_progress',execution:existing,userMessage:prior};
 
     await client.query(`UPDATE executions SET state='UNDERSTANDING',error_code=NULL,trace='{}'::jsonb,completed_at=NULL,lead_model=NULL,started_at=now() WHERE id=$1 AND owner_id=$2`,[existing.id,userId]);
     if(prior)await client.query(`UPDATE messages SET metadata=COALESCE(metadata,'{}'::jsonb)-'failed' WHERE id=$1 AND owner_id=$2`,[prior.id,userId]);
@@ -195,12 +205,31 @@ async function finalizeTurn({db,userId,projectId,conversationId,execution,mode,r
     await client.query(`UPDATE executions SET state='SAVING',lead_model=$1,trace=$2::jsonb WHERE id=$3 AND owner_id=$4`,[result.leadModel||null,JSON.stringify(result.trace||{}),execution.id,userId]);
     const assistant=(await client.query(
       `INSERT INTO messages(owner_id,conversation_id,execution_id,role,mode,content,metadata) VALUES($1,$2,$3,'assistant',$4,$5,$6::jsonb) RETURNING id,role,mode,content,metadata,created_at`,
-      [userId,conversationId,execution.id,mode,result.content,JSON.stringify({artifacts:artifacts.map(a=>a.id),sources:Array.isArray(result.sources)?result.sources.slice(0,12):[],capabilities:Array.isArray(result.capabilities)?result.capabilities:[]})]
+      [userId,conversationId,execution.id,mode,result.content,JSON.stringify({artifacts:artifacts.map(a=>a.id),sources:Array.isArray(result.sources)?result.sources.slice(0,12):[],capabilities:Array.isArray(result.capabilities)?result.capabilities:[],leadModel:result.leadModel||null,fallback:Array.isArray(result.trace?.fallbacks)&&result.trace.fallbacks.length>0,modeExplanation:result.modeExplanation||null})]
     )).rows[0];
     await client.query(`UPDATE executions SET state='COMPLETED',completed_at=now() WHERE id=$1 AND owner_id=$2`,[execution.id,userId]);
     await client.query(`UPDATE conversations SET updated_at=now() WHERE id=$1 AND owner_id=$2`,[conversationId,userId]);
     return {assistant,artifacts};
   });
+}
+
+async function dispatchOlympus(req, payload){
+  try{
+    const url=new URL('/api/olympus-background', req.url);
+    const res=await fetch(url,{
+      method:'POST',
+      headers:{
+        'content-type':'application/json',
+        'x-zeus-access-token':req.headers.get('x-zeus-access-token')||'',
+        'x-olyhub-request-id':payload.requestId,
+      },
+      body:JSON.stringify(payload),
+      signal:AbortSignal.timeout(4000),
+    });
+    return res.status===202||res.ok;
+  }catch{
+    return false;
+  }
 }
 
 async function chatHandler(req, context, startedAt){
@@ -228,10 +257,10 @@ async function chatHandler(req, context, startedAt){
   if(req.method!=='POST')return errorJson('Method not allowed.',405,'METHOD_NOT_ALLOWED',requestIdFromHeader);
   const body=await readJson(req);if(!body)return errorJson('Invalid JSON.',400,'INVALID_JSON',requestIdFromHeader);
   const requestId=getRequestId(req,context,body.requestId);
+  const worker=req.headers.get('x-olympus-execute')==='1';
   const content=cleanText(body.content,40000); if(!content)return errorJson('Message is required.',400,'MESSAGE_REQUIRED',requestId);
   const modelText=redactSecrets(content);
   const secretsRedacted=modelText!==content;
-  const mode=body.mode==='OLYMPUS'?'OLYMPUS':'ZEUS';
   let projectId=body.projectId||null, conversationId=body.conversationId||null;
   const scope=await resolveOwnedScope(db,user.id,{projectId,conversationId});
   if(scope.error)return errorJson(scope.error.message,scope.error.status,scope.error.code,requestId);
@@ -248,16 +277,26 @@ async function chatHandler(req, context, startedAt){
   const attachmentRows=await validateAttachedFiles(db,user.id,projectId,fileIds);
   const hasImage=attachmentRows.some(r=>(r.mime_type||'').startsWith('image/'));
   const intent=classifyIntent(content,{hasImage,hasFiles:attachmentRows.length>0});
+  const decision=decideExecutionMode(modelText,{action:intent.action});
+  const mode=decision.mode;
+  const modeExplanation=explainExecutionMode(decision);
 
   let init=null;
   const stagedArtifacts=[];
   let executionBudget=null;
   try{
-    init=await initializeTurn({db,userId:user.id,conversationId,projectId,mode,content,fileIds,requestId});
+    init=await initializeTurn({db,userId:user.id,conversationId,projectId,mode,content,fileIds,requestId,worker});
     if(init.kind==='replay')return replayCompleted(db,user.id,conversationId,init.execution,init.userMessage,requestId);
     if(init.kind==='in_progress')return errorJson('This request is already running.',409,'REQUEST_IN_PROGRESS',requestId,{conversationId,executionId:init.execution.id});
+    if(mode==='OLYMPUS'&&!worker){
+      await db.sql`UPDATE executions SET state='QUEUED' WHERE id=${init.execution.id} AND owner_id=${user.id}`;
+      const dispatched=await dispatchOlympus(req,{...body,content,conversationId,projectId,mode,requestId,fileIds});
+      if(dispatched)return json({pending:true,mode,modeExplanation,conversationId,userMessage:init.userMessage,execution:{id:init.execution.id,state:'QUEUED'},requestId,replayed:false},202);
+      await db.sql`UPDATE executions SET state='UNDERSTANDING' WHERE id=${init.execution.id} AND owner_id=${user.id}`;
+    }
     const execution=init.execution,userMessage=init.userMessage;
-    const aiContext=await buildContext({db,userId:user.id,projectId,conversationId,currentMessageId:userMessage.id,currentText:modelText,attachmentRows});
+    const built=await buildContext({db,userId:user.id,projectId,conversationId,currentMessageId:userMessage.id,currentText:modelText,attachmentRows});
+    const aiContext=built.context,history=built.history;
 
     if(projectId && explicitMemoryIntent(content)){
       const memoryContent=redactSecrets(content);
@@ -265,9 +304,10 @@ async function chatHandler(req, context, startedAt){
       if(!exists.length)await db.sql`INSERT INTO memories(owner_id,project_id,type,content,source,confidence,approved) VALUES(${user.id},${projectId},'explicit_instruction',${clip(memoryContent,4000)},${`conversation:${conversationId}`},100,true)`;
     }
 
-    const webIntent=intent.action==='CHAT'&&shouldSearchWeb(modelText);
+    const webIntent=shouldSearchWeb(modelText)&&intent.action!=='IMAGE_CREATE'&&intent.action!=='IMAGE_EDIT';
     const maxCalls=(intent.action==='IMAGE_CREATE'||intent.action==='IMAGE_EDIT'?3:(mode==='OLYMPUS'?7:6))+(webIntent?1:0);
-    executionBudget=createExecutionBudget({startedAt,timeoutMs:webIntent?CHAT_WEB_TIMEOUT_MS:CHAT_TIMEOUT_MS,maxCalls,reserveMs:6500});
+    const timeoutMs=worker?150000:(webIntent?CHAT_WEB_TIMEOUT_MS:CHAT_TIMEOUT_MS);
+    executionBudget=createExecutionBudget({startedAt,timeoutMs,maxCalls,reserveMs:6500});
     const vision=hasImage?await loadVisionInputs(attachmentRows):{images:[],skipped:[]};
     const web=webIntent?await runWebSearch(modelText,{budget:executionBudget,reserveAfterMs:mode==='OLYMPUS'?17000:12000}):{requested:false,context:'',sources:[],trace:null};
     const enrichedContext=`${aiContext}${web.context||''}`;
@@ -289,14 +329,14 @@ async function chatHandler(req, context, startedAt){
     }else{
       await db.sql`UPDATE executions SET state='RUNNING' WHERE id=${execution.id} AND owner_id=${user.id}`;
       if(mode==='OLYMPUS'){
-        try{result=await runOlympus({text:modelText,context:enrichedContext,images:vision.images,budget:executionBudget});}
+        try{result=await runOlympus({text:modelText,context:enrichedContext,images:vision.images,history,budget:executionBudget});}
         catch(olympusError){
           if(!executionBudget.canCall())throw olympusError;
-          const fallback=await runZeus({text:modelText,context:enrichedContext,images:vision.images,budget:executionBudget});
+          const fallback=await runZeus({text:modelText,context:enrichedContext,images:vision.images,history,budget:executionBudget});
           fallback.trace={...(fallback.trace||{}),olympusFallback:String(olympusError?.message||olympusError).slice(0,220)};
           result=fallback;
         }
-      }else result=await runZeus({text:modelText,context:enrichedContext,images:vision.images,budget:executionBudget});
+      }else result=await runZeus({text:modelText,context:enrichedContext,images:vision.images,history,budget:executionBudget});
       if(intent.action==='ARTIFACT_CREATE'&&intent.artifactType){
         try{
           stagedArtifacts.push(await stageArtifact({ownerId:user.id,type:intent.artifactType,title:titleFrom(content),content:result.content,metadata:{title:titleFrom(content),intent:intent.reason}}));
@@ -311,7 +351,8 @@ async function chatHandler(req, context, startedAt){
 
     result.sources=web.sources||[];
     result.capabilities=web.trace?[web.trace]:[];
-    result.trace={...(result.trace||{}),intent,secretsRedacted,visionSkipped:vision.skipped,webSearch:web.trace||null};
+    result.trace={...(result.trace||{}),intent,modeDecision:decision,secretsRedacted,visionSkipped:vision.skipped,webSearch:web.trace||null};
+    result.modeExplanation=modeExplanation;
     const final=await finalizeTurn({db,userId:user.id,projectId,conversationId,execution,mode,result,stagedArtifacts});
     return json({conversationId,message:final.assistant,userMessage,artifacts:final.artifacts,execution:{id:execution.id,state:'COMPLETED'},requestId,replayed:false});
   }catch(error){
@@ -326,12 +367,13 @@ async function chatHandler(req, context, startedAt){
   }
 }
 
-export default async (req, context) => {
+export async function runChatRequest(req, context) {
   const startedAt=Date.now();
   const requestId=getRequestId(req,context,null);
   try{return await chatHandler(req,context,startedAt);}catch(error){
     console.error('Unhandled OlyHub chat failure',requestId,error?.stack||error?.message||error);
     return errorJson('OlyHub could not complete the request because the runtime failed before a safe response was produced.',500,'RUNTIME_FAILURE',requestId);
   }
-};
+}
+export default runChatRequest;
 export const config={path:'/api/chat'};
