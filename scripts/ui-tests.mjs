@@ -19,3 +19,6 @@ const must=[
 for(const [haystack,needle,label] of must){if(typeof haystack==='boolean'){if(haystack!==needle)throw new Error(`Missing ${label}`)}else if(!String(haystack).includes(needle))throw new Error(`Missing ${label}`)}
 if(/Open in Zeus|Open in Olympus/.test(app))throw new Error('Project UI regressed to Home launcher buttons');
 console.log('OH-004.3.x UI regression tests: PASS');
+
+if(!app.includes("activeMode:null"))throw new Error('execution mode state must not pin old chats to Zeus');
+if(!app.includes('syncActiveModeFromMessages'))throw new Error('loaded chats must restore their actual last execution mode');

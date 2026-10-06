@@ -133,3 +133,7 @@ assert.ok(chat.includes("olympusDispatchFallback=true"),'Olympus dispatch failur
 assert.ok(chat.includes('loadSharedProviderBlocks'),'shared fatal provider health must influence routing');
 assert.ok(app.includes('PRIVATE_BLOB_CACHE_MAX=16'),'private preview Blob URLs need a bounded LRU');
 assert.ok(app.includes('sampleVideoFrames'),'video picker must produce honest sampled visual frames');
+
+assert.ok(app.includes('waitMs=Math.min(5500'),'Olympus polling must back off instead of hitting the API every two seconds for three minutes');
+assert.ok(app.includes('assistant:{...assistant,artifacts}'),'background artifacts must appear inline when Olympus finishes');
+assert.ok(app.includes('await Promise.allSettled([loadConversations(),loadProjects()])'),'chat completion should not reload the whole file library on every turn');

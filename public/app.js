@@ -4,7 +4,7 @@ const app = $('#app');
 
 const state = {
   user:null, token:null, refreshToken:null, authReady:false, accessKey:'', attachMenu:false,
-  tab:'Home', mode:'ZEUS', activeMode:'ZEUS', drawer:false,
+  tab:'Home', mode:'ZEUS', activeMode:null, drawer:false,
   conversations:[], currentConversation:null, messages:[], chatArtifacts:[], sending:false, execStatus:'', error:'',
   attachedFiles:[], projects:[], projectFilter:'ALL', currentProject:null, tasks:[],
   files:[], artifacts:[], health:null, recording:false,
@@ -276,10 +276,11 @@ function topbar(){
   </header>`;
 }
 
-function liveMode(){
-  const last=[...state.messages].reverse().find(m=>m.role==='assistant'&&(m.mode==='OLYMPUS'||m.mode==='ZEUS'));
-  return state.activeMode||last?.mode||'ZEUS';
+function lastReplyMode(messages=state.messages){
+  return [...(messages||[])].reverse().find(m=>m.role==='assistant'&&(m.mode==='OLYMPUS'||m.mode==='ZEUS'))?.mode||null;
 }
+function syncActiveModeFromMessages(){state.activeMode=lastReplyMode()||null;}
+function liveMode(){return state.activeMode||lastReplyMode()||'ZEUS';}
 function modeStrip(){
   const olympus=liveMode()==='OLYMPUS';
   return `<div class="mode-strip" role="status" aria-live="polite" aria-label="Execution mode"><div class="mode-card selected"><div class="mode-icon">${icon(olympus?'globe':'auto')}</div><div><strong>${olympus?'Olympus':'Zeus'} <em>${olympus?'TEAM':'AUTHOR'}</em></strong><small>${olympus?'Two scoped specialists · Director · adversarial audit.':'Zeus chooses one author; important work is independently verified.'}</small></div></div></div>`;
@@ -517,7 +518,7 @@ function bind(){
   $$('[data-tab]').forEach(b=>b.addEventListener('click',async()=>{
     const next=b.dataset.tab;state.drawer=false;
     if(next==='Home' && state.currentProject){
-      state.currentProject=null;state.currentConversation=null;state.messages=[];state.chatArtifacts=[];state.attachedFiles=[];state.error='';
+      state.currentProject=null;state.currentConversation=null;state.messages=[];state.chatArtifacts=[];state.attachedFiles=[];state.activeMode=null;state.error='';
       history.replaceState({},'',location.pathname);
     }
     state.tab=next;
@@ -556,13 +557,13 @@ function bind(){
   $$('[data-project]').forEach(b=>{b.addEventListener('click',()=>openProjectWorkspace(b.dataset.project));b.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();openProjectWorkspace(b.dataset.project);}});});
   $$('[data-project-section]').forEach(b=>b.addEventListener('click',async()=>{state.projectSection=b.dataset.projectSection;try{if(state.projectSection==='MEMORY'&&state.currentProject)await loadMemories(state.currentProject.id);}catch(err){state.error=err?.message||'Could not load project memory.';}render();resetViewport()}));
   $('#edit-project')?.addEventListener('click',projectEditModal);
-  $('#back-projects')?.addEventListener('click',async()=>{state.currentProject=null;state.currentConversation=null;state.messages=[];state.chatArtifacts=[];state.attachedFiles=[];state.projectMemories=[];state.memoryPolicy=null;state.projectSection='CHAT';state.messagePage={hasMore:false,nextCursor:null};state.tasks=[];state.error='';history.replaceState({},'',location.pathname);render()});
+  $('#back-projects')?.addEventListener('click',async()=>{state.currentProject=null;state.currentConversation=null;state.messages=[];state.chatArtifacts=[];state.attachedFiles=[];state.activeMode=null;state.projectMemories=[];state.memoryPolicy=null;state.projectSection='CHAT';state.messagePage={hasMore:false,nextCursor:null};state.tasks=[];state.error='';history.replaceState({},'',location.pathname);render()});
   $('#task-form')?.addEventListener('submit',createTask); $$('[data-task]').forEach(b=>b.addEventListener('click',()=>{if(b.disabled)return;b.disabled=true;b.setAttribute('aria-busy','true');toggleTask(b.dataset.task,b.dataset.status);}));
   $('#memory-form')?.addEventListener('submit',createMemory); $$('[data-memory-delete]').forEach(b=>b.addEventListener('click',()=>deleteMemory(b.dataset.memoryDelete)));
   $$('[data-delete-output]').forEach(b=>b.addEventListener('click',()=>deleteOutput(b.dataset.deleteOutput,b.dataset.outputId)));
   $('#delete-project')?.addEventListener('click',deleteCurrentProject);
   $('#upload-project-file')?.addEventListener('click',()=>$('#global-file-input').click());
-  $$('[data-tool-prompt]').forEach(b=>b.addEventListener('click',()=>{state.currentProject=null;state.currentConversation=null;state.messages=[];state.chatArtifacts=[];state.attachedFiles=[];state.messagePage={hasMore:false,nextCursor:null};state.error='';state.tab='Home';history.replaceState({},'',location.pathname);state.draft=b.dataset.toolPrompt;render();setTimeout(()=>{const t=$('#composer-text');if(t){t.focus();t.setSelectionRange(t.value.length,t.value.length)}},0)}));
+  $$('[data-tool-prompt]').forEach(b=>b.addEventListener('click',()=>{state.currentProject=null;state.currentConversation=null;state.messages=[];state.chatArtifacts=[];state.attachedFiles=[];state.activeMode=null;state.messagePage={hasMore:false,nextCursor:null};state.error='';state.tab='Home';history.replaceState({},'',location.pathname);state.draft=b.dataset.toolPrompt;render();setTimeout(()=>{const t=$('#composer-text');if(t){t.focus();t.setSelectionRange(t.value.length,t.value.length)}},0)}));
 }
 document.addEventListener('keydown',e=>{
   if(e.key!=='Escape'||$('#modal-root')?.childElementCount)return;
@@ -583,7 +584,7 @@ function bindAuth(){
 }
 
 async function newChat(){
-  state.currentConversation=null;state.currentProject=null;state.messages=[];state.chatArtifacts=[];state.attachedFiles=[];state.draft='';
+  state.currentConversation=null;state.currentProject=null;state.messages=[];state.chatArtifacts=[];state.attachedFiles=[];state.draft='';state.activeMode=null;
   state.error='';state.lastFailedText='';state.lastFailedMessageId=null;state.lastFailedAttachments=[];state.lastFailedRequestId=null;state.messagePage={hasMore:false,nextCursor:null};
   state.tab='Home';state.drawer=false;history.replaceState({},'',location.pathname);render();resetViewport();
 }
@@ -606,6 +607,7 @@ async function openConversation(id,doRender=true){
     state.chatArtifacts=d.artifacts||[];
     state.artifacts=mergeById(state.artifacts,d.artifacts||[]);
     state.messagePage={hasMore:Boolean(d.page?.hasMore),nextCursor:d.page?.nextCursor||null};
+    syncActiveModeFromMessages();
     state.tab=state.currentProject?'Projects':'Home';state.drawer=false;
     history.replaceState({},'',state.currentProject?`/?project=${encodeURIComponent(state.currentProject.id)}`:`/?conversation=${encodeURIComponent(id)}`);
     if(doRender){render();resetViewport();}
@@ -649,16 +651,27 @@ async function sendMessage(e){
   await sendText(text,[...state.attachedFiles]);
 }
 async function pollForReply(conversationId, executionId){
-  const deadline=Date.now()+180000;
+  const deadline=Date.now()+180000;let waitMs=1800,lastStatusPaint=0;
   while(Date.now()<deadline){
-    await new Promise(r=>setTimeout(r,2000));
-    const page=await api(`/api/chat?conversationId=${encodeURIComponent(conversationId)}&limit=30`);
-    const assistant=(page.messages||[]).find(m=>m.role==='assistant'&&m.execution_id===executionId);
-    if(assistant)return {page,assistant};
-    const userRow=(page.messages||[]).find(m=>m.role==='user'&&m.execution_id===executionId);
-    if(userRow?.metadata?.failed)throw apiError('Olympus could not finish that request. Tap Retry.',503,'AI_EXECUTION_FAILED');
-    state.execStatus='Olympus is still writing one answer…';
-    render();
+    const pause=document.visibilityState==='hidden'?Math.max(waitMs,5500):waitMs;
+    await new Promise(r=>setTimeout(r,pause));
+    try{
+      const page=await api(`/api/chat?conversationId=${encodeURIComponent(conversationId)}&limit=30`);
+      const assistant=(page.messages||[]).find(m=>m.role==='assistant'&&m.execution_id===executionId);
+      if(assistant){
+        const ids=new Set(Array.isArray(assistant.metadata?.artifacts)?assistant.metadata.artifacts:[]);
+        const artifacts=(page.artifacts||[]).filter(a=>ids.has(a.id));
+        return {page,assistant:{...assistant,artifacts}};
+      }
+      const userRow=(page.messages||[]).find(m=>m.role==='user'&&m.execution_id===executionId);
+      if(userRow?.metadata?.failed)throw apiError('Olympus could not finish that request. Tap Retry.',503,'AI_EXECUTION_FAILED');
+      if(Date.now()-lastStatusPaint>12000){state.execStatus='Olympus is still writing one answer…';lastStatusPaint=Date.now();render();}
+    }catch(error){
+      if(error?.code==='AI_EXECUTION_FAILED'||error?.status===401)throw error;
+      if(!([0,502,503,504].includes(Number(error?.status||0))||error?.code==='CONNECTION_INTERRUPTED'))throw error;
+      if(Date.now()-lastStatusPaint>12000){state.execStatus='Olympus is still working · reconnecting to its result…';lastStatusPaint=Date.now();render();}
+    }
+    waitMs=Math.min(5500,Math.round(waitMs*1.35));
   }
   throw apiError('Olympus is still working. Wait a moment, then tap Retry to collect the reply.',503,'REQUEST_IN_PROGRESS');
 }
@@ -703,11 +716,12 @@ async function sendText(text,pendingAttachments=[],requestId=crypto.randomUUID()
     }
     if(assistant){
       if(assistant.mode)state.activeMode=assistant.mode;
-      state.messages.push({...assistant,artifacts:d.artifacts||assistant.artifacts||[]});
+      const deliveredArtifacts=d.artifacts||assistant.artifacts||[];
+      state.messages.push({...assistant,artifacts:deliveredArtifacts});
+      if(deliveredArtifacts.length){state.chatArtifacts=mergeById(state.chatArtifacts,deliveredArtifacts);state.artifacts=mergeById(state.artifacts,deliveredArtifacts);}
     }
     state.execStatus='Completed';
-    const scopeProjectId=state.currentProject?.id||null;
-    await Promise.allSettled([loadConversations(),loadFiles(scopeProjectId),loadArtifacts(scopeProjectId),loadProjects()]);
+    await Promise.allSettled([loadConversations(),loadProjects()]);
     setTimeout(()=>{if(state.execStatus==='Completed'&&!state.sending){state.execStatus='';state.execTitle='';render();}},900);
   }catch(err){
     if(err?.code==='REQUEST_IN_PROGRESS'){
@@ -734,7 +748,7 @@ function mediaBaseName(name='media'){return String(name||'media').replace(/\.[^.
 function canvasJpeg(canvas,quality=.82){return new Promise((resolve,reject)=>canvas.toBlob(blob=>blob?resolve(blob):reject(new Error('Could not encode image.')),'image/jpeg',quality));}
 async function imageElementFromFile(file){const url=URL.createObjectURL(file);try{const img=new Image();img.decoding='async';await new Promise((resolve,reject)=>{img.onload=resolve;img.onerror=()=>reject(new Error('This image format could not be decoded on this device.'));img.src=url;});return {img,url};}catch(error){URL.revokeObjectURL(url);throw error;}}
 async function normalizeMediaImage(file){const supported=/^image\/(?:png|jpeg|jpg|webp|gif)$/i.test(file.type||'');if(supported&&file.size<=1500*1024)return file;const {img,url}=await imageElementFromFile(file);try{const max=1600,scale=Math.min(1,max/Math.max(img.naturalWidth||1,img.naturalHeight||1)),w=Math.max(1,Math.round((img.naturalWidth||1)*scale)),h=Math.max(1,Math.round((img.naturalHeight||1)*scale)),canvas=document.createElement('canvas');canvas.width=w;canvas.height=h;canvas.getContext('2d').drawImage(img,0,0,w,h);let blob=await canvasJpeg(canvas,.84);if(blob.size>1500*1024)blob=await canvasJpeg(canvas,.70);return new File([blob],`${mediaBaseName(file.name)}.jpg`,{type:'image/jpeg',lastModified:Date.now()});}finally{URL.revokeObjectURL(url);}}
-async function sampleVideoFrames(file,maxFrames=3){const url=URL.createObjectURL(file),video=document.createElement('video');video.preload='auto';video.muted=true;video.playsInline=true;video.src=url;try{await new Promise((resolve,reject)=>{video.onloadedmetadata=resolve;video.onerror=()=>reject(new Error('This video could not be decoded on this device.'));});const duration=Number.isFinite(video.duration)&&video.duration>0?video.duration:1,points=Array.from({length:maxFrames},(_,i)=>(i+1)/(maxFrames+1)),out=[];for(let i=0;i<points.length;i++){const t=Math.max(0,Math.min(Math.max(0,duration-.05),duration*points[i]));await new Promise((resolve,reject)=>{let timer;const done=()=>{clearTimeout(timer);resolve();};video.addEventListener('seeked',done,{once:true});video.currentTime=t;timer=setTimeout(()=>reject(new Error('Video frame sampling timed out.')),5000);});const max=1280,scale=Math.min(1,max/Math.max(video.videoWidth||1,video.videoHeight||1)),canvas=document.createElement('canvas');canvas.width=Math.max(1,Math.round((video.videoWidth||1)*scale));canvas.height=Math.max(1,Math.round((video.videoHeight||1)*scale));canvas.getContext('2d').drawImage(video,0,0,canvas.width,canvas.height);const blob=await canvasJpeg(canvas,.76);out.push(new File([blob],`${mediaBaseName(file.name)}-frame-${i+1}.jpg`,{type:'image/jpeg',lastModified:Date.now()}));}return out;}finally{video.pause();video.removeAttribute('src');video.load();URL.revokeObjectURL(url);}}
+async function sampleVideoFrames(file,maxFrames=3){const url=URL.createObjectURL(file),video=document.createElement('video');video.preload='auto';video.muted=true;video.playsInline=true;video.src=url;try{await new Promise((resolve,reject)=>{video.onloadedmetadata=resolve;video.onerror=()=>reject(new Error('This video could not be decoded on this device.'));});const duration=Number.isFinite(video.duration)&&video.duration>0?video.duration:1,points=Array.from({length:maxFrames},(_,i)=>(i+1)/(maxFrames+1)),out=[];for(let i=0;i<points.length;i++){const t=Math.max(0,Math.min(Math.max(0,duration-.05),duration*points[i]));await new Promise((resolve,reject)=>{let timer;const done=()=>{clearTimeout(timer);video.removeEventListener('seeked',done);resolve();};video.addEventListener('seeked',done,{once:true});video.currentTime=t;timer=setTimeout(()=>{video.removeEventListener('seeked',done);reject(new Error('Video frame sampling timed out.'));},5000);});const max=1280,scale=Math.min(1,max/Math.max(video.videoWidth||1,video.videoHeight||1)),canvas=document.createElement('canvas');canvas.width=Math.max(1,Math.round((video.videoWidth||1)*scale));canvas.height=Math.max(1,Math.round((video.videoHeight||1)*scale));canvas.getContext('2d').drawImage(video,0,0,canvas.width,canvas.height);const blob=await canvasJpeg(canvas,.76);out.push(new File([blob],`${mediaBaseName(file.name)}-frame-${i+1}.jpg`,{type:'image/jpeg',lastModified:Date.now()}));}return out;}finally{video.pause();video.removeAttribute('src');video.load();URL.revokeObjectURL(url);}}
 async function handleMediaFiles(files){state.attachMenu=false;for(const file of files){try{if((file.type||'').startsWith('video/')){state.execStatus=`Sampling ${file.name} for visual analysis…`;render();const frames=await sampleVideoFrames(file,3);if(file.size<=4*1024*1024)await uploadFile(file,{analysisRole:'video_source',sourceName:file.name,attach:true});for(const frame of frames)await uploadFile(frame,{analysisRole:'video_frame',sourceName:file.name,attach:true});state.execStatus=`Video prepared: ${frames.length} sampled frames. Audio and motion between samples are not analyzed.`;}else if((file.type||'').startsWith('image/')||/\.(heic|heif)$/i.test(file.name||'')){state.execStatus=`Preparing ${file.name} for vision…`;render();const normalized=await normalizeMediaImage(file);await uploadFile(normalized,{analysisRole:'media_image',sourceName:file.name,attach:true});}else await uploadFile(file);}catch(error){state.error=error?.message||`Could not prepare ${file.name}.`;state.execStatus='';render();}}}
 async function uploadFile(file,{analysisRole='',sourceName='',attach=true}={}){
   if(file.size>4*1024*1024){state.error=`${file.name} is over the current 4 MB safe upload limit.`;render();return;}
@@ -855,6 +869,7 @@ async function loadProjectConversation(project){
   }));
   state.chatArtifacts=d.artifacts||[];
   state.messagePage={hasMore:Boolean(d.page?.hasMore),nextCursor:d.page?.nextCursor||null};
+  syncActiveModeFromMessages();
 }
 
 function projectEditModal(){
@@ -912,7 +927,7 @@ async function deleteCurrentProject(){
   if(!confirm(`Delete “${p.name}” and its permanent chat, tasks, memory, files and artifacts? This cannot be undone.`))return;
   try{
     await api('/api/projects',{method:'DELETE',body:JSON.stringify({id:p.id})});
-    state.currentProject=null;state.currentConversation=null;state.messages=[];state.chatArtifacts=[];state.attachedFiles=[];state.projectMemories=[];state.memoryPolicy=null;state.tasks=[];state.files=[];state.artifacts=[];state.projectSection='CHAT';state.messagePage={hasMore:false,nextCursor:null};state.error='';
+    state.currentProject=null;state.currentConversation=null;state.messages=[];state.chatArtifacts=[];state.attachedFiles=[];state.activeMode=null;state.projectMemories=[];state.memoryPolicy=null;state.tasks=[];state.files=[];state.artifacts=[];state.projectSection='CHAT';state.messagePage={hasMore:false,nextCursor:null};state.error='';
     history.replaceState({},'',location.pathname);
     await Promise.all([loadProjects(),loadFiles(),loadArtifacts()]);
     state.tab='Projects';render();resetViewport();

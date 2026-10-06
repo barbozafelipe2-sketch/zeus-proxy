@@ -80,3 +80,6 @@ assert.equal(pkg.overrides?.exceljs?.uuid,'11.1.1','exceljs uuid override missin
 assert.ok(!lock.packages['node_modules/exceljs/node_modules/uuid'],'deprecated nested uuid@8 returned to the lockfile');
 
 console.log('OH-004.4 accessibility/resilience/security polish tests: PASS');
+
+assert.ok(app.includes('function syncActiveModeFromMessages()'),'loaded conversations must restore the mode shown in the header');
+assert.ok(app.includes("document.visibilityState==='hidden'"),'background Olympus polling must slow down while the app is hidden');
