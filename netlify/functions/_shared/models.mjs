@@ -156,8 +156,8 @@ export function availableModels({ vision = false, ignoreCircuit = false } = {}) 
   });
 }
 
-const WRITING = /\b(write|rewrite|story|book|email|copy|script|brand|marketing|escreva|reescreva|historia|livro|roteiro|marca)\b/i;
-const CODING = /\b(code|bug|typescript|javascript|python|api|database|deploy|implement|refactor|codigo|banco de dados|implementar|refatorar)\b/i;
+const WRITING = /\b(write|rewrite|story|book|email|copy|script|brand|marketing|escreva|reescreva|historia|livro|roteiro|marca|escribe|reescribe|historia|libro|correo|guion)\b/i;
+const CODING = /\b(code|bug|typescript|javascript|python|api|database|deploy|implement|refactor|codigo|banco de dados|implementar|refatorar|base de datos|desplegar|refactorizar|arreglar)\b/i;
 
 // Task routes. GPT is a fallback, not the default.
 // Simple turns use Gemini Flash first (cheap and fast). Economy OpenAI models are only the backup if Gemini is down.
@@ -175,7 +175,7 @@ const RESEARCH_ROUTE = /\b(research|latest|today|news|current|sources|benchmark|
 const HARD_ROUTE = /\b(audit|architecture|security|production|legal|financial|comprehensive|strategy|migration|analy[sz]e|auditar|arquitetura|seguranca|producao|estrategia|detalhado|arquitectura|seguridad|produccion|financiero|migracion|analizar)\b/i;
 
 export function routeFor(text = '', { vision = false } = {}) {
-  const t = String(text || '');
+  const t = String(text || '').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
   if (vision) return 'vision';
   // A long note is not automatically a hard task. Only the work itself promotes the route.
   if (HARD_ROUTE.test(t)) return 'hard';
