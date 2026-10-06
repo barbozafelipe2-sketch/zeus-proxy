@@ -110,7 +110,9 @@ assert.ok(chat.includes('STALE_EXECUTION_MS') && /started_at=now\(\)/.test(chat)
 assert.ok(chat.includes("startsWith('ZIP_')"), 'ZIP build failure must keep the model answer');
 assert.ok(chat.includes('reuse the conversation already bound to this request id'), 'retry of a lost first message must reuse its conversation');
 assert.ok(chat.includes('CHAT_TIMEOUT_MS') && chat.includes('CHAT_WEB_TIMEOUT_MS'));
-assert.ok(read('netlify/functions/_shared/limits.mjs').includes("'90 seconds'"), 'concurrency guard must not count killed runs for 15 minutes');
+const limitsSource=read('netlify/functions/_shared/limits.mjs');
+assert.ok(limitsSource.includes("'90 seconds'")&&limitsSource.includes("'16 minutes'"), 'concurrency guard needs separate Zeus and Olympus liveness windows');
+assert.ok(chat.includes("const resumable=worker&&existing.state==='QUEUED'"), 'only a queued Olympus execution may be claimed by a background worker');
 
 // ---- Client: long-request drops and gateway timeouts are not mislabeled as user network errors ----
 const app = read('public/app.js');

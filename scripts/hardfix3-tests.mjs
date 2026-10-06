@@ -70,19 +70,21 @@ assert.equal(pageLimit('500',60,100),100);
 const page=pageResult([{...row},{...row,id:'22222222-2222-4222-8222-222222222222'},{...row,id:'33333333-3333-4333-8333-333333333333'}],2);
 assert.equal(page.hasMore,true);assert.equal(page.page.length,2);assert.ok(page.nextCursor);
 
-function guardClient({existing=null,activeTotal=0,activeOlympus=0,recent=0}={}){
+function guardClient({existing=null,activeZeus=0,activeOlympus=0,recent=0}={}){
   return {async query(q){
     if(q.includes('pg_advisory_xact_lock'))return {rows:[{}],rowCount:1};
     if(q.includes('WHERE owner_id=$1 AND request_id=$2 LIMIT 1'))return {rows:existing?[existing]:[],rowCount:existing?1:0};
-    if(q.includes("state NOT IN"))return {rows:[{total:activeTotal,olympus:activeOlympus}],rowCount:1};
+    if(q.includes("state NOT IN"))return {rows:[{zeus:activeZeus,olympus:activeOlympus}],rowCount:1};
     if(q.includes("started_at > now() - interval '1 hour'"))return {rows:[{total:recent}],rowCount:1};
     throw new Error(`Unexpected guard query: ${q}`);
   }};
 }
 await guardAiExecution(guardClient(), 'user-1','ZEUS','req-1');
 await guardAiExecution(guardClient({existing:{id:'e',state:'FAILED'}}),'user-1','OLYMPUS','req-retry');
-await assert.rejects(()=>guardAiExecution(guardClient({activeTotal:2}),'user-1','ZEUS','req-2'),e=>e?.code==='AI_CONCURRENCY_LIMIT');
+await assert.rejects(()=>guardAiExecution(guardClient({activeZeus:2}),'user-1','ZEUS','req-2'),e=>e?.code==='AI_CONCURRENCY_LIMIT');
 await assert.rejects(()=>guardAiExecution(guardClient({activeOlympus:1}),'user-1','OLYMPUS','req-3'),e=>e?.code==='AI_CONCURRENCY_LIMIT');
 await assert.rejects(()=>guardAiExecution(guardClient({recent:60}),'user-1','ZEUS','req-4'),e=>e?.code==='AI_RATE_LIMIT');
 
 console.log('Hard Fix 3 runtime-contract tests: PASS');
+
+assert.ok(String(guardAiExecution).includes("16 minutes"),'Olympus concurrency lease window must survive background execution');

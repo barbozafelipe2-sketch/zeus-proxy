@@ -54,3 +54,5 @@ assert.ok(app.includes('data-open-output')&&app.includes('downloadPrivateOutput'
 assert.equal(shouldSearchWeb('Busca las noticias de hoy sobre Netlify'),true,'Spanish web intent not detected');
 assert.ok(app.includes('sampleVideoFrames')&&app.includes('normalizeMediaImage'),'media preprocessing/video sampling missing');
 assert.ok(!app.includes("['automation','Automation'"),'unfinished Automation shell must not be visible');
+
+assert.ok(chat.includes("const resumable=worker&&existing.state==='QUEUED'"),'duplicate Olympus workers can still resume an active execution');

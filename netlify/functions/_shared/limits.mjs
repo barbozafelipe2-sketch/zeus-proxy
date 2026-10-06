@@ -31,16 +31,18 @@ export async function guardAiExecution(client, ownerId, mode, requestId) {
 
   const limits = aiLimits(mode);
   const active = (await client.query(
-    `SELECT count(*)::int AS total,
-            count(*) FILTER (WHERE mode='OLYMPUS')::int AS olympus
+    `SELECT
+       count(*) FILTER (WHERE mode='ZEUS' AND started_at > now() - interval '90 seconds')::int AS zeus,
+       count(*) FILTER (WHERE mode='OLYMPUS' AND started_at > now() - interval '16 minutes')::int AS olympus
      FROM executions
      WHERE owner_id=$1
-       AND state NOT IN ('COMPLETED','PARTIAL','FAILED','CANCELLED')
-       AND started_at > now() - interval '90 seconds'`, // Netlify kills sync functions at 60 s; older non-terminal rows are orphans
+       AND state NOT IN ('COMPLETED','PARTIAL','FAILED','CANCELLED')`,
     [ownerId]
-  )).rows[0] || { total:0, olympus:0 };
+  )).rows[0] || { zeus:0, olympus:0 };
+  // Zeus is synchronous and should age out quickly. Olympus is a Netlify background
+  // function and may legitimately run for many minutes, so never forget it after 90 s.
   if (mode === 'OLYMPUS' && Number(active.olympus || 0) >= limits.concurrent) throw limitError('An Olympus execution is already running. Wait for it to finish before starting another.', 'AI_CONCURRENCY_LIMIT', 15);
-  if (mode !== 'OLYMPUS' && Number(active.total || 0) >= limits.concurrent) throw limitError('Too many AI executions are already running. Wait a moment and try again.', 'AI_CONCURRENCY_LIMIT', 10);
+  if (mode !== 'OLYMPUS' && Number(active.zeus || 0) >= limits.concurrent) throw limitError('Too many Zeus executions are already running. Wait a moment and try again.', 'AI_CONCURRENCY_LIMIT', 10);
 
   const recent = (await client.query(`SELECT count(*)::int AS total FROM executions WHERE owner_id=$1 AND mode=$2 AND started_at > now() - interval '1 hour'`, [ownerId, mode])).rows[0];
   if (Number(recent?.total || 0) >= limits.hourly) throw limitError(`${mode === 'OLYMPUS' ? 'Olympus' : 'Zeus'} hourly safety budget reached. Try again later.`, 'AI_RATE_LIMIT', 300);

@@ -289,3 +289,8 @@ if (!filePreview.includes("Content-Type':'text/plain; charset=utf-8")) throw new
 if (!chat.includes('FAST_CHAT_TIMEOUT_MS')) throw new Error('Fast chat route lacks a dedicated bounded runtime.');
 if (!chat.includes('olympusDispatchFallback=true')) throw new Error('Olympus dispatch failure can still fall into heavy synchronous execution.');
 if (!app.includes('sampleVideoFrames') || !app.includes('normalizeMediaImage')) throw new Error('Media analysis preprocessing missing.');
+
+if (!limits.includes("'16 minutes'")) throw new Error('Olympus background concurrency window is too short.');
+if (!chat.includes("const resumable=worker&&existing.state==='QUEUED'")) throw new Error('Background execution claim is not idempotent.');
+if (!security.includes('REDACTED NETLIFY TOKEN')) throw new Error('Netlify token redaction missing.');
+if (!tasks.includes('syncProjectProgressClient')) throw new Error('Task/project progress updates are not transactional.');

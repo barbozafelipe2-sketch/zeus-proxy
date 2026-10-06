@@ -170,7 +170,7 @@ async function initializeTurn({db,userId,conversationId,projectId,mode,content,f
     // A run killed by the platform timeout never reaches FAILED; once it is older than any possible
     // live run, let Retry (same request id) restart it instead of reporting 'already running' forever.
     const orphaned=existing.started_at&&Date.now()-new Date(existing.started_at).getTime()>STALE_EXECUTION_MS;
-    const resumable=worker&&['QUEUED','UNDERSTANDING','RUNNING'].includes(existing.state);
+    const resumable=worker&&existing.state==='QUEUED';
     if(existing.state!=='FAILED'&&existing.state!=='CANCELLED'&&!orphaned&&!resumable)return {kind:'in_progress',execution:existing,userMessage:prior};
 
     await client.query(`UPDATE executions SET state='UNDERSTANDING',error_code=NULL,trace='{}'::jsonb,completed_at=NULL,lead_model=NULL,started_at=now() WHERE id=$1 AND owner_id=$2`,[existing.id,userId]);
@@ -325,9 +325,17 @@ async function chatHandler(req, context, startedAt){
     }
 
     if(projectId && explicitMemoryIntent(content)){
-      const memoryContent=redactSecrets(content);
-      const exists=await db.sql`SELECT id FROM memories WHERE owner_id=${user.id} AND project_id=${projectId} AND content=${memoryContent} LIMIT 1`;
-      if(!exists.length)await db.sql`INSERT INTO memories(owner_id,project_id,type,content,source,confidence,approved) VALUES(${user.id},${projectId},'explicit_instruction',${clip(memoryContent,4000)},${`conversation:${conversationId}`},100,true)`;
+      const memoryContent=clip(redactSecrets(content),4000);
+      const memoryKey=memoryContent.replace(/\s+/g,' ').trim().toLowerCase();
+      await db.sql`
+        INSERT INTO memories(owner_id,project_id,type,content,source,confidence,approved)
+        SELECT ${user.id},${projectId},'explicit_instruction',${memoryContent},${`conversation:${conversationId}`},100,true
+        WHERE NOT EXISTS (
+          SELECT 1 FROM memories
+          WHERE owner_id=${user.id} AND project_id=${projectId}
+            AND regexp_replace(lower(btrim(content)), E'\\s+', ' ', 'g')=${memoryKey}
+        )
+      `;
     }
 
     const webIntent=shouldSearchWeb(modelText)&&intent.action!=='IMAGE_CREATE'&&intent.action!=='IMAGE_EDIT';
