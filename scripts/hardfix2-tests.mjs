@@ -52,6 +52,7 @@ models.__recordProviderFailureForTests('openai','boom again');
 assert.equal(models.providerRuntimeHealth().openai.circuitOpen,true,'provider circuit should open after repeated failures');
 assert.equal(models.availableModels().some(m=>m.provider==='openai'),false,'open circuit provider must be skipped');
 models.__resetProviderHealthForTests();
-assert.ok(models.planSpecialists('Build a secure web app with database, UI, and API').assignments.filter(a=>a.role==='primary').length<=3,'Olympus primary team must be bounded to three');
+assert.equal(typeof models.planSpecialists,'undefined','legacy keyword-domain specialist planner must stay removed');
+assert.ok(String(models.runOlympus).includes('splitRequirementScopes'),'Olympus must partition the persisted requirement list instead of keyword departments');
 
 console.log('Hard Fix 2 unit tests: PASS');

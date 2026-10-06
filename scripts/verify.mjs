@@ -122,8 +122,6 @@ const mustContain = [
   [runtime,'createExecutionBudget','global execution deadline/call budget'],
   [models,'providerRuntimeHealth','provider runtime health'],
   [models,'reviewedAfterFallback','Zeus review survives lead fallback'],
-  [models,'OLYMPUS_DIRECTOR_RESERVE_MS','Olympus Director time reserve'],
-  [models,'DIVERSITY_SCORE_TOLERANCE','quality-bounded provider diversity'],
   [reliability,'validateAdversaryFindings','mechanical quoted-evidence adversary filter'],
   [memoryPolicy,'selectMemoryContext','deterministic project memory selection'],
   [health,"started_at > now() - interval '24 hours'",'persisted provider readiness evidence'],
@@ -139,7 +137,6 @@ const mustContain = [
   [auth,'timingSafeEqual','constant-time private access comparison'],
   [auth,'DATABASE_UNAVAILABLE','controlled database bootstrap failure'],
   [chat,'olympusFallback','Olympus to Zeus fallback'],
-  [models,'planSpecialists','domain planner'],
   [models,'scoped_specialists_director_adversary_patch','Olympus scoped specialist strategy'],
   [models,'Director','Olympus Director synthesis'],
   [projects,'INSERT INTO projects','project persistence'],
@@ -294,3 +291,6 @@ if (!limits.includes("'16 minutes'")) throw new Error('Olympus background concur
 if (!chat.includes("const resumable=worker&&existing.state==='QUEUED'")) throw new Error('Background execution claim is not idempotent.');
 if (!security.includes('REDACTED NETLIFY TOKEN')) throw new Error('Netlify token redaction missing.');
 if (!tasks.includes('syncProjectProgressClient')) throw new Error('Task/project progress updates are not transactional.');
+
+if (models.includes('planSpecialists') || models.includes('DOMAIN_PRIORITY')) throw new Error('Legacy keyword-domain Olympus planner returned.');
+if (!models.includes('splitRequirementScopes(checklist)')) throw new Error('Olympus requirement-scope partitioning missing.');

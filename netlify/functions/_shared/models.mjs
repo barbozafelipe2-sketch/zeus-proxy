@@ -3,8 +3,6 @@ import { formatChecklist, mergeClarifiedRequirements, splitRequirementScopes, st
 
 const env = (name) => globalThis.Netlify?.env?.get?.(name) || process.env?.[name] || '';
 const MAX_SPECIALIST_CHARS = 24000;
-const OLYMPUS_DIRECTOR_RESERVE_MS = 14500;
-const DIVERSITY_SCORE_TOLERANCE = 1.75;
 const CIRCUIT_FAILURE_THRESHOLD = 2;
 const CIRCUIT_COOLDOWN_MS = 60_000;
 const LONG_CIRCUIT_COOLDOWN_MS = 180_000;
@@ -170,7 +168,6 @@ const ROUTE_TABLE = {
   research: [['openrouter', () => 'x-ai/grok-4.5'], ['anthropic', () => env('ANTHROPIC_STRONG_MODEL') || 'claude-sonnet-5'], ['gemini', () => env('GEMINI_STRONG_MODEL') || 'gemini-3.5-flash'], ['openai', () => env('OPENAI_STRONG_MODEL') || 'gpt-5.6-sol']],
   hard: [['anthropic', () => env('ANTHROPIC_STRONG_MODEL') || 'claude-sonnet-5'], ['openrouter', () => 'deepseek/deepseek-v4-pro'], ['openrouter', () => 'x-ai/grok-4.5'], ['gemini', () => env('GEMINI_STRONG_MODEL') || 'gemini-3.5-flash'], ['openai', () => env('OPENAI_STRONG_MODEL') || 'gpt-5.6-sol'], ['openai', () => 'gpt-5'], ['openai', () => 'gpt-4.1-mini'], ['openai', () => env('OPENAI_MODEL') || 'gpt-5.6-luna']],
 };
-const NEED_ROUTE = { coding: 'coding', implementation: 'coding', writing: 'writing', fast: 'fast', research: 'research', multimodal: 'vision', vision: 'vision', files: 'vision', security: 'hard', architecture: 'hard', reasoning: 'hard', director: 'hard', general: 'hard' };
 const RESEARCH_ROUTE = /\b(research|latest|today|news|current|sources|benchmark|pesquisa|mais recente|hoje|not[ií]cias|fontes|investigar|busca|actual|hoy|noticias|fuentes|reciente)\b/i;
 const HARD_ROUTE = /\b(audit|architecture|security|production|legal|financial|comprehensive|strategy|migration|analy[sz]e|auditar|arquitetura|seguranca|producao|estrategia|detalhado|arquitectura|seguridad|produccion|financiero|migracion|analizar)\b/i;
 
@@ -203,89 +200,6 @@ function orderForRoute(route, exclude = new Set(), options = {}) {
 
 export function rankModels(text, exclude = new Set(), options = {}) {
   return orderForRoute(routeFor(text, options), exclude, options);
-}
-
-export function bestModelFor(need, exclude = new Set(), excludeProviders = [], options = {}) {
-  const route = NEED_ROUTE[need] || (options.vision ? 'vision' : 'hard');
-  return orderForRoute(route, exclude, options).filter((m) => !excludeProviders.includes(m.provider))[0];
-}
-
-const DOMAIN_PRIORITY = ['security', 'architecture', 'implementation', 'ui_ux', 'multimodal', 'research', 'writing', 'reasoning'];
-const BUILD_INTENT = /\b(build|create|make|develop|implement|scaffold|ship|design|architect|construir|criar|desenvolver|implementar|projetar|arquitetar)\b/i;
-const DELIVERABLE = /\b(app|application|website|web ?site|saas|platform|dashboard|portal|backend|frontend|game|api|aplicativo|site|plataforma|painel|jogo)\b/i;
-const HAS_UI = /\b(app|application|website|web ?site|saas|dashboard|portal|frontend|game|landing page|aplicativo|site|plataforma|painel|interface|jogo)\b/i;
-const CHALLENGE = /\b(challenge|red team|adversarial|attack this|critique|stress test|desafie|ataque|red-team|critique|teste adversarial)\b/i;
-
-const DOMAIN_RULES = [
-  ['security', /\b(security|secure|auth|authentication|oauth|permissions?|secrets?|privacy|gdpr|payments?|encryption|vulnerabilit(?:y|ies)|seguranca|autenticacao|permissao|segredos?|privacidade|pagamentos?|criptografia|vulnerabilidades?)\b/i],
-  ['architecture', /\b(architecture|architect|system design|schema|data model|microservices?|scalab(?:le|ility)|infrastructure|multi-tenant|arquitetura|arquitetar|design de sistema|modelo de dados|infraestrutura|escalabilidade)\b/i],
-  ['implementation', /\b(implement|code|coding|fix|debug|refactor|migration|script|function|endpoint|typescript|python|sql|bug|implementar|codigo|corrigir|depurar|refatorar|migracao|funcao)\b/i],
-  ['ui_ux', /\b(ui|ux|user interface|interface|screens?|frontend|front-end|layout|wireframe|mockup|branding|design system|telas?|marca|sistema de design)\b/i],
-  ['research', /\b(research|compare|comparison|sources|latest|market|competitors?|investigate|analy[sz]e|benchmark|pesquisa|comparar|fontes|mercado|concorrentes?|investigar|analisar)\b/i],
-  ['multimodal', /\b(image|photo|video|pdf|screenshot|audio|diagram|spreadsheet|imagem|foto|captura de tela|diagrama|planilha)\b/i],
-  ['writing', /\b(write|rewrite|copy|copywriting|story|book|essay|email|marketing|blog|escreva|reescreva|historia|livro|ensaio)\b/i],
-];
-
-const DOMAIN_NEED = { security: 'security', architecture: 'architecture', implementation: 'coding', ui_ux: 'reasoning', research: 'research', multimodal: 'multimodal', writing: 'writing', reasoning: 'reasoning' };
-
-function detectDomains(text) {
-  const found = new Set();
-  for (const [domain, re] of DOMAIN_RULES) if (re.test(text)) found.add(domain);
-  if (BUILD_INTENT.test(text) && DELIVERABLE.test(text)) {
-    found.add('architecture');
-    found.add('implementation');
-    if (HAS_UI.test(text)) found.add('ui_ux');
-  }
-  return found;
-}
-
-function complexity(text) {
-  let n = 0;
-  if (text.length > 450) n += 2;
-  if (/create|build|design|analy|research|compare|strategy|architecture|plan|audit|document|report|criar|construir|projetar|analis|pesquis|compar|estrateg|arquitetura|plano|auditar|relatorio/i.test(text)) n += 2;
-  if (/\b(and|then|also|plus|including|e depois|tambem|alem disso|incluindo)\b/i.test(text)) n += 1;
-  if (detectDomains(text).size >= 3) n += 2;
-  return n;
-}
-
-function specialistProfileFor(domain, used, usedProviders, { vision = false } = {}) {
-  const need = domain === 'ui_ux' && vision ? 'multimodal' : (DOMAIN_NEED[domain] || 'reasoning');
-  const bestOverall = bestModelFor(need, used, [], { vision });
-  const bestDiverse = bestModelFor(need, used, [...usedProviders], { vision });
-  if (!bestOverall) return bestDiverse;
-  if (!bestDiverse) return bestOverall;
-  return Number(bestDiverse.score ?? -Infinity) >= Number(bestOverall.score ?? 0) - DIVERSITY_SCORE_TOLERANCE ? bestDiverse : bestOverall;
-}
-
-export function planSpecialists(message, context = '', { vision = false } = {}) {
-  let found = detectDomains(message);
-  const terse = message.trim().length < 60;
-  if (context && (found.size === 0 || terse)) for (const d of detectDomains(`${context}\n${message}`)) found.add(d);
-  if (found.size === 0) found.add('reasoning');
-
-  const rankedDomains = DOMAIN_PRIORITY.filter((d) => found.has(d));
-  const primaryCap = complexity(message) >= 4 ? 3 : 2;
-  const chosen = rankedDomains.slice(0, primaryCap);
-  const droppedDomains = rankedDomains.slice(primaryCap);
-  const used = new Set();
-  const usedProviders = new Set();
-  const primaries = [];
-  for (const domain of chosen) {
-    const profile = specialistProfileFor(domain, used, usedProviders, { vision });
-    if (!profile) continue;
-    used.add(`${profile.provider}:${profile.id}`);
-    usedProviders.add(profile.provider);
-    primaries.push({ domain, role: 'primary', profile });
-  }
-
-  const critics = [];
-  if (CHALLENGE.test(message) && primaries.length) {
-    const target = primaries[0];
-    const criticNeed = target.domain === 'ui_ux' && vision ? 'multimodal' : (DOMAIN_NEED[target.domain] || 'reasoning');
-    const critic = bestModelFor(criticNeed, used, [target.profile.provider], { vision }) || bestModelFor('reasoning', used, [], { vision });
-    if (critic) critics.push({ domain: target.domain, role: 'critic', profile: critic });
-  }
-  return { assignments: [...primaries, ...critics], droppedDomains, complexity: complexity(message) };
 }
 
 function clip(text) {

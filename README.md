@@ -33,9 +33,9 @@ Do not expose the access token through client-visible environment variables.
 
 Provider API keys/base URLs are expected to be supplied by Netlify AI Gateway. Do not add manual provider keys unless intentionally overriding the gateway. Explicit/current-information requests can use the same Gateway-backed OpenAI Responses endpoint for live web research.
 
-Zeus picks the execution mode. Ordinary and single-skill requests stay on one model. A request that crosses several kinds of work, or an explicit ask for the team, runs Olympus in the background. The top of the chat shows which mode is in use.
+Zeus picks the execution mode. Ordinary low-risk turns use one author. Important delivery work can add an independent, different-family adversarial review and one bounded repair pass without turning that reviewer into a co-author. Requests that genuinely span several requirement groups, or an explicit ask for the team, run Olympus in the background: at most two scoped specialists own separate requirement IDs, the Director assembles one canonical answer, an independent adversary audits that assembled result, and the Director repairs once only when grounded defects are accepted. The top of the chat shows the mode actually used.
 
-Simple replies prefer Gemini Flash. Coding prefers DeepSeek, writing and hard work prefer Claude, research prefers Grok. GPT models are fallbacks, not the default. A fatal error (auth, billing, rate limit, bad request) skips the rest of that provider and tries the next one. Transient failures and missing model ids still walk the route.
+Simple replies prefer Gemini Flash. Coding prefers DeepSeek, writing and hard work prefer Claude, research prefers Grok. GPT models are fallbacks, not the default. A fatal error (auth, billing, rate limit, bad request) skips the rest of that provider and tries the next one. Transient failures and missing model ids still walk the route. The old keyword-domain specialist planner is intentionally removed; Olympus partitions the persisted requirement list instead.
 
 ## UX invariants
 

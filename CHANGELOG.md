@@ -1,5 +1,11 @@
 # Zeus Proxy Personal Recovery
 
+## Final production hardening — 2026-10-06
+- Hardened Zeus/Olympus execution leases, background idempotency, workspace transactions, provider-failure sharing, multimodal/file honesty and iOS delivery behavior.
+- Olympus now uses only the requirement-scoped specialist → Director → adversary → bounded repair architecture; the obsolete keyword-domain planner was removed.
+- Restored the actual last execution mode when reopening conversations and made background-result polling adaptive, transient-failure tolerant and artifact-aware.
+- GitHub verification and Netlify production deployment are required to be green before this pass is considered complete.
+
 ## OH-004.3.4-router — 2026-10-03
 - Zeus chooses Zeus or Olympus per message. The chat shows the active mode; there is no mode picker.
 - Simple turns prefer Gemini Flash. Coding prefers DeepSeek, writing and hard work prefer Claude, research prefers Grok. GPT is fallback only.
