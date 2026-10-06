@@ -1,17 +1,17 @@
 const normalize = (value = '') => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 
-const RISK = /\b(auth(?:entication)?|oauth|billing|payment|payments|database|sql|migration|production|prod|delete|remove|drop|security|permission|permissions|secret|secrets|deploy|release|account|users?|dados|banco de dados|migracao|producao|apagar|excluir|remover|seguranca|permissao|segredos?|usuarios?)\b/i;
-const CODE_DELIVERY = /\b(fix|implement|refactor|build|write|create|generate|code|debug|patch|function|class|api|endpoint|typescript|javascript|python|sql|deploy|corrigir|implementar|refatorar|construir|escrever|criar|gerar|codigo|depurar|funcao)\b/i;
-const RESEARCH = /\b(research|latest|today|current|news|sources?|benchmark|pesquisa|mais recente|hoje|noticias?|fontes?)\b/i;
-const REQUIREMENT_SIGNAL = /\b(must|need|needs|ensure|make sure|keep|preserve|remove|delete|add|fix|create|build|implement|export|generate|return|show|include|audit|review|do not|don't|never|precisa|preciso|garanta|assegure|mantenha|preserve|remova|apague|delete|adicione|corrija|crie|construa|implemente|exporte|gere|retorne|mostre|inclua|audite|revise|nao|não|nunca|quero)\b/i;
-const CENTRAL = /\b(must|need|ensure|make sure|do not|don't|never|required|precisa|garanta|assegure|nao|não|nunca|obrigatorio|obrigatório)\b/i;
+const RISK = /\b(auth(?:entication)?|oauth|billing|payment|payments|database|sql|migration|production|prod|delete|remove|drop|security|permission|permissions|secret|secrets|deploy|release|account|users?|dados|banco de dados|migracao|producao|apagar|excluir|remover|seguranca|permissao|segredos?|usuarios?|autenticacion|facturacion|pago|pagos|base de datos|migracion|produccion|borrar|eliminar|remover|seguridad|permiso|permisos|secreto|secretos|desplegar|lanzamiento|cuenta|usuario|usuarios)\b/i;
+const CODE_DELIVERY = /\b(fix|implement|refactor|build|write|create|generate|code|debug|patch|function|class|api|endpoint|typescript|javascript|python|sql|deploy|corrigir|implementar|refatorar|construir|escrever|criar|gerar|codigo|depurar|funcao|arreglar|refactorizar|escribir|crear|generar|funcion|desplegar)\b/i;
+const RESEARCH = /\b(research|latest|today|current|news|sources?|benchmark|pesquisa|mais recente|hoje|noticias?|fontes?|investiga(?:r|cion)?|busca(?:r)?|actual|hoy|noticias?|fuentes?|reciente)\b/i;
+const REQUIREMENT_SIGNAL = /\b(must|need|needs|ensure|make sure|keep|preserve|remove|delete|add|fix|create|build|implement|export|generate|return|show|include|audit|review|do not|don't|never|precisa|preciso|garanta|assegure|mantenha|preserve|remova|apague|delete|adicione|corrija|crie|construa|implemente|exporte|gere|retorne|mostre|inclua|audite|revise|nao|não|nunca|quero|necesito|necesita|asegura|asegure|manten|preserva|elimina|borra|agrega|arregla|crea|construye|implementa|exporta|genera|devuelve|muestra|incluye|audita|revisa|no|nunca|quiero)\b/i;
+const CENTRAL = /\b(must|need|ensure|make sure|do not|don't|never|required|precisa|garanta|assegure|nao|não|nunca|obrigatorio|obrigatório|necesita|necesito|asegura|asegure|no|nunca|obligatorio)\b/i;
 const WORKSTREAMS = [
-  ['security', /\b(security|secure|auth(?:entication)?|oauth|privacy|permission|encryption|seguranca|autenticacao|privacidade|permissao|criptografia)\b/i],
-  ['implementation', /\b(implement|code|coding|api|database|backend|refactor|debug|bug|typescript|javascript|python|sql|codigo|banco de dados|implementar|depurar)\b/i],
-  ['interface', /\b(ui|ux|user interface|frontend|front-end|layout|screen|screens|wireframe|tela|telas|interface)\b/i],
-  ['research', /\b(research|compare|comparison|market|competitor|benchmark|sources?|latest|pesquisa|comparar|mercado|concorrente|fontes?|mais recente)\b/i],
-  ['writing', /\b(write|rewrite|essay|email|copywriting|story|book|blog|document|report|escreva|reescreva|historia|livro|documento|relatorio)\b/i],
-  ['architecture', /\b(architecture|architect|system design|schema|data model|infrastructure|arquitetura|modelo de dados|infraestrutura)\b/i],
+  ['security', /\b(security|secure|auth(?:entication)?|oauth|privacy|permission|encryption|seguranca|autenticacao|privacidade|permissao|criptografia|seguridad|autenticacion|privacidad|permiso|cifrado)\b/i],
+  ['implementation', /\b(implement|code|coding|api|database|backend|refactor|debug|bug|typescript|javascript|python|sql|codigo|banco de dados|implementar|depurar|base de datos|refactorizar|arreglar)\b/i],
+  ['interface', /\b(ui|ux|user interface|frontend|front-end|layout|screen|screens|wireframe|tela|telas|interface|pantalla|pantallas|interfaz)\b/i],
+  ['research', /\b(research|compare|comparison|market|competitor|benchmark|sources?|latest|pesquisa|comparar|mercado|concorrente|fontes?|mais recente|investigar|competidor|fuentes?|reciente)\b/i],
+  ['writing', /\b(write|rewrite|essay|email|copywriting|story|book|blog|document|report|escreva|reescreva|historia|livro|documento|relatorio|escribe|reescribe|libro|informe)\b/i],
+  ['architecture', /\b(architecture|architect|system design|schema|data model|infrastructure|arquitetura|modelo de dados|infraestrutura|arquitectura|modelo de datos|infraestructura)\b/i],
 ];
 function compact(value,max=360){return String(value||'').replace(/\s+/g,' ').trim().slice(0,max);}
 function add(items,seen,text,evidence,{kind='request',central=false}={}){
@@ -46,7 +46,7 @@ export function shouldVerifyDelivery(text='', {action='CHAT',route='fast',hasFil
   if(RISK.test(t)||action==='ARTIFACT_CREATE'||route==='research'||RESEARCH.test(t))return true;
   if(route==='coding'&&CODE_DELIVERY.test(t))return true;
   if(route==='hard')return true;
-  if(action==='ANALYZE'&&((hasFiles&&!hasImage)||/\b(audit|review|security|auditar|revisar|seguranca)\b/i.test(t)))return true;
+  if(action==='ANALYZE'&&((hasFiles&&!hasImage)||/\b(audit|review|security|auditar|revisar|seguranca|seguridad)\b/i.test(t)))return true;
   return false;
 }
 export function isWhatMissingIntent(text=''){return /\b(what(?:'s| is) missing|what did (?:you|we) miss|anything missing|what else is missing|o que falta|faltou algo|o que ficou faltando|tem algo faltando)\b/i.test(String(text||''));}

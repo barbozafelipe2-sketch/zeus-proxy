@@ -56,7 +56,7 @@ assert.equal(models.redactProviderText('Bearer abcdefghijkl and AIzaSyA123456789
 
 // ---- Budget: answer calls get a long cap, everything fits under Netlify's 60s sync limit ----
 assert.ok(runtime.CHAT_WEB_TIMEOUT_MS + 8000 <= runtime.NETLIFY_SYNC_LIMIT_MS, 'need >=8s headroom for cold start, artifacts and DB finalize');
-assert.ok(runtime.CHAT_TIMEOUT_MS <= runtime.CHAT_WEB_TIMEOUT_MS && runtime.STALE_EXECUTION_MS > runtime.NETLIFY_SYNC_LIMIT_MS);
+assert.ok(runtime.FAST_CHAT_TIMEOUT_MS < runtime.CHAT_TIMEOUT_MS && runtime.CHAT_TIMEOUT_MS <= runtime.CHAT_WEB_TIMEOUT_MS && runtime.STALE_EXECUTION_MS > runtime.NETLIFY_SYNC_LIMIT_MS);
 const big = runtime.createExecutionBudget({ timeoutMs: 47000, maxCalls: 6 });
 assert.ok(models.answerCallTimeout(big, 0, 0.65) >= 25000, 'lead call must not be capped at 11.5s any more');
 assert.ok(models.answerCallTimeout(big, 0, 0.9) <= 32000);
@@ -126,3 +126,8 @@ assert.ok(appSource.includes('fetchPrivateBlob')&&appSource.includes("headers.se
 assert.ok(!appSource.includes('href="${esc(a.downloadUrl)}" target="_blank"'),'artifact Open must not navigate to a protected API URL');
 assert.ok(appSource.includes('private-preview-close')&&appSource.includes('← Back'),'standalone PWA private preview needs an in-app back control');
 assert.ok(appSource.includes("state.sending=true;state.activeMode='ZEUS'"),'automatic mode display must reset before each request');
+
+assert.ok(chat.includes("olympusDispatchFallback=true"),'Olympus dispatch failure must degrade to verified Zeus instead of running the full team inline');
+assert.ok(chat.includes('loadSharedProviderBlocks'),'shared fatal provider health must influence routing');
+assert.ok(app.includes('PRIVATE_BLOB_CACHE_MAX=16'),'private preview Blob URLs need a bounded LRU');
+assert.ok(app.includes('sampleVideoFrames'),'video picker must produce honest sampled visual frames');

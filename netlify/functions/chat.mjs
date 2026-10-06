@@ -8,7 +8,7 @@ import { resolveOwnedScope } from './_shared/relations.mjs';
 import { classifyIntent, decideExecutionMode, explainExecutionMode } from './_shared/intent.mjs';
 import { redactSecrets } from './_shared/security.mjs';
 import { assembleContext, relevanceScore } from './_shared/context.mjs';
-import { createExecutionBudget, CHAT_TIMEOUT_MS, CHAT_WEB_TIMEOUT_MS, STALE_EXECUTION_MS } from './_shared/runtime.mjs';
+import { createExecutionBudget, FAST_CHAT_TIMEOUT_MS, CHAT_TIMEOUT_MS, CHAT_WEB_TIMEOUT_MS, STALE_EXECUTION_MS } from './_shared/runtime.mjs';
 import { guardAiExecution } from './_shared/limits.mjs';
 import { pageLimit, decodeCursor, pageResult } from './_shared/pagination.mjs';
 import { queueBlobGc } from './_shared/storage.mjs';
@@ -65,13 +65,13 @@ async function buildContext({db,userId,projectId,conversationId,currentMessageId
     if(memories.length)memoriesText=formatMemoryContext(selectMemoryContext(memories));
 
     const attachedIds=new Set(attachmentRows.map(r=>String(r.id)));
-    const projectFiles=await db.sql`SELECT id,filename,mime_type,extracted_text,created_at FROM files WHERE project_id=${projectId} AND owner_id=${userId} ORDER BY created_at DESC LIMIT 30`;
+    const projectFiles=await db.sql`SELECT id,filename,mime_type,extracted_text,metadata,created_at FROM files WHERE project_id=${projectId} AND owner_id=${userId} ORDER BY created_at DESC LIMIT 30`;
     const relevant=projectFiles
       .filter(f=>!attachedIds.has(String(f.id)))
       .map(f=>({...f,_score:relevanceScore(currentText,`${f.filename}\n${String(f.extracted_text||'').slice(0,4000)}`)}))
       .sort((a,b)=>b._score-a._score || new Date(b.created_at)-new Date(a.created_at))
       .slice(0,8);
-    if(relevant.length)projectFilesText=relevant.map(f=>`PROJECT FILE: ${f.filename} (${f.mime_type})\n${clip(f.extracted_text||'[No text extraction available]',6500)}`).join('\n\n');
+    if(relevant.length)projectFilesText=relevant.map(f=>{const status=f.metadata?.extractionStatus||'stored_only',note=status==='analyzable'?(f.metadata?.truncated?'[Text extraction is partial/truncated.]':''):status==='vision_only'?'[Image file: use vision only when explicitly attached to this turn.]':status==='failed'?'[Text extraction failed. Do not claim the file contents were read.]':'[Stored file has no extracted text. Do not claim the binary contents were read.]';return `PROJECT FILE: ${f.filename} (${f.mime_type})\n${note}${f.extracted_text?`\n${clip(f.extracted_text,6500)}`:''}`;}).join('\n\n');
   }
 
   const history=[];
@@ -89,7 +89,7 @@ async function buildContext({db,userId,projectId,conversationId,currentMessageId
   }
 
   const attachmentsText=attachmentRows.length
-    ? attachmentRows.map(f=>`FILE: ${f.filename} (${f.mime_type})\n${queryAwareExcerpt(f.extracted_text||'[No text extraction available for this file type.]',currentText,18000)}`).join('\n\n')
+    ? attachmentRows.map(f=>{const status=f.metadata?.extractionStatus||'stored_only',role=f.metadata?.analysisRole||'';let note='';if(role==='video_source')note='VIDEO SOURCE: visual analysis is based only on attached sampled frames; audio and motion between samples were not analyzed.';else if(role==='video_frame')note=`VIDEO FRAME sampled from ${f.metadata?.sourceName||'video source'}.`;else if(status==='failed')note='Text extraction failed. Do not claim the binary contents were read.';else if(status==='stored_only'||status==='unsupported')note='Stored-only binary. Do not claim the file contents were read.';else if(status==='vision_only')note='Image content is available only through the vision inputs for this turn.';else if(f.metadata?.truncated)note='Text extraction is partial/truncated; do not claim full-file coverage.';const text=f.extracted_text?queryAwareExcerpt(f.extracted_text,currentText,18000):'';return `FILE: ${f.filename} (${f.mime_type})\n${note}${text?`\n${text}`:''}`;}).join('\n\n')
     : '';
 
   return {context:assembleContext({attachments:attachmentsText,memories:memoriesText,history:'',identity,tasks:tasksText,projectFiles:projectFilesText,maxChars:90000}),history};
@@ -112,7 +112,7 @@ async function canonicalConversation(db,userId,projectId,title){
 
 async function validateAttachedFiles(db,userId,projectId,fileIds){
   if(!fileIds.length)return [];
-  const rows=await db.sql`SELECT id,project_id,filename,mime_type,blob_key,size,extracted_text FROM files WHERE owner_id=${userId} AND id = ANY(${fileIds})`;
+  const rows=await db.sql`SELECT id,project_id,filename,mime_type,blob_key,size,extracted_text,metadata FROM files WHERE owner_id=${userId} AND id = ANY(${fileIds})`;
   if(rows.length!==fileIds.length)throw codedError('One or more attached files are unavailable.',404,'ATTACHMENT_NOT_FOUND');
   for(const row of rows){
     const fileProject=row.project_id?String(row.project_id):null;
@@ -125,11 +125,11 @@ async function validateAttachedFiles(db,userId,projectId,fileIds){
 
 async function loadVisionInputs(attachmentRows){
   const supported=/^image\/(?:png|jpeg|jpg|webp|gif)$/i;
-  const rows=attachmentRows.filter(r=>supported.test(r.mime_type||'')).slice(0,2);
+  const rows=attachmentRows.filter(r=>supported.test(r.mime_type||'')).slice(0,6);
   const images=[];let total=0;const skipped=[];
   for(const row of rows){
     const size=Number(row.size||0);
-    if(size>3*1024*1024 || total+size>4*1024*1024){skipped.push({id:row.id,filename:row.filename,reason:'vision_size_budget'});continue;}
+    if(size>2*1024*1024 || total+size>7*1024*1024){skipped.push({id:row.id,filename:row.filename,reason:'vision_size_budget'});continue;}
     const bytes=await blobStore('olyhub-files').get(row.blob_key,{type:'arrayBuffer'});
     if(!bytes){skipped.push({id:row.id,filename:row.filename,reason:'blob_missing'});continue;}
     const data=new Uint8Array(bytes);total+=data.byteLength;
@@ -208,7 +208,7 @@ async function finalizeTurn({db,userId,projectId,conversationId,execution,mode,r
     await client.query(`UPDATE executions SET state='SAVING',lead_model=$1,trace=$2::jsonb WHERE id=$3 AND owner_id=$4`,[result.leadModel||null,JSON.stringify(result.trace||{}),execution.id,userId]);
     const assistant=(await client.query(
       `INSERT INTO messages(owner_id,conversation_id,execution_id,role,mode,content,metadata) VALUES($1,$2,$3,'assistant',$4,$5,$6::jsonb) RETURNING id,role,mode,content,metadata,created_at`,
-      [userId,conversationId,execution.id,mode,result.content,JSON.stringify({artifacts:artifacts.map(a=>a.id),sources:Array.isArray(result.sources)?result.sources.slice(0,12):[],capabilities:Array.isArray(result.capabilities)?result.capabilities:[],leadModel:result.leadModel||null,fallback:Array.isArray(result.trace?.fallbacks)&&result.trace.fallbacks.length>0,modeExplanation:result.modeExplanation||null,verificationLabel:result.verificationLabel||null})]
+      [userId,conversationId,execution.id,mode,result.content,JSON.stringify({artifacts:artifacts.map(a=>a.id),sources:Array.isArray(result.sources)?result.sources.slice(0,12):[],capabilities:Array.isArray(result.capabilities)?result.capabilities:[],leadModel:result.leadModel||null,fallback:Array.isArray(result.trace?.fallbacks)&&result.trace.fallbacks.length>0,modeExplanation:result.modeExplanation||null,verificationLabel:result.verificationLabel||null,visionSummary:result.visionSummary||null})]
     )).rows[0];
     await client.query(`UPDATE executions SET state='COMPLETED',completed_at=now() WHERE id=$1 AND owner_id=$2`,[execution.id,userId]);
     await client.query(`UPDATE conversations SET updated_at=now() WHERE id=$1 AND owner_id=$2`,[conversationId,userId]);
@@ -221,6 +221,13 @@ async function loadPriorRequirements(db,userId,conversationId,currentExecutionId
   const rows=await db.sql`SELECT trace FROM executions WHERE owner_id=${userId} AND conversation_id=${conversationId} AND id<>${currentExecutionId} AND state='COMPLETED' ORDER BY completed_at DESC NULLS LAST, started_at DESC LIMIT 1`;
   const items=rows?.[0]?.trace?.requirements;
   return Array.isArray(items)?items.slice(0,12):[];
+}
+
+async function loadSharedProviderBlocks(db,userId){
+  const rows=await db.sql`SELECT state,lead_model,trace FROM executions WHERE owner_id=${userId} AND started_at > now() - interval '10 minutes' ORDER BY started_at DESC LIMIT 60`;
+  const resolved=new Map(),fatal=(item)=>{const status=Number(item?.status||0),msg=String(item?.error||'').toLowerCase();return [401,402,403,429].includes(status)||/quota|billing|credit|unauthor|forbidden|rate limit|insufficient/.test(msg);};
+  for(const row of rows){const lead=String(row?.lead_model||'').split(':')[0];if(lead&&!resolved.has(lead)&&(row.state==='COMPLETED'||row.state==='PARTIAL'))resolved.set(lead,'success');const trace=row?.trace||{};for(const item of [...(Array.isArray(trace?.attempts)?trace.attempts:[]),...(Array.isArray(trace?.fallbacks)?trace.fallbacks:[]),...(Array.isArray(trace?.failures)?trace.failures:[])]){const provider=String(item?.provider||'').toLowerCase();if(provider&&!resolved.has(provider)&&fatal(item))resolved.set(provider,'blocked');}}
+  return [...resolved.entries()].filter(([,v])=>v==='blocked').map(([p])=>p);
 }
 
 async function dispatchOlympus(req, payload){
@@ -293,9 +300,9 @@ async function chatHandler(req, context, startedAt){
   let decision=decideExecutionMode(modelText,{action:intent.action});
   if(decision.mode==='OLYMPUS'&&requirementSpec.items.length<3)decision={...decision,mode:'ZEUS',reason:'fewer_than_three_requirements'};
   const mode=decision.mode;
-  const modeExplanation=explainExecutionMode(decision);
+  let modeExplanation=explainExecutionMode(decision);
 
-  let init=null;
+  let init=null;let olympusDispatchFallback=false;
   const stagedArtifacts=[];
   let executionBudget=null;
   try{
@@ -306,6 +313,7 @@ async function chatHandler(req, context, startedAt){
       await db.sql`UPDATE executions SET state='QUEUED' WHERE id=${init.execution.id} AND owner_id=${user.id}`;
       const dispatched=await dispatchOlympus(req,{...body,content,conversationId,projectId,mode,requestId,fileIds});
       if(dispatched)return json({pending:true,mode,modeExplanation,conversationId,userMessage:init.userMessage,execution:{id:init.execution.id,state:'QUEUED'},requestId,replayed:false},202);
+      olympusDispatchFallback=true;modeExplanation='Olympus background dispatch was unavailable, so Zeus verified the request instead of running a heavy team inline.';
       await db.sql`UPDATE executions SET state='UNDERSTANDING' WHERE id=${init.execution.id} AND owner_id=${user.id}`;
     }
     const execution=init.execution,userMessage=init.userMessage;
@@ -324,11 +332,13 @@ async function chatHandler(req, context, startedAt){
 
     const webIntent=shouldSearchWeb(modelText)&&intent.action!=='IMAGE_CREATE'&&intent.action!=='IMAGE_EDIT';
     const githubIntent=hasGitHubRepoUrl(modelText);
-    const maxCalls=(intent.action==='IMAGE_CREATE'||intent.action==='IMAGE_EDIT'?3:(mode==='OLYMPUS'?8:(verify?9:5)))+(webIntent?1:0);
-    const timeoutMs=worker?150000:((webIntent||githubIntent)?CHAT_WEB_TIMEOUT_MS:CHAT_TIMEOUT_MS);
+    const actualMode=olympusDispatchFallback?'ZEUS':mode;
+    const maxCalls=(intent.action==='IMAGE_CREATE'||intent.action==='IMAGE_EDIT'?3:(actualMode==='OLYMPUS'?8:(verify||olympusDispatchFallback?9:5)))+(webIntent?1:0);
+    const timeoutMs=worker?150000:((webIntent||githubIntent)?CHAT_WEB_TIMEOUT_MS:(route==='fast'&&!verify&&!olympusDispatchFallback?FAST_CHAT_TIMEOUT_MS:CHAT_TIMEOUT_MS));
     executionBudget=createExecutionBudget({startedAt,timeoutMs,maxCalls,reserveMs:6500});
     const vision=hasImage?await loadVisionInputs(attachmentRows):{images:[],skipped:[]};
-    const web=webIntent?await runWebSearch(modelText,{budget:executionBudget,reserveAfterMs:mode==='OLYMPUS'?17000:12000}):{requested:false,context:'',sources:[],trace:null};
+    const sharedBlockedProviders=await loadSharedProviderBlocks(db,user.id);
+    const web=webIntent?await runWebSearch(modelText,{budget:executionBudget,reserveAfterMs:actualMode==='OLYMPUS'?17000:12000}):{requested:false,context:'',sources:[],trace:null};
     const github=githubIntent?await loadGitHubContext(modelText,{timeoutMs:worker?12000:7000,maxFiles:worker?14:10,maxChars:worker?62000:42000}):{requested:false,context:'',sources:[],trace:null};
     const deliveryContract=intent.action==='ARTIFACT_CREATE'&&intent.artifactType==='zip'?'For a ZIP deliverable, include exactly one machine-readable block delimited by <olyhub_zip_manifest> and </olyhub_zip_manifest>. Inside it output valid JSON with shape {"files":[{"path":"relative/path.ext","content":"complete file contents"}]}. Include every file required to run/deploy the requested project, use safe relative paths, no placeholders, no omitted-file prose, and keep any human summary outside the manifest.':'';
     const enrichedContext=`${aiContext}${web.context||''}${github.context||''}`;
@@ -349,15 +359,15 @@ async function chatHandler(req, context, startedAt){
       result={content:'Image created and saved to your OlyHub Files.',leadModel:`openai:${img.model}`,trace:{image:true,budget:img.budget}};
     }else{
       await db.sql`UPDATE executions SET state='RUNNING' WHERE id=${execution.id} AND owner_id=${user.id}`;
-      if(mode==='OLYMPUS'){
-        try{result=await runOlympus({text:modelText,context:enrichedContext,images:vision.images,history,requirements:requirementSpec,deliveryContract,budget:executionBudget});}
+      if(actualMode==='OLYMPUS'){
+        try{result=await runOlympus({text:modelText,context:enrichedContext,images:vision.images,history,requirements:requirementSpec,deliveryContract,blockedProviders:sharedBlockedProviders,budget:executionBudget});}
         catch(olympusError){
           if(!executionBudget.canCall())throw olympusError;
-          const fallback=await runZeus({text:modelText,context:enrichedContext,images:vision.images,history,requirements:requirementSpec,verify:true,budget:executionBudget});
+          const fallback=await runZeus({text:modelText,context:enrichedContext,images:vision.images,history,requirements:requirementSpec,verify:true,deliveryContract,blockedProviders:sharedBlockedProviders,budget:executionBudget});
           fallback.trace={...(fallback.trace||{}),olympusFallback:String(olympusError?.message||olympusError).slice(0,220)};
           result=fallback;
         }
-      }else result=await runZeus({text:modelText,context:enrichedContext,images:vision.images,history,requirements:requirementSpec,verify,budget:executionBudget});
+      }else result=await runZeus({text:modelText,context:enrichedContext,images:vision.images,history,requirements:requirementSpec,verify:verify||olympusDispatchFallback,deliveryContract,blockedProviders:sharedBlockedProviders,budget:executionBudget});
       if(intent.action==='ARTIFACT_CREATE'&&intent.artifactType){
         try{
           stagedArtifacts.push(await stageArtifact({ownerId:user.id,type:intent.artifactType,title:titleFrom(content),content:result.content,metadata:{title:titleFrom(content),intent:intent.reason}}));
@@ -373,9 +383,11 @@ async function chatHandler(req, context, startedAt){
 
     result.sources=[...(web.sources||[]),...(github.sources||[])].slice(0,12);
     result.capabilities=[web.trace,github.trace].filter(Boolean);
-    result.trace={...(result.trace||{}),intent,modeDecision:decision,route,verificationRequested:verify,secretsRedacted,visionSkipped:vision.skipped,webSearch:web.trace||null,githubRepository:github.trace||null};
+    const visionSummary={attached:attachmentRows.filter(r=>(r.mime_type||'').startsWith('image/')).length,analyzed:vision.images.length,skipped:vision.skipped.length};
+    result.trace={...(result.trace||{}),intent,modeDecision:decision,route,verificationRequested:verify||olympusDispatchFallback,olympusDispatchFallback,secretsRedacted,visionSkipped:vision.skipped,visionSummary,sharedBlockedProviders,webSearch:web.trace||null,githubRepository:github.trace||null};
+    result.visionSummary=visionSummary;
     result.modeExplanation=modeExplanation;
-    const finalMode=result.effectiveMode||mode;
+    const finalMode=result.effectiveMode||(olympusDispatchFallback?'ZEUS':mode);
     const final=await finalizeTurn({db,userId:user.id,projectId,conversationId,execution,mode:finalMode,result,stagedArtifacts});
     return json({conversationId,message:final.assistant,userMessage,artifacts:final.artifacts,mode:finalMode,modeExplanation,execution:{id:execution.id,state:'COMPLETED'},requestId,replayed:false});
   }catch(error){

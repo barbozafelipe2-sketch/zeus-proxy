@@ -10,12 +10,13 @@ const state = {
   files:[], artifacts:[], health:null, recording:false,
   projectSection:'CHAT', projectMemories:[], memoryPolicy:null,
   messagePage:{hasMore:false,nextCursor:null}, filesPage:{scope:'global',hasMore:false,nextCursor:null}, artifactsPage:{scope:'global',hasMore:false,nextCursor:null}, chatRestore:null,
-  voiceBusy:false, voiceRecorder:null, voiceStream:null, voiceChunks:[], voiceStopTimer:null, voiceRecognition:null,
+  voiceBusy:false, voiceRecorder:null, voiceStream:null, voiceChunks:[], voiceStopTimer:null, voiceRecognition:null, voiceBytes:0, voiceHitSizeLimit:false,
   draft:'', offline:typeof navigator!=='undefined'&&navigator.onLine===false,
   lastFailedText:'', lastFailedMessageId:null, lastFailedAttachments:[], lastFailedRequestId:null,
 };
-const privateBlobUrls=new Map();
-function revokePrivateBlobUrls(){for(const url of privateBlobUrls.values())try{URL.revokeObjectURL(url)}catch{}privateBlobUrls.clear();}
+const privateBlobUrls=new Map();const PRIVATE_BLOB_CACHE_MAX=16;
+function revokePrivateBlobUrls(){for(const entry of privateBlobUrls.values())try{URL.revokeObjectURL(entry?.url||entry)}catch{}privateBlobUrls.clear();}
+function rememberPrivateBlob(key,url){if(privateBlobUrls.has(key)){const old=privateBlobUrls.get(key);try{URL.revokeObjectURL(old?.url||old)}catch{}privateBlobUrls.delete(key);}privateBlobUrls.set(key,{url,at:Date.now()});while(privateBlobUrls.size>PRIVATE_BLOB_CACHE_MAX){const first=privateBlobUrls.keys().next().value,old=privateBlobUrls.get(first);try{URL.revokeObjectURL(old?.url||old)}catch{}privateBlobUrls.delete(first);}}
 
 const esc = (v='') => String(v).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const fmtSize = n => { n=Number(n||0); if(n<1024)return `${n} B`; if(n<1048576)return `${(n/1024).toFixed(1)} KB`; return `${(n/1048576).toFixed(1)} MB`; };
@@ -123,8 +124,8 @@ async function fetchPrivateBlob(url){
   return await r.blob();
 }
 async function privateObjectUrl(url){
-  if(privateBlobUrls.has(url))return privateBlobUrls.get(url);
-  const blob=await fetchPrivateBlob(url),objectUrl=URL.createObjectURL(blob);privateBlobUrls.set(url,objectUrl);return objectUrl;
+  if(privateBlobUrls.has(url)){const entry=privateBlobUrls.get(url);privateBlobUrls.delete(url);privateBlobUrls.set(url,entry);return entry?.url||entry;}
+  const blob=await fetchPrivateBlob(url),objectUrl=URL.createObjectURL(blob);rememberPrivateBlob(url,objectUrl);return objectUrl;
 }
 async function downloadPrivateOutput(url,filename='OlyHub-output'){
   const blob=await fetchPrivateBlob(url),objectUrl=URL.createObjectURL(blob),a=document.createElement('a');
@@ -132,7 +133,7 @@ async function downloadPrivateOutput(url,filename='OlyHub-output'){
 }
 async function openPrivateOutput(url,filename='OlyHub output',mime='application/octet-stream'){
   const blob=await fetchPrivateBlob(url),objectUrl=URL.createObjectURL(blob),type=blob.type||mime||'application/octet-stream';
-  const body=type.startsWith('image/')?`<img class="private-preview-image" src="${objectUrl}" alt="${esc(filename)}">`:type==='application/pdf'?`<iframe class="private-preview-frame" src="${objectUrl}" title="${esc(filename)}"></iframe>`:`<div class="private-preview-generic">${icon('files')}<strong>${esc(filename)}</strong><p>This file is private. Use Download to save it to your device.</p></div>`;
+  let body;if(type.startsWith('image/'))body=`<img class="private-preview-image" src="${objectUrl}" alt="${esc(filename)}">`;else if(type==='application/pdf')body=`<iframe class="private-preview-frame" src="${objectUrl}" title="${esc(filename)}"></iframe>`;else if(type.startsWith('text/')||type.includes('json')||type.includes('csv')){const text=await blob.text();body=`<pre class="private-preview-text">${esc(text.slice(0,240000))}${text.length>240000?'\n[preview truncated]':''}</pre>`;}else body=`<div class="private-preview-generic">${icon('files')}<strong>${esc(filename)}</strong><p>This file is private. Use Download to save it to your device.</p></div>`;
   showModal(`<div class="modal-backdrop private-preview-backdrop"><section class="modal private-preview-modal"><header class="private-preview-head"><button class="secondary compact" id="private-preview-close" type="button">← Back</button><strong>${esc(filename)}</strong><button class="secondary compact" id="private-preview-download" type="button">Download</button></header><div class="private-preview-body">${body}</div></section></div>`,{initialFocus:'#private-preview-close',onClose:()=>URL.revokeObjectURL(objectUrl)});
   $('#private-preview-close')?.addEventListener('click',()=>closeModal());
   $('#private-preview-download')?.addEventListener('click',()=>downloadPrivateOutput(url,filename).catch(e=>{state.error=e.message;closeModal();render();}));
@@ -314,7 +315,9 @@ function messageHtml(m){
   const sourceHtml=sources.length?`<div class="message-sources"><span>Sources</span><div>${sources.map((source,i)=>`<a href="${esc(source.url)}" target="_blank" rel="noreferrer noopener" title="${esc(source.title)}"><strong>${i+1}</strong><span>${esc(source.title)}</span></a>`).join('')}</div></div>`:'';
   const leadRaw=m.role==='assistant'&&m.metadata?.leadModel?String(m.metadata.leadModel):'';
   const lead=leadRaw.includes(':')?`${leadRaw.slice(0,leadRaw.indexOf(':'))} · ${leadRaw.slice(leadRaw.indexOf(':')+1)}`:leadRaw;
-  const note=[m.metadata?.modeExplanation,lead,m.metadata?.fallback?'fallback':'',m.metadata?.verificationLabel].filter(Boolean).join(' · ');
+  const vision=m.metadata?.visionSummary,visionNote=vision?.skipped?`Vision ${Number(vision.analyzed||0)}/${Number(vision.attached||0)} images analyzed`:'';
+  const capabilityNotes=(Array.isArray(m.metadata?.capabilities)?m.metadata.capabilities:[]).map(c=>c?.name==='github_repository'&&c?.status==='completed'?`GitHub ${Number(c.fileCount||0)}/${Number(c.treeEntries||0)} files sampled`:c?.name==='web_search'&&c?.status==='completed'?`Web ${Number(c.sourceCount||0)} sources`:null).filter(Boolean);
+  const note=[m.metadata?.modeExplanation,lead,m.metadata?.fallback?'fallback':'',m.metadata?.verificationLabel,visionNote,...capabilityNotes].filter(Boolean).join(' · ');
   return `<article class="message ${m.role==='user'?'user':'assistant'}"><div class="message-label">${m.role==='user'?'YOU':esc(m.mode||'ZEUS')}</div><div class="message-body">${esc(m.content||'')}</div>${note?`<div class="message-model">${esc(note)}</div>`:''}${sourceHtml}${attached?`<div class="attachments in-message">${attached}</div>`:''}${artifacts?`<div class="artifact-row">${artifacts}</div>`:''}</article>`;
 }
 function artifactCard(a){const tag=esc((a.type||'FILE').toUpperCase().slice(0,4)),url=esc(a.downloadUrl||''),name=esc(a.filename||'OlyHub output'),mime=esc(a.mime_type||a.type||'application/octet-stream'),isImage=String(a.mime_type||'').startsWith('image/');return `<div class="artifact-card">${isImage?`<button type="button" class="artifact-thumb-wrap" data-open-output="${url}" data-output-name="${name}" data-output-mime="${mime}" aria-label="Open ${name}"><img class="artifact-thumb" data-private-image="${url}" alt=""></button>`:`<div class="out-badge">${tag}</div>`}<div><strong>${name}</strong><small>${fmtSize(a.size)} · ${mime}</small></div><div class="artifact-actions"><button type="button" data-open-output="${url}" data-output-name="${name}" data-output-mime="${mime}">Open</button><button type="button" class="ghost-a" data-download-output="${url}" data-output-name="${name}">Download</button></div></div>`}
@@ -429,15 +432,15 @@ function projectMemoryView(){
 function memoryItem(m){return `<article class="memory-item"><div class="memory-icon">${icon('memory')}</div><div><strong>${esc(m.type==='manual_note'?'Project memory':String(m.type||'Memory').replaceAll('_',' '))}</strong><p>${esc(m.content)}</p><small>${fmtDate(m.created_at)} · ${esc(m.source||'manual')}</small></div><button class="ghost danger memory-delete" data-memory-delete="${m.id}" title="Delete memory" aria-label="Delete this memory">${icon('close')}</button></article>`}
 function taskHtml(t){const status=String(t.status||'TODO');const next=status==='TODO'?'IN_PROGRESS':status==='IN_PROGRESS'?'DONE':'TODO';const label=status==='TODO'?'Start task':status==='IN_PROGRESS'?'Mark task done':'Reopen task';const mark=status==='DONE'?icon('check'):status==='IN_PROGRESS'?'<span class="task-state-dot" aria-hidden="true"></span>':'';return `<div class="task-item"><button class="task-check ${status==='DONE'?'done':status==='IN_PROGRESS'?'in-progress':''}" data-task="${t.id}" data-status="${status}" data-next-status="${next}" aria-label="${label}: ${esc(t.title)}" title="${label}">${mark}</button><div><strong style="font-size:13px">${esc(t.title)}</strong><div class="muted tiny">${esc(status.replaceAll('_',' '))}${t.due_at?` · ${fmtDate(t.due_at)}`:''}</div></div><span class="priority ${esc(t.priority)}">${esc(t.priority)}</span></div>`}
 
-function capabilityState(key,fallbackReady=false){const raw=state.health?.capabilityReadiness?.[key];if(raw==='observed_healthy')return {enabled:true,label:'READY'};if(raw==='configured_unverified')return {enabled:true,label:'CONFIGURED'};if(raw==='degraded')return {enabled:false,label:'DEGRADED'};return {enabled:Boolean(fallbackReady),label:fallbackReady?'READY':'COMING LATER'};}
+function capabilityState(key,fallbackReady=false){const raw=state.health?.capabilityReadiness?.[key];if(raw==='observed_healthy')return {enabled:true,label:'READY'};if(raw==='configured_unverified')return {enabled:true,label:'CONFIGURED'};if(raw==='degraded'||raw==='recent_failure')return {enabled:false,label:'DEGRADED'};return {enabled:Boolean(fallbackReady),label:fallbackReady?'READY':'UNAVAILABLE'};}
 function toolsView(){const h=state.health?.capabilities||{};const chat=capabilityState('chat',Boolean(h.chat));const images=capabilityState('imageGeneration',Boolean(h.imageGeneration));const tools=[
   ['web','Web Search','Current web retrieval with sources',icon('globe'),Boolean(h.webSearch),h.webSearch?'READY':'NOT CONFIGURED','Search the web for '],
   ['code','Code','Build and review code with explicit test status',icon('code'),chat.enabled,chat.label,'Build or review code for '],
   ['images','Images','Generate and edit with AI',icon('image'),images.enabled,images.label,'Create an image of '],
   ['documents','Documents','Create retained PDF, DOCX, PPTX and XLSX deliverables',icon('doc'),chat.enabled,chat.label,'Create a professional PDF about '],
   ['analysis','Source Review','Ground analysis in uploaded files and project context',icon('chart'),chat.enabled,chat.label,'Analyze the attached source and ground the findings in what it actually supports'],
-  ['automation','Automation','Workflows and integrations',icon('auto'),false,'COMING LATER','']
 ];
+
   return `<section class="page tools-page">
     <div class="page-head tight"><div><h1>Tools & Capabilities</h1><p class="eyebrow">REAL CAPABILITIES. REAL OUTPUTS.</p></div><button class="text-gold" data-tab="Files">Explore All ></button></div>
     ${errorBanner('page-alert')}<div class="tool-grid">${tools.map(([kind,title,sub,ico,ok,label,prompt])=>`<button class="tool-card ${ok?'':'disabled'}" data-kind="${kind}" ${ok?`data-tool-prompt="${esc(prompt)}"`:'disabled aria-disabled="true"'}><div class="tool-ico">${ico}</div><div class="tool-copy"><strong>${title}</strong><span>${sub}</span></div><span class="tool-state">${esc(label)}</span><span class="chev">›</span></button>`).join('')}</div>
@@ -445,7 +448,7 @@ function toolsView(){const h=state.health?.capabilities||{};const chat=capabilit
   </section>`;
 }
 function outputsList(limit=12){let all=[...state.artifacts.map(a=>({...a,kind:'artifact'})),...state.files.map(f=>({...f,kind:'file',type:(f.mime_type||'file').split('/').pop()}))].sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));if(Number.isFinite(limit))all=all.slice(0,limit);return all.length?`<div class="output-list">${all.map(outputItem).join('')}</div>`:`<div class="card" style="padding:24px"><strong>Your library starts with the first source or deliverable.</strong><p class="muted">Upload a source for analysis, or ask Zeus/Olympus to create a document, image, spreadsheet, presentation or ZIP.</p></div>`}
-function outputItem(o){const tag=String(o.type||o.mime_type||'FILE').split('/').pop().toUpperCase().slice(0,4),kind=o.kind==='artifact'?'artifact':'file',url=esc(o.downloadUrl||''),name=esc(o.filename||'Output'),mime=esc(o.mime_type||o.type||'application/octet-stream');return `<article class="out-row"><div class="out-badge ${tag.toLowerCase()}">${esc(tag)}</div><div><strong>${name}</strong><small>${fmtSize(o.size)}${fmtDateTime(o.created_at)?` · ${fmtDateTime(o.created_at)}`:''}</small></div><div class="out-actions"><button class="chev-link" type="button" data-open-output="${url}" data-output-name="${name}" data-output-mime="${mime}">Open</button><button class="chev-link" type="button" data-download-output="${url}" data-output-name="${name}">Download</button><button class="icon-danger" type="button" data-delete-output="${kind}" data-output-id="${esc(o.id)}" aria-label="Delete ${kind} ${name}" title="Delete ${kind}">${icon('close')}</button></div></article>`}
+function outputItem(o){const tag=String(o.type||o.mime_type||'FILE').split('/').pop().toUpperCase().slice(0,4),kind=o.kind==='artifact'?'artifact':'file',download=esc(o.downloadUrl||''),open=esc((kind==='file'&&o.previewUrl)||o.downloadUrl||''),name=esc(o.filename||'Output'),mime=esc(kind==='file'&&o.previewUrl?'text/plain':(o.mime_type||o.type||'application/octet-stream')),status=kind==='file'?(o.metadata?.extractionStatus||'stored_only'):'';return `<article class="out-row"><div class="out-badge ${tag.toLowerCase()}">${esc(tag)}</div><div><strong>${name}</strong><small>${fmtSize(o.size)}${status?` · ${esc(status.replaceAll('_',' '))}`:''}${fmtDateTime(o.created_at)?` · ${fmtDateTime(o.created_at)}`:''}</small></div><div class="out-actions"><button class="chev-link" type="button" data-open-output="${open}" data-output-name="${name}" data-output-mime="${mime}">Open</button><button class="chev-link" type="button" data-download-output="${download}" data-output-name="${name}">Download</button><button class="icon-danger" type="button" data-delete-output="${kind}" data-output-id="${esc(o.id)}" aria-label="Delete ${kind} ${name}" title="Delete ${kind}">${icon('close')}</button></div></article>`}
 function filesView(){const more=Boolean(state.filesPage?.hasMore||state.artifactsPage?.hasMore);return `<section class="page files-page"><div class="page-head"><div><div class="eyebrow">Files</div><h1>Files & Library</h1><p>Upload, analyze, and keep files and generated artifacts connected to your conversations and projects.</p></div><button class="primary" id="upload-files">${icon('plus')} Upload files</button></div><div class="project-tabs" style="margin-bottom:18px"><button type="button" class="active" aria-pressed="true">All outputs</button></div>${errorBanner('page-alert')}${outputsList(null)}${more?'<div class="history-more"><button class="secondary compact" id="load-older-outputs">Load older</button></div>':''}</section>`}
 function settingsView(){const providers=state.health?.providerReadiness||{};const statusLabel=(v)=>String(v||'not_configured').toUpperCase().replaceAll('_',' ');const statusGood=(v)=>v==='observed_healthy';return `<section class="page"><div class="page-head"><div><div class="eyebrow">Settings</div><h1>Workspace settings</h1><p>Account and advanced runtime diagnostics.</p></div></div>${errorBanner('page-alert')}<div class="settings-grid"><article class="card settings-card"><h3>Account</h3><div class="user-chip"><div class="avatar">${esc(initials())}</div><div><strong>${esc(state.user?.user_metadata?.full_name||'Felipe')}</strong><div class="muted tiny">${esc(state.user?.email||'')}</div></div></div><button class="secondary" id="settings-logout" style="margin-top:18px">Lock</button></article><article class="card settings-card"><h3>AI provider diagnostics</h3><div class="diag-list">${['openai','anthropic','gemini','openrouter'].map(p=>{const v=providers[p]?.status||'not_configured';return `<div class="diag-row"><span>${p}</span><strong class="${statusGood(v)?'status-good':'status-warn'}">${esc(statusLabel(v))}</strong></div>`}).join('')}</div><p class="muted tiny" style="line-height:1.55;margin-top:14px">Diagnostics are runtime-local evidence. CONFIGURED UNVERIFIED means credentials/models were detected but this warm Function runtime has not observed a successful call yet. DEGRADED means the temporary circuit breaker is open.</p></article><article class="card settings-card"><h3>Capabilities</h3><div class="diag-list">${Object.keys(state.health?.capabilityReadiness||{}).length?'':`<div class="muted tiny">${state.health?'No capability diagnostics reported.':'Diagnostics load when the workspace runtime responds.'}</div>`}${Object.entries(state.health?.capabilityReadiness||{}).map(([k,v])=>`<div class="diag-row"><span>${esc(k)}</span><strong class="${v==='observed_healthy'?'status-good':'status-warn'}">${esc(statusLabel(v))}</strong></div>`).join('')}</div></article></div></section>`}
 
@@ -541,7 +544,8 @@ function bind(){
   $('#attach')?.addEventListener('click',()=>{state.attachMenu=!state.attachMenu;render();if(state.attachMenu)requestAnimationFrame(()=>$('#attach-media')?.focus());}); $('#upload-files')?.addEventListener('click',()=>$('#global-file-input').click());
   $('#attach-media')?.addEventListener('click',()=>$('#global-media-input').click()); $('#attach-camera')?.addEventListener('click',()=>$('#global-camera-input').click()); $('#attach-file')?.addEventListener('click',()=>$('#global-file-input').click());
   const handleUpload=async e=>{const files=[...e.target.files];e.target.value='';state.attachMenu=false;for(const f of files)await uploadFile(f);};
-  $('#global-file-input').onchange=handleUpload; $('#global-media-input').onchange=handleUpload; $('#global-camera-input').onchange=handleUpload;
+  const handleMedia=async e=>{const files=[...e.target.files];e.target.value='';await handleMediaFiles(files);render();};
+  $('#global-file-input').onchange=handleUpload; $('#global-media-input').onchange=handleMedia; $('#global-camera-input').onchange=handleMedia;
   $$('[data-remove-file]').forEach(b=>b.addEventListener('click',()=>{state.attachedFiles=state.attachedFiles.filter(f=>f.id!==b.dataset.removeFile);render()}));
   $('#voice')?.addEventListener('click',startVoice);
   $('#retry-last')?.addEventListener('click',retryLastMessage);
@@ -726,17 +730,23 @@ async function retryLastMessage(){
   state.error='';state.lastFailedText='';state.lastFailedMessageId=null;state.lastFailedAttachments=[];state.lastFailedRequestId=null;render();
   await sendText(text,pending,requestId);
 }
-async function uploadFile(file){
+function mediaBaseName(name='media'){return String(name||'media').replace(/\.[^.]+$/,'').replace(/[^a-z0-9._-]+/gi,'-').slice(0,100)||'media';}
+function canvasJpeg(canvas,quality=.82){return new Promise((resolve,reject)=>canvas.toBlob(blob=>blob?resolve(blob):reject(new Error('Could not encode image.')),'image/jpeg',quality));}
+async function imageElementFromFile(file){const url=URL.createObjectURL(file);try{const img=new Image();img.decoding='async';await new Promise((resolve,reject)=>{img.onload=resolve;img.onerror=()=>reject(new Error('This image format could not be decoded on this device.'));img.src=url;});return {img,url};}catch(error){URL.revokeObjectURL(url);throw error;}}
+async function normalizeMediaImage(file){const supported=/^image\/(?:png|jpeg|jpg|webp|gif)$/i.test(file.type||'');if(supported&&file.size<=1500*1024)return file;const {img,url}=await imageElementFromFile(file);try{const max=1600,scale=Math.min(1,max/Math.max(img.naturalWidth||1,img.naturalHeight||1)),w=Math.max(1,Math.round((img.naturalWidth||1)*scale)),h=Math.max(1,Math.round((img.naturalHeight||1)*scale)),canvas=document.createElement('canvas');canvas.width=w;canvas.height=h;canvas.getContext('2d').drawImage(img,0,0,w,h);let blob=await canvasJpeg(canvas,.84);if(blob.size>1500*1024)blob=await canvasJpeg(canvas,.70);return new File([blob],`${mediaBaseName(file.name)}.jpg`,{type:'image/jpeg',lastModified:Date.now()});}finally{URL.revokeObjectURL(url);}}
+async function sampleVideoFrames(file,maxFrames=3){const url=URL.createObjectURL(file),video=document.createElement('video');video.preload='auto';video.muted=true;video.playsInline=true;video.src=url;try{await new Promise((resolve,reject)=>{video.onloadedmetadata=resolve;video.onerror=()=>reject(new Error('This video could not be decoded on this device.'));});const duration=Number.isFinite(video.duration)&&video.duration>0?video.duration:1,points=Array.from({length:maxFrames},(_,i)=>(i+1)/(maxFrames+1)),out=[];for(let i=0;i<points.length;i++){const t=Math.max(0,Math.min(Math.max(0,duration-.05),duration*points[i]));await new Promise((resolve,reject)=>{let timer;const done=()=>{clearTimeout(timer);resolve();};video.addEventListener('seeked',done,{once:true});video.currentTime=t;timer=setTimeout(()=>reject(new Error('Video frame sampling timed out.')),5000);});const max=1280,scale=Math.min(1,max/Math.max(video.videoWidth||1,video.videoHeight||1)),canvas=document.createElement('canvas');canvas.width=Math.max(1,Math.round((video.videoWidth||1)*scale));canvas.height=Math.max(1,Math.round((video.videoHeight||1)*scale));canvas.getContext('2d').drawImage(video,0,0,canvas.width,canvas.height);const blob=await canvasJpeg(canvas,.76);out.push(new File([blob],`${mediaBaseName(file.name)}-frame-${i+1}.jpg`,{type:'image/jpeg',lastModified:Date.now()}));}return out;}finally{video.pause();video.removeAttribute('src');video.load();URL.revokeObjectURL(url);}}
+async function handleMediaFiles(files){state.attachMenu=false;for(const file of files){try{if((file.type||'').startsWith('video/')){state.execStatus=`Sampling ${file.name} for visual analysis…`;render();const frames=await sampleVideoFrames(file,3);if(file.size<=4*1024*1024)await uploadFile(file,{analysisRole:'video_source',sourceName:file.name,attach:true});for(const frame of frames)await uploadFile(frame,{analysisRole:'video_frame',sourceName:file.name,attach:true});state.execStatus=`Video prepared: ${frames.length} sampled frames. Audio and motion between samples are not analyzed.`;}else if((file.type||'').startsWith('image/')||/\.(heic|heif)$/i.test(file.name||'')){state.execStatus=`Preparing ${file.name} for vision…`;render();const normalized=await normalizeMediaImage(file);await uploadFile(normalized,{analysisRole:'media_image',sourceName:file.name,attach:true});}else await uploadFile(file);}catch(error){state.error=error?.message||`Could not prepare ${file.name}.`;state.execStatus='';render();}}}
+async function uploadFile(file,{analysisRole='',sourceName='',attach=true}={}){
   if(file.size>4*1024*1024){state.error=`${file.name} is over the current 4 MB safe upload limit.`;render();return;}
   state.execStatus=`Uploading ${file.name}…`;render();
   try{
-    const fd=new FormData();fd.append('file',file);
+    const fd=new FormData();fd.append('file',file);if(analysisRole)fd.append('analysisRole',analysisRole);if(sourceName)fd.append('sourceName',sourceName);
     const inProjectWorkspace=state.tab==='Projects'&&Boolean(state.currentProject?.id);
     if(inProjectWorkspace)fd.append('projectId',state.currentProject.id);
     if((inProjectWorkspace||state.tab==='Home')&&state.currentConversation)fd.append('conversationId',state.currentConversation);
     const d=await api('/api/files',{method:'POST',body:fd});
-    state.attachedFiles.push(d.file);await loadFiles(inProjectWorkspace?state.currentProject.id:null);
-    state.execStatus=d.file.extracted?'File uploaded and ready for analysis.':'File uploaded. It will remain available as a binary artifact.';
+    if(attach)state.attachedFiles.push(d.file);await loadFiles(inProjectWorkspace?state.currentProject.id:null);
+    const status=d.file.analysisStatus||d.file.metadata?.extractionStatus||'stored_only';state.execStatus=status==='analyzable'?'File uploaded and ready for text analysis.':status==='vision_only'?'Image uploaded and ready for vision.':status==='failed'?'File uploaded, but text extraction failed. The original is preserved.':status==='stored_only'&&analysisRole==='video_source'?'Video source stored; analysis uses sampled frames.':'File uploaded and preserved; this type is stored only.';
   }catch(e){state.error=e.message;state.execStatus='';}
   finally{render();const shown=state.execStatus;setTimeout(()=>{if(state.execStatus===shown&&!state.sending){state.execStatus='';render();}},1200)}
 }
@@ -753,16 +763,16 @@ async function startVoice(){
       const choices=['audio/mp4','audio/aac','audio/webm;codecs=opus','audio/webm'];
       const mime=choices.find(x=>MediaRecorder.isTypeSupported?.(x))||'';
       const recorder=new MediaRecorder(stream,mime?{mimeType:mime}:undefined);
-      state.voiceStream=stream;state.voiceRecorder=recorder;state.voiceChunks=[];
-      recorder.ondataavailable=e=>{if(e.data?.size)state.voiceChunks.push(e.data)};
+      state.voiceStream=stream;state.voiceRecorder=recorder;state.voiceChunks=[];state.voiceBytes=0;state.voiceHitSizeLimit=false;
+      recorder.ondataavailable=e=>{if(e.data?.size){state.voiceChunks.push(e.data);state.voiceBytes+=e.data.size;if(state.voiceBytes>3600*1024&&recorder.state==='recording'){state.voiceHitSizeLimit=true;recorder.stop();}}};
       recorder.onerror=()=>{state.error='Voice recording failed. Check microphone permission.';cleanupVoice();render();};
       recorder.onstop=async()=>{
         clearTimeout(state.voiceStopTimer);
         const chunks=state.voiceChunks.slice();
-        const type=recorder.mimeType||'audio/webm';
+        const type=recorder.mimeType||'audio/webm';const hitSizeLimit=state.voiceHitSizeLimit;
         cleanupVoice();
         if(!chunks.length){state.error='No voice audio was captured.';render();return;}
-        state.voiceBusy=true;state.execStatus='Detecting language and transcribing…';render();
+        state.voiceBusy=true;state.execStatus=hitSizeLimit?'Recording reached the safe size limit; transcribing captured audio…':'Detecting language and transcribing…';render();
         try{
           const blob=new Blob(chunks,{type});
           const ext=type.includes('mp4')||type.includes('aac')?'m4a':'webm';
@@ -818,7 +828,7 @@ async function startVoice(){
 }
 function cleanupVoice(){
   state.voiceStream?.getTracks?.().forEach(t=>t.stop());
-  state.recording=false;state.voiceRecorder=null;state.voiceStream=null;state.voiceChunks=[];
+  state.recording=false;state.voiceRecorder=null;state.voiceStream=null;state.voiceChunks=[];state.voiceBytes=0;state.voiceHitSizeLimit=false;
   clearTimeout(state.voiceStopTimer);state.voiceStopTimer=null;
 }
 function projectModal(){

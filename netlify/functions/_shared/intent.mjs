@@ -1,17 +1,17 @@
 const normalize = (value = '') => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 
-const ANALYZE = /\b(analy[sz]e|analysis|review|inspect|explain|summari[sz]e|read|check|audit|what(?:'s| is)|tell me what|analise|analisar|analisa|analisa-lo|revise|revisar|inspecione|inspecionar|explique|explicar|resuma|resumir|leia|ler|verifique|verificar|audite|auditar|o que tem|o que ha)\b/i;
-const CREATE = /\b(create|generate|make|build|produce|prepare|export|save|draw|design|crie|criar|cria|gere|gerar|gera|faca|fazer|faça|produza|produzir|prepare|preparar|exporte|exportar|salve|salvar|desenhe|desenhar|monte|montar)\b/i;
-const EDIT = /\b(edit|change|remove|replace|improve|enhance|transform|restyle|erase|add|crop|retouch|edite|editar|mude|mudar|remova|remover|substitua|substituir|melhore|melhorar|aprimore|aprimorar|transforme|transformar|adicione|adicionar|recorte|retocar)\b/i;
-const IMAGE = /\b(image|picture|photo|logo|illustration|poster|graphic|artwork|screenshot|imagem|foto|logotipo|ilustracao|ilustracao|poster|grafico|arte|captura de tela)\b/i;
+const ANALYZE = /\b(analy[sz]e|analysis|review|inspect|explain|summari[sz]e|read|check|audit|what(?:'s| is)|tell me what|analise|analisar|analisa|analisa-lo|revise|revisar|inspecione|inspecionar|explique|explicar|resuma|resumir|leia|ler|verifique|verificar|audite|auditar|o que tem|o que ha|analiza|analizar|revisa|revisar|inspecciona|inspeccionar|explica|explicar|resume|resumir|lee|leer|verifica|verificar|audita|auditar|que contiene|que hay)\b/i;
+const CREATE = /\b(create|generate|make|build|produce|prepare|export|save|draw|design|crie|criar|cria|gere|gerar|gera|faca|fazer|faça|produza|produzir|prepare|preparar|exporte|exportar|salve|salvar|desenhe|desenhar|monte|montar|crea|crear|genera|generar|haz|hacer|construye|construir|produce|producir|prepara|preparar|exporta|exportar|guarda|guardar|dibuja|dibujar|diseña|diseñar)\b/i;
+const EDIT = /\b(edit|change|remove|replace|improve|enhance|transform|restyle|erase|add|crop|retouch|edite|editar|mude|mudar|remova|remover|substitua|substituir|melhore|melhorar|aprimore|aprimorar|transforme|transformar|adicione|adicionar|recorte|retocar|edita|cambia|cambiar|elimina|eliminar|reemplaza|reemplazar|mejora|mejorar|transforma|transformar|agrega|agregar|recorta|recortar|retoca)\b/i;
+const IMAGE = /\b(image|picture|photo|logo|illustration|poster|graphic|artwork|screenshot|imagem|foto|logotipo|ilustracao|poster|grafico|arte|captura de tela|imagen|foto|logotipo|ilustracion|grafico|captura de pantalla)\b/i;
 
 const ARTIFACTS = [
   ['pdf', /\bpdf\b/i],
-  ['docx', /\b(docx|word document|documento word)\b/i],
-  ['pptx', /\b(pptx|powerpoint|pitch deck|slide deck|presentation|apresentacao|apresentacao de slides)\b/i],
-  ['xlsx', /\b(xlsx|excel|spreadsheet|planilha)\b/i],
+  ['docx', /\b(docx|word document|documento word|documento de word)\b/i],
+  ['pptx', /\b(pptx|powerpoint|pitch deck|slide deck|presentation|apresentacao|apresentacao de slides|presentacion|presentacion de diapositivas)\b/i],
+  ['xlsx', /\b(xlsx|excel|spreadsheet|planilha|hoja de calculo)\b/i],
   ['csv', /\bcsv\b/i],
-  ['zip', /\b(zip|arquivo zip|pacote de codigo|code project|source package|source code package|projeto em zip)\b/i],
+  ['zip', /\b(zip|arquivo zip|pacote de codigo|code project|source package|source code package|projeto em zip|archivo zip|paquete de codigo|proyecto en zip)\b/i],
 ];
 
 export function artifactTypeFromText(text = '') {
@@ -60,17 +60,17 @@ export function classifyIntent(text = '', { hasImage = false, hasFiles = false }
 }
 
 const WORKSTREAMS = [
-  ['security', /\b(security|secure|auth(?:entication)?|oauth|privacy|gdpr|encryption|vulnerabilit|seguranca|autenticacao|privacidade|criptografia)\b/i],
-  ['architecture', /\b(architecture|architect|system design|schema|data model|arquitetura|modelo de dados)\b/i],
-  ['implementation', /\b(implement|code|coding|api|database|backend|refactor|debug|bug|codigo|banco de dados|implementar|depurar)\b/i],
-  ['interface', /\b(ui|ux|user interface|frontend|front-end|layout|screens?|wireframe|tela|telas|interface)\b/i],
-  ['research', /\b(research|compare|comparison|market|competitors|benchmark|pesquisa|comparar|mercado|concorrentes)\b/i],
-  ['writing', /\b(write|rewrite|essay|email|copywriting|story|book|blog|escreva|reescreva|historia|e-?mail)\b/i],
+  ['security', /\b(security|secure|auth(?:entication)?|oauth|privacy|gdpr|encryption|vulnerabilit|seguranca|autenticacao|privacidade|criptografia|seguridad|autenticacion|privacidad|cifrado|vulnerabilidad)\b/i],
+  ['architecture', /\b(architecture|architect|system design|schema|data model|arquitetura|modelo de dados|arquitectura|modelo de datos)\b/i],
+  ['implementation', /\b(implement|code|coding|api|database|backend|refactor|debug|bug|codigo|banco de dados|implementar|depurar|base de datos|refactorizar|arreglar)\b/i],
+  ['interface', /\b(ui|ux|user interface|frontend|front-end|layout|screens?|wireframe|tela|telas|interface|pantalla|pantallas|interfaz)\b/i],
+  ['research', /\b(research|compare|comparison|market|competitors|benchmark|pesquisa|comparar|mercado|concorrentes|investigar|comparacion|competidores)\b/i],
+  ['writing', /\b(write|rewrite|essay|email|copywriting|story|book|blog|escreva|reescreva|historia|e-?mail|escribe|reescribe|ensayo|correo|libro)\b/i],
 ];
 
-const FORCE_FAST = /\b(quick|quickly|briefly|short answer|just answer|one model|zeus only|be brief|rapido|resposta curta|so responde|sem time|direto ao ponto)\b/i;
-const FORCE_TEAM = /\b(olympus|specialist team|use the team|full team|think harder|go deep|vai fundo|time de especialistas|modo olympus|usa o time)\b/i;
-const BUILD = /\b(build|design|architect|plan|audit|ship|create|develop|construir|projetar|auditar|planejar|planeje)\b/i;
+const FORCE_FAST = /\b(quick|quickly|briefly|short answer|just answer|one model|zeus only|be brief|rapido|resposta curta|so responde|sem time|direto ao ponto|breve|respuesta corta|solo responde|sin equipo|directo al punto)\b/i;
+const FORCE_TEAM = /\b(olympus|specialist team|use the team|full team|think harder|go deep|vai fundo|time de especialistas|modo olympus|usa o time|equipo de especialistas|usa el equipo|equipo completo|modo olympus)\b/i;
+const BUILD = /\b(build|design|architect|plan|audit|ship|create|develop|construir|projetar|auditar|planejar|planeje|construir|diseñar|arquitectar|planificar|auditar|crear|desarrollar)\b/i;
 
 function workstreamsIn(text = '') {
   const found = [];

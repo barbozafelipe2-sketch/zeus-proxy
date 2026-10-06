@@ -2,6 +2,7 @@
 // nothing useful to the browser (iOS reports it as a network failure), so the chat deadline leaves
 // headroom for cold start, artifact/ZIP building and the final database writes.
 export const NETLIFY_SYNC_LIMIT_MS = 60000;
+export const FAST_CHAT_TIMEOUT_MS = 26000;
 export const CHAT_TIMEOUT_MS = 47000;
 export const CHAT_WEB_TIMEOUT_MS = 51000;
 // No execution can still be running after the platform limit; older non-terminal rows are orphans.

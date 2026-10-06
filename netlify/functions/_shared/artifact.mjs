@@ -31,13 +31,13 @@ async function pdfBytes(title, content) {
     y-=after;
   };
   drawWrapped(title||'OlyHub Output',{useFont:bold,size:20,lineHeight:25,color:rgb(0.1,0.1,0.12),after:9});
-  for (const raw of lines(content)) drawWrapped(raw,{after:raw?4:2});
+  for (const raw of lines(content)) {const line=String(raw||'');if(/^#{1,2}\s+/.test(line))drawWrapped(line.replace(/^#{1,2}\s+/,''),{useFont:bold,size:14,lineHeight:19,color:rgb(0.11,0.12,0.15),after:5});else if(/^[-*]\s+/.test(line))drawWrapped(`- ${line.replace(/^[-*]\s+/, '')}`,{after:3});else drawWrapped(line,{after:line?4:2});}
   return await pdf.save();
 }
 
 async function docxBytes(title, content) {
   const children = [new Paragraph({text:title,heading:HeadingLevel.TITLE})];
-  for (const l of lines(content)) children.push(new Paragraph({text:l || ' '}));
+  for (const l of lines(content)) {const line=String(l||'');if(/^#\s+/.test(line))children.push(new Paragraph({text:line.replace(/^#\s+/,''),heading:HeadingLevel.HEADING_1}));else if(/^##\s+/.test(line))children.push(new Paragraph({text:line.replace(/^##\s+/,''),heading:HeadingLevel.HEADING_2}));else if(/^[-*]\s+/.test(line))children.push(new Paragraph({text:line.replace(/^[-*]\s+/,''),bullet:{level:0}}));else children.push(new Paragraph({text:line||' '}));}
   const doc = new Document({sections:[{children}]});
   return new Uint8Array(await Packer.toBuffer(doc));
 }
@@ -65,7 +65,7 @@ async function xlsxBytes(title, content) {
   ws.columns = [{header:'Section',key:'section',width:18},{header:'Content',key:'content',width:90}];
   ws.addRow({section:'Title',content:title});
   lines(content).filter(Boolean).forEach((l,i)=>ws.addRow({section:`${i+1}`,content:l}));
-  ws.getRow(1).font={bold:true};
+  ws.getRow(1).font={bold:true};ws.views=[{state:'frozen',ySplit:1}];ws.autoFilter={from:{row:1,column:1},to:{row:1,column:2}};ws.getColumn(1).alignment={vertical:'top'};ws.getColumn(2).alignment={vertical:'top',wrapText:true};
   return new Uint8Array(await wb.xlsx.writeBuffer());
 }
 

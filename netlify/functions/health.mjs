@@ -76,7 +76,7 @@ async function handler(req,context){
       webSearch:providers.openai?(runtime.openai?.circuitOpen?'degraded':'configured_unverified'):'unavailable',
     },
     capabilities:{
-      chat:activeModels.length>0,
+      chat:['observed_healthy','configured_unverified'].includes(chatState),
       projects:true,
       files:true,
       artifacts:true,
@@ -89,9 +89,12 @@ async function handler(req,context){
       paginatedHistory:true,
       archiveSafety:true,
       storageMaintenance:true,
+      githubRepositoryPublic:true,
+      githubPrivateRepository:Boolean(globalThis.Netlify?.env?.get?.('GITHUB_TOKEN')||process.env?.GITHUB_TOKEN),
     },
+    goLive:{privateAccess:Boolean(globalThis.Netlify?.env?.get?.('ZEUS_PROXY_ACCESS_TOKEN')||process.env?.ZEUS_PROXY_ACCESS_TOKEN),database:true,blobMaintenance:!storageMaintenance?.failed,configuredProviders:Object.values(providers).filter(Boolean).length,chatState,ready:Boolean((globalThis.Netlify?.env?.get?.('ZEUS_PROXY_ACCESS_TOKEN')||process.env?.ZEUS_PROXY_ACCESS_TOKEN)&&Object.values(providers).some(Boolean)&&['observed_healthy','configured_unverified'].includes(chatState))},
     storageMaintenance,
-    note:'Provider readiness uses recent execution evidence stored in OlyHub plus the current Function runtime circuit state. CONFIGURED UNVERIFIED means credentials/models are present but no recent successful execution is recorded. OBSERVED HEALTHY means OlyHub recorded a successful use in the last 24 hours. RECENT FAILURE means the latest stored evidence is a failure. Image/audio endpoint readiness remains configuration-based unless that capability is actually exercised. Web search uses the OpenAI Responses web_search capability through the configured OpenAI gateway and is invoked only for explicit/current-information intent.'
+    note:'Provider readiness uses recent execution evidence stored in OlyHub plus the current Function runtime circuit state. CONFIGURED UNVERIFIED means credentials/models are present but no recent successful execution is recorded. OBSERVED HEALTHY means OlyHub recorded a successful use in the last 24 hours. RECENT FAILURE means the latest stored evidence is a failure. Image/audio endpoint readiness remains configuration-based unless that capability is actually exercised. GitHub public repository retrieval is built in; private repository retrieval requires GITHUB_TOKEN. Web search uses the OpenAI Responses web_search capability through the configured OpenAI gateway and is invoked only for explicit/current-information intent.'
   });
 }
 

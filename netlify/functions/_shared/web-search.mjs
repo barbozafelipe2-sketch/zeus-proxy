@@ -6,8 +6,8 @@ function usageNumber(value){const n=Number(value);return Number.isFinite(n)?Math
 
 export function shouldSearchWeb(text=''){
   const value=String(text||'');
-  if(/(search|research|look up|find online|web|internet|latest|today|tonight|this week|this month|news|recent|up to date|pesquise|pesquisar|procure|buscar|busque|internet|web|mais recente|hoje|esta semana|este mês|not[ií]cias|recente)/i.test(value))return true;
-  return /(current|now|atual|agora).{0,60}(president|ceo|price|rate|version|release|law|rule|weather|score|schedule|status|presidente|preço|taxa|versão|lançamento|lei|regra|clima|placar|agenda)/i.test(value);
+  if(/(search|research|look up|find online|web|internet|latest|today|tonight|this week|this month|news|recent|up to date|pesquise|pesquisar|procure|buscar|busque|internet|web|mais recente|hoje|esta semana|este mês|not[ií]cias|recente|investiga|investigar|busca|más reciente|mas reciente|hoy|esta semana|este mes|noticias|actualizado)/i.test(value))return true;
+  return /(current|now|atual|agora|actual|ahora).{0,60}(president|ceo|price|rate|version|release|law|rule|weather|score|schedule|status|presidente|preço|taxa|versão|lançamento|lei|regra|clima|placar|agenda|precio|tasa|version|lanzamiento|ley|regla|marcador|horario|estado)/i.test(value);
 }
 
 export function webSearchConfigured(){return Boolean(env('OPENAI_API_KEY')&&apiRoot(env('OPENAI_BASE_URL')||env('OPENAI_API_BASE')));}

@@ -50,3 +50,7 @@ assert.equal(shouldAdvanceOpenAIModel(Object.assign(new Error('rate limit'),{sta
 console.log('Zeus personal regression tests: PASS');
 
 assert.ok(app.includes('data-open-output')&&app.includes('downloadPrivateOutput'),'private artifact viewer/download flow missing');
+
+assert.equal(shouldSearchWeb('Busca las noticias de hoy sobre Netlify'),true,'Spanish web intent not detected');
+assert.ok(app.includes('sampleVideoFrames')&&app.includes('normalizeMediaImage'),'media preprocessing/video sampling missing');
+assert.ok(!app.includes("['automation','Automation'"),'unfinished Automation shell must not be visible');

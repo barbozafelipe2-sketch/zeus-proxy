@@ -1,6 +1,6 @@
 import { requireUser } from './_shared/auth.mjs';
 import { blobStore } from './_shared/blob.mjs';
-import { extractText } from './_shared/extract.mjs';
+import { extractFile } from './_shared/extract.mjs';
 import { json, readJson, isUuid, safeFilename, getRequestId, errorJson } from './_shared/http.mjs';
 import { resolveOwnedScope } from './_shared/relations.mjs';
 import { pageLimit, decodeCursor, pageResult } from './_shared/pagination.mjs';
@@ -24,7 +24,7 @@ async function handler(req,context){
     else if(before)rows=await db.sql`SELECT id,project_id,conversation_id,filename,mime_type,size,status,metadata,created_at FROM files WHERE owner_id=${user.id} AND (created_at < ${before.t}::timestamptz OR (created_at = ${before.t}::timestamptz AND id < ${before.id}::uuid)) ORDER BY created_at DESC,id DESC LIMIT ${limit+1}`;
     else rows=await db.sql`SELECT id,project_id,conversation_id,filename,mime_type,size,status,metadata,created_at FROM files WHERE owner_id=${user.id} ORDER BY created_at DESC,id DESC LIMIT ${limit+1}`;
     const paged=pageResult(rows,limit);
-    return json({files:paged.page.map(r=>({...r,downloadUrl:`/api/file-download?id=${r.id}`})),page:{hasMore:paged.hasMore,nextCursor:paged.nextCursor},requestId});
+    return json({files:paged.page.map(r=>({...r,downloadUrl:`/api/file-download?id=${r.id}`,previewUrl:r.metadata?.extractable?`/api/file-preview?id=${r.id}`:null})),page:{hasMore:paged.hasMore,nextCursor:paged.nextCursor},requestId});
   }
   if(req.method==='DELETE'){
     const body=await readJson(req);if(!body)return errorJson('Invalid JSON.',400,'INVALID_JSON',requestId);
@@ -52,14 +52,17 @@ async function handler(req,context){
   if(scope.error)return errorJson(scope.error.message,scope.error.status,scope.error.code,requestId);
   projectId=scope.projectId;conversationId=scope.conversationId;
   const filename=safeFilename(file.name),mime=file.type||'application/octet-stream';
+  const requestedRole=String(form.get('analysisRole')||'').slice(0,40);const analysisRole=['media_image','video_source','video_frame'].includes(requestedRole)?requestedRole:null;
+  const sourceName=form.get('sourceName')?safeFilename(String(form.get('sourceName')).slice(0,180)):null;
   const buf=new Uint8Array(await file.arrayBuffer());
   const key=`${user.id}/${crypto.randomUUID()}/${filename}`;
   const store=blobStore('olyhub-files');
   await store.set(key,buf.buffer.slice(buf.byteOffset,buf.byteOffset+buf.byteLength));
   try{
-    const extracted=await extractText(buf,mime,filename);
-    const [row]=await db.sql`INSERT INTO files(owner_id,project_id,conversation_id,filename,mime_type,blob_key,size,status,extracted_text,metadata) VALUES(${user.id},${projectId},${conversationId},${filename},${mime},${key},${file.size},'READY',${extracted||null},${{extractable:Boolean(extracted)}}) RETURNING id,project_id,conversation_id,filename,mime_type,size,status,metadata,created_at`;
-    return json({file:{...row,downloadUrl:`/api/file-download?id=${row.id}`,extracted:Boolean(extracted)},requestId},201);
+    const extraction=await extractFile(buf,mime,filename);
+    const metadata={extractable:Boolean(extraction.extractable),extractionStatus:extraction.status,extractionReason:extraction.reason||null,truncated:Boolean(extraction.truncated),analysisRole,sourceName};
+    const [row]=await db.sql`INSERT INTO files(owner_id,project_id,conversation_id,filename,mime_type,blob_key,size,status,extracted_text,metadata) VALUES(${user.id},${projectId},${conversationId},${filename},${mime},${key},${file.size},'READY',${extraction.text||null},${metadata}) RETURNING id,project_id,conversation_id,filename,mime_type,size,status,metadata,created_at`;
+    return json({file:{...row,downloadUrl:`/api/file-download?id=${row.id}`,previewUrl:metadata.extractable?`/api/file-preview?id=${row.id}`:null,extracted:metadata.extractable,analysisStatus:extraction.status},requestId},201);
   }catch(error){try{await store.delete(key);}catch{try{await queueBlobGc(db,user.id,'olyhub-files',key,'failed-upload');}catch{}}throw error;}
 }
 

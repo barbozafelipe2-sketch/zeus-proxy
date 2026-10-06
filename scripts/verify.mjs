@@ -5,7 +5,7 @@ import { join, relative } from 'node:path';
 const required = [
   'public/index.html','public/app.js','public/styles.css','public/ui-premium.css',
   'netlify/functions/chat.mjs','netlify/functions/projects.mjs','netlify/functions/tasks.mjs','netlify/functions/memories.mjs',
-  'netlify/functions/files.mjs','netlify/functions/file-download.mjs',
+  'netlify/functions/files.mjs','netlify/functions/file-download.mjs','netlify/functions/file-preview.mjs',
   'netlify/functions/artifacts.mjs','netlify/functions/artifact-download.mjs','netlify/functions/health.mjs','netlify/functions/transcribe.mjs',
   'netlify/functions/_shared/models.mjs','netlify/functions/_shared/reliability.mjs','netlify/functions/_shared/web-search.mjs','netlify/functions/_shared/github-context.mjs','netlify/functions/_shared/memory.mjs','netlify/functions/_shared/artifact.mjs','netlify/functions/_shared/artifact-limits.mjs','netlify/functions/_shared/pdf-layout.mjs','netlify/functions/_shared/extract.mjs','netlify/functions/_shared/auth.mjs','netlify/functions/_shared/db.mjs','netlify/functions/_shared/relations.mjs','netlify/functions/_shared/intent.mjs','netlify/functions/_shared/security.mjs','netlify/functions/_shared/context.mjs','netlify/functions/_shared/runtime.mjs','netlify/functions/_shared/archive-safety.mjs','netlify/functions/_shared/zip-output.mjs','netlify/functions/_shared/pagination.mjs','netlify/functions/_shared/limits.mjs','netlify/functions/_shared/storage.mjs',
   'netlify/database/migrations/20260930044607_create_olyhub_foundation/migration.sql',
@@ -52,6 +52,7 @@ const limits = read('netlify/functions/_shared/limits.mjs');
 const storage = read('netlify/functions/_shared/storage.mjs');
 const memoryPolicy = read('netlify/functions/_shared/memory.mjs');
 const fileDownload = read('netlify/functions/file-download.mjs');
+const filePreview = read('netlify/functions/file-preview.mjs');
 const artifactDownload = read('netlify/functions/artifact-download.mjs');
 const pdfLayout = read('netlify/functions/_shared/pdf-layout.mjs');
 const npmrc = read('.npmrc');
@@ -283,3 +284,8 @@ console.log(`Baseline migration SHA-256: ${baselineHash}`);
 console.log('Verified: hardened foundation and Final Fix invariants preserved; 4.3.4 product-polish, source-grounding, long-document and release-gate invariants present.');
 
 if (!githubContext.includes('loadGitHubContext')) throw new Error('GitHub repository ingestion missing.');
+
+if (!filePreview.includes("Content-Type':'text/plain; charset=utf-8")) throw new Error('Safe extracted-text file preview missing.');
+if (!chat.includes('FAST_CHAT_TIMEOUT_MS')) throw new Error('Fast chat route lacks a dedicated bounded runtime.');
+if (!chat.includes('olympusDispatchFallback=true')) throw new Error('Olympus dispatch failure can still fall into heavy synchronous execution.');
+if (!app.includes('sampleVideoFrames') || !app.includes('normalizeMediaImage')) throw new Error('Media analysis preprocessing missing.');

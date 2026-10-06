@@ -23,7 +23,7 @@ const checks=[
   [lock.lockfileVersion===3 && lock.name===pkg.name && lock.version===pkg.version,'lock metadata matches package'],
   [JSON.stringify(Object.fromEntries(Object.entries(lock.packages?.['']?.dependencies||{}).sort()))===JSON.stringify(Object.fromEntries(Object.entries(pkg.dependencies||{}).sort())),'lock root dependencies match package manifest'],
   [existsSync('.github/workflows/verify.yml'),'GitHub verification workflow'],
-  [existsSync('.github/workflows/smoke-live.yml'),'manual production smoke workflow'],
+  [existsSync('.github/workflows/smoke-live.yml'),'production smoke workflow'],
 ];
 for(const [ok,label] of checks)if(!ok)throw new Error(`Polish invariant failed: ${label}`);
 console.log('OH-004.3.4 polish/product-positioning tests: PASS');
