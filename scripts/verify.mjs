@@ -294,3 +294,7 @@ if (!tasks.includes('syncProjectProgressClient')) throw new Error('Task/project 
 
 if (models.includes('planSpecialists') || models.includes('DOMAIN_PRIORITY')) throw new Error('Legacy keyword-domain Olympus planner returned.');
 if (!models.includes('splitRequirementScopes(checklist)')) throw new Error('Olympus requirement-scope partitioning missing.');
+
+if (!models.includes("olympusDescended:'scope_failure'")) throw new Error('Olympus scope failure no longer degrades to verified Zeus.');
+if (!models.includes('specialistPrompt(scopeA),{images,history')) throw new Error('Olympus specialists lost conversation history.');
+if (!models.includes('images,history,blockedProviders')) throw new Error('Olympus Director lost conversation history.');

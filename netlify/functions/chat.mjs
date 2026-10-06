@@ -394,8 +394,16 @@ async function chatHandler(req, context, startedAt){
     const visionSummary={attached:attachmentRows.filter(r=>(r.mime_type||'').startsWith('image/')).length,analyzed:vision.images.length,skipped:vision.skipped.length};
     result.trace={...(result.trace||{}),intent,modeDecision:decision,route,verificationRequested:verify||olympusDispatchFallback,olympusDispatchFallback,secretsRedacted,visionSkipped:vision.skipped,visionSummary,sharedBlockedProviders,webSearch:web.trace||null,githubRepository:github.trace||null};
     result.visionSummary=visionSummary;
-    result.modeExplanation=modeExplanation;
     const finalMode=result.effectiveMode||(olympusDispatchFallback?'ZEUS':mode);
+    if(finalMode==='ZEUS'&&mode==='OLYMPUS'&&result.trace?.olympusDescended){
+      const reason=result.trace.olympusDescended;
+      modeExplanation=reason==='scope_failure'
+        ?'Olympus could not safely complete both independent workstreams, so Zeus produced a verified fallback answer.'
+        :reason==='independent_specialists_unavailable'
+          ?'Olympus did not have two independent specialist families available, so Zeus produced a verified fallback answer.'
+          :'The request did not need a full Olympus team, so Zeus completed it with independent verification.';
+    }
+    result.modeExplanation=modeExplanation;
     const final=await finalizeTurn({db,userId:user.id,projectId,conversationId,execution,mode:finalMode,result,stagedArtifacts});
     return json({conversationId,message:final.assistant,userMessage,artifacts:final.artifacts,mode:finalMode,modeExplanation,execution:{id:execution.id,state:'COMPLETED'},requestId,replayed:false});
   }catch(error){

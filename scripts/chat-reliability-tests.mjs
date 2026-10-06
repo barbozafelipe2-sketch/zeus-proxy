@@ -137,3 +137,9 @@ assert.ok(app.includes('sampleVideoFrames'),'video picker must produce honest sa
 assert.ok(app.includes('waitMs=Math.min(5500'),'Olympus polling must back off instead of hitting the API every two seconds for three minutes');
 assert.ok(app.includes('assistant:{...assistant,artifacts}'),'background artifacts must appear inline when Olympus finishes');
 assert.ok(app.includes('await Promise.allSettled([loadConversations(),loadProjects()])'),'chat completion should not reload the whole file library on every turn');
+
+const modelsSource=read('netlify/functions/_shared/models.mjs');
+assert.ok(modelsSource.includes("olympusDescended:'scope_failure'"),'Olympus specialist failure must degrade to verified Zeus when budget remains');
+assert.ok(modelsSource.includes("callModel(authorA,specialistSystem,specialistPrompt(scopeA),{images,history"),'Olympus specialists must receive real conversation history');
+assert.ok(modelsSource.includes("maxAttempts:4,budget:localBudget,images,history,blockedProviders"),'Olympus Director must receive real conversation history');
+assert.ok(chat.includes("finalMode==='ZEUS'&&mode==='OLYMPUS'&&result.trace?.olympusDescended"),'UI mode explanation must match an Olympus-to-Zeus runtime downgrade');
