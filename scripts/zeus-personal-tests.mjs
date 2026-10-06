@@ -31,7 +31,7 @@ assert.equal(shouldSearchWeb('Write a short poem about rain'),false,'ordinary wr
 assert.ok(app.includes("$('#voice')?.addEventListener('click',startVoice)"),'voice input missing');
 assert.ok(models.includes("'gpt-5.6-sol'")&&models.includes("'gpt-5.6-luna'")&&models.includes("'gpt-5'")&&models.includes("'gpt-4.1-mini'"),'OpenAI model chain incomplete');
 assert.ok(models.includes('shouldAdvanceOpenAIModel')&&models.includes('buildFallbackOrder')&&models.includes('blockedProviders'),'provider fallback missing');
-assert.ok(models.includes('if (!shouldAdvanceOpenAIModel(error)) blockedProviders.add(model.provider)'),'fatal provider errors must skip that provider only');
+assert.ok(models.includes('if (!shouldAdvanceOpenAIModel(error)) providerBlocks.add(model.provider)'),'fatal provider errors must skip that provider only');
 const ranked=[
   {id:'claude-sonnet',provider:'anthropic'},
   {id:'gpt-5.6-sol',provider:'openai'},
