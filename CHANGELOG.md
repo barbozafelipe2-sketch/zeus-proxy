@@ -1,5 +1,9 @@
 # Zeus Proxy Personal Recovery
 
+## Session gate — 2026-10-07
+- Private access key still persists in `localStorage` as `olyhub.zeusproxy.access.v3`. A separate session stamp expires it after 14 days without use. Lock and 401 still clear every copy.
+- Unlock and Settings now warn that an unlocked device is trusted. Settings shows the health go-live checklist (token, database, blob maintenance, provider, chat).
+
 ## Final production hardening — 2026-10-06
 - Hardened Zeus/Olympus execution leases, background idempotency, workspace transactions, provider-failure sharing, multimodal/file honesty and iOS delivery behavior.
 - Olympus now uses only the requirement-scoped specialist → Director → adversary → bounded repair architecture; the obsolete keyword-domain planner was removed.

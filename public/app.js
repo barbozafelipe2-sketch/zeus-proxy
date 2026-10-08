@@ -26,9 +26,20 @@ const resetViewport = () => requestAnimationFrame(() => window.scrollTo({ top: 0
 const initials = () => (state.user?.user_metadata?.full_name || state.user?.email || 'O').trim().split(/\s+/).map(x=>x[0]).join('').slice(0,2).toUpperCase();
 const accessStoreKey='olyhub.zeusproxy.access.v3';
 const legacyAccessStoreKey='olyhub.zeusproxy.access.v2';
+const accessSessionKey='olyhub.zeusproxy.access.session.v1';
+const ACCESS_SESSION_MS=14*24*60*60*1000;
+function stampAccessSession(){try{localStorage.setItem(accessSessionKey,String(Date.now()));}catch{}}
+function accessSessionFresh(){
+  try{
+    const raw=localStorage.getItem(accessSessionKey);
+    if(!raw){stampAccessSession();return true;}
+    const at=Number(raw);
+    return Number.isFinite(at)&&at>0&&Date.now()-at<ACCESS_SESSION_MS;
+  }catch{return true}
+}
 function writeAccessKey(value){
   try{
-    if(value)localStorage.setItem(accessStoreKey,value);
+    if(value){localStorage.setItem(accessStoreKey,value);stampAccessSession();}
     else localStorage.removeItem(accessStoreKey);
     sessionStorage.removeItem(accessStoreKey);
     sessionStorage.removeItem(legacyAccessStoreKey);
@@ -38,6 +49,7 @@ function readAccessKey(){
   try{
     const saved=localStorage.getItem(accessStoreKey)||localStorage.getItem(legacyAccessStoreKey)||sessionStorage.getItem(legacyAccessStoreKey)||'';
     if(saved){
+      if(!accessSessionFresh()){clearAuth();return '';}
       localStorage.setItem(accessStoreKey,saved);
       localStorage.removeItem(legacyAccessStoreKey);
       sessionStorage.removeItem(legacyAccessStoreKey);
@@ -49,6 +61,7 @@ function clearAuth(){
   try{
     localStorage.removeItem(accessStoreKey);
     localStorage.removeItem(legacyAccessStoreKey);
+    localStorage.removeItem(accessSessionKey);
     sessionStorage.removeItem(accessStoreKey);
     sessionStorage.removeItem(legacyAccessStoreKey);
   }catch{}
@@ -238,7 +251,7 @@ function authView(){
       <div class="auth-proof" aria-label="Zeus capabilities"><span>Projects + dedicated memory</span><span>Files, images and outputs</span><span>Zeus + Olympus</span></div>
     </section>
     <main class="auth-panel" id="main-content" tabindex="-1"><div class="auth-card">
-      <div class="personal-bolt small">ϟ</div><div class="eyebrow">PRIVATE ACCESS</div><h2>Unlock Zeus</h2><p>Use the same private access key configured in Netlify.</p>
+      <div class="personal-bolt small">ϟ</div><div class="eyebrow">PRIVATE ACCESS</div><h2>Unlock Zeus</h2><p>Use the same private access key configured in Netlify.</p><p class="muted tiny" id="access-session-warning">This key stays on this device until Lock or 14 days without use. On a shared device, Lock before you leave.</p>
       <form id="auth-form" class="form-grid"><div class="field"><label for="auth-key">Private key</label><input id="auth-key" type="password" autocomplete="current-password" minlength="32" required spellcheck="false" autocapitalize="off"></div><div id="auth-notice" class="notice hidden" role="alert" aria-live="assertive"></div><button class="primary" type="submit" id="auth-submit">Unlock Zeus</button></form>
     </div></main>
   </div>`;
@@ -451,7 +464,7 @@ function toolsView(){const h=state.health?.capabilities||{};const chat=capabilit
 function outputsList(limit=12){let all=[...state.artifacts.map(a=>({...a,kind:'artifact'})),...state.files.map(f=>({...f,kind:'file',type:(f.mime_type||'file').split('/').pop()}))].sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));if(Number.isFinite(limit))all=all.slice(0,limit);return all.length?`<div class="output-list">${all.map(outputItem).join('')}</div>`:`<div class="card" style="padding:24px"><strong>Your library starts with the first source or deliverable.</strong><p class="muted">Upload a source for analysis, or ask Zeus/Olympus to create a document, image, spreadsheet, presentation or ZIP.</p></div>`}
 function outputItem(o){const tag=String(o.type||o.mime_type||'FILE').split('/').pop().toUpperCase().slice(0,4),kind=o.kind==='artifact'?'artifact':'file',download=esc(o.downloadUrl||''),open=esc((kind==='file'&&o.previewUrl)||o.downloadUrl||''),name=esc(o.filename||'Output'),mime=esc(kind==='file'&&o.previewUrl?'text/plain':(o.mime_type||o.type||'application/octet-stream')),status=kind==='file'?(o.metadata?.extractionStatus||'stored_only'):'';return `<article class="out-row"><div class="out-badge ${tag.toLowerCase()}">${esc(tag)}</div><div><strong>${name}</strong><small>${fmtSize(o.size)}${status?` · ${esc(status.replaceAll('_',' '))}`:''}${fmtDateTime(o.created_at)?` · ${fmtDateTime(o.created_at)}`:''}</small></div><div class="out-actions"><button class="chev-link" type="button" data-open-output="${open}" data-output-name="${name}" data-output-mime="${mime}">Open</button><button class="chev-link" type="button" data-download-output="${download}" data-output-name="${name}">Download</button><button class="icon-danger" type="button" data-delete-output="${kind}" data-output-id="${esc(o.id)}" aria-label="Delete ${kind} ${name}" title="Delete ${kind}">${icon('close')}</button></div></article>`}
 function filesView(){const more=Boolean(state.filesPage?.hasMore||state.artifactsPage?.hasMore);return `<section class="page files-page"><div class="page-head"><div><div class="eyebrow">Files</div><h1>Files & Library</h1><p>Upload, analyze, and keep files and generated artifacts connected to your conversations and projects.</p></div><button class="primary" id="upload-files">${icon('plus')} Upload files</button></div><div class="project-tabs" style="margin-bottom:18px"><button type="button" class="active" aria-pressed="true">All outputs</button></div>${errorBanner('page-alert')}${outputsList(null)}${more?'<div class="history-more"><button class="secondary compact" id="load-older-outputs">Load older</button></div>':''}</section>`}
-function settingsView(){const providers=state.health?.providerReadiness||{};const statusLabel=(v)=>String(v||'not_configured').toUpperCase().replaceAll('_',' ');const statusGood=(v)=>v==='observed_healthy';return `<section class="page"><div class="page-head"><div><div class="eyebrow">Settings</div><h1>Workspace settings</h1><p>Account and advanced runtime diagnostics.</p></div></div>${errorBanner('page-alert')}<div class="settings-grid"><article class="card settings-card"><h3>Account</h3><div class="user-chip"><div class="avatar">${esc(initials())}</div><div><strong>${esc(state.user?.user_metadata?.full_name||'Felipe')}</strong><div class="muted tiny">${esc(state.user?.email||'')}</div></div></div><button class="secondary" id="settings-logout" style="margin-top:18px">Lock</button></article><article class="card settings-card"><h3>AI provider diagnostics</h3><div class="diag-list">${['openai','anthropic','gemini','openrouter'].map(p=>{const v=providers[p]?.status||'not_configured';return `<div class="diag-row"><span>${p}</span><strong class="${statusGood(v)?'status-good':'status-warn'}">${esc(statusLabel(v))}</strong></div>`}).join('')}</div><p class="muted tiny" style="line-height:1.55;margin-top:14px">Diagnostics are runtime-local evidence. CONFIGURED UNVERIFIED means credentials/models were detected but this warm Function runtime has not observed a successful call yet. DEGRADED means the temporary circuit breaker is open.</p></article><article class="card settings-card"><h3>Capabilities</h3><div class="diag-list">${Object.keys(state.health?.capabilityReadiness||{}).length?'':`<div class="muted tiny">${state.health?'No capability diagnostics reported.':'Diagnostics load when the workspace runtime responds.'}</div>`}${Object.entries(state.health?.capabilityReadiness||{}).map(([k,v])=>`<div class="diag-row"><span>${esc(k)}</span><strong class="${v==='observed_healthy'?'status-good':'status-warn'}">${esc(statusLabel(v))}</strong></div>`).join('')}</div></article></div></section>`}
+function settingsView(){const providers=state.health?.providerReadiness||{};const statusLabel=(v)=>String(v||'not_configured').toUpperCase().replaceAll('_',' ');const statusGood=(v)=>v==='observed_healthy';return `<section class="page"><div class="page-head"><div><div class="eyebrow">Settings</div><h1>Workspace settings</h1><p>Account and advanced runtime diagnostics.</p></div></div>${errorBanner('page-alert')}<div class="settings-grid"><article class="card settings-card"><h3>Account</h3><div class="user-chip"><div class="avatar">${esc(initials())}</div><div><strong>${esc(state.user?.user_metadata?.full_name||'Felipe')}</strong><div class="muted tiny">${esc(state.user?.email||'')}</div></div></div><button class="secondary" id="settings-logout" style="margin-top:18px">Lock</button><p class="muted tiny" style="margin-top:12px">The private key stays in localStorage on this device until Lock or 14 days without use.</p></article><article class="card settings-card"><h3>Go-live checklist</h3><div class="diag-list">${[['Private access token',state.health?.goLive?.privateAccess],['Database',state.health?.goLive?.database],['Blob maintenance',state.health?.goLive?.blobMaintenance],['Provider configured',Number(state.health?.goLive?.configuredProviders||0)>0],['Chat callable',['observed_healthy','configured_unverified'].includes(state.health?.goLive?.chatState)]].map(([label,ok])=>`<div class="diag-row"><span>${esc(label)}</span><strong class="${ok?'status-good':'status-warn'}">${ok?'READY':'BLOCKED'}</strong></div>`).join('')}</div><p class="muted tiny" style="line-height:1.55;margin-top:14px">${state.health?.goLive?.ready?'Go-live gate is ready for this owner.':'Go-live gate is blocked until token, a configured provider and a callable chat state are all present.'}</p></article><article class="card settings-card"><h3>AI provider diagnostics</h3><div class="diag-list">${['openai','anthropic','gemini','openrouter'].map(p=>{const v=providers[p]?.status||'not_configured';return `<div class="diag-row"><span>${p}</span><strong class="${statusGood(v)?'status-good':'status-warn'}">${esc(statusLabel(v))}</strong></div>`}).join('')}</div><p class="muted tiny" style="line-height:1.55;margin-top:14px">Diagnostics are runtime-local evidence. CONFIGURED UNVERIFIED means credentials/models were detected but this warm Function runtime has not observed a successful call yet. DEGRADED means the temporary circuit breaker is open.</p></article><article class="card settings-card"><h3>Capabilities</h3><div class="diag-list">${Object.keys(state.health?.capabilityReadiness||{}).length?'':`<div class="muted tiny">${state.health?'No capability diagnostics reported.':'Diagnostics load when the workspace runtime responds.'}</div>`}${Object.entries(state.health?.capabilityReadiness||{}).map(([k,v])=>`<div class="diag-row"><span>${esc(k)}</span><strong class="${v==='observed_healthy'?'status-good':'status-warn'}">${esc(statusLabel(v))}</strong></div>`).join('')}</div></article></div></section>`}
 
 
 let modalKeydownHandler=null;
