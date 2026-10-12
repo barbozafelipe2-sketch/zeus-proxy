@@ -2,6 +2,7 @@ import { requireUser } from './_shared/auth.mjs';
 import { providerStatus, providerRuntimeHealth, availableModels, serverTranscriptionConfigured } from './_shared/models.mjs';
 import { json, getRequestId, errorJson } from './_shared/http.mjs';
 import { opportunisticDrainBlobGc } from './_shared/storage.mjs';
+import { githubWriteConfigured } from './_shared/github-write.mjs';
 
 const PROVIDERS=['openai','anthropic','gemini','openrouter'];
 
@@ -60,6 +61,7 @@ async function handler(req,context){
   const readiness=await persistedProviderReadiness(db,user.id,providers,runtime);
   const chatState=chatReadiness(readiness,configuredModels,activeModels);
   const storageMaintenance=await opportunisticDrainBlobGc(db,user.id,{limit:5}).catch(()=>({attempted:0,deleted:0,failed:0,pending:null,skipped:true}));
+  const githubWrite=githubWriteConfigured();
   return json({
     requestId,
     providers,
@@ -74,6 +76,7 @@ async function handler(req,context){
       imageUnderstanding:availableModels({vision:true,ignoreCircuit:true}).length?(availableModels({vision:true}).length?'configured_unverified':'degraded'):'unavailable',
       serverTranscription:serverTranscriptionConfigured()?'configured_unverified':'unavailable',
       webSearch:providers.openai?(runtime.openai?.circuitOpen?'degraded':'configured_unverified'):'unavailable',
+      githubCommit:githubWrite?'configured_unverified':'unavailable',
     },
     capabilities:{
       chat:['observed_healthy','configured_unverified'].includes(chatState),
@@ -91,10 +94,11 @@ async function handler(req,context){
       storageMaintenance:true,
       githubRepositoryPublic:true,
       githubPrivateRepository:Boolean(globalThis.Netlify?.env?.get?.('GITHUB_TOKEN')||process.env?.GITHUB_TOKEN),
+      githubCommit:githubWrite,
     },
     goLive:{privateAccess:Boolean(globalThis.Netlify?.env?.get?.('ZEUS_PROXY_ACCESS_TOKEN')||process.env?.ZEUS_PROXY_ACCESS_TOKEN),database:true,blobMaintenance:!storageMaintenance?.failed,configuredProviders:Object.values(providers).filter(Boolean).length,chatState,ready:Boolean((globalThis.Netlify?.env?.get?.('ZEUS_PROXY_ACCESS_TOKEN')||process.env?.ZEUS_PROXY_ACCESS_TOKEN)&&Object.values(providers).some(Boolean)&&['observed_healthy','configured_unverified'].includes(chatState))},
     storageMaintenance,
-    note:'Provider readiness uses recent execution evidence stored in OlyHub plus the current Function runtime circuit state. CONFIGURED UNVERIFIED means credentials/models are present but no recent successful execution is recorded. OBSERVED HEALTHY means OlyHub recorded a successful use in the last 24 hours. RECENT FAILURE means the latest stored evidence is a failure. Image/audio endpoint readiness remains configuration-based unless that capability is actually exercised. GitHub public repository retrieval is built in; private repository retrieval requires GITHUB_TOKEN. Web search uses the OpenAI Responses web_search capability through the configured OpenAI gateway and is invoked only for explicit/current-information intent.'
+    note:'Provider readiness uses recent execution evidence stored in OlyHub plus the current Function runtime circuit state. CONFIGURED UNVERIFIED means credentials/models are present but no recent successful execution is recorded. OBSERVED HEALTHY means OlyHub recorded a successful use in the last 24 hours. RECENT FAILURE means the latest stored evidence is a failure. Image/audio endpoint readiness remains configuration-based unless that capability is actually exercised. GitHub public repository retrieval is built in; private repository retrieval and GitHub commits require a server-side GITHUB_TOKEN with access to the target repositories. GitHub writes are atomic, non-force branch updates from validated ZIP project packages. Web search uses the OpenAI Responses web_search capability through the configured OpenAI gateway and is invoked only for explicit/current-information intent.'
   });
 }
 

@@ -88,3 +88,8 @@ The original foundation migration remains unchanged.
 SHA-256: `90dece71adbd153d42168585fab6988e000fec715c33a6bef3595c2096a52d70`
 
 The source line is the audited OlyHub OH-004.3.4 foundation with a personal Zeus overlay; it is no longer based on the reduced OH-001.2.x chat shell.
+
+
+## GitHub commit integration
+
+OlyHub can publish a validated ZIP project package to an existing GitHub repository with one atomic, non-force commit. GitHub writes run only on the server and require `GITHUB_TOKEN` with Contents read/write access to the target repository. The browser never receives the token. ZIP preflight blocks unsafe paths, private-key/.env-style files and credential-like text before creating Git blobs. Protected branches remain protected: OlyHub does not force-push.

@@ -5,7 +5,7 @@ import { join, relative } from 'node:path';
 const required = [
   'public/index.html','public/app.js','public/styles.css','public/ui-premium.css',
   'netlify/functions/chat.mjs','netlify/functions/projects.mjs','netlify/functions/tasks.mjs','netlify/functions/memories.mjs',
-  'netlify/functions/files.mjs','netlify/functions/file-download.mjs','netlify/functions/file-preview.mjs',
+  'netlify/functions/files.mjs','netlify/functions/file-download.mjs','netlify/functions/file-preview.mjs','netlify/functions/github-commit.mjs',
   'netlify/functions/artifacts.mjs','netlify/functions/artifact-download.mjs','netlify/functions/health.mjs','netlify/functions/transcribe.mjs',
   'netlify/functions/_shared/models.mjs','netlify/functions/_shared/reliability.mjs','netlify/functions/_shared/web-search.mjs','netlify/functions/_shared/github-context.mjs','netlify/functions/_shared/memory.mjs','netlify/functions/_shared/artifact.mjs','netlify/functions/_shared/artifact-limits.mjs','netlify/functions/_shared/pdf-layout.mjs','netlify/functions/_shared/extract.mjs','netlify/functions/_shared/auth.mjs','netlify/functions/_shared/db.mjs','netlify/functions/_shared/relations.mjs','netlify/functions/_shared/intent.mjs','netlify/functions/_shared/security.mjs','netlify/functions/_shared/context.mjs','netlify/functions/_shared/runtime.mjs','netlify/functions/_shared/archive-safety.mjs','netlify/functions/_shared/zip-output.mjs','netlify/functions/_shared/pagination.mjs','netlify/functions/_shared/limits.mjs','netlify/functions/_shared/storage.mjs',
   'netlify/database/migrations/20260930044607_create_olyhub_foundation/migration.sql',
@@ -53,6 +53,8 @@ const storage = read('netlify/functions/_shared/storage.mjs');
 const memoryPolicy = read('netlify/functions/_shared/memory.mjs');
 const fileDownload = read('netlify/functions/file-download.mjs');
 const filePreview = read('netlify/functions/file-preview.mjs');
+const githubCommit = read('netlify/functions/github-commit.mjs');
+const githubWrite = read('netlify/functions/_shared/github-write.mjs');
 const artifactDownload = read('netlify/functions/artifact-download.mjs');
 const pdfLayout = read('netlify/functions/_shared/pdf-layout.mjs');
 const npmrc = read('.npmrc');
@@ -302,3 +304,10 @@ if (!models.includes('splitRequirementScopes(checklist)')) throw new Error('Olym
 if (!models.includes("olympusDescended:'scope_failure'")) throw new Error('Olympus scope failure no longer degrades to verified Zeus.');
 if (!models.includes('specialistPrompt(scopeA),{images,history')) throw new Error('Olympus specialists lost conversation history.');
 if (!models.includes('images,history,blockedProviders')) throw new Error('Olympus Director lost conversation history.');
+
+if (!githubCommit.includes("path:'/api/github-commit'")) throw new Error('GitHub commit endpoint missing.');
+if (!githubWrite.includes('force:false')) throw new Error('GitHub commit must never force-push.');
+if (!githubWrite.includes('GITHUB_SECRET_DETECTED')) throw new Error('GitHub secret preflight missing.');
+if (!githubWrite.includes('base_tree:baseTree')) throw new Error('GitHub atomic tree commit missing.');
+if (!health.includes('githubCommit:githubWrite')) throw new Error('GitHub write capability is not exposed in Health.');
+if (!app.includes('data-github-commit')) throw new Error('ZIP outputs do not expose GitHub Commit.');
