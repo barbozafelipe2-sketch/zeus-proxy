@@ -18,7 +18,7 @@ const cases=[
   ['Audit this PDF','ZEUS','ANALYZE','hard','COMPOUND',true,{hasFiles:true}],
   ['Audit architecture, security, database implementation, and UI for production','OLYMPUS','ANALYZE','hard','COMPOUND_PLUS',true,{}],
   ['Reverse engineer this application architecture and security model','OLYMPUS','CHAT','hard','COMPOUND_PLUS',true,{}],
-  ['Fix all findings from the audit','OLYMPUS','CHAT','coding','COMPLEX_TURBO',true,{hasFiles:true}],
+  ['Fix all findings from the audit','OLYMPUS','ANALYZE','hard','COMPLEX_TURBO',true,{hasFiles:true}],
   ['Implement the backend API, security permissions, frontend UI, and tests','OLYMPUS','CHAT','coding','COMPLEX_TURBO',true,{}],
   ['Create a ZIP project package','OLYMPUS','ARTIFACT_CREATE','fast','COMPLEX_TURBO',true,{}],
   ['hello','OLYMPUS','CHAT','fast','COMPOUND_PLUS',false,{}],
