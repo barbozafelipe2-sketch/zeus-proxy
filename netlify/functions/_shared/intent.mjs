@@ -68,9 +68,10 @@ const WORKSTREAMS = [
   ['writing', /\b(write|rewrite|essay|email|copywriting|story|book|blog|escreva|reescreva|historia|e-?mail|escribe|reescribe|ensayo|correo|libro)\b/i],
 ];
 
-const FORCE_FAST = /\b(quick|quickly|briefly|short answer|just answer|one model|zeus only|be brief|rapido|resposta curta|so responde|sem time|direto ao ponto|breve|respuesta corta|solo responde|sin equipo|directo al punto)\b/i;
-const FORCE_TEAM = /\b(olympus|specialist team|use the team|full team|think harder|go deep|vai fundo|time de especialistas|modo olympus|usa o time|equipo de especialistas|usa el equipo|equipo completo|modo olympus)\b/i;
-const BUILD = /\b(build|design|architect|plan|audit|ship|create|develop|construir|projetar|auditar|planejar|planeje|construir|diseñar|arquitectar|planificar|auditar|crear|desarrollar)\b/i;
+const FORCE_SIMPLE = /\b(quick|quickly|briefly|short answer|just answer|one model|be brief|rapido|resposta curta|so responde|direto ao ponto|breve|respuesta corta|solo responde|directo al punto)\b/i;
+const DEEP_ANALYSIS = /\b(audit|review|reverse engineer|engineering reverse|architecture review|security review|deep analysis|line by line|complete analysis|auditoria|revisao|engenharia reversa|linha por linha|analise completa|auditoria completa|revisar|ingenieria inversa|linea por linea|analisis completo|auditoria completa)\b/i;
+const TURBO_EXECUTION = /\b(fix|fix all|implement|apply(?: all)?(?: findings)?|repair|correct|refactor|finish|finalize|ship|assemble|integrate|compile|build|package|commit|deploy|execute|corrigir|corrija|implementar|aplicar|reparar|refatorar|finalizar|entregar|montar|integrar|compilar|empacotar|commit|publicar|executar|arreglar|corregir|implementar|aplicar|reparar|refactorizar|finalizar|entregar|ensamblar|integrar|compilar|empaquetar|desplegar|ejecutar)\b/i;
+const STRONG_TURBO = /\b(fix all|apply all|apply findings|apply all findings|finish the project|finalize the project|make it deployable|make it production ready|corrija tudo|aplique tudo|aplique os achados|finalize o projeto|deixe pronto para deploy|deixe pronto para producao|arregla todo|aplica todo|aplica los hallazgos|finaliza el proyecto|dejalo listo para produccion)\b/i;
 
 function workstreamsIn(text = '') {
   const found = [];
@@ -78,31 +79,90 @@ function workstreamsIn(text = '') {
   return found;
 }
 
-// Zeus is the default. Olympus is only for a request that really crosses kinds of work,
-// or when you explicitly ask for the team. Length alone never promotes a turn.
-export function decideExecutionMode(text = '', { action = 'CHAT' } = {}) {
-  const value = normalize(String(text || ''));
-  const streams = workstreamsIn(value);
-  if (action === 'IMAGE_CREATE' || action === 'IMAGE_EDIT') {
-    return { mode: 'ZEUS', reason: 'image_is_one_model', workstreams: streams };
+export function normalizeRequestedMode(value='ZEUS'){
+  const mode=String(value||'ZEUS').trim().toUpperCase();
+  return mode==='ZEUS'||mode==='OLYMPUS'?mode:null;
+}
+
+// Top-level mode is an owner choice. The router never spends tokens deciding
+// whether Zeus or Olympus should be used.
+export function decideExecutionMode(text = '', { requestedMode = 'ZEUS' } = {}) {
+  const value=normalize(String(text||''));
+  const mode=normalizeRequestedMode(requestedMode)||'ZEUS';
+  return {
+    mode,
+    reason:mode==='OLYMPUS'?'manual_olympus':'manual_zeus',
+    workstreams:workstreamsIn(value),
+    router:'deterministic_zero_token',
+  };
+}
+
+// Sublevel routing is deliberately synchronous and rule based: no model call,
+// no provider call, no hidden classification tokens.
+export function decideExecutionLevel(text='', {
+  mode='ZEUS',
+  action='CHAT',
+  route='fast',
+  hasFiles=false,
+  hasImage=false,
+  requirementCount=0,
+  artifactType=null,
+  requiresVerification=false,
+}={}){
+  const value=normalize(String(text||''));
+  const selectedMode=normalizeRequestedMode(mode)||'ZEUS';
+  const workstreams=workstreamsIn(value);
+  const reasons=[];
+  const requirements=Math.max(0,Number(requirementCount)||0);
+
+  if(selectedMode==='ZEUS'){
+    if(action==='IMAGE_CREATE'||action==='IMAGE_EDIT'){
+      return {mode:selectedMode,level:'SIMPLE',reason:'single_model_media_operation',reasons:['single_model_media_operation'],workstreams,router:'deterministic_zero_token'};
+    }
+    if(requiresVerification){reasons.push('verification_required');}
+    if(action==='ARTIFACT_CREATE'){reasons.push('deliverable');}
+    if(route==='coding'||route==='hard'||route==='research'){reasons.push(route);}
+    if(hasFiles&&!hasImage){reasons.push('document_context');}
+    if(requirements>=2){reasons.push('multiple_requirements');}
+    if(DEEP_ANALYSIS.test(value)){reasons.push('deep_analysis');}
+    if(TURBO_EXECUTION.test(value)&&route!=='fast'){reasons.push('execution_work');}
+    if(value.length>1200&&requirements>0){reasons.push('long_structured_request');}
+    if(FORCE_SIMPLE.test(value)&&!requiresVerification&&action==='CHAT'&&!hasFiles&&!reasons.length){
+      return {mode:selectedMode,level:'SIMPLE',reason:'explicitly_brief',reasons:['explicitly_brief'],workstreams,router:'deterministic_zero_token'};
+    }
+    return reasons.length
+      ?{mode:selectedMode,level:'COMPOUND',reason:reasons[0],reasons:[...new Set(reasons)],workstreams,router:'deterministic_zero_token'}
+      :{mode:selectedMode,level:'SIMPLE',reason:'ordinary_turn',reasons:['ordinary_turn'],workstreams,router:'deterministic_zero_token'};
   }
-  if (FORCE_FAST.test(value)) return { mode: 'ZEUS', reason: 'you_asked_for_a_direct_answer', workstreams: streams };
-  if (FORCE_TEAM.test(value)) return { mode: 'OLYMPUS', reason: 'you_asked_for_the_team', workstreams: streams };
-  const broadBuild = streams.length >= 3 && (value.length > 80 || BUILD.test(value));
-  const longCross = streams.length >= 2 && value.length > 360;
-  if (broadBuild || longCross) return { mode: 'OLYMPUS', reason: `spans_${streams.slice(0, 3).join('_')}`, workstreams: streams };
-  return { mode: 'ZEUS', reason: streams.length ? 'one_kind_of_work' : 'ordinary_turn', workstreams: streams };
+
+  // Olympus is manual. Inside Olympus, audit/investigation defaults to
+  // Compound Plus; execution/integration requests escalate to Complex Turbo.
+  const artifactExecution=action==='ARTIFACT_CREATE'&&['zip','docx','pptx','xlsx','pdf','csv'].includes(String(artifactType||'').toLowerCase());
+  const explicitTurbo=STRONG_TURBO.test(value);
+  const executionVerb=TURBO_EXECUTION.test(value);
+  const multiPart=requirements>=2||workstreams.length>=2||hasFiles;
+  if(explicitTurbo||artifactExecution||(executionVerb&&(multiPart||route==='coding'||route==='hard'))){
+    if(explicitTurbo)reasons.push('explicit_full_execution');
+    if(artifactExecution)reasons.push('artifact_delivery');
+    if(executionVerb)reasons.push('execution_request');
+    if(multiPart)reasons.push('multi_part_work');
+    return {mode:selectedMode,level:'COMPLEX_TURBO',reason:reasons[0]||'execution_request',reasons:[...new Set(reasons)],workstreams,router:'deterministic_zero_token'};
+  }
+  if(DEEP_ANALYSIS.test(value))reasons.push('audit_or_investigation');
+  if(requiresVerification)reasons.push('high_confidence_review');
+  if(requirements>=2)reasons.push('multiple_requirements');
+  return {mode:selectedMode,level:'COMPOUND_PLUS',reason:reasons[0]||'olympus_review',reasons:[...new Set(reasons.length?reasons:['olympus_review'])],workstreams,router:'deterministic_zero_token'};
 }
 
 export function explainExecutionMode(decision = {}) {
-  if (decision.mode !== 'OLYMPUS') {
-    if (decision.reason === 'you_asked_for_a_direct_answer') return 'Direct answer, one model.';
-    if (decision.reason === 'image_is_one_model') return 'Image work, one model.';
-    return 'One model is enough for this.';
-  }
-  if (decision.reason === 'you_asked_for_the_team') return 'You asked for the team. Olympus drafts, then one answer.';
-  const names = (decision.workstreams || []).slice(0, 3).join(', ');
-  return names
-    ? `This spans ${names}. Olympus drafts those parts, then one answer.`
-    : 'This is broad. Olympus drafts it, then one answer.';
+  return decision.mode==='OLYMPUS'
+    ?'Olympus selected manually. The deterministic router chooses Compound Plus or Complex Turbo.'
+    :'Zeus selected. The deterministic router chooses Simple or Compound.';
+}
+
+export function explainExecutionLevel(decision={}){
+  if(decision.mode==='OLYMPUS'&&decision.level==='COMPLEX_TURBO')return 'Olympus · Complex Turbo selected by the zero-token router.';
+  if(decision.mode==='OLYMPUS')return 'Olympus · Compound Plus selected by the zero-token router.';
+  if(decision.level==='COMPOUND')return 'Zeus · Compound selected by the zero-token router.';
+  return 'Zeus · Simple selected by the zero-token router.';
 }

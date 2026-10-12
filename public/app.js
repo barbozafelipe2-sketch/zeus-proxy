@@ -4,7 +4,7 @@ const app = $('#app');
 
 const state = {
   user:null, token:null, refreshToken:null, authReady:false, accessKey:'', attachMenu:false,
-  tab:'Home', mode:'ZEUS', activeMode:null, drawer:false,
+  tab:'Home', mode:'ZEUS', activeMode:null, activeLevel:null, drawer:false,
   conversations:[], currentConversation:null, messages:[], chatArtifacts:[], sending:false, execStatus:'', error:'',
   attachedFiles:[], projects:[], projectFilter:'ALL', currentProject:null, tasks:[],
   files:[], artifacts:[], health:null, recording:false,
@@ -12,7 +12,7 @@ const state = {
   messagePage:{hasMore:false,nextCursor:null}, filesPage:{scope:'global',hasMore:false,nextCursor:null}, artifactsPage:{scope:'global',hasMore:false,nextCursor:null}, chatRestore:null,
   voiceBusy:false, voiceRecorder:null, voiceStream:null, voiceChunks:[], voiceStopTimer:null, voiceRecognition:null, voiceBytes:0, voiceHitSizeLimit:false,
   draft:'', offline:typeof navigator!=='undefined'&&navigator.onLine===false,
-  lastFailedText:'', lastFailedMessageId:null, lastFailedAttachments:[], lastFailedRequestId:null,
+  lastFailedText:'', lastFailedMessageId:null, lastFailedAttachments:[], lastFailedRequestId:null, lastFailedMode:null,
 };
 const privateBlobUrls=new Map();const PRIVATE_BLOB_CACHE_MAX=16;
 function revokePrivateBlobUrls(){for(const entry of privateBlobUrls.values())try{URL.revokeObjectURL(entry?.url||entry)}catch{}privateBlobUrls.clear();}
@@ -169,7 +169,7 @@ function announce(text){
   if(!region||!value||value===lastAnnouncement)return;
   lastAnnouncement=value;region.textContent=value;
 }
-function dismissError(){state.error='';state.lastFailedText='';state.lastFailedMessageId=null;state.lastFailedAttachments=[];state.lastFailedRequestId=null;render();}
+function dismissError(){state.error='';state.lastFailedText='';state.lastFailedMessageId=null;state.lastFailedAttachments=[];state.lastFailedRequestId=null;state.lastFailedMode=null;render();}
 function errorBanner(extraClass=''){
   if(!state.error)return '';
   return `<div class="chat-error ${extraClass}"><span>${esc(state.error)}</span><div class="error-actions">${state.lastFailedText?`<button type="button" id="retry-last">Retry</button>`:''}<button type="button" class="error-dismiss" data-dismiss-error aria-label="Dismiss message">${icon('close')}</button></div></div>`;
@@ -289,14 +289,16 @@ function topbar(){
   </header>`;
 }
 
-function lastReplyMode(messages=state.messages){
-  return [...(messages||[])].reverse().find(m=>m.role==='assistant'&&(m.mode==='OLYMPUS'||m.mode==='ZEUS'))?.mode||null;
-}
-function syncActiveModeFromMessages(){state.activeMode=lastReplyMode()||null;}
-function liveMode(){return state.activeMode||lastReplyMode()||'ZEUS';}
+function lastReply(messages=state.messages){return [...(messages||[])].reverse().find(m=>m.role==='assistant'&&(m.mode==='OLYMPUS'||m.mode==='ZEUS'))||null;}
+function lastReplyMode(messages=state.messages){return lastReply(messages)?.mode||null;}
+function syncActiveModeFromMessages(){const last=lastReply();state.activeMode=last?.mode||null;state.activeLevel=last?.metadata?.executionLevel||null;}
+function liveMode(){return state.mode==='OLYMPUS'?'OLYMPUS':'ZEUS';}
 function modeStrip(){
-  const olympus=liveMode()==='OLYMPUS';
-  return `<div class="mode-strip" role="status" aria-live="polite" aria-label="Execution mode"><div class="mode-card selected"><div class="mode-icon">${icon(olympus?'globe':'auto')}</div><div><strong>${olympus?'Olympus':'Zeus'} <em>${olympus?'TEAM':'AUTHOR'}</em></strong><small>${olympus?'Two scoped specialists · Director · adversarial audit.':'Zeus chooses one author; important work is independently verified.'}</small></div></div></div>`;
+  const selected=liveMode(),lastLevel=state.activeLevel?String(state.activeLevel).replaceAll('_',' '):'';
+  return `<div class="mode-select-wrap"><div class="mode-strip" role="group" aria-label="Intelligence mode">
+    <button type="button" class="mode-card zeus ${selected==='ZEUS'?'selected':''}" data-mode="ZEUS" aria-pressed="${selected==='ZEUS'}" ${state.sending?'disabled':''}><div class="mode-icon">${icon('auto')}</div><div><strong>Zeus <em>STANDARD</em></strong><small>Automatic level: Simple or Compound</small></div></button>
+    <button type="button" class="mode-card olympus ${selected==='OLYMPUS'?'selected':''}" data-mode="OLYMPUS" aria-pressed="${selected==='OLYMPUS'}" ${state.sending?'disabled':''}><div class="mode-icon">${icon('globe')}</div><div><strong>Olympus <em>ADVANCED</em></strong><small>Automatic level: Compound Plus or Complex Turbo</small></div></button>
+  </div><div class="mode-blurb">You choose the mode. The zero-token router chooses the level.${lastLevel?` Last execution: ${esc(lastLevel)}.`:''}</div></div>`;
 }
 
 function homeView(){
@@ -331,7 +333,8 @@ function messageHtml(m){
   const lead=leadRaw.includes(':')?`${leadRaw.slice(0,leadRaw.indexOf(':'))} · ${leadRaw.slice(leadRaw.indexOf(':')+1)}`:leadRaw;
   const vision=m.metadata?.visionSummary,visionNote=vision?.skipped?`Vision ${Number(vision.analyzed||0)}/${Number(vision.attached||0)} images analyzed`:'';
   const capabilityNotes=(Array.isArray(m.metadata?.capabilities)?m.metadata.capabilities:[]).map(c=>c?.name==='github_repository'&&c?.status==='completed'?`GitHub ${Number(c.fileCount||0)}/${Number(c.treeEntries||0)} files sampled`:c?.name==='web_search'&&c?.status==='completed'?`Web ${Number(c.sourceCount||0)} sources`:null).filter(Boolean);
-  const note=[m.metadata?.modeExplanation,lead,m.metadata?.fallback?'fallback':'',m.metadata?.verificationLabel,visionNote,...capabilityNotes].filter(Boolean).join(' · ');
+  const level=m.metadata?.executionLevel?String(m.metadata.executionLevel).replaceAll('_',' '):'';
+  const note=[level,m.metadata?.modeExplanation,lead,m.metadata?.fallback?'fallback':'',m.metadata?.verificationLabel,visionNote,...capabilityNotes].filter(Boolean).join(' · ');
   return `<article class="message ${m.role==='user'?'user':'assistant'}"><div class="message-label">${m.role==='user'?'YOU':esc(m.mode||'ZEUS')}</div><div class="message-body">${esc(m.content||'')}</div>${note?`<div class="message-model">${esc(note)}</div>`:''}${sourceHtml}${attached?`<div class="attachments in-message">${attached}</div>`:''}${artifacts?`<div class="artifact-row">${artifacts}</div>`:''}</article>`;
 }
 function artifactCard(a){const tag=esc((a.type||'FILE').toUpperCase().slice(0,4)),url=esc(a.downloadUrl||''),name=esc(a.filename||'OlyHub output'),mime=esc(a.mime_type||a.type||'application/octet-stream'),isImage=String(a.mime_type||'').startsWith('image/'),isZip=a.type==='zip'||/zip/i.test(a.mime_type||'')||String(a.filename||'').toLowerCase().endsWith('.zip'),git=Boolean(state.health?.capabilities?.githubCommit);return `<div class="artifact-card">${isImage?`<button type="button" class="artifact-thumb-wrap" data-open-output="${url}" data-output-name="${name}" data-output-mime="${mime}" aria-label="Open ${name}"><img class="artifact-thumb" data-private-image="${url}" alt=""></button>`:`<div class="out-badge">${tag}</div>`}<div><strong>${name}</strong><small>${fmtSize(a.size)} · ${mime}</small></div><div class="artifact-actions"><button type="button" data-open-output="${url}" data-output-name="${name}" data-output-mime="${mime}">Open</button><button type="button" class="ghost-a" data-download-output="${url}" data-output-name="${name}">Download</button>${isZip&&git?`<button type="button" class="ghost-a" data-github-commit="artifact" data-source-id="${esc(a.id)}" data-source-name="${name}">Commit</button>`:''}</div></div>`}
@@ -563,6 +566,7 @@ function bind(){
   $('#new-chat')?.addEventListener('click',newChat);
   $('#chat-search')?.addEventListener('input',e=>{const q=e.target.value.toLowerCase();let shown=0;$$('.recent-item').forEach(x=>{const match=x.textContent.toLowerCase().includes(q);x.style.display=match?'block':'none';if(match)shown++;});$('#recent-empty')?.classList.toggle('hidden',!q||shown>0||!$$('.recent-item').length);});
   $$('[data-dismiss-error]').forEach(b=>b.addEventListener('click',dismissError));
+  $$('[data-mode]').forEach(b=>b.addEventListener('click',()=>{if(state.sending)return;state.mode=b.dataset.mode==='OLYMPUS'?'OLYMPUS':'ZEUS';state.activeLevel=null;render();}));
   $$('[data-open-output]').forEach(b=>b.addEventListener('click',()=>openPrivateOutput(b.dataset.openOutput,b.dataset.outputName,b.dataset.outputMime).catch(e=>{state.error=e.message;render();})));
   $$('[data-download-output]').forEach(b=>b.addEventListener('click',()=>downloadPrivateOutput(b.dataset.downloadOutput,b.dataset.outputName).catch(e=>{state.error=e.message;render();})));
   $$('[data-github-commit]').forEach(b=>b.addEventListener('click',()=>githubCommitModal(b.dataset.githubCommit,b.dataset.sourceId,b.dataset.sourceName)));
@@ -612,8 +616,8 @@ function bindAuth(){
 }
 
 async function newChat(){
-  state.currentConversation=null;state.currentProject=null;state.messages=[];state.chatArtifacts=[];state.attachedFiles=[];state.draft='';state.activeMode=null;
-  state.error='';state.lastFailedText='';state.lastFailedMessageId=null;state.lastFailedAttachments=[];state.lastFailedRequestId=null;state.messagePage={hasMore:false,nextCursor:null};
+  state.currentConversation=null;state.currentProject=null;state.messages=[];state.chatArtifacts=[];state.attachedFiles=[];state.draft='';state.activeMode=null;state.activeLevel=null;
+  state.error='';state.lastFailedText='';state.lastFailedMessageId=null;state.lastFailedAttachments=[];state.lastFailedRequestId=null;state.lastFailedMode=null;state.messagePage={hasMore:false,nextCursor:null};
   state.tab='Home';state.drawer=false;history.replaceState({},'',location.pathname);render();resetViewport();
 }
 async function openConversation(id,doRender=true){
@@ -703,14 +707,14 @@ async function pollForReply(conversationId, executionId){
   }
   throw apiError('Olympus is still working. Wait a moment, then tap Retry to collect the reply.',503,'REQUEST_IN_PROGRESS');
 }
-async function sendText(text,pendingAttachments=[],requestId=crypto.randomUUID()){
+async function sendText(text,pendingAttachments=[],requestId=crypto.randomUUID(),requestedMode=state.mode){
   if(!text||state.sending)return;
-  const pending=[...(pendingAttachments||[])];
-  const optimistic={id:crypto.randomUUID(),role:'user',mode:'ZEUS',content:text,artifacts:[],attachments:pending};
+  const pending=[...(pendingAttachments||[])],mode=requestedMode==='OLYMPUS'?'OLYMPUS':'ZEUS';
+  const optimistic={id:crypto.randomUUID(),role:'user',mode,content:text,artifacts:[],attachments:pending};
   state.messages.push(optimistic);
   state.attachedFiles=[];state.draft='';
-  state.sending=true;state.activeMode='ZEUS';state.error='';state.lastFailedText='';state.lastFailedMessageId=null;state.lastFailedAttachments=[];state.lastFailedRequestId=null;
-  state.execTitle='Zeus is working';
+  state.sending=true;state.activeMode=mode;state.activeLevel=null;state.error='';state.lastFailedText='';state.lastFailedMessageId=null;state.lastFailedAttachments=[];state.lastFailedRequestId=null;state.lastFailedMode=null;
+  state.execTitle=mode==='OLYMPUS'?'Olympus is working':'Zeus is working';
   state.execStatus='Choosing the model for this request…';render();
   const timer=setTimeout(()=>{
     if(!state.sending)return;
@@ -722,10 +726,11 @@ async function sendText(text,pendingAttachments=[],requestId=crypto.randomUUID()
       projectId:state.currentProject?.id||null,
       content:text,
       fileIds:pending.map(f=>f.id),
+      mode,
       requestId
     }),requestId});
     state.currentConversation=d.conversationId;
-    if(d.mode)state.activeMode=d.mode;
+    if(d.mode)state.activeMode=d.mode;if(d.level)state.activeLevel=d.level;
     state.execTitle=d.mode==='OLYMPUS'?'Olympus is working':'Zeus is working';
     if(d.modeExplanation)state.execStatus=d.modeExplanation;
     history.replaceState({},'',state.currentProject?.id?`/?project=${encodeURIComponent(state.currentProject.id)}`:`/?conversation=${encodeURIComponent(d.conversationId)}`);
@@ -740,10 +745,10 @@ async function sendText(text,pendingAttachments=[],requestId=crypto.randomUUID()
       render();
       const polled=await pollForReply(d.conversationId,d.execution?.id);
       assistant=polled.assistant;
-      if(assistant?.mode)state.activeMode=assistant.mode;
+      if(assistant?.mode)state.activeMode=assistant.mode;if(assistant?.metadata?.executionLevel)state.activeLevel=assistant.metadata.executionLevel;
     }
     if(assistant){
-      if(assistant.mode)state.activeMode=assistant.mode;
+      if(assistant.mode)state.activeMode=assistant.mode;if(assistant?.metadata?.executionLevel)state.activeLevel=assistant.metadata.executionLevel;
       const deliveredArtifacts=d.artifacts||assistant.artifacts||[];
       state.messages.push({...assistant,artifacts:deliveredArtifacts});
       if(deliveredArtifacts.length){state.chatArtifacts=mergeById(state.chatArtifacts,deliveredArtifacts);state.artifacts=mergeById(state.artifacts,deliveredArtifacts);}
@@ -756,21 +761,21 @@ async function sendText(text,pendingAttachments=[],requestId=crypto.randomUUID()
       if(err.data?.conversationId&&!state.currentConversation)state.currentConversation=err.data.conversationId;
       state.error='Zeus is still finishing this request. Wait a few seconds, then tap Retry to get the reply.';
     }else state.error=err.message||'Request failed.';
-    state.execStatus='';state.activeMode='ZEUS';
+    state.execStatus='';state.activeMode=mode;state.activeLevel=null;
     state.lastFailedText=text;
     state.lastFailedMessageId=optimistic.id;
     state.lastFailedAttachments=pending;
-    state.lastFailedRequestId=requestId;
+    state.lastFailedRequestId=requestId;state.lastFailedMode=mode;
   }finally{clearTimeout(timer);state.sending=false;render();}
 }
 async function retryLastMessage(){
   if(!state.lastFailedText||state.sending)return;
   const text=state.lastFailedText;
   const pending=[...state.lastFailedAttachments];
-  const requestId=state.lastFailedRequestId||crypto.randomUUID();
+  const requestId=state.lastFailedRequestId||crypto.randomUUID(),mode=state.lastFailedMode||state.mode;
   if(state.lastFailedMessageId)state.messages=state.messages.filter(m=>m.id!==state.lastFailedMessageId);
-  state.error='';state.lastFailedText='';state.lastFailedMessageId=null;state.lastFailedAttachments=[];state.lastFailedRequestId=null;render();
-  await sendText(text,pending,requestId);
+  state.error='';state.lastFailedText='';state.lastFailedMessageId=null;state.lastFailedAttachments=[];state.lastFailedRequestId=null;state.lastFailedMode=null;render();
+  await sendText(text,pending,requestId,mode);
 }
 function mediaBaseName(name='media'){return String(name||'media').replace(/\.[^.]+$/,'').replace(/[^a-z0-9._-]+/gi,'-').slice(0,100)||'media';}
 function canvasJpeg(canvas,quality=.82){return new Promise((resolve,reject)=>canvas.toBlob(blob=>blob?resolve(blob):reject(new Error('Could not encode image.')),'image/jpeg',quality));}

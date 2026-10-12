@@ -9,7 +9,7 @@ const models=readFileSync('netlify/functions/_shared/models.mjs','utf8');
 const chat=readFileSync('netlify/functions/chat.mjs','utf8');
 const health=readFileSync('netlify/functions/health.mjs','utf8');
 
-assert.ok(app.includes('activeMode')&&app.includes('Zeus chooses one author'),'automatic Zeus/Olympus display missing');
+assert.ok(app.includes('data-mode="ZEUS"')&&app.includes('data-mode="OLYMPUS"')&&app.includes('zero-token router'),'manual Zeus/Olympus selector missing');
 assert.ok(!/data-mode=["'](?:OPENAI|CLAUDE|GEMINI|GOOGLE)/i.test(app),'direct provider mode leaked into UI');
 assert.ok(app.includes('id="hamburger" aria-label="Open navigation" title="Navigation">${icon(\'menu\')}</button>')&&app.includes("['Home','home'],['Projects','projects']"),'simplified menu navigation with Projects missing');
 assert.ok(app.includes('PERMANENT PROJECT CHAT'),'permanent Project chat missing');
@@ -56,3 +56,7 @@ assert.ok(app.includes('sampleVideoFrames')&&app.includes('normalizeMediaImage')
 assert.ok(!app.includes("['automation','Automation'"),'unfinished Automation shell must not be visible');
 
 assert.ok(chat.includes("const resumable=worker&&existing.state==='QUEUED'"),'duplicate Olympus workers can still resume an active execution');
+
+assert.ok(chat.includes("normalizeRequestedMode(body.mode||'ZEUS')"),'server does not enforce the owner-selected mode');
+assert.ok(chat.includes('decideExecutionLevel'),'deterministic internal level router is not wired into chat');
+assert.ok(!chat.includes("reason:'fewer_than_three_requirements'"),'chat must not auto-downgrade a manually selected Olympus request');

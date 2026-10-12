@@ -127,7 +127,7 @@ const appSource=read('public/app.js');
 assert.ok(appSource.includes('fetchPrivateBlob')&&appSource.includes("headers.set('x-zeus-access-token',state.accessKey)"),'private output fetch must carry access token');
 assert.ok(!appSource.includes('href="${esc(a.downloadUrl)}" target="_blank"'),'artifact Open must not navigate to a protected API URL');
 assert.ok(appSource.includes('private-preview-close')&&appSource.includes('← Back'),'standalone PWA private preview needs an in-app back control');
-assert.ok(appSource.includes("state.sending=true;state.activeMode='ZEUS'"),'automatic mode display must reset before each request');
+assert.ok(appSource.includes("state.sending=true;state.activeMode=mode"),'manual mode selection must be preserved into each request');
 
 assert.ok(chat.includes("olympusDispatchFallback=true"),'Olympus dispatch failure must degrade to verified Zeus instead of running the full team inline');
 assert.ok(chat.includes('loadSharedProviderBlocks'),'shared fatal provider health must influence routing');
@@ -143,3 +143,6 @@ assert.ok(modelsSource.includes("olympusDescended:'scope_failure'"),'Olympus spe
 assert.ok(modelsSource.includes("callModel(authorA,specialistSystem,specialistPrompt(scopeA),{images,history"),'Olympus specialists must receive real conversation history');
 assert.ok(modelsSource.includes("maxAttempts:4,budget:localBudget,images,history,blockedProviders"),'Olympus Director must receive real conversation history');
 assert.ok(chat.includes("finalMode==='ZEUS'&&mode==='OLYMPUS'&&result.trace?.olympusDescended"),'UI mode explanation must match an Olympus-to-Zeus runtime downgrade');
+
+assert.ok(chat.includes('executionLevel:result.executionLevel||null'),'selected execution level must persist with the assistant message');
+assert.ok(chat.includes("Mode must be ZEUS or OLYMPUS."),'server must reject invalid intelligence modes');

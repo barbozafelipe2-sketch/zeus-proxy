@@ -76,8 +76,11 @@ const mustContain = [
   [app,'startVoice','voice input handler'],
   [app,'window.webkitSpeechRecognition','browser-native voice recognition'],
   [app,'state.health?.capabilities?.serverTranscription','server transcription gating'],
-  [app,'activeMode','automatic mode display'],
-  [app,'Zeus chooses','Zeus chooses Zeus or Olympus'],
+  [app,'activeMode','actual execution mode display'],
+  [app,'data-mode="ZEUS"','manual Zeus selector'],
+  [app,'data-mode="OLYMPUS"','manual Olympus selector'],
+  [intent,'decideExecutionLevel','deterministic internal level router'],
+  [intent,'deterministic_zero_token','zero-token router contract'],
   [app,'PERMANENT PROJECT CHAT','embedded project chat'],
   [app,'workspace-tabs','project workspace tabs'],
   [app,'Permanent project memory','visible project memory manager'],
@@ -178,7 +181,7 @@ const mustContain = [
   [css,'OH-004.2.10 — operational pagination controls','4.2.10 pagination UI'],
   [css,'OH-004.3.0 — premium product UI refinement','4.3.0 premium UI refinement'],
   [css,'OH-004.3.4 — final product polish','4.3.4 final polish layer'],
-  [app,'Two scoped specialists · Director · adversarial audit.','truthful Olympus product positioning'],
+  [app,'Automatic level: Compound Plus or Complex Turbo','truthful Olympus level positioning'],
   [app,'OLYMPUS HUB · PERSONAL','personal Zeus product identity'],
   [app,'composer-meta','composer persistence guidance'],
   [chat,'queryAwareExcerpt','query-aware long attachment excerpts'],
@@ -311,3 +314,7 @@ if (!githubWrite.includes('GITHUB_SECRET_DETECTED')) throw new Error('GitHub sec
 if (!githubWrite.includes('base_tree:baseTree')) throw new Error('GitHub atomic tree commit missing.');
 if (!health.includes('githubCommit:githubWrite')) throw new Error('GitHub write capability is not exposed in Health.');
 if (!app.includes('data-github-commit')) throw new Error('ZIP outputs do not expose GitHub Commit.');
+
+if (chat.includes("reason:'fewer_than_three_requirements'")) throw new Error('Manual Olympus may not be auto-downgraded by requirement count.');
+if (!chat.includes("normalizeRequestedMode(body.mode||'ZEUS')")) throw new Error('Chat is not honoring the manual top-level mode.');
+if (!models.includes("if(!checklist.length)checklist=[{id:'R1'")) throw new Error('Manual Olympus cannot handle a small request safely.');
