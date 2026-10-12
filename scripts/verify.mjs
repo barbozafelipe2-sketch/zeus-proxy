@@ -231,7 +231,7 @@ if (!projects.includes('queueProjectBlobs') || !projects.includes('drainBlobGc')
 if (!chat.includes('classifyIntent(content')) throw new Error('Chat no longer uses the deterministic intent router.');
 if (!chat.includes('loadVisionInputs')) throw new Error('Real image understanding input loader is missing.');
 if (!chat.includes('redactSecrets(content)')) throw new Error('User/provider context secret redaction missing.');
-if (!models.includes('[scopeA,scopeB]=splitRequirementScopes(checklist)')) throw new Error('Olympus must remain bounded to two requirement-scoped specialist workstreams.');
+if (!models.includes('split=splitRequirementScopes(checklist)') || !models.includes('scopeA=split[0].length?split[0]:checklist') || !models.includes('scopeB=split[1].length?split[1]:checklist')) throw new Error('Olympus must remain bounded to two requirement-scoped specialist workstreams.');
 if (!models.includes("String(env('OLYHUB_SERVER_TRANSCRIPTION')).toLowerCase() === 'true' && Boolean(audioBase() && audioKey())")) throw new Error('Server transcription no longer requires an explicit audio endpoint/key.');
 if (Object.prototype.hasOwnProperty.call(pkg.dependencies||{},'xlsx')) throw new Error('Redundant legacy xlsx dependency returned.');
 if (!app.includes("if(state.tab==='Tools')await Promise.all([loadHealth(),loadFiles(),loadArtifacts()])")) throw new Error('Tools can still render stale Project-scoped outputs.');
