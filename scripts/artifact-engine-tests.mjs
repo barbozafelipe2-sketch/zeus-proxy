@@ -25,3 +25,20 @@ assert.ok(artifact.includes('validateWorkbook(workbook)')&&artifact.includes('re
 assert.ok(ui.includes('<details class="message-debug">'));
 assert.ok(ui.includes('Message '+'$'+'{composerMode}'));
 console.log('Artifact Engine multi-file validation and continuation: PASS');
+// fix-v2: Portuguese prose regressions (ref 6688a54d)
+{
+  const m=await import('../netlify/functions/_shared/artifact-delivery.mjs');
+  const e=await import('../netlify/functions/_shared/execution-error.mjs');
+  const body='1. Decisão sobre todo o portfólio com 12 dados verificáveis. '.repeat(15);
+  const doc='# Resumo executivo\n'+body+' Na próxima etapa a empresa expande. '+body;
+  m.parseArtifactDelivery(doc,['pdf'],{requestText:'resumo executivo'});
+  let threw=false;try{m.parseArtifactDelivery('TODO '+doc,['pdf'],{requestText:'x'});}catch(x){threw=x.code==='ARTIFACT_INCOMPLETE';}
+  if(!threw)throw new Error('uppercase TODO marker must still be rejected');
+  threw=false;try{m.parseArtifactDelivery('Vou criar os arquivos. '+doc,['pdf'],{requestText:'x'});}catch(x){threw=true;}
+  if(!threw)throw new Error('leading promise must still be rejected');
+  for(const code of ['ARTIFACT_INCOMPLETE','AI_RATE_LIMIT','OLYMPUS_CREATOR_UNAVAILABLE']){
+    const f=e.publicExecutionFailure(Object.assign(new Error('raw secret sk-xyz'),{code,status:422}));
+    if(/Zeus could not complete/.test(f.message)||/sk-xyz/.test(f.message))throw new Error('generic/leaky message for '+code);
+  }
+  console.log('fix-v2 artifact prose + actionable error mapping: PASS');
+}

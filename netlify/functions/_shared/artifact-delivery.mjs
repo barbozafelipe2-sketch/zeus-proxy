@@ -5,7 +5,12 @@ const normalize=s=>String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'')
 const coded=(code,message)=>Object.assign(new Error(message),{code,status:422});
 const pending=(message)=>coded('ARTIFACT_INCOMPLETE',message||'The requested files were not complete. No partial document was marked as delivered.');
 const unfinished=/(?:\b(?:i will|we will|i can|once (?:you|the)|before (?:i|we) (?:start|proceed)|please confirm|would you like me to|i(?:'m| am) (?:starting|preparing)|as soon as|in a next step)\b|\b(?:vou (?:criar|gerar|elaborar|preparar|produzir|fazer)|irei (?:criar|gerar|preparar)|assim que (?:as|os|a|o)|por favor[, ]+confirm|confirme para (?:comecar|prosseguir)|posso (?:entao )?(?:comecar|prosseguir)|estou iniciando a elaboracao|serao disponibilizados|ficarao disponiveis|em seguida (?:vou|farei)|a seguir (?:vou|farei)|na proxima etapa)\b)/i;
-const placeholders=/\b(?:lorem ipsum|todo\b|tbd\b|to be completed|insert (?:details|content) here|conteudo a (?:ser )?preenchid[oa]|a definir)\b/i;
+// Portuguese "todo" (= whole/all) is ordinary prose; only the uppercase TODO marker is a placeholder.
+const placeholders=/\b(?:lorem ipsum|tbd\b|to be completed|insert (?:details|content) here|conteudo a (?:ser )?preenchid[oa])\b/i;
+const placeholderMarkers=/(?:\bTODO\b|\bTBD\b|\[(?:inserir|insert)[^\]]{0,40}\])/;
+// Promise/confirmation phrases only signal unfinished work at the start or end of a document;
+// inside a finished document "we will"/"na proxima etapa" are normal business prose.
+const edges=(t,n=600)=>t.length<=n*2?t:t.slice(0,n)+'\n'+t.slice(-n);
 function tidyTypes(types=[]){return [...new Set((Array.isArray(types)?types:[]).map(v=>String(v||'').toLowerCase()))];}
 export function isArtifactContinuation(text=''){
  const t=normalize(String(text).trim());
@@ -38,7 +43,7 @@ function extractManifest(raw=''){
 }
 function rejectUnfinished(text,{strict=false,requestText=''}={}){
  const n=normalize(text);
- if(!n.trim()||unfinished.test(n)||placeholders.test(n))throw pending('The response contains placeholders, promises or a request for confirmation instead of finished work.');
+ if(!n.trim()||unfinished.test(strict?edges(n):n)||placeholders.test(n)||placeholderMarkers.test(String(text||'')))throw pending('The response contains placeholders, promises or a request for confirmation instead of finished work.');
  if(strict){
    const plan=/plano de negocios|business plan|plano financeiro|financial projection/i.test(normalize(requestText));
    if(text.trim().length<(plan?1750:230))throw pending('The document is too short to satisfy the requested scope.');

@@ -5,6 +5,20 @@ const safeCodes=new Set([
   'EXECUTION_BUDGET_EXHAUSTED','EXECUTION_DEADLINE','IMAGE_REQUIRED',
   'REQUEST_ID_REUSED','REQUEST_IN_PROGRESS','TURBO_APPROVAL_REQUIRED'
 ]);
+// Actionable, secret-free messages for non-provider failures that previously collapsed into the generic text.
+const authored={
+  ARTIFACT_INCOMPLETE:'The requested files failed validation (incomplete, placeholder or missing file). Nothing partial was delivered. Retry, or ask for fewer files at once.',
+  ARTIFACT_VERIFICATION_FAILED:'A generated file failed its integrity check, so it was not delivered. Please retry.',
+  ARTIFACT_FORMAT_UNSUPPORTED:'This combination of file types is not supported (max 4 of PDF, DOCX, XLSX, PPTX, CSV).',
+  ARTIFACT_TOO_LARGE:'The generated file exceeded the size limit. Ask for a shorter deliverable.',
+  OLYMPUS_CREATOR_UNAVAILABLE:'No AI model was available for an Olympus specialist (provider credits, quota or configuration). Check provider credits or use Zeus mode.',
+  OLYMPUS_CRITIC_UNAVAILABLE:'No AI model was available for the Olympus reviewer (provider credits, quota or configuration). Check provider credits or use Zeus mode.',
+  PROVIDER_MODEL_INVALID_CACHED:'A configured model ID is invalid and was skipped. Check the model environment variables.',
+  AI_RATE_LIMIT:'Hourly execution limit reached (default Olympus 3/h, Zeus 15/h). Wait for the window to reset. Limits count runs, not money.',
+  AI_CONCURRENCY_LIMIT:'Another execution is still running. Wait for it to finish, then retry.',
+  RATE_LIMIT:'Request safety limit reached. Try again later.',
+  DATABASE_UNAVAILABLE:'Zeus workspace database is temporarily unavailable. Please retry shortly.'
+};
 const safeCategory=code=>/^[A-Z][A-Z0-9_]{1,63}$/.test(String(code||''))?String(code):null;
 export function publicExecutionFailure(error){
   const raw=String(error?.message||error||'');
@@ -24,7 +38,7 @@ export function publicExecutionFailure(error){
   const safeStatus=status>=400&&status<=599?status:503;
   const code=safeCategory(error?.code)||'AI_EXECUTION_FAILED';
   // Only specifically authored client messages can be sent to the browser.
-  const message=safeCodes.has(code)
+  const message=authored[code]?authored[code]:safeCodes.has(code)
     ?(code==='AI_REQUEST_REJECTED'
        ?'The AI provider rejected the request. Check the input size or attachments before retrying.'
        :code==='REQUEST_IN_PROGRESS'
