@@ -21,7 +21,7 @@ assert.throws(()=>validateWorkbook({sheets:[{name:'Attack',rows:[['X','Y'],['bad
 const chat=readFileSync('netlify/functions/chat.mjs','utf8'),artifact=readFileSync('netlify/functions/_shared/artifact.mjs','utf8'),ui=readFileSync('public/app.js','utf8');
 assert.ok(chat.includes('parseArtifactDelivery(result.content,requestedArtifacts')&&chat.includes('for(const file of bundle.artifacts)'));
 assert.ok(chat.includes('await finalizeTurn({db,')&&chat.includes('isArtifactContinuation(content)'));
-assert.ok(artifact.includes('validateWorkbook(workbook)')&&artifact.includes('readback.xlsx.load(bytes)'));
+assert.ok(artifact.includes('validateWorkbook(workbook)')&&artifact.includes('readback.xlsx.load(Buffer.from(bytes))'));
 assert.ok(ui.includes('<details class="message-debug">'));
 assert.ok(ui.includes('Message '+'$'+'{composerMode}'));
 console.log('Artifact Engine multi-file validation and continuation: PASS');

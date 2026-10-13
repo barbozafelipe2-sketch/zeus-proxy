@@ -107,7 +107,7 @@ models.__resetProviderHealthForTests();
 // ---- Server static invariants ----
 const chat = read('netlify/functions/chat.mjs');
 assert.ok(chat.includes('STALE_EXECUTION_MS') && /started_at=now\(\)/.test(chat), 'orphaned (killed) executions must be restartable');
-assert.ok(chat.includes("startsWith('ZIP_')"), 'ZIP build failure must keep the model answer');
+assert.ok(chat.includes("if(intent.artifactType==='zip')")&&chat.includes('stagedArtifacts.push(staged)'), 'ZIP must remain structurally validated; failed output must not masquerade as a completed file.');
 assert.ok(chat.includes('reuse the conversation already bound to this request id'), 'retry of a lost first message must reuse its conversation');
 assert.ok(chat.includes('CHAT_TIMEOUT_MS') && chat.includes('CHAT_WEB_TIMEOUT_MS'));
 const limitsSource=read('netlify/functions/_shared/limits.mjs');
