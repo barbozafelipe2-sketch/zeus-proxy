@@ -11,7 +11,7 @@ assert.ok(match,'initial execution_state enum must exist');
 const validStates=new Set([...match[1].matchAll(/'([A-Z_]+)'/g)].map(m=>m[1]));
 assert.ok(!validStates.has('QUEUED'),'existing applied migration must remain unchanged');
 assert.match(patch,/ALTER TYPE "execution_state" ADD VALUE IF NOT EXISTS 'QUEUED';/);
-assert.equal((patch.match(/\bALTER TYPE\b/g)||[]).length,1,'one additive schema change only');
+assert.equal((patch.split('\n').filter(line=>!/^\s*--/.test(line)).join('\n').match(/\bALTER TYPE\b/g)||[]).length,1,'one executable additive schema change only');
 validStates.add('QUEUED');
 for(const [,state] of chat.matchAll(/UPDATE executions SET state='([A-Z_]+)'/g)){
   assert.ok(validStates.has(state),'execution state not declared in migrations: '+state);

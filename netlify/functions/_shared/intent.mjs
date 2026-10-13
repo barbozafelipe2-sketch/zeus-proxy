@@ -14,10 +14,12 @@ const ARTIFACTS = [
   ['zip', /\b(zip|arquivo zip|pacote de codigo|code project|source package|source code package|projeto em zip|archivo zip|paquete de codigo|proyecto en zip)\b/i],
 ];
 
+export function artifactTypesFromText(text = '') {
+  const t=normalize(text);
+  return ARTIFACTS.filter(([,pattern])=>pattern.test(t)).map(([type])=>type);
+}
 export function artifactTypeFromText(text = '') {
-  const t = normalize(text);
-  for (const [type, re] of ARTIFACTS) if (re.test(t)) return type;
-  return null;
+  return artifactTypesFromText(text)[0]||null;
 }
 
 export function classifyIntent(text = '', { hasImage = false, hasFiles = false } = {}) {
@@ -26,7 +28,8 @@ export function classifyIntent(text = '', { hasImage = false, hasFiles = false }
   const create = CREATE.test(t);
   const edit = EDIT.test(t);
   const imageMention = IMAGE.test(t);
-  const artifactType = artifactTypeFromText(t);
+  const artifactTypes = artifactTypesFromText(t);
+  const artifactType = artifactTypes[0]||null;
 
   // Explicit image modification requires both an attached image and an actual edit verb.
   if (hasImage && edit && (imageMention || /\b(this|that|attached|essa|esta|imagem|foto)\b/i.test(t))) {
@@ -44,12 +47,12 @@ export function classifyIntent(text = '', { hasImage = false, hasFiles = false }
 
   // Artifact creation requires a creation/export verb and an explicit output type.
   if (create && artifactType) {
-    return { action: 'ARTIFACT_CREATE', artifactType, reason: `explicit_${artifactType}_create` };
+    return { action: 'ARTIFACT_CREATE', artifactType, artifactTypes, reason: `explicit_${artifactType}_create` };
   }
 
   // Mixed request such as "analyze this ZIP and create a PDF report" should analyze, then produce the requested artifact.
   if (analysis && create && artifactType) {
-    return { action: 'ARTIFACT_CREATE', artifactType, reason: `analysis_plus_${artifactType}_output` };
+    return { action: 'ARTIFACT_CREATE', artifactType, artifactTypes, reason: `analysis_plus_${artifactType}_output` };
   }
 
   if (analysis || (hasImage && /\b(background|fundo|what do you see|o que voce ve|o que vc ve)\b/i.test(t))) {

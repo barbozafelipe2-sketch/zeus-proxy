@@ -19,7 +19,7 @@ assert.ok(source.includes("pipelineLabel:modelFamily(final.model)==='openai'"),
 assert.ok(source.includes("if(isNonRetryableRequestFailure(error))throw rejectedRequestError(error,attempts)"));
 assert.ok(chat.includes("if(olympusError?.code==='AI_REQUEST_REJECTED')throw olympusError"));
 assert.ok(chat.includes('providerTelemetry:snapshotProviderTelemetry(executionBudget)'));
-assert.ok(chat.includes("const hasProviderAttempts=Array.isArray(error?.attempts)"));
+assert.ok(chat.includes('const safeAttempts=')&&chat.includes('publicFailure=publicExecutionFailure(error)'), 'safe diagnostic behavior must be present');
 assert.ok(policy.includes('turboApprovalFingerprint')&&policy.includes('estimateTurboQuote'));
 assert.ok(policy.includes('externalMutationPolicy'));
 assert.ok(ui.includes('turboApprovalModal')&&ui.includes('approvalFingerprint'));

@@ -18,7 +18,8 @@ export function assertGithubRepoAllowed(repoUrl){
   const ref=parseGitHubRepoUrl(repoUrl);
   if(!ref)throw coded('Provide a valid GitHub repository URL.',400,'GITHUB_REPO_URL_INVALID');
   const allowed=githubRepoAllowlist(),key=`${ref.owner}/${ref.repo}`.toLowerCase();
-  if(allowed.length&&!allowed.includes(key))throw coded('This repository is outside the configured GitHub allowlist.',403,'GITHUB_REPO_NOT_ALLOWED');
+  if(!allowed.length)throw coded('GitHub writes require a configured GITHUB_REPO_ALLOWLIST.',403,'GITHUB_ALLOWLIST_REQUIRED');
+  if(!allowed.includes(key))throw coded('This repository is outside the configured GitHub allowlist.',403,'GITHUB_REPO_NOT_ALLOWED');
   return ref;
 }
 
@@ -31,7 +32,7 @@ export function normalizeGitBranch(value=''){
   return branch;
 }
 
-function dangerousPath(path){
+export function dangerousPath(path){
   const p=String(path||'').replace(/\\/g,'/'),base=p.split('/').pop()?.toLowerCase()||'';
   if(p.startsWith('.git/')||p.includes('/.git/')||p.startsWith('node_modules/')||p.includes('/node_modules/'))return true;
   return /^\.env(?:\..*)?$/i.test(base)
@@ -39,7 +40,12 @@ function dangerousPath(path){
     || /^secrets?(?:\..*)?$/i.test(base)
     || /^service[-_.]?account.*\.json$/i.test(base)
     || /^id_(?:rsa|dsa|ecdsa|ed25519)$/i.test(base)
-    || /\.(?:pem|key|p12|pfx|jks|keystore)$/i.test(base);
+    || /^\.(?:npmrc|pypirc|netrc|git-credentials|htpasswd|pgpass)$/i.test(base)
+    || /^(?:credentials|secrets?|service[-_.]?account|client[-_]secret|google[-_]?credentials)[^/]*\.(?:json|ya?ml|txt|toml|ini)$/i.test(base)
+    || /^terraform\.tfstate(?:\.backup)?$/i.test(base)
+    || p.startsWith('.netlify/')||p.includes('/.netlify/')
+    || p.startsWith('.aws/')||p.includes('/.aws/')||p.startsWith('.ssh/')||p.includes('/.ssh/')
+    || /\.(?:pem|key|p12|pfx|jks|keystore|ppk|asc|gpg)$/i.test(base);
 }
 
 function probablyText(bytes){
@@ -107,6 +113,7 @@ async function mapLimit(items,limit,fn){
 }
 
 export async function commitZipToGitHub({repoUrl,branch='',message='',zipBytes,requestId,timeoutMs=30000}){
+  if(!githubWriteConfigured())throw coded('GitHub write access is not configured on the server.',503,'GITHUB_WRITE_NOT_CONFIGURED');
   const ref=assertGithubRepoAllowed(repoUrl);
   const files=await extractCommitFilesFromZip(zipBytes);
   const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeoutMs);

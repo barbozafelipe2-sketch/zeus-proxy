@@ -52,9 +52,9 @@ try{
   const budget=createExecutionBudget({timeoutMs:30000,maxCalls:4});
   const reply=await ai.executeWithFallback('Hello','system','Hello',{budget,maxAttempts:4});
   assert.equal(reply.content,'break-glass success');
-  assert.deepEqual(recorded,['gateway','gateway','openrouter_direct','openai_direct']);
-  assert.equal(reply.attempts.length,3);
-  assert.equal(reply.attempts[2].transport,'openrouter_direct');
+  assert.deepEqual(recorded,['gateway','openrouter_direct','openai_direct']);
+  assert.equal(reply.attempts.length,2);
+  assert.equal(reply.attempts[1].transport,'openrouter_direct');
 }finally{
   globalThis.fetch=oldFetch;globalThis.Netlify=oldNetlify;ai.__resetProviderHealthForTests();
 }

@@ -2,6 +2,7 @@ import { requireUser } from './_shared/auth.mjs';
 import { json, readJson, cleanText, isUuid, getRequestId, errorJson } from './_shared/http.mjs';
 import { runZeus, runOlympus, runOlympusCompoundPlus, TURBO_LIMITS, generateImage, editImage, routeFor } from './_shared/models.mjs';
 import { snapshotProviderTelemetry } from './_shared/provider-observability.mjs';
+import { deliveryContract as artifactDeliveryContract, parseArtifactDelivery, isArtifactContinuation } from './_shared/artifact-delivery.mjs';
 import { publicExecutionFailure } from './_shared/execution-error.mjs';
 import { stageArtifact, stageBinaryArtifact, discardStagedArtifact } from './_shared/artifact.mjs';
 import { blobStore } from './_shared/blob.mjs';
@@ -299,8 +300,9 @@ async function chatHandler(req, context, startedAt){
   const requestId=getRequestId(req,context,body.requestId);
   const worker=req.headers.get('x-olympus-execute')==='1';
   const content=cleanText(body.content,40000); if(!content)return errorJson('Message is required.',400,'MESSAGE_REQUIRED',requestId);
-  const modelText=redactSecrets(content);
-  const secretsRedacted=modelText!==content;
+  let modelText=redactSecrets(content);
+  let continuationOfArtifact=false;
+  let secretsRedacted=modelText!==content;
   let projectId=body.projectId||null, conversationId=body.conversationId||null;
   const scope=await resolveOwnedScope(db,user.id,{projectId,conversationId});
   if(scope.error)return errorJson(scope.error.message,scope.error.status,scope.error.code,requestId);
@@ -311,10 +313,26 @@ async function chatHandler(req, context, startedAt){
     const prior=await db.sql`SELECT conversation_id FROM executions WHERE owner_id=${user.id} AND request_id=${requestId} LIMIT 1`;
     if(prior.length&&prior[0].conversation_id)conversationId=prior[0].conversation_id;
   }
-  const fileIds=normalizedIds(body.fileIds);
+  let fileIds=normalizedIds(body.fileIds);
+  // Explicit continuation retrieves the original authorized deliverable request, not AI promises.
+  // The new turn uses its own request id, and prior file ids are revalidated against owner scope.
+  if(conversationId&&isArtifactContinuation(content)){
+    const recent=await db.sql`SELECT content,metadata FROM messages WHERE owner_id=${user.id} AND conversation_id=${conversationId} AND role='user' ORDER BY created_at DESC LIMIT 12`;
+    const prior=recent.find(row=>classifyIntent(row.content||'',{hasFiles:true}).action==='ARTIFACT_CREATE');
+    if(prior){
+      continuationOfArtifact=true;
+      modelText=redactSecrets(String(prior.content||'').slice(0,22000)+'\n\nUSER FOLLOW-UP: '+content+'\nDeliver the unfinished original files now, without further approval requests.');
+      if(!fileIds.length)fileIds=normalizedIds(prior.metadata?.attachments||[]);
+      secretsRedacted=secretsRedacted||modelText.includes('[REDACTED]');
+    }
+  }
   const attachmentRows=await validateAttachedFiles(db,user.id,projectId,fileIds);
   const hasImage=attachmentRows.some(r=>(r.mime_type||'').startsWith('image/'));
-  const intent=classifyIntent(content,{hasImage,hasFiles:attachmentRows.length>0});
+  const intent=classifyIntent(modelText,{hasImage,hasFiles:attachmentRows.length>0});
+  const requestedArtifacts=Array.isArray(intent.artifactTypes)?intent.artifactTypes:(intent.artifactType?[intent.artifactType]:[]);
+  if(intent.action==='ARTIFACT_CREATE'&&(requestedArtifacts.length>4||(requestedArtifacts.includes('zip')&&requestedArtifacts.length>1))){
+    return errorJson('Request up to four files at once. ZIP packages must be requested separately.',422,'ARTIFACT_FORMAT_UNSUPPORTED',requestId);
+  }
   const requirementSpec=extractRequirementChecklist(modelText,{action:intent.action,artifactType:intent.artifactType,hasImage,hasFiles:attachmentRows.length>0});
   const route=routeFor(modelText,{vision:hasImage});
   const verificationSignal=shouldVerifyDelivery(modelText,{action:intent.action,route,hasFiles:attachmentRows.length>0,hasImage});
@@ -389,7 +407,9 @@ async function chatHandler(req, context, startedAt){
     const sharedBlockedProviders=await loadSharedProviderBlocks(db,user.id);
     const web=webIntent?await runWebSearch(modelText,{budget:executionBudget,reserveAfterMs:actualMode==='OLYMPUS'?17000:12000}):{requested:false,context:'',sources:[],trace:null};
     const github=githubIntent?await loadGitHubContext(modelText,{timeoutMs:worker?12000:7000,maxFiles:worker?14:10,maxChars:worker?62000:42000}):{requested:false,context:'',sources:[],trace:null};
-    const deliveryContract=intent.action==='ARTIFACT_CREATE'&&intent.artifactType==='zip'?'For a ZIP deliverable, include exactly one machine-readable block delimited by <olyhub_zip_manifest> and </olyhub_zip_manifest>. Inside it output valid JSON with shape {"files":[{"path":"relative/path.ext","content":"complete file contents"}]}. Include every file required to run/deploy the requested project, use safe relative paths, no placeholders, no omitted-file prose, and keep any human summary outside the manifest.':'';
+    const deliveryContract=intent.action==='ARTIFACT_CREATE'&&intent.artifactType==='zip'
+      ?'For a ZIP deliverable, include exactly one machine-readable block delimited by <olyhub_zip_manifest> and </olyhub_zip_manifest>. Inside it output valid JSON with shape {"files":[{"path":"relative/path.ext","content":"complete file contents"}]}. Include every file required to run/deploy the requested project, use safe relative paths, no placeholders, no omitted-file prose, and keep any human summary outside the manifest.'
+      :intent.action==='ARTIFACT_CREATE'?artifactDeliveryContract(requestedArtifacts,modelText):'';
     const actionPolicyContext=externalActions.requested.length?`\n\nEXTERNAL ACTION POLICY\nRequested external actions: ${externalActions.requested.join(', ')}. Chat/Turbo may prepare the work but MUST NOT claim commit, deploy, merge, or destructive production changes occurred. Those mutations require the owner's explicit dedicated action flow.`:'';
     const enrichedContext=`${aiContext}${web.context||''}${github.context||''}${actionPolicyContext}`;
 
@@ -422,14 +442,27 @@ async function chatHandler(req, context, startedAt){
         }
       }else result=await runZeus({text:modelText,context:enrichedContext,images:vision.images,history,requirements:requirementSpec,level:zeusLevel||'COMPOUND',deliveryContract,blockedProviders:sharedBlockedProviders,budget:executionBudget});
       if(intent.action==='ARTIFACT_CREATE'&&intent.artifactType){
-        try{
-          stagedArtifacts.push(await stageArtifact({ownerId:user.id,type:intent.artifactType,title:titleFrom(content),content:result.content,metadata:{title:titleFrom(content),intent:intent.reason}}));
-          if(intent.artifactType==='zip')result.content=stripStructuredZipManifest(result.content).trim()||'ZIP created, structurally validated, and saved to OlyHub Files.';
-        }catch(artifactError){
-          // Keep the model's answer (it usually still contains the code) instead of failing the whole turn.
-          if(!String(artifactError?.code||'').startsWith('ZIP_'))throw artifactError;
-          result.content=`${result.content}\n\n---\n⚠️ ${artifactError.message}`;
-          result.trace={...(result.trace||{}),artifactError:{code:artifactError.code,message:String(artifactError.message).slice(0,220)}};
+        if(intent.artifactType==='zip'){
+          // Preserve the existing structured ZIP package contract, with bounded structural validation.
+          const staged=await stageArtifact({ownerId:user.id,type:'zip',title:titleFrom(content),content:result.content});
+          stagedArtifacts.push(staged);
+          result.content=stripStructuredZipManifest(result.content).trim()||'The ZIP package was generated and structurally validated.';
+          result.trace={...(result.trace||{}),artifactDelivery:{requested:['zip'],created:['zip'],validated:true}};
+        }else{
+          // Validate the ENTIRE bundle before staging any blob. No more PDF containing a promise.
+          const bundle=parseArtifactDelivery(result.content,requestedArtifacts,{requestText:modelText});
+          const title=titleFrom(content);
+          for(const file of bundle.artifacts){
+            const staged=await stageArtifact({
+              ownerId:user.id,type:file.type,title:file.title||title,content:file.content,workbook:file.workbook||null,
+              metadata:{title:file.title||title,intent:intent.reason,validated:true,requestedTypes:requestedArtifacts},
+              provenance:{generator:'olyhub_artifact_engine',validated:true}
+            });
+            stagedArtifacts.push(staged);
+          }
+          // Only claim success once each binary file was built and stored successfully.
+          result.content=bundle.summary+'\n\nFiles created: '+bundle.artifacts.map(file=>file.title+'.'+file.type).join(', ')+'.';
+          result.trace={...(result.trace||{}),artifactDelivery:{requested:requestedArtifacts,created:bundle.artifacts.map(file=>file.type),validated:true,structured:bundle.structured,continuationOfArtifact}};
         }
       }
     }

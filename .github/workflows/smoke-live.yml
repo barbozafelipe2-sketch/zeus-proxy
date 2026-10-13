@@ -2,13 +2,16 @@ name: Zeus Proxy Live Smoke
 on:
   workflow_dispatch:
     inputs:
-      test_ai:
-        description: 'Run one real Zeus provider turn'
+      confirm_paid_ai:
+        description: 'Type yes-spend-credits to run one real, paid provider request'
+        required: false
+        default: 'no'
+        type: string
+      write_probe:
+        description: 'Run the database/blob probe without AI'
         required: false
         default: true
         type: boolean
-  schedule:
-    - cron: '17 13 * * 1'
 jobs:
   smoke:
     runs-on: ubuntu-latest
@@ -37,5 +40,5 @@ jobs:
         env:
           ZEUS_PROXY_SMOKE_BASE_URL: ${{ secrets.ZEUS_PROXY_SMOKE_BASE_URL }}
           ZEUS_PROXY_SMOKE_ACCESS_TOKEN: ${{ secrets.ZEUS_PROXY_SMOKE_ACCESS_TOKEN }}
-          ZEUS_PROXY_SMOKE_WRITE: '1'
-          ZEUS_PROXY_SMOKE_AI: ${{ github.event_name == 'schedule' && '1' || (inputs.test_ai && '1' || '0') }}
+          ZEUS_PROXY_SMOKE_WRITE: ${{ inputs.write_probe && '1' || '0' }}
+          ZEUS_PROXY_SMOKE_AI: ${{ (github.event_name == 'workflow_dispatch' && inputs.confirm_paid_ai == 'yes-spend-credits') && '1' || '0' }}

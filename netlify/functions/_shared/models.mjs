@@ -148,7 +148,7 @@ export function providerReadiness() {
   }));
 }
 
-export function __resetProviderHealthForTests() { providerCircuits.clear(); }
+export function __resetProviderHealthForTests() { providerCircuits.clear(); invalidModels.clear(); }
 export function __recordProviderFailureForTests(provider, message = 'test') { recordProviderFailure(provider, new Error(message)); }
 
 export function availableModels({ vision = false, ignoreCircuit = false } = {}) {
@@ -291,6 +291,7 @@ async function callOpenAI(model, system, user, { images = [], history = [], budg
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw providerError(data.error?.message || `OpenAI ${res.status}`, res.status);
+  noteUsage(budget,data.usage);
   const content = data.choices?.[0]?.message?.content || '';
   if (!String(content).trim()) throw providerError('OpenAI returned an empty response.');
   return String(content);
@@ -308,6 +309,7 @@ async function callAnthropic(model, system, user, { images = [], history = [], b
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw providerError(data.error?.message || `Anthropic ${res.status}`, res.status);
+  noteUsage(budget,data.usage);
   const content = (data.content || []).filter((x) => x.type === 'text').map((x) => x.text).join('\n');
   if (!String(content).trim()) throw providerError('Anthropic returned an empty response.');
   return content;
@@ -333,6 +335,7 @@ async function callGemini(model, system, user, { images = [], history = [], budg
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw providerError(data.error?.message || `Gemini ${res.status}`, res.status);
+  noteUsage(budget,data.usageMetadata);
   const content = data.candidates?.[0]?.content?.parts?.map((p) => p.text || '').join('') || '';
   if (!String(content).trim()) throw providerError('Gemini returned an empty response.');
   return content;
@@ -352,9 +355,46 @@ async function callOpenRouter(model, system, user, { images = [], history = [], 
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw providerError(data.error?.message || `OpenRouter ${res.status}`, res.status);
+  noteUsage(budget,data.usage);
   const content = data.choices?.[0]?.message?.content || '';
   if (!String(content).trim()) throw providerError('OpenRouter returned an empty response.');
   return content;
+}
+
+// No request text, response body or credentials are stored with token usage.
+const usageByBudget=new WeakMap();
+function noteUsage(budget,usage){
+  if(!budget||typeof budget!=='object'||!usage||typeof usage!=='object')return;
+  const clean=n=>Number.isFinite(Number(n))&&Number(n)>=0?Math.round(Number(n)):null;
+  usageByBudget.set(budget,{inputTokens:clean(usage.prompt_tokens??usage.input_tokens??usage.promptTokenCount),
+    outputTokens:clean(usage.completion_tokens??usage.output_tokens??usage.candidatesTokenCount)});
+}
+function takeUsage(budget){if(!budget||typeof budget!=='object')return null;const x=usageByBudget.get(budget)||null;usageByBudget.delete(budget);return x;}
+const invalidModels=new Map();
+function invalidModelTtlMs(){
+  const configured=Number.parseInt(String(env('OLYHUB_INVALID_MODEL_TTL_MS')||''),10);
+  return Number.isFinite(configured)&&configured>=60000?Math.min(configured,604800000):21600000;
+}
+const invalidModelKey=model=>modelTransport(model)+':'+model.provider+':'+model.id;
+export function isKnownInvalidModel(model){
+  const key=invalidModelKey(model),expires=invalidModels.get(key)||0;
+  if(expires>Date.now())return true;
+  if(expires)invalidModels.delete(key);
+  return false;
+}
+export function markModelInvalid(model){invalidModels.set(invalidModelKey(model),Date.now()+invalidModelTtlMs());}
+export function knownInvalidModels(){const now=Date.now();return [...invalidModels.entries()].filter(([,expires])=>expires>now).map(([route,expires])=>({route,retryAfterMs:expires-now}));}
+export function __resetInvalidModelsForTests(){invalidModels.clear();}
+function isBillingFailure(error){const status=errorStatus(error);return status===402||/quota|billing|credit|insufficient[_ ]?(?:funds|balance)|payment required/.test(errorMessage(error));}
+function isAuthFailure(error){return [401,403].includes(errorStatus(error));}
+export function applyFailureBlocks(blocked,model,error){
+  if(shouldAdvanceOpenAIModel(error))return blocked;
+  blocked.add(modelCircuitScope(model));
+  // All Gateway families share a Netlify credential/billing balance. Direct keys do not.
+  if(modelTransport(model)==='gateway'&&(isBillingFailure(error)||isAuthFailure(error))){
+    for(const p of ['openai','anthropic','gemini','openrouter'])blocked.add(p);
+  }
+  return blocked;
 }
 
 function inferModelStage(system=''){
@@ -378,6 +418,11 @@ export async function callModel(model, system, user, { images = [], history = []
     error.retryAfterMs = Math.max(0, state.openUntil - Date.now());
     throw error;
   }
+  if(isKnownInvalidModel(model)){
+    const error=providerError('Model was previously rejected on this route.',404);
+    error.code='PROVIDER_MODEL_INVALID_CACHED';
+    throw error; // not charged; no outbound request
+  }
   budget.reserveCall(`${scope}:${model.id}`, reserveAfterMs);
   const callStartedAt=Date.now();
   try {
@@ -390,10 +435,12 @@ export async function callModel(model, system, user, { images = [], history = []
     else throw providerError(`Unsupported provider ${model.provider}`);
     recordProviderSuccess(scope);
     recordProviderSuccess(`${scope}:${model.id}`);
-    recordProviderAttempt(budget,{model,stage:inferModelStage(system),durationMs:Date.now()-callStartedAt});
+    recordProviderAttempt(budget,{model,stage:inferModelStage(system),durationMs:Date.now()-callStartedAt,usage:takeUsage(budget)});
     return content;
   } catch (error) {
+    takeUsage(budget);
     recordProviderAttempt(budget,{model,stage:inferModelStage(system),durationMs:Date.now()-callStartedAt,error});
+    if(isModelSpecificFailure(error)&&error.code!=='PROVIDER_MODEL_INVALID_CACHED'&&errorStatus(error)!==0)markModelInvalid(model);
     if (countsAsProviderFailure(error)) {
       const providerWide = [401, 402, 403, 429].includes(errorStatus(error)) || /quota|billing|credit|unauthor|forbidden|rate limit|insufficient/.test(errorMessage(error));
       recordProviderFailure(providerWide ? scope : `${scope}:${model.id}`, error);
@@ -462,7 +509,7 @@ export async function executeWithFallback(text, system, prompt, { exclude = new 
       attempts.push({ provider:model.provider, model:model.id, transport:modelTransport(model), family:modelFamily(model), error:failureCategory(error), code:error?.code||(isTimeoutFailure(error)?'PROVIDER_TIMEOUT':null), status:errorStatus(error)||null });
       if(isNonRetryableRequestFailure(error))throw rejectedRequestError(error,attempts);
       // Transport/provider failures can advance to another independent route.
-      if (!shouldAdvanceOpenAIModel(error)) providerBlocks.add(modelCircuitScope(model));
+      applyFailureBlocks(providerBlocks,model,error);
     }
   }
   const summary = summarizeProviderFailure(attempts, localBudget);
@@ -532,7 +579,7 @@ async function executeCandidateOrder(candidates, system, prompt, {
     }catch(error){
       attempts.push({provider:model.provider,model:model.id,transport:modelTransport(model),family:modelFamily(model),error:failureCategory(error),code:error?.code||(isTimeoutFailure(error)?'PROVIDER_TIMEOUT':null),status:errorStatus(error)||null});
       if(isNonRetryableRequestFailure(error))throw rejectedRequestError(error,attempts);
-      if(!shouldAdvanceOpenAIModel(error))providerBlocks.add(modelCircuitScope(model));
+      applyFailureBlocks(providerBlocks,model,error);
     }
   }
   const summary=summarizeProviderFailure(attempts,localBudget),error=Object.assign(new Error(summary.message),{attempts,status:summary.status});

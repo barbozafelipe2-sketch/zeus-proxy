@@ -7,13 +7,13 @@ const required = [
   'netlify/functions/chat.mjs','netlify/functions/projects.mjs','netlify/functions/tasks.mjs','netlify/functions/memories.mjs',
   'netlify/functions/files.mjs','netlify/functions/file-download.mjs','netlify/functions/file-preview.mjs','netlify/functions/github-commit.mjs',
   'netlify/functions/artifacts.mjs','netlify/functions/artifact-download.mjs','netlify/functions/health.mjs','netlify/functions/transcribe.mjs',
-  'netlify/functions/_shared/models.mjs','netlify/functions/_shared/provider-routing.mjs','netlify/functions/_shared/provider-observability.mjs','netlify/functions/_shared/execution-error.mjs','netlify/functions/_shared/reliability.mjs','netlify/functions/_shared/web-search.mjs','netlify/functions/_shared/github-context.mjs','netlify/functions/_shared/execution-policy.mjs','netlify/functions/_shared/memory.mjs','netlify/functions/_shared/artifact.mjs','netlify/functions/_shared/artifact-limits.mjs','netlify/functions/_shared/pdf-layout.mjs','netlify/functions/_shared/extract.mjs','netlify/functions/_shared/auth.mjs','netlify/functions/_shared/db.mjs','netlify/functions/_shared/relations.mjs','netlify/functions/_shared/intent.mjs','netlify/functions/_shared/security.mjs','netlify/functions/_shared/context.mjs','netlify/functions/_shared/runtime.mjs','netlify/functions/_shared/archive-safety.mjs','netlify/functions/_shared/zip-output.mjs','netlify/functions/_shared/pagination.mjs','netlify/functions/_shared/limits.mjs','netlify/functions/_shared/storage.mjs',
+  'netlify/functions/_shared/models.mjs','netlify/functions/_shared/provider-routing.mjs','netlify/functions/_shared/provider-observability.mjs','netlify/functions/_shared/execution-error.mjs','netlify/functions/_shared/reliability.mjs','netlify/functions/_shared/web-search.mjs','netlify/functions/_shared/github-context.mjs','netlify/functions/_shared/execution-policy.mjs','netlify/functions/_shared/memory.mjs','netlify/functions/_shared/artifact.mjs','netlify/functions/_shared/artifact-delivery.mjs','netlify/functions/_shared/artifact-limits.mjs','netlify/functions/_shared/pdf-layout.mjs','netlify/functions/_shared/extract.mjs','netlify/functions/_shared/auth.mjs','netlify/functions/_shared/db.mjs','netlify/functions/_shared/relations.mjs','netlify/functions/_shared/intent.mjs','netlify/functions/_shared/security.mjs','netlify/functions/_shared/context.mjs','netlify/functions/_shared/runtime.mjs','netlify/functions/_shared/archive-safety.mjs','netlify/functions/_shared/zip-output.mjs','netlify/functions/_shared/pagination.mjs','netlify/functions/_shared/limits.mjs','netlify/functions/_shared/storage.mjs',
   'netlify/database/migrations/20260930044607_create_olyhub_foundation/migration.sql',
   'netlify/database/migrations/20260930080000_add_files/migration.sql',
   'netlify/database/migrations/20261001030000_hard-fix-1-integrity/migration.sql',
   'netlify/database/migrations/20261001043000_hard-fix-3-operations/migration.sql',
   'netlify/database/migrations/20261013180000_add_queued_execution_state/migration.sql',
-  'scripts/hardfix1-tests.mjs','scripts/hardfix2-tests.mjs','scripts/hardfix3-tests.mjs','scripts/reliability-engine-tests.mjs','scripts/phase10-queued-db-tests.mjs','scripts/finalfix1-tests.mjs','scripts/finalfix2-tests.mjs','scripts/finalfix3-tests.mjs','scripts/polish-tests.mjs','scripts/smoke-live.mjs','.npmrc','netlify/functions/storage-maintenance.mjs','.github/workflows/verify.yml','.github/workflows/smoke-live.yml',
+  'scripts/hardfix1-tests.mjs','scripts/hardfix2-tests.mjs','scripts/hardfix3-tests.mjs','scripts/reliability-engine-tests.mjs','scripts/phase10-queued-db-tests.mjs','scripts/artifact-engine-tests.mjs','scripts/security-cost-tests.mjs','scripts/finalfix1-tests.mjs','scripts/finalfix2-tests.mjs','scripts/finalfix3-tests.mjs','scripts/polish-tests.mjs','scripts/smoke-live.mjs','.npmrc','netlify/functions/storage-maintenance.mjs','.github/workflows/verify.yml','.github/workflows/smoke-live.yml',
   'netlify.toml','package-lock.json','README.md','CHANGELOG.md','SMOKE-TEST.md'
 ];
 for (const file of required) if (!existsSync(file)) throw new Error(`Missing required file: ${file}`);
@@ -368,3 +368,12 @@ const queueMigration=read('netlify/database/migrations/20261013180000_add_queued
 const queueErrorSurface=read('netlify/functions/_shared/execution-error.mjs');
 if (!queueMigration.includes('ALTER TYPE "execution_state" ADD VALUE IF NOT EXISTS \'QUEUED\';')) throw new Error('Missing safe QUEUED execution-state migration.');
 if (!chat.includes('publicFailure=publicExecutionFailure(error)') || !queueErrorSurface.includes('DATABASE_QUERY_FAILED')) throw new Error('Raw database failures might leak SQL to chat.');
+
+const deliveryEngine=read('netlify/functions/_shared/artifact-delivery.mjs');
+const securityLimits=read('netlify/functions/_shared/limits.mjs');
+const githubWrites=read('netlify/functions/_shared/github-write.mjs');
+const liveSmoke=read('.github/workflows/smoke-live.yml');
+if(!deliveryEngine.includes('parseArtifactDelivery')||!deliveryEngine.includes('validateWorkbook'))throw new Error('Artifact Engine contract missing.');
+if(!chat.includes('for(const file of bundle.artifacts)')||!artifact.includes('readback.xlsx.load(Buffer.from(bytes))'))throw new Error('Multi-file verification missing.');
+if(!securityLimits.includes('DEFAULT_AI_HOURLY_LIMITS')||!githubWrites.includes('GITHUB_ALLOWLIST_REQUIRED'))throw new Error('Cost/security controls missing.');
+if(/^\s*schedule\s*:/m.test(liveSmoke))throw new Error('Scheduled paid AI smoke must be disabled.');

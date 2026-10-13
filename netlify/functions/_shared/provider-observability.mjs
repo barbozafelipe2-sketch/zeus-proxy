@@ -15,13 +15,14 @@ export function failureCategory(error){
   if(status===401||status===403)return 'auth';
   if(status===402)return 'quota';
   if(status===429)return 'rate_limit';
+  if(code==='PROVIDER_MODEL_INVALID_CACHED')return 'model_invalid_cached';
   if(status===404)return 'model_unavailable';
   if(status===400||status===413||status===422)return 'invalid_request';
   if(status===408||status===504)return 'timeout';
   if(status>=500)return 'upstream';
   return 'network_or_unknown';
 }
-export function recordProviderAttempt(budget,{model,stage='unspecified',durationMs=0,error=null}={}){
+export function recordProviderAttempt(budget,{model,stage='unspecified',durationMs=0,error=null,usage=null}={}){
   if(!budget||typeof budget!=='object'||!model)return;
   let events=attemptsByBudget.get(budget);
   if(!events){events=[];attemptsByBudget.set(budget,events);}
@@ -35,6 +36,7 @@ export function recordProviderAttempt(budget,{model,stage='unspecified',duration
     model:/^(?:sk-|rk-|ghp_|gho_|AIza)/i.test(safe(model.id,100))?'redacted-model-id':safe(model.id,100),
     outcome:error?'failure':'success',
     durationMs:Math.round(clamp(durationMs,180000)),
+    ...(usage&&!error?{inputTokens:Number.isFinite(usage.inputTokens)?usage.inputTokens:null,outputTokens:Number.isFinite(usage.outputTokens)?usage.outputTokens:null}:{}),
     ...(error?{failureClass:failureCategory(error),status:status>=400&&status<=599?status:null}:{})
   });
 }
@@ -47,6 +49,9 @@ export function snapshotProviderTelemetry(budget){
     version:1,modelCalls:events.length,budgetCalls:Number.isFinite(budgetCalls)?budgetCalls:null,
     succeeded:success.length,failed:failed.length,
     recovered:failed.length>0&&success.length>0,
+    inputTokens:events.reduce((n,e)=>n+(Number.isFinite(e.inputTokens)?e.inputTokens:0),0),
+    outputTokens:events.reduce((n,e)=>n+(Number.isFinite(e.outputTokens)?e.outputTokens:0),0),
+    byTransport:events.reduce((acc,e)=>{acc[e.transport]=(acc[e.transport]||0)+1;return acc;},{}),
     independentFallbackUsed:success.some(e=>e.transport==='openrouter_direct'||e.transport==='openai_direct'),
     attempts:events
   };

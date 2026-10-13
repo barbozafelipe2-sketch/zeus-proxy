@@ -4,10 +4,12 @@ function envInt(name, fallback, min=1, max=10000) {
   return Number.isFinite(n) ? Math.max(min, Math.min(max, n)) : fallback;
 }
 
+// Counts user executions, not billable model calls or dollars. Enforce spend caps with providers.
+export const DEFAULT_AI_HOURLY_LIMITS=Object.freeze({ZEUS:15,OLYMPUS:3});
 export function aiLimits(mode='ZEUS') {
   return mode === 'OLYMPUS'
-    ? { hourly: envInt('OLYHUB_OLYMPUS_HOURLY_LIMIT', 20, 1, 500), concurrent: envInt('OLYHUB_OLYMPUS_CONCURRENCY', 1, 1, 5) }
-    : { hourly: envInt('OLYHUB_ZEUS_HOURLY_LIMIT', 60, 1, 1000), concurrent: envInt('OLYHUB_ZEUS_CONCURRENCY', 2, 1, 10) };
+    ? { hourly: envInt('OLYHUB_OLYMPUS_HOURLY_LIMIT', DEFAULT_AI_HOURLY_LIMITS.OLYMPUS, 1, 500), concurrent: envInt('OLYHUB_OLYMPUS_CONCURRENCY', 1, 1, 5) }
+    : { hourly: envInt('OLYHUB_ZEUS_HOURLY_LIMIT', DEFAULT_AI_HOURLY_LIMITS.ZEUS, 1, 1000), concurrent: envInt('OLYHUB_ZEUS_CONCURRENCY', 2, 1, 10) };
 }
 
 export function endpointLimit(kind) {
@@ -27,9 +29,16 @@ function limitError(message, code, retryAfter=60) {
 export async function guardAiExecution(client, ownerId, mode, requestId) {
   await client.query(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, [`olyhub-ai:${ownerId}`]);
   const existing = (await client.query(`SELECT id,state FROM executions WHERE owner_id=$1 AND request_id=$2 LIMIT 1`, [ownerId, requestId])).rows[0];
-  if (existing) return { existing };
-
-  const limits = aiLimits(mode);
+  const limits=aiLimits(mode);
+  if(existing){
+    // An in-progress or completed replay never invokes another model. Failed/cancelled
+    // requests retry with fresh paid calls and must obey the current hourly limit.
+    if(existing.state==='FAILED'||existing.state==='CANCELLED'){
+      const r=(await client.query("SELECT count(*)::int AS total FROM executions WHERE owner_id=$1 AND mode=$2 AND started_at > now() - interval '1 hour'",[ownerId,mode])).rows[0];
+      if(Number(r?.total||0)>=limits.hourly)throw limitError('Hourly AI safety budget reached. Try again later.','AI_RATE_LIMIT',300);
+    }
+    return {existing};
+  }
   const active = (await client.query(
     `SELECT
        count(*) FILTER (WHERE mode='ZEUS' AND started_at > now() - interval '90 seconds')::int AS zeus,

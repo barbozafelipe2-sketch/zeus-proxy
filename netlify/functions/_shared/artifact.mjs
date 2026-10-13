@@ -13,6 +13,7 @@ import { wrapPdfText } from './pdf-layout.mjs';
 function lines(text) { return String(text || '').replace(/\r/g,'').split('\n'); }
 
 import { validateArtifactInput, assertArtifactOutputSize } from './artifact-limits.mjs';
+import { validateWorkbook } from './artifact-delivery.mjs';
 
 async function pdfBytes(title, content) {
   const pdf = await PDFDocument.create();
@@ -59,14 +60,40 @@ async function pptxBytes(title, content) {
   return new Uint8Array(await pptx.write({outputType:'arraybuffer'}));
 }
 
-async function xlsxBytes(title, content) {
+async function xlsxBytes(title, content, workbook) {
+  // Structured workbook: strings remain text, formulas are intentional typed cells.
+  validateWorkbook(workbook);
   const wb = new ExcelJS.Workbook();
-  const ws = wb.addWorksheet('OlyHub Output');
-  ws.columns = [{header:'Section',key:'section',width:18},{header:'Content',key:'content',width:90}];
-  ws.addRow({section:'Title',content:title});
-  lines(content).filter(Boolean).forEach((l,i)=>ws.addRow({section:`${i+1}`,content:l}));
-  ws.getRow(1).font={bold:true};ws.views=[{state:'frozen',ySplit:1}];ws.autoFilter={from:{row:1,column:1},to:{row:1,column:2}};ws.getColumn(1).alignment={vertical:'top'};ws.getColumn(2).alignment={vertical:'top',wrapText:true};
-  return new Uint8Array(await wb.xlsx.writeBuffer());
+  wb.creator='Zeus Proxy';wb.created=new Date();
+  for(const spec of workbook.sheets){
+    const ws=wb.addWorksheet(spec.name);
+    ws.views=[{state:'frozen',ySplit:1}];
+    for(const values of spec.rows){
+      const row=ws.addRow(values.map(cell=>cell&&typeof cell==='object'&&!Array.isArray(cell)&&typeof cell.formula==='string'
+        ?{formula:cell.formula.trim().replace(/^=/,''),...(cell.result!=null?{result:cell.result}:{})}
+        :cell));
+      values.forEach((cell,index)=>{
+        if(cell&&typeof cell==='object'&&!Array.isArray(cell)&&cell.numFmt&&/^[#0$€£.,;%() _-]{1,64}$/.test(String(cell.numFmt))){
+          row.getCell(index+1).numFmt=cell.numFmt;
+        }
+      });
+    }
+    ws.getRow(1).font={bold:true,color:{argb:'FFFFFFFF'}};
+    ws.getRow(1).fill={type:'pattern',pattern:'solid',fgColor:{argb:'FF18212F'}};
+    ws.getRow(1).alignment={vertical:'middle',wrapText:true};
+    ws.getRow(1).height=30;
+    const widths=Array.isArray(spec.columnWidths)?spec.columnWidths:[];
+    for(let col=1;col<=Math.min(40,Math.max(...spec.rows.map(r=>r.length),1));col++){
+      ws.getColumn(col).width=Math.max(10,Math.min(55,Number(widths[col-1])||22));
+    }
+    ws.autoFilter={from:{row:1,column:1},to:{row:Math.max(2,spec.rows.length),column:Math.max(1,spec.rows[0].length)}};
+  }
+  const bytes=new Uint8Array(await wb.xlsx.writeBuffer());
+  // Ensure the bytes produced are a readable Excel workbook, not a text dump renamed .xlsx.
+  const readback=new ExcelJS.Workbook();
+  await readback.xlsx.load(Buffer.from(bytes));
+  if(readback.worksheets.length!==workbook.sheets.length)throw Object.assign(new Error('Workbook validation failed.'),{code:'ARTIFACT_VERIFICATION_FAILED',status:422});
+  return bytes;
 }
 
 async function zipBytes(title, content) {
@@ -82,23 +109,28 @@ async function zipBytes(title, content) {
 }
 
 
-async function artifactBytes(type, title, content) {
+async function artifactBytes(type, title, content, workbook=null) {
   const normalized = String(type || '').toLowerCase();
   validateArtifactInput(normalized,content);
   let bytes, mime, ext;
   if (normalized === 'pdf') { bytes=await pdfBytes(title,content); mime='application/pdf'; ext='pdf'; }
   else if (normalized === 'docx') { bytes=await docxBytes(title,content); mime='application/vnd.openxmlformats-officedocument.wordprocessingml.document'; ext='docx'; }
   else if (normalized === 'pptx') { bytes=await pptxBytes(title,content); mime='application/vnd.openxmlformats-officedocument.presentationml.presentation'; ext='pptx'; }
-  else if (normalized === 'xlsx') { bytes=await xlsxBytes(title,content); mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'; ext='xlsx'; }
+  else if (normalized === 'xlsx') { bytes=await xlsxBytes(title,content,workbook); mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'; ext='xlsx'; }
   else if (normalized === 'csv') { bytes=new TextEncoder().encode(content); mime='text/csv'; ext='csv'; }
   else if (normalized === 'zip') { bytes=await zipBytes(title,content); mime='application/zip'; ext='zip'; }
   else { bytes=new TextEncoder().encode(content); mime='text/markdown'; ext='md'; }
   assertArtifactOutputSize(normalized,bytes.byteLength);
+  if(normalized==='pdf'){
+    // Structural verification before uploading to Blob storage.
+    const loaded=await PDFDocument.load(bytes);
+    if(loaded.getPageCount()<1)throw Object.assign(new Error('Empty PDF.'),{code:'ARTIFACT_VERIFICATION_FAILED',status:422});
+  }
   return { normalized, bytes, mime, ext };
 }
 
-export async function stageArtifact({ ownerId, type, title, content, metadata=null, provenance=null }) {
-  const { normalized, bytes, mime, ext } = await artifactBytes(type,title,content);
+export async function stageArtifact({ ownerId, type, title, content, workbook=null, metadata=null, provenance=null }) {
+  const { normalized, bytes, mime, ext } = await artifactBytes(type,title,content,workbook);
   const filename = safeFilename(`${title || 'OlyHub Output'}.${ext}`);
   const blobKey = `${ownerId}/${crypto.randomUUID()}/${filename}`;
   await blobStore('olyhub-artifacts').set(blobKey, bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset+bytes.byteLength));

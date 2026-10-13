@@ -1,12 +1,16 @@
 import assert from 'node:assert/strict';
 import JSZip from 'jszip';
 
-globalThis.Netlify={env:{get:()=>''}};
+const localEnv={};
+globalThis.Netlify={env:{get:k=>localEnv[k]||''}};
 const mod=await import('../netlify/functions/_shared/github-write.mjs');
+assert.throws(()=>mod.assertGithubRepoAllowed('https://github.com/acme/demo'),e=>e?.code==='GITHUB_ALLOWLIST_REQUIRED');
+assert.deepEqual(mod.githubRepoAllowlist(),[]);
+localEnv.GITHUB_REPO_ALLOWLIST='acme/demo';
 
 assert.equal(mod.normalizeGitBranch('main'),'main');
 assert.equal(mod.normalizeGitBranch('release/next'),'release/next');
-assert.deepEqual(mod.githubRepoAllowlist(),[]);
+assert.deepEqual(mod.githubRepoAllowlist(),['acme/demo']);
 const allowedRef=mod.assertGithubRepoAllowed('https://github.com/acme/demo');assert.equal(allowedRef.owner,'acme');assert.equal(allowedRef.repo,'demo');
 assert.throws(()=>mod.normalizeGitBranch('../main'),e=>e?.code==='GITHUB_BRANCH_INVALID');
 assert.throws(()=>mod.normalizeGitBranch('bad branch'),e=>e?.code==='GITHUB_BRANCH_INVALID');
