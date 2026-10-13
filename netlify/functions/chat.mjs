@@ -2,6 +2,7 @@ import { requireUser } from './_shared/auth.mjs';
 import { json, readJson, cleanText, isUuid, getRequestId, errorJson } from './_shared/http.mjs';
 import { runZeus, runOlympus, runOlympusCompoundPlus, TURBO_LIMITS, generateImage, editImage, routeFor } from './_shared/models.mjs';
 import { snapshotProviderTelemetry } from './_shared/provider-observability.mjs';
+import { publicExecutionFailure } from './_shared/execution-error.mjs';
 import { stageArtifact, stageBinaryArtifact, discardStagedArtifact } from './_shared/artifact.mjs';
 import { blobStore } from './_shared/blob.mjs';
 import { withTransaction } from './_shared/db.mjs';
@@ -456,14 +457,20 @@ async function chatHandler(req, context, startedAt){
   }catch(error){
     for(const staged of stagedArtifacts){const removed=await discardStagedArtifact(staged);if(!removed){try{await queueBlobGc(db,user.id,'olyhub-artifacts',staged.blobKey,'failed-chat-artifact');}catch{}}}
     // Persist only the failure code for provider-chain errors; raw upstream text may echo prompts or credentials.
-    const hasProviderAttempts=Array.isArray(error?.attempts)&&error.attempts.length>0;
-    const trace={error:hasProviderAttempts?String(error?.code||'AI_PROVIDERS_FAILED'):redactSecrets(String(error?.message||error)).slice(0,500),attempts:error?.attempts||[],budget:executionBudget?.snapshot?.()||null,providerTelemetry:snapshotProviderTelemetry(executionBudget)};
+    const publicFailure=publicExecutionFailure(error);
+    // Never persist/return provider error prose, raw SQL, request parameters, or credentials.
+    const safeAttempts=(Array.isArray(error?.attempts)?error.attempts:[]).slice(0,10).map(item=>({
+      provider:String(item?.provider||'').replace(/[^a-z0-9_-]/gi,'').slice(0,32),
+      transport:String(item?.transport||'').replace(/[^a-z0-9_-]/gi,'').slice(0,32),
+      family:String(item?.family||'').replace(/[^a-z0-9_-]/gi,'').slice(0,32),
+      status:Number(item?.status)>=400&&Number(item?.status)<=599?Number(item.status):null,
+      code:/^[A-Z][A-Z0-9_]{1,63}$/.test(String(item?.code||''))?item.code:null
+    }));
+    const trace={error:publicFailure.traceError,attempts:safeAttempts,budget:executionBudget?.snapshot?.()||null,providerTelemetry:snapshotProviderTelemetry(executionBudget)};
     if(init?.execution?.id){try{await db.sql`UPDATE executions SET state='FAILED',error_code=${error?.code||'EXECUTION_FAILED'},trace=${trace},completed_at=now() WHERE id=${init.execution.id} AND owner_id=${user.id}`;}catch{}
       try{if(init?.userMessage?.id)await db.sql`UPDATE messages SET metadata=COALESCE(metadata,'{}'::jsonb)||${JSON.stringify({failed:true})}::jsonb WHERE id=${init.userMessage.id} AND owner_id=${user.id}`;}catch{}
     }
-    const status=Number(error?.status)||503;
-    const code=error?.code||(status>=500?'AI_EXECUTION_FAILED':'REQUEST_FAILED');
-    return errorJson(error?.message||'Execution failed.',status,code,requestId,{conversationId,executionId:init?.execution?.id||null,attempts:trace.attempts,...(error?.retryAfter?{retryAfter:error.retryAfter}:{})});
+    return errorJson(publicFailure.message,publicFailure.status,publicFailure.code,requestId,{conversationId,executionId:init?.execution?.id||null,attempts:trace.attempts,...(error?.retryAfter?{retryAfter:error.retryAfter}:{})});
   }
 }
 
