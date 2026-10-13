@@ -149,3 +149,7 @@ assert.ok(chat.includes('pipelineLabel:result.pipelineLabel||null'),'Zeus pipeli
 assert.ok(modelsSource.includes("strategy:'zeus_simple_single_model'"),'Zeus Simple engine missing');
 assert.ok(modelsSource.includes("strategy:'zeus_compound_base_gpt_finalizer'"),'Zeus Compound base→GPT engine missing');
 assert.ok(chat.includes("Mode must be ZEUS or OLYMPUS."),'server must reject invalid intelligence modes');
+
+assert.ok(modelsSource.includes("strategy:'olympus_compound_plus_author_critic_gpt'"),'Olympus Compound Plus engine missing');
+assert.ok(modelsSource.includes('olympusCriticCandidates'),'Olympus independent critic selector missing');
+assert.ok(chat.includes("level==='COMPOUND_PLUS'"),'chat does not dispatch the Compound Plus pipeline');

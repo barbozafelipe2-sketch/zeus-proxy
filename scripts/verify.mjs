@@ -139,7 +139,9 @@ const mustContain = [
   [models,'PROVIDER_CIRCUIT_OPEN','provider circuit breaker'],
   [models,'image_url','OpenAI-compatible vision input'],
   [models,'inlineData','Gemini vision input'],
-  [models,'scoped_specialists_director_adversary_patch','scoped Olympus orchestration'],
+  [models,'olympusCriticCandidates','Olympus Compound Plus independent critic selector'],
+  [models,"strategy:'olympus_compound_plus_author_critic_gpt'",'Olympus Compound Plus author-critic-GPT pipeline'],
+  [models,'scoped_specialists_director_adversary_patch','legacy Complex Turbo compatibility pipeline'],
   [health,'serverTranscriptionConfigured()','health reports actual transcription readiness'],
   [auth,'ZEUS_PROXY_ACCESS_TOKEN','server-side private access verification'],
   [auth,'timingSafeEqual','constant-time private access comparison'],
@@ -325,3 +327,6 @@ if (!models.includes("if(!checklist.length)checklist=[{id:'R1'")) throw new Erro
 if (models.includes("strategy:verify?'author_adversary_patch':'single_author'")) throw new Error('Legacy Zeus author/adversary engine returned after phase 2.');
 if (!chat.includes("level:zeusLevel||'COMPOUND'")) throw new Error('Chat does not pass the deterministic Zeus level into the engine.');
 if (!chat.includes('pipelineLabel:result.pipelineLabel||null')) throw new Error('Zeus pipeline label is not persisted.');
+
+if (!chat.includes("level==='COMPOUND_PLUS'")) throw new Error('Compound Plus is not routed separately from Complex Turbo.');
+if (!models.includes('independentCritic:Boolean(critic&&critic.model.provider!==author.model.provider)')) throw new Error('Compound Plus does not prove critic-family independence.');

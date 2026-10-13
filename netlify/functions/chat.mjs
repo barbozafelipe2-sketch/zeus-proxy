@@ -1,6 +1,6 @@
 import { requireUser } from './_shared/auth.mjs';
 import { json, readJson, cleanText, isUuid, getRequestId, errorJson } from './_shared/http.mjs';
-import { runZeus, runOlympus, generateImage, editImage, routeFor } from './_shared/models.mjs';
+import { runZeus, runOlympus, runOlympusCompoundPlus, generateImage, editImage, routeFor } from './_shared/models.mjs';
 import { stageArtifact, stageBinaryArtifact, discardStagedArtifact } from './_shared/artifact.mjs';
 import { blobStore } from './_shared/blob.mjs';
 import { withTransaction } from './_shared/db.mjs';
@@ -346,7 +346,7 @@ async function chatHandler(req, context, startedAt){
     const githubIntent=hasGitHubRepoUrl(modelText);
     const actualMode=olympusDispatchFallback?'ZEUS':mode;
     const zeusLevel=actualMode==='ZEUS'?(mode==='OLYMPUS'?'COMPOUND':level):null;
-    const maxCalls=(intent.action==='IMAGE_CREATE'||intent.action==='IMAGE_EDIT'?3:(actualMode==='OLYMPUS'?8:(zeusLevel==='COMPOUND'?6:4)))+(webIntent?1:0);
+    const maxCalls=(intent.action==='IMAGE_CREATE'||intent.action==='IMAGE_EDIT'?3:(actualMode==='OLYMPUS'?(level==='COMPOUND_PLUS'?7:8):(zeusLevel==='COMPOUND'?6:4)))+(webIntent?1:0);
     const timeoutMs=worker?150000:((webIntent||githubIntent)?CHAT_WEB_TIMEOUT_MS:(route==='fast'&&zeusLevel==='SIMPLE'?FAST_CHAT_TIMEOUT_MS:CHAT_TIMEOUT_MS));
     executionBudget=createExecutionBudget({startedAt,timeoutMs,maxCalls,reserveMs:6500});
     const vision=hasImage?await loadVisionInputs(attachmentRows):{images:[],skipped:[]};
@@ -373,7 +373,9 @@ async function chatHandler(req, context, startedAt){
     }else{
       await db.sql`UPDATE executions SET state='RUNNING' WHERE id=${execution.id} AND owner_id=${user.id}`;
       if(actualMode==='OLYMPUS'){
-        try{result=await runOlympus({text:modelText,context:enrichedContext,images:vision.images,history,requirements:requirementSpec,deliveryContract,blockedProviders:sharedBlockedProviders,budget:executionBudget});}
+        try{result=level==='COMPOUND_PLUS'
+          ?await runOlympusCompoundPlus({text:modelText,context:enrichedContext,images:vision.images,history,requirements:requirementSpec,deliveryContract,blockedProviders:sharedBlockedProviders,budget:executionBudget})
+          :await runOlympus({text:modelText,context:enrichedContext,images:vision.images,history,requirements:requirementSpec,deliveryContract,blockedProviders:sharedBlockedProviders,budget:executionBudget});}
         catch(olympusError){
           if(!executionBudget.canCall())throw olympusError;
           const fallback=await runZeus({text:modelText,context:enrichedContext,images:vision.images,history,requirements:requirementSpec,level:'COMPOUND',deliveryContract,blockedProviders:sharedBlockedProviders,budget:executionBudget});
