@@ -1,6 +1,7 @@
 import { requireUser } from './_shared/auth.mjs';
 import { json, readJson, cleanText, isUuid, getRequestId, errorJson } from './_shared/http.mjs';
 import { runZeus, runOlympus, runOlympusCompoundPlus, TURBO_LIMITS, generateImage, editImage, routeFor } from './_shared/models.mjs';
+import { snapshotProviderTelemetry } from './_shared/provider-observability.mjs';
 import { stageArtifact, stageBinaryArtifact, discardStagedArtifact } from './_shared/artifact.mjs';
 import { blobStore } from './_shared/blob.mjs';
 import { withTransaction } from './_shared/db.mjs';
@@ -227,8 +228,27 @@ async function loadPriorRequirements(db,userId,conversationId,currentExecutionId
 
 async function loadSharedProviderBlocks(db,userId){
   const rows=await db.sql`SELECT state,lead_model,trace FROM executions WHERE owner_id=${userId} AND started_at > now() - interval '10 minutes' ORDER BY started_at DESC LIMIT 60`;
-  const resolved=new Map(),fatal=(item)=>{const status=Number(item?.status||0),msg=String(item?.error||'').toLowerCase();return [401,402,403,429].includes(status)||/quota|billing|credit|unauthor|forbidden|rate limit|insufficient/.test(msg);};
-  for(const row of rows){const lead=String(row?.lead_model||'').split(':')[0];if(lead&&!resolved.has(lead)&&(row.state==='COMPLETED'||row.state==='PARTIAL'))resolved.set(lead,'success');const trace=row?.trace||{};for(const item of [...(Array.isArray(trace?.attempts)?trace.attempts:[]),...(Array.isArray(trace?.fallbacks)?trace.fallbacks:[]),...(Array.isArray(trace?.failures)?trace.failures:[])]){const provider=String(item?.provider||'').toLowerCase();if(provider&&!resolved.has(provider)&&fatal(item))resolved.set(provider,'blocked');}}
+  const resolved=new Map(),fatal=(item)=>[401,402,403,429].includes(Number(item?.status||0))||['auth','quota','rate_limit'].includes(item?.failureClass)||/quota|billing|credit|unauthor|forbidden|rate limit|insufficient/.test(String(item?.error||'').toLowerCase());
+  for(const row of rows){
+    const trace=row?.trace||{},events=trace.providerTelemetry?.attempts;
+    if(Array.isArray(events)&&events.length){
+      // Newest event wins per transport; a direct-route error cannot poison the Gateway.
+      for(const item of [...events].reverse()){
+        const scope=item.transport==='gateway'?String(item.provider||'').toLowerCase():String(item.transport||'').toLowerCase();
+        if(!scope||resolved.has(scope))continue;
+        if(item.outcome==='success')resolved.set(scope,'success');
+        else if(fatal(item))resolved.set(scope,'blocked');
+      }
+      continue;
+    }
+    // Legacy traces had no transport; only treat them as Gateway evidence.
+    const lead=String(row?.lead_model||'').split(':')[0];
+    if(lead&&!resolved.has(lead)&&(row.state==='COMPLETED'||row.state==='PARTIAL'))resolved.set(lead,'success');
+    for(const item of [...(Array.isArray(trace?.attempts)?trace.attempts:[]),...(Array.isArray(trace?.fallbacks)?trace.fallbacks:[]),...(Array.isArray(trace?.failures)?trace.failures:[])]){
+      const provider=String(item?.provider||'').toLowerCase();
+      if(provider&&!resolved.has(provider)&&fatal(item))resolved.set(provider,'blocked');
+    }
+  }
   return [...resolved.entries()].filter(([,v])=>v==='blocked').map(([p])=>p);
 }
 
@@ -393,6 +413,7 @@ async function chatHandler(req, context, startedAt){
           ?await runOlympusCompoundPlus({text:modelText,context:enrichedContext,images:vision.images,history,requirements:requirementSpec,deliveryContract,blockedProviders:sharedBlockedProviders,budget:executionBudget})
           :await runOlympus({text:modelText,context:enrichedContext,images:vision.images,history,requirements:requirementSpec,deliveryContract,blockedProviders:sharedBlockedProviders,budget:executionBudget});}
         catch(olympusError){
+          if(olympusError?.code==='AI_REQUEST_REJECTED')throw olympusError;
           if(!executionBudget.canCall())throw olympusError;
           const fallback=await runZeus({text:modelText,context:enrichedContext,images:vision.images,history,requirements:requirementSpec,level:'COMPOUND',deliveryContract,blockedProviders:sharedBlockedProviders,budget:executionBudget});
           fallback.trace={...(fallback.trace||{}),olympusFallback:String(olympusError?.message||olympusError).slice(0,220)};
@@ -428,13 +449,15 @@ async function chatHandler(req, context, startedAt){
     }
     const finalLevel=result.effectiveLevel||(finalMode==='ZEUS'&&mode==='OLYMPUS'?'COMPOUND':level);
     if(finalMode==='OLYMPUS'&&level==='COMPLEX_TURBO'&&finalLevel==='COMPOUND_PLUS'&&result.trace?.olympusDescended){modeExplanation='Olympus Complex Turbo could not preserve its role-separation guarantees, so it safely downgraded to Compound Plus.';}
-    result.executionLevel=finalLevel;result.trace={...(result.trace||{}),finalExecutionLevel:finalLevel};
+    result.executionLevel=finalLevel;result.trace={...(result.trace||{}),finalExecutionLevel:finalLevel,providerTelemetry:snapshotProviderTelemetry(executionBudget)};
     result.modeExplanation=modeExplanation;
     const final=await finalizeTurn({db,userId:user.id,projectId,conversationId,execution,mode:finalMode,result,stagedArtifacts});
     return json({conversationId,message:final.assistant,userMessage,artifacts:final.artifacts,mode:finalMode,level:finalLevel,modeExplanation,execution:{id:execution.id,state:'COMPLETED'},requestId,replayed:false});
   }catch(error){
     for(const staged of stagedArtifacts){const removed=await discardStagedArtifact(staged);if(!removed){try{await queueBlobGc(db,user.id,'olyhub-artifacts',staged.blobKey,'failed-chat-artifact');}catch{}}}
-    const trace={error:String(error?.message||error).slice(0,500),attempts:error?.attempts||[],budget:executionBudget?.snapshot?.()||null};
+    // Persist only the failure code for provider-chain errors; raw upstream text may echo prompts or credentials.
+    const hasProviderAttempts=Array.isArray(error?.attempts)&&error.attempts.length>0;
+    const trace={error:hasProviderAttempts?String(error?.code||'AI_PROVIDERS_FAILED'):redactSecrets(String(error?.message||error)).slice(0,500),attempts:error?.attempts||[],budget:executionBudget?.snapshot?.()||null,providerTelemetry:snapshotProviderTelemetry(executionBudget)};
     if(init?.execution?.id){try{await db.sql`UPDATE executions SET state='FAILED',error_code=${error?.code||'EXECUTION_FAILED'},trace=${trace},completed_at=now() WHERE id=${init.execution.id} AND owner_id=${user.id}`;}catch{}
       try{if(init?.userMessage?.id)await db.sql`UPDATE messages SET metadata=COALESCE(metadata,'{}'::jsonb)||${JSON.stringify({failed:true})}::jsonb WHERE id=${init.userMessage.id} AND owner_id=${user.id}`;}catch{}
     }

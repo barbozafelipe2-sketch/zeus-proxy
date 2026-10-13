@@ -7,7 +7,7 @@ const required = [
   'netlify/functions/chat.mjs','netlify/functions/projects.mjs','netlify/functions/tasks.mjs','netlify/functions/memories.mjs',
   'netlify/functions/files.mjs','netlify/functions/file-download.mjs','netlify/functions/file-preview.mjs','netlify/functions/github-commit.mjs',
   'netlify/functions/artifacts.mjs','netlify/functions/artifact-download.mjs','netlify/functions/health.mjs','netlify/functions/transcribe.mjs',
-  'netlify/functions/_shared/models.mjs','netlify/functions/_shared/reliability.mjs','netlify/functions/_shared/web-search.mjs','netlify/functions/_shared/github-context.mjs','netlify/functions/_shared/execution-policy.mjs','netlify/functions/_shared/memory.mjs','netlify/functions/_shared/artifact.mjs','netlify/functions/_shared/artifact-limits.mjs','netlify/functions/_shared/pdf-layout.mjs','netlify/functions/_shared/extract.mjs','netlify/functions/_shared/auth.mjs','netlify/functions/_shared/db.mjs','netlify/functions/_shared/relations.mjs','netlify/functions/_shared/intent.mjs','netlify/functions/_shared/security.mjs','netlify/functions/_shared/context.mjs','netlify/functions/_shared/runtime.mjs','netlify/functions/_shared/archive-safety.mjs','netlify/functions/_shared/zip-output.mjs','netlify/functions/_shared/pagination.mjs','netlify/functions/_shared/limits.mjs','netlify/functions/_shared/storage.mjs',
+  'netlify/functions/_shared/models.mjs','netlify/functions/_shared/provider-routing.mjs','netlify/functions/_shared/provider-observability.mjs','netlify/functions/_shared/reliability.mjs','netlify/functions/_shared/web-search.mjs','netlify/functions/_shared/github-context.mjs','netlify/functions/_shared/execution-policy.mjs','netlify/functions/_shared/memory.mjs','netlify/functions/_shared/artifact.mjs','netlify/functions/_shared/artifact-limits.mjs','netlify/functions/_shared/pdf-layout.mjs','netlify/functions/_shared/extract.mjs','netlify/functions/_shared/auth.mjs','netlify/functions/_shared/db.mjs','netlify/functions/_shared/relations.mjs','netlify/functions/_shared/intent.mjs','netlify/functions/_shared/security.mjs','netlify/functions/_shared/context.mjs','netlify/functions/_shared/runtime.mjs','netlify/functions/_shared/archive-safety.mjs','netlify/functions/_shared/zip-output.mjs','netlify/functions/_shared/pagination.mjs','netlify/functions/_shared/limits.mjs','netlify/functions/_shared/storage.mjs',
   'netlify/database/migrations/20260930044607_create_olyhub_foundation/migration.sql',
   'netlify/database/migrations/20260930080000_add_files/migration.sql',
   'netlify/database/migrations/20261001030000_hard-fix-1-integrity/migration.sql',
@@ -26,6 +26,9 @@ const githubContext = read('netlify/functions/_shared/github-context.mjs');
 const reliability = read('netlify/functions/_shared/reliability.mjs');
 const webSearch = read('netlify/functions/_shared/web-search.mjs');
 const health = read('netlify/functions/health.mjs');
+const providerObservability = read('netlify/functions/_shared/provider-observability.mjs');
+const phase8Source = read('scripts/phase8-resilience-tests.mjs');
+const phase9Source = read('scripts/phase9-regression-tests.mjs');
 const projects = read('netlify/functions/projects.mjs');
 const tasks = read('netlify/functions/tasks.mjs');
 const memories = read('netlify/functions/memories.mjs');
@@ -334,7 +337,7 @@ if (!chat.includes("level:zeusLevel||'COMPOUND'")) throw new Error('Chat does no
 if (!chat.includes('pipelineLabel:result.pipelineLabel||null')) throw new Error('Zeus pipeline label is not persisted.');
 
 if (!chat.includes("level==='COMPOUND_PLUS'")) throw new Error('Compound Plus is not routed separately from Complex Turbo.');
-if (!models.includes('independentCritic:Boolean(critic&&critic.model.provider!==author.model.provider)')) throw new Error('Compound Plus does not prove critic-family independence.');
+if (!models.includes('independentCritic:Boolean(critic&&modelFamily(critic.model)!==modelFamily(author.model))')) throw new Error('Compound Plus does not prove critic-family independence.');
 
 if (models.includes("strategy:'scoped_specialists_director_adversary_patch'")) throw new Error('Legacy Complex Turbo compatibility pipeline returned.');
 if (!models.includes('excludeProviders:creatorProviders')) throw new Error('Turbo Director is not isolated from creator provider families.');
@@ -346,3 +349,15 @@ if (chat.indexOf("TURBO_APPROVAL_REQUIRED") > chat.indexOf('init=await initializ
 if (!app.includes('turboApprovalModal') || !app.includes('approvalFingerprint')) throw new Error('Turbo approval UI is missing.');
 if (!githubCommit.includes("body.confirm!==true")) throw new Error('GitHub commit no longer requires explicit owner confirmation.');
 if (!githubWrite.includes('GITHUB_REPO_ALLOWLIST') || !githubWrite.includes('GITHUB_REPO_NOT_ALLOWED')) throw new Error('GitHub repo allowlist guard is missing.');
+
+if (!chat.includes('providerTelemetry:snapshotProviderTelemetry(executionBudget)')) throw new Error('Model telemetry missing from persisted trace.');
+if (!health.includes('transportReadiness')) throw new Error('Transport health visibility missing.');
+if (!providerObservability.includes('WeakMap')) throw new Error('Budget-scoped telemetry missing.');
+
+if (!models.includes('isNonRetryableRequestFailure') || !models.includes('AI_REQUEST_REJECTED')) throw new Error('User-input errors can consume paid fallback routes.');
+if (!chat.includes("if(olympusError?.code==='AI_REQUEST_REJECTED')throw olympusError")) throw new Error('Olympus invalid requests incorrectly downgrade to Zeus.');
+if (!phase8Source.includes('snapshotProviderTelemetry') || !phase8Source.includes('maxCalls:4')) throw new Error('Phase 8 resilience coverage missing.');
+
+if (!models.includes('excludeProviders:[modelFamily(director.model)]')) throw new Error('Turbo CEO must exclude Director model family, not merely adapter.');
+if (!models.includes("gptFinished:modelFamily(final.model)==='openai'")) throw new Error('Non-GPT finishing must not be attributed to GPT.');
+if (!phase9Source.includes('buildTransportRoutes') || !phase9Source.includes('snapshotProviderTelemetry')) throw new Error('Phase 9 route/family regression tests missing.');

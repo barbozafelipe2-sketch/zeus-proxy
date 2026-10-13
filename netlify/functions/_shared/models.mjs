@@ -1,4 +1,6 @@
 import { createExecutionBudget } from './runtime.mjs';
+import { recordProviderAttempt, failureCategory } from './provider-observability.mjs';
+import { modelFamily, modelCircuitScope, modelTransport, buildTransportRoutes } from './provider-routing.mjs';
 import { formatChecklist, mergeClarifiedRequirements, splitRequirementScopes, structuralRewriteAllowed, validateAdversaryFindings } from './reliability.mjs';
 
 const env = (name) => globalThis.Netlify?.env?.get?.(name) || process.env?.[name] || '';
@@ -102,7 +104,7 @@ function recordProviderFailure(provider, error) {
   const state = circuitState(provider);
   state.failures += 1;
   state.lastFailureAt = Date.now();
-  state.lastError = String(error?.message || error || 'provider failure').slice(0, 220);
+  state.lastError = failureCategory(error); // no raw upstream text or secrets in diagnostics
   if (state.failures >= CIRCUIT_FAILURE_THRESHOLD) state.openUntil = Date.now() + failureCooldown(error);
   providerCircuits.set(provider, state);
 }
@@ -113,11 +115,12 @@ function recordProviderSuccess(provider) {
 
 export function providerRuntimeHealth() {
   const configured = providerStatus();
-  return Object.fromEntries(Object.keys(configured).map((provider) => {
+  const direct={openrouter_direct:Boolean(env('OPENROUTER_DIRECT_API_KEY')),openai_direct:Boolean(env('OPENAI_DIRECT_API_KEY'))};
+  return Object.fromEntries(Object.keys({...configured,...direct}).map((provider) => {
     const state = circuitState(provider);
     return [provider, {
-      configured: configured[provider],
-      circuitOpen: configured[provider] && state.openUntil > Date.now(),
+      configured: Boolean({...configured,...direct}[provider]),
+      circuitOpen: Boolean({...configured,...direct}[provider]) && state.openUntil > Date.now(),
       retryAfterMs: state.openUntil > Date.now() ? state.openUntil - Date.now() : 0,
       consecutiveFailures: state.failures,
       lastError: state.lastError,
@@ -125,6 +128,10 @@ export function providerRuntimeHealth() {
       lastFailureAt: state.lastFailureAt,
     }];
   }));
+}
+
+export function providerTransportStatus(){
+  return {gateway:providerStatus(),openrouter_direct:Boolean(env('OPENROUTER_DIRECT_API_KEY')),openai_direct:Boolean(env('OPENAI_DIRECT_API_KEY'))};
 }
 
 export function providerReadiness() {
@@ -146,9 +153,11 @@ export function __recordProviderFailureForTests(provider, message = 'test') { re
 
 export function availableModels({ vision = false, ignoreCircuit = false } = {}) {
   const status = providerStatus();
+  const routerDirect=Boolean(env('OPENROUTER_DIRECT_API_KEY'))&&(ignoreCircuit||!circuitOpen('openrouter_direct'));
+  const openaiDirect=Boolean(env('OPENAI_DIRECT_API_KEY'))&&(ignoreCircuit||!circuitOpen('openai_direct'));
   return modelCatalog().filter((m) => {
-    if (!status[m.provider]) return false;
-    if (!ignoreCircuit && circuitOpen(m.provider, m.id)) return false;
+    const gatewayReady=status[m.provider] && (ignoreCircuit || !circuitOpen(m.provider,m.id));
+    if (!gatewayReady && !routerDirect && !(openaiDirect && modelFamily(m)==='openai')) return false;
     if (vision && !(m.roles || []).some((role) => role === 'vision' || role === 'multimodal')) return false;
     return true;
   });
@@ -268,9 +277,10 @@ function geminiParts(user, images = []) {
   ];
 }
 
-async function callOpenAI(model, system, user, { images = [], history = [], budget, reserveAfterMs = 0, callTimeoutMs = DEFAULT_CALL_TIMEOUT_MS, maxOutputTokens = 5000 }) {
-  const base = apiRoot(openaiBase());
-  const key = env('OPENAI_API_KEY');
+async function callOpenAI(model, system, user, { images = [], history = [], budget, reserveAfterMs = 0, callTimeoutMs = DEFAULT_CALL_TIMEOUT_MS, maxOutputTokens = 5000, transport = 'gateway' }) {
+  const direct=transport==='openai_direct';
+  const base = apiRoot(direct?(env('OPENAI_DIRECT_BASE_URL')||'https://api.openai.com/v1'):openaiBase());
+  const key = direct?env('OPENAI_DIRECT_API_KEY'):env('OPENAI_API_KEY');
   if (!base || !key) throw providerError('OpenAI is not configured.');
   const messages = [{ role: 'system', content: system }, ...chatTurns(history, openAIUserContent(user, images))];
   const res = await fetch(`${base}/chat/completions`, {
@@ -328,9 +338,10 @@ async function callGemini(model, system, user, { images = [], history = [], budg
   return content;
 }
 
-async function callOpenRouter(model, system, user, { images = [], history = [], budget, reserveAfterMs = 0, callTimeoutMs = DEFAULT_CALL_TIMEOUT_MS, maxOutputTokens = 5000 }) {
-  const base = openrouterBase().replace(/\/$/, '');
-  const key = env('OPENROUTER_API_KEY');
+async function callOpenRouter(model, system, user, { images = [], history = [], budget, reserveAfterMs = 0, callTimeoutMs = DEFAULT_CALL_TIMEOUT_MS, maxOutputTokens = 5000, transport = 'gateway' }) {
+  const direct=transport==='openrouter_direct';
+  const base = (direct?(env('OPENROUTER_DIRECT_BASE_URL')||'https://openrouter.ai/api/v1'):openrouterBase()).replace(/\/$/, '');
+  const key = direct?env('OPENROUTER_DIRECT_API_KEY'):env('OPENROUTER_API_KEY');
   if (!base || !key) throw providerError('OpenRouter is not configured.');
   const messages = [{ role: 'system', content: system }, ...chatTurns(history, openAIUserContent(user, images))];
   const res = await fetch(`${base}/chat/completions`, {
@@ -346,30 +357,46 @@ async function callOpenRouter(model, system, user, { images = [], history = [], 
   return content;
 }
 
+function inferModelStage(system=''){
+  const s=String(system).toLowerCase();
+  if(s.includes('creator specialist'))return 'turbo_creator';
+  if(s.includes('planner role'))return 'turbo_planner';
+  if(s.includes('director/assembler'))return 'turbo_director';
+  if(s.includes('ceo/final authority'))return 'turbo_ceo';
+  if(s.includes('independent critic'))return 'olympus_critic';
+  if(s.includes('author stage'))return 'olympus_author';
+  if(s.includes('gpt finalizer'))return 'finalizer';
+  if(s.includes('base stage'))return 'zeus_base';
+  return 'zeus_simple';
+}
 export async function callModel(model, system, user, { images = [], history = [], budget = createExecutionBudget({ maxCalls: 1 }), reserveAfterMs = 0, callTimeoutMs = DEFAULT_CALL_TIMEOUT_MS, maxOutputTokens = 5000 } = {}) {
-  if (circuitOpen(model.provider, model.id)) {
-    const state = circuitState(circuitOpen(model.provider) ? model.provider : `${model.provider}:${model.id}`);
-    const error = providerError(`${model.provider} circuit is temporarily open after repeated failures.`);
+  const scope=modelCircuitScope(model);
+  if (circuitOpen(scope, model.id)) {
+    const state = circuitState(circuitOpen(scope) ? scope : `${scope}:${model.id}`);
+    const error = providerError(`${scope} circuit is temporarily open after repeated failures.`);
     error.code = 'PROVIDER_CIRCUIT_OPEN';
     error.retryAfterMs = Math.max(0, state.openUntil - Date.now());
     throw error;
   }
-  budget.reserveCall(`${model.provider}:${model.id}`, reserveAfterMs);
+  budget.reserveCall(`${scope}:${model.id}`, reserveAfterMs);
+  const callStartedAt=Date.now();
   try {
     let content;
-    const call = { images, history, budget, reserveAfterMs, callTimeoutMs, maxOutputTokens };
+    const call = { images, history, budget, reserveAfterMs, callTimeoutMs, maxOutputTokens, transport:modelTransport(model) };
     if (model.provider === 'openai') content = await callOpenAI(model.id, system, user, call);
     else if (model.provider === 'anthropic') content = await callAnthropic(model.id, system, user, call);
     else if (model.provider === 'gemini') content = await callGemini(model.id, system, user, call);
     else if (model.provider === 'openrouter') content = await callOpenRouter(model.id, system, user, call);
     else throw providerError(`Unsupported provider ${model.provider}`);
-    recordProviderSuccess(model.provider);
-    recordProviderSuccess(`${model.provider}:${model.id}`);
+    recordProviderSuccess(scope);
+    recordProviderSuccess(`${scope}:${model.id}`);
+    recordProviderAttempt(budget,{model,stage:inferModelStage(system),durationMs:Date.now()-callStartedAt});
     return content;
   } catch (error) {
+    recordProviderAttempt(budget,{model,stage:inferModelStage(system),durationMs:Date.now()-callStartedAt,error});
     if (countsAsProviderFailure(error)) {
       const providerWide = [401, 402, 403, 429].includes(errorStatus(error)) || /quota|billing|credit|unauthor|forbidden|rate limit|insufficient/.test(errorMessage(error));
-      recordProviderFailure(providerWide ? model.provider : `${model.provider}:${model.id}`, error);
+      recordProviderFailure(providerWide ? scope : `${scope}:${model.id}`, error);
     }
     throw error;
   }
@@ -382,6 +409,22 @@ export function isTimeoutFailure(error){const name=String(error?.name||'');const
 function isTransientFailure(error){const status=errorStatus(error),m=errorMessage(error);return isTimeoutFailure(error) || status===408 || status>=500 || /empty response|fetch failed|econnreset|etimedout|connection reset|socket hang up|temporarily unavailable/.test(m);}
 function countsAsProviderFailure(error){const status=errorStatus(error),m=errorMessage(error);if(isModelSpecificFailure(error))return false;return [401,402,403,429].includes(status)||status>=500||/quota|billing|credit|unauthor|forbidden|rate limit|insufficient|fetch failed|econnreset|etimedout|connection reset|socket hang up/.test(m);}
 export function shouldAdvanceOpenAIModel(error){const status=errorStatus(error),m=errorMessage(error);if([400,401,402,403,413,422,429].includes(status)&&!isModelSpecificFailure(error))return false;if(/quota|billing|credit|unauthor|forbidden|rate limit|content policy|context length|invalid image|invalid request/.test(m))return false;return isModelSpecificFailure(error)||isTransientFailure(error);}
+// User-input failures are not provider outages. Retrying an identical oversized/invalid payload
+// through paid fallback routes cannot fix it and can multiply charges.
+export function isNonRetryableRequestFailure(error){
+  const status=errorStatus(error),message=errorMessage(error);
+  if(isModelSpecificFailure(error))return false; // 404/unsupported model can use another route
+  return status===413||status===422||
+    (status===400&&/invalid request|bad request|malformed|invalid image|context length|content policy|unsupported image|too large|exceed|maximum tokens|token limit/.test(message));
+}
+function rejectedRequestError(error,attempts=[]){
+  const status=errorStatus(error);
+  return Object.assign(new Error(status===413
+    ?'The request is too large for the selected AI provider. Reduce attachments or input size before retrying.'
+    :'The AI provider rejected the request as invalid. Review the inputs before retrying.'),{
+    code:'AI_REQUEST_REJECTED',status:status===413?413:422,attempts
+  });
+}
 
 export function buildFallbackOrder(ranked,maxAttempts=4){
   if(!ranked?.length)return [];
@@ -397,23 +440,29 @@ export function buildFallbackOrder(ranked,maxAttempts=4){
 export async function executeWithFallback(text, system, prompt, { exclude = new Set(), maxAttempts = 4, budget, images = [], history = [], reserveAfterMs = 0, callTimeoutMs = null, maxOutputTokens = 5000, blockedProviders = [] } = {}) {
   const localBudget = budget || createExecutionBudget({ maxCalls: Math.max(4, maxAttempts) });
   const providerBlocks=new Set(Array.isArray(blockedProviders)?blockedProviders:[]);
-  const ranked = rankModels(text, exclude, { vision: images.length > 0 }).filter(m=>!providerBlocks.has(m.provider));
+  const ranked = rankModels(text, exclude, { vision: images.length > 0 });
   const first = ranked[0];
   if (!first) { const error = new Error('No configured AI provider is currently available.'); error.code='AI_NOT_CONFIGURED'; throw error; }
-  const ordered = buildFallbackOrder(ranked,maxAttempts);
+  const native=providerStatus();
+  const ordered=buildTransportRoutes(buildFallbackOrder(ranked,maxAttempts),{
+    limit:maxAttempts,gatewayEnabled:m=>Boolean(native[m.provider])&&!providerBlocks.has(m.provider)&&!circuitOpen(m.provider,m.id),
+    openrouterDirect:Boolean(env('OPENROUTER_DIRECT_API_KEY'))&&!circuitOpen('openrouter_direct')&&!providerBlocks.has('openrouter_direct'),
+    openaiDirect:Boolean(env('OPENAI_DIRECT_API_KEY'))&&!circuitOpen('openai_direct')&&!providerBlocks.has('openai_direct')
+  });
 
   const attempts = [];
   for (const model of ordered) {
-    if (providerBlocks.has(model.provider)) continue;
+    if (providerBlocks.has(modelCircuitScope(model))) continue;
     if (!localBudget.canCall(1200, reserveAfterMs)) break;
     try {
       const timeout = typeof callTimeoutMs === 'function' ? callTimeoutMs(localBudget, attempts.length) : (callTimeoutMs || DEFAULT_CALL_TIMEOUT_MS);
       const content = await callModel(model, system, prompt, { images, history, budget: localBudget, reserveAfterMs, callTimeoutMs: timeout, maxOutputTokens });
       return { content, model, attempts };
     } catch (error) {
-      attempts.push({ provider:model.provider, model:model.id, error:redactProviderText(String(error?.message||error)).slice(0,220), code:error?.code||(isTimeoutFailure(error)?'PROVIDER_TIMEOUT':null), status:errorStatus(error)||null });
-      // Auth, billing, rate limit and bad requests stop that provider only. Another provider may still answer.
-      if (!shouldAdvanceOpenAIModel(error)) providerBlocks.add(model.provider);
+      attempts.push({ provider:model.provider, model:model.id, transport:modelTransport(model), family:modelFamily(model), error:failureCategory(error), code:error?.code||(isTimeoutFailure(error)?'PROVIDER_TIMEOUT':null), status:errorStatus(error)||null });
+      if(isNonRetryableRequestFailure(error))throw rejectedRequestError(error,attempts);
+      // Transport/provider failures can advance to another independent route.
+      if (!shouldAdvanceOpenAIModel(error)) providerBlocks.add(modelCircuitScope(model));
     }
   }
   const summary = summarizeProviderFailure(attempts, localBudget);
@@ -436,9 +485,13 @@ function uniqueModelOrder(models=[]){
 
 // Zeus Compound's first stage is deliberately economical. Route relevance is
 // preserved, but premium GPT is reserved for the finalizer.
+function routeEligibleWhenGatewayBlocked(model,blocked){
+  return !blocked.has(model.provider)||(Boolean(env('OPENROUTER_DIRECT_API_KEY'))&&!blocked.has('openrouter_direct'))||(modelFamily(model)==='openai'&&Boolean(env('OPENAI_DIRECT_API_KEY'))&&!blocked.has('openai_direct'));
+}
+
 export function zeusBaseCandidates(text='', {vision=false,blockedProviders=[]}={}){
   const blocked=new Set(blockedProviders||[]),route=routeFor(text,{vision});
-  const ranked=orderForRoute(route,new Set(),{vision}).filter(m=>!blocked.has(m.provider));
+  const ranked=orderForRoute(route,new Set(),{vision}).filter(m=>routeEligibleWhenGatewayBlocked(m,blocked));
   const strongGpt=env('OPENAI_STRONG_MODEL')||'gpt-5.6-sol';
   const cheap=ranked.map((m,index)=>({m,index})).filter(x=>Number(x.m.cost||99)<=3&&!(x.m.provider==='openai'&&x.m.id===strongGpt)).sort((a,b)=>Number(a.m.cost||99)-Number(b.m.cost||99)||Number(a.m.provider==='openai')-Number(b.m.provider==='openai')||a.index-b.index).map(x=>x.m);
   const fallback=ranked.filter(m=>!(m.provider==='openai'&&m.id===strongGpt));
@@ -450,10 +503,10 @@ export function zeusBaseCandidates(text='', {vision=false,blockedProviders=[]}={
 // excluded so the two stages do not collapse into one model.
 export function gptFinisherCandidates({vision=false,blockedProviders=[],exclude=new Set()}={}){
   const blocked=new Set(blockedProviders||[]),skip=exclude instanceof Set?exclude:new Set(exclude||[]);
-  const pool=availableModels({vision}).filter(m=>m.provider==='openai'&&!blocked.has(m.provider)&&!skip.has(`${m.provider}:${m.id}`));
+  const pool=availableModels({vision}).filter(m=>routeEligibleWhenGatewayBlocked(m,blocked)&&!skip.has(`${m.provider}:${m.id}`));
   const ids=[env('OPENAI_STRONG_MODEL')||'gpt-5.6-sol','gpt-5',env('OPENAI_MODEL')||'gpt-5.6-luna','gpt-4.1-mini'];
   const preferred=ids.map(id=>pool.find(m=>m.id===id)).filter(Boolean);
-  const rest=pool.filter(m=>!preferred.some(p=>p.id===m.id)).sort((a,b)=>Number(b.quality||0)-Number(a.quality||0)||Number(a.cost||99)-Number(b.cost||99));
+  const rest=pool.filter(m=>!preferred.some(p=>p.provider===m.provider&&p.id===m.id)).sort((a,b)=>Number(b.quality||0)-Number(a.quality||0)||Number(a.cost||99)-Number(b.cost||99));
   return uniqueModelOrder([...preferred,...rest]);
 }
 
@@ -461,19 +514,25 @@ async function executeCandidateOrder(candidates, system, prompt, {
   maxAttempts=3,budget,images=[],history=[],reserveAfterMs=0,callTimeoutMs=null,maxOutputTokens=5000,blockedProviders=[]
 }={}){
   const localBudget=budget||createExecutionBudget({maxCalls:maxAttempts}),providerBlocks=new Set(blockedProviders||[]);
-  const ordered=uniqueModelOrder(candidates||[]).slice(0,Math.max(1,Math.min(maxAttempts,4)));
+  const native=providerStatus();
+  const ordered=buildTransportRoutes(uniqueModelOrder(candidates||[]),{
+    limit:Math.max(1,Math.min(maxAttempts,4)),gatewayEnabled:m=>Boolean(native[m.provider])&&!providerBlocks.has(m.provider)&&!circuitOpen(m.provider,m.id),
+    openrouterDirect:Boolean(env('OPENROUTER_DIRECT_API_KEY'))&&!circuitOpen('openrouter_direct')&&!providerBlocks.has('openrouter_direct'),
+    openaiDirect:Boolean(env('OPENAI_DIRECT_API_KEY'))&&!circuitOpen('openai_direct')&&!providerBlocks.has('openai_direct')
+  });
   if(!ordered.length){const error=new Error('No compatible model is available for this Zeus stage.');error.code='AI_NOT_CONFIGURED';error.status=503;throw error;}
   const attempts=[];
   for(const model of ordered){
-    if(providerBlocks.has(model.provider))continue;
+    if(providerBlocks.has(modelCircuitScope(model)))continue;
     if(!localBudget.canCall(1200,reserveAfterMs))break;
     try{
       const timeout=typeof callTimeoutMs==='function'?callTimeoutMs(localBudget,attempts.length):(callTimeoutMs||DEFAULT_CALL_TIMEOUT_MS);
       const content=await callModel(model,system,prompt,{images,history,budget:localBudget,reserveAfterMs,callTimeoutMs:timeout,maxOutputTokens});
       return {content,model,attempts};
     }catch(error){
-      attempts.push({provider:model.provider,model:model.id,error:redactProviderText(String(error?.message||error)).slice(0,220),code:error?.code||(isTimeoutFailure(error)?'PROVIDER_TIMEOUT':null),status:errorStatus(error)||null});
-      if(!shouldAdvanceOpenAIModel(error))providerBlocks.add(model.provider);
+      attempts.push({provider:model.provider,model:model.id,transport:modelTransport(model),family:modelFamily(model),error:failureCategory(error),code:error?.code||(isTimeoutFailure(error)?'PROVIDER_TIMEOUT':null),status:errorStatus(error)||null});
+      if(isNonRetryableRequestFailure(error))throw rejectedRequestError(error,attempts);
+      if(!shouldAdvanceOpenAIModel(error))providerBlocks.add(modelCircuitScope(model));
     }
   }
   const summary=summarizeProviderFailure(attempts,localBudget),error=Object.assign(new Error(summary.message),{attempts,status:summary.status});
@@ -578,7 +637,7 @@ export async function runZeus({ text, context = '', images = [], history = [], r
         maxAttempts:2,budget:localBudget,images,history,reserveAfterMs:17000,maxOutputTokens:answerTokens,blockedProviders,
         callTimeoutMs:(b,attempt)=>Math.min(8500+attempt*1000,Math.max(2500,b.remaining()-b.reserveMs-17000))
       });
-    }catch(error){baseError=error;}
+    }catch(error){if(error?.code==='AI_REQUEST_REJECTED')throw error;baseError=error;}
   }
 
   const excluded=new Set(base?.model?[`${base.model.provider}:${base.model.id}`]:[]);
@@ -596,14 +655,14 @@ export async function runZeus({ text, context = '', images = [], history = [], r
       return {
         content:final.content,
         leadModel:`${final.model.provider}:${final.model.id}`,
-        pipelineLabel:'Compound · economical base → GPT final',
+        pipelineLabel:modelFamily(final.model)==='openai'?'Compound · economical base → GPT final':'Compound · economical base → independent finisher',
         verificationLabel:codeLikeRequest(text)?'Static synthesis only · not executed':null,
         trace:{
           strategy:'zeus_compound_base_gpt_finalizer',executionLevel:'COMPOUND',requirements:checklist,
           base:base?{provider:base.model.provider,model:base.model.id,fallbacks:base.attempts}:null,
           baseError:baseError?{code:baseError.code||null,message:redactProviderText(String(baseError?.message||baseError)).slice(0,220),attempts:baseError.attempts||[]}:null,
           finalizer:{provider:final.model.provider,model:final.model.id,fallbacks:final.attempts},
-          gptFinished:true,fallbacks,visionInputs:images.length,budget:localBudget.snapshot()
+          gptFinished:modelFamily(final.model)==='openai',fallbacks,visionInputs:images.length,budget:localBudget.snapshot()
         }
       };
     }catch(error){
@@ -638,9 +697,9 @@ export async function runZeus({ text, context = '', images = [], history = [], r
 
 
 export function olympusCriticCandidates(text='', author=null, {vision=false,blockedProviders=[]}={}){
-  const blocked=new Set(blockedProviders||[]),authorProvider=author?.provider||'',authorKey=author?`${author.provider}:${author.id}`:'';
+  const blocked=new Set(blockedProviders||[]),authorProvider=author?modelFamily(author):'',authorKey=author?`${author.provider}:${author.id}`:'';
   const pool=rankModels(text,new Set(authorKey?[authorKey]:[]),{vision})
-    .filter(m=>!blocked.has(m.provider)&&m.provider!==authorProvider);
+    .filter(m=>routeEligibleWhenGatewayBlocked(m,blocked)&&modelFamily(m)!==authorProvider);
   const score=(m)=>{
     const roles=new Set(m.roles||[]);
     const criticBonus=roles.has('critic')||roles.has('review')||roles.has('security')||roles.has('architecture')||roles.has('reasoning')?4:0;
@@ -684,6 +743,7 @@ export async function runOlympusCompoundPlus({
       callTimeoutMs:(b,attempt)=>Math.min(12000+attempt*1500,Math.max(3000,b.remaining()-b.reserveMs-30000))
     });
   }catch(error){
+    if(error?.code==='AI_REQUEST_REJECTED')throw error;
     if(localBudget.canCall(6000)){
       const zeus=await runZeus({text,context,images,history,requirements:{items:checklist,ambiguous:false},level:'COMPOUND',deliveryContract,blockedProviders,budget:localBudget});
       return {...zeus,effectiveMode:'ZEUS',trace:{...(zeus.trace||{}),olympusDescended:'compound_plus_author_failed',olympusAuthorError:redactProviderText(String(error?.message||error)).slice(0,220)}};
@@ -700,7 +760,7 @@ export async function runOlympusCompoundPlus({
         maxAttempts:2,budget:localBudget,images,history,reserveAfterMs:18000,maxOutputTokens:3500,blockedProviders,
         callTimeoutMs:(b,attempt)=>Math.min(14000+attempt*1500,Math.max(3000,b.remaining()-b.reserveMs-18000))
       });
-    }catch(error){criticError=error;}
+    }catch(error){if(error?.code==='AI_REQUEST_REJECTED')throw error;criticError=error;}
   }else if(!criticCandidates.length){
     criticError=Object.assign(new Error('No independent critic family is currently available.'),{code:'OLYMPUS_CRITIC_UNAVAILABLE'});
   }
@@ -719,21 +779,22 @@ export async function runOlympusCompoundPlus({
       return {
         content:final.content,
         leadModel:`${final.model.provider}:${final.model.id}`,
-        pipelineLabel:'Compound Plus · author → independent critic → GPT final',
-        verificationLabel:codeLikeRequest(text)?'Independent static critique + GPT synthesis · not executed':'Independent critique + GPT synthesis completed',
+        pipelineLabel:modelFamily(final.model)==='openai'?'Compound Plus · author → independent critic → GPT final':'Compound Plus · author → independent critic → routed finisher',
+        verificationLabel:codeLikeRequest(text)?'Independent static critique + finisher synthesis · not executed':'Independent critique + finisher synthesis completed',
         trace:{
           strategy:'olympus_compound_plus_author_critic_gpt',executionLevel:'COMPOUND_PLUS',requirements:checklist,
           author:{provider:author.model.provider,model:author.model.id,fallbacks:author.attempts},
           critic:critic?{provider:critic.model.provider,model:critic.model.id,fallbacks:critic.attempts}:null,
           criticError:criticError?{code:criticError.code||null,message:redactProviderText(String(criticError?.message||criticError)).slice(0,220),attempts:criticError.attempts||[]}:null,
           finalizer:{provider:final.model.provider,model:final.model.id,fallbacks:final.attempts},
-          independentCritic:Boolean(critic&&critic.model.provider!==author.model.provider),
-          gptFinished:true,
+          independentCritic:Boolean(critic&&modelFamily(critic.model)!==modelFamily(author.model)),
+          gptFinished:modelFamily(final.model)==='openai',
           fallbacks:[...(author.attempts||[]),...(critic?.attempts||[]),...(final.attempts||[])],
           visionInputs:images.length,budget:localBudget.snapshot()
         }
       };
     }catch(error){
+      if(error?.code==='AI_REQUEST_REJECTED')throw error;
       return {
         content:author.content,
         leadModel:`${author.model.provider}:${author.model.id}`,
@@ -745,7 +806,7 @@ export async function runOlympusCompoundPlus({
           critic:critic?{provider:critic.model.provider,model:critic.model.id,fallbacks:critic.attempts}:null,
           criticError:criticError?{code:criticError.code||null,message:redactProviderText(String(criticError?.message||criticError)).slice(0,220)}:null,
           finalizerError:{code:error.code||null,message:redactProviderText(String(error?.message||error)).slice(0,220),attempts:error.attempts||[]},
-          independentCritic:Boolean(critic&&critic.model.provider!==author.model.provider),
+          independentCritic:Boolean(critic&&modelFamily(critic.model)!==modelFamily(author.model)),
           gptFinished:false,
           fallbacks:[...(author.attempts||[]),...(critic?.attempts||[]),...(error.attempts||[])],
           visionInputs:images.length,budget:localBudget.snapshot()
@@ -764,7 +825,7 @@ export async function runOlympusCompoundPlus({
       author:{provider:author.model.provider,model:author.model.id,fallbacks:author.attempts},
       critic:critic?{provider:critic.model.provider,model:critic.model.id,fallbacks:critic.attempts}:null,
       criticError:criticError?{code:criticError.code||null,message:redactProviderText(String(criticError?.message||criticError)).slice(0,220)}:null,
-      finalizer:null,independentCritic:Boolean(critic&&critic.model.provider!==author.model.provider),gptFinished:false,
+      finalizer:null,independentCritic:Boolean(critic&&modelFamily(critic.model)!==modelFamily(author.model)),gptFinished:false,
       fallbacks:[...(author.attempts||[]),...(critic?.attempts||[])],visionInputs:images.length,budget:localBudget.snapshot()
     }
   };
@@ -813,7 +874,7 @@ export function roleCandidates(role,text='',{
   vision=false,blockedProviders=[],excludeProviders=[],exclude=new Set(),limit=4
 }={}){
   const blocked=new Set(blockedProviders||[]),excludedProviders=new Set(excludeProviders||[]),skip=exclude instanceof Set?exclude:new Set(exclude||[]);
-  const pool=availableModels({vision}).filter(m=>!blocked.has(m.provider)&&!excludedProviders.has(m.provider)&&!skip.has(`${m.provider}:${m.id}`));
+  const pool=availableModels({vision}).filter(m=>routeEligibleWhenGatewayBlocked(m,blocked)&&!excludedProviders.has(modelFamily(m))&&!skip.has(`${m.provider}:${m.id}`));
   return uniqueModelOrder(pool.sort((a,b)=>roleScore(role,b,text)-roleScore(role,a,text))).slice(0,Math.max(1,Math.min(Number(limit)||4,4)));
 }
 
@@ -921,7 +982,7 @@ function turboCeoSystem(deliveryContract=''){
 function creatorCandidates(task,text,{vision=false,blockedProviders=[],usedProviders=[]}={}){
   const scoped=`${text}\n${task.title}\n${task.instructions}\n${task.specialty}`,used=new Set(usedProviders||[]);
   const ranked=roleCandidates('CREATOR',scoped,{vision,blockedProviders,limit:4});
-  const diverse=ranked.filter(m=>!used.has(m.provider)),rest=ranked.filter(m=>used.has(m.provider));
+  const diverse=ranked.filter(m=>!used.has(modelFamily(m))),rest=ranked.filter(m=>used.has(modelFamily(m)));
   return uniqueModelOrder([...diverse,...rest]).slice(0,4);
 }
 
@@ -944,7 +1005,7 @@ export async function runOlympusComplexTurbo({
         callTimeoutMs:(b,attempt)=>Math.min(15000+attempt*1500,Math.max(3500,b.remaining()-b.reserveMs-70000))
       });
       plan=validateTurboPlan(planner.content,checklist,text);
-    }catch(error){plannerError=error;}
+    }catch(error){if(error?.code==='AI_REQUEST_REJECTED')throw error;plannerError=error;}
   }
   if(!plan)plan=deterministicTurboPlan(checklist,text);
 
@@ -952,7 +1013,7 @@ export async function runOlympusComplexTurbo({
   for(const task of plan.tasks.slice(0,TURBO_LIMITS.maxCreators)){
     const candidates=creatorCandidates(task,text,{vision:images.length>0,blockedProviders,usedProviders});
     creatorOrders.push({task,candidates});
-    if(candidates[0])usedProviders.push(candidates[0].provider);
+    if(candidates[0])usedProviders.push(modelFamily(candidates[0]));
   }
   if(!creatorOrders.length){
     const fallback=await runOlympusCompoundPlus({text,context,images,history,requirements:{items:checklist,ambiguous:false},deliveryContract,blockedProviders,budget:localBudget});
@@ -973,6 +1034,7 @@ export async function runOlympusComplexTurbo({
   const creators=creatorSettled.map((entry,index)=>{
     const task=creatorOrders[index].task;
     if(entry.status==='fulfilled')return {task,ok:true,...entry.value};
+    if(entry.reason?.code==='AI_REQUEST_REJECTED')throw entry.reason;
     return {task,ok:false,error:{code:entry.reason?.code||null,message:redactProviderText(String(entry.reason?.message||entry.reason)).slice(0,220),attempts:entry.reason?.attempts||[]}};
   });
   const failedCreators=creators.filter(x=>!x.ok);
@@ -981,7 +1043,7 @@ export async function runOlympusComplexTurbo({
     return {...fallback,effectiveLevel:'COMPOUND_PLUS',trace:{...(fallback.trace||{}),olympusDescended:'turbo_creator_failure',turboPlan:plan,turboCreatorFailures:failedCreators.map(x=>({task:x.task.id,...x.error}))}};
   }
 
-  const creatorProviders=[...new Set(creators.map(x=>x.model.provider))];
+  const creatorProviders=[...new Set(creators.map(x=>modelFamily(x.model)))];
   let directorCandidates=roleCandidates('DIRECTOR',text,{vision:images.length>0,blockedProviders,excludeProviders:creatorProviders,limit:TURBO_LIMITS.maxDirectorAttempts});
   if(!directorCandidates.length){
     const fallback=await runOlympusCompoundPlus({text,context,images,history,requirements:{items:checklist,ambiguous:false},deliveryContract,blockedProviders,budget:localBudget});
@@ -998,18 +1060,19 @@ export async function runOlympusComplexTurbo({
       callTimeoutMs:(b,attempt)=>answerCallTimeout(b,18000,attempt===0?.72:.86)
     });
   }catch(error){
+    if(error?.code==='AI_REQUEST_REJECTED')throw error;
     const fallback=await runOlympusCompoundPlus({text,context,images,history,requirements:{items:checklist,ambiguous:false},deliveryContract,blockedProviders,budget:localBudget});
     return {...fallback,effectiveLevel:'COMPOUND_PLUS',trace:{...(fallback.trace||{}),olympusDescended:'turbo_director_failed',turboPlan:plan,directorError:{code:error.code||null,message:redactProviderText(String(error?.message||error)).slice(0,220)}}};
   }
 
-  const directorIndependent=!creatorProviders.includes(director.model.provider);
+  const directorIndependent=!creatorProviders.includes(modelFamily(director.model));
   if(!directorIndependent){
     const fallback=await runOlympusCompoundPlus({text,context,images,history,requirements:{items:checklist,ambiguous:false},deliveryContract,blockedProviders,budget:localBudget});
     return {...fallback,effectiveLevel:'COMPOUND_PLUS',trace:{...(fallback.trace||{}),olympusDescended:'turbo_director_not_independent',turboPlan:plan,creatorProviders,directorProvider:director.model.provider}};
   }
 
   let ceoCandidates=roleCandidates('CEO',text,{
-    vision:images.length>0,blockedProviders,excludeProviders:[director.model.provider],
+    vision:images.length>0,blockedProviders,excludeProviders:[modelFamily(director.model)],
     exclude:new Set([`${director.model.provider}:${director.model.id}`]),limit:TURBO_LIMITS.maxCeoAttempts
   });
   if(!ceoCandidates.length)ceoCandidates=roleCandidates('CEO',text,{vision:images.length>0,blockedProviders,exclude:new Set([`${director.model.provider}:${director.model.id}`]),limit:TURBO_LIMITS.maxCeoAttempts});
@@ -1032,6 +1095,7 @@ export async function runOlympusComplexTurbo({
       callTimeoutMs:(b,attempt)=>answerCallTimeout(b,0,attempt===0?.78:.92)
     });
   }catch(error){
+    if(error?.code==='AI_REQUEST_REJECTED')throw error;
     return {
       content:director.content,
       leadModel:`${director.model.provider}:${director.model.id}`,
@@ -1052,7 +1116,7 @@ export async function runOlympusComplexTurbo({
       plannerError:plannerError?{code:plannerError.code||null,message:redactProviderText(String(plannerError?.message||plannerError)).slice(0,220),attempts:plannerError.attempts||[]}:null,
       creators:creators.map(x=>({task:x.task,provider:x.model.provider,model:x.model.id,fallbacks:x.attempts||[]})),
       creatorProviders,director:{provider:director.model.provider,model:director.model.id,independent:true,fallbacks:director.attempts||[]},
-      ceo:{provider:ceo.model.provider,model:ceo.model.id,independentFromDirector:ceo.model.provider!==director.model.provider,fallbacks:ceo.attempts||[]},
+      ceo:{provider:ceo.model.provider,model:ceo.model.id,independentFromDirector:modelFamily(ceo.model)!==modelFamily(director.model),fallbacks:ceo.attempts||[]},
       ceoFinished:true,visionInputs:images.length,budget:localBudget.snapshot()
     }
   };

@@ -1,5 +1,6 @@
 import { requireUser } from './_shared/auth.mjs';
-import { providerStatus, providerRuntimeHealth, availableModels, serverTranscriptionConfigured } from './_shared/models.mjs';
+import { providerStatus, providerRuntimeHealth, providerTransportStatus, availableModels, serverTranscriptionConfigured } from './_shared/models.mjs';
+import { summarizeTransportEvidence } from './_shared/provider-observability.mjs';
 import { json, getRequestId, errorJson } from './_shared/http.mjs';
 import { opportunisticDrainBlobGc } from './_shared/storage.mjs';
 import { githubWriteConfigured } from './_shared/github-write.mjs';
@@ -9,6 +10,11 @@ const PROVIDERS=['openai','anthropic','gemini','openrouter'];
 function addProvider(set,value){const p=String(value||'').toLowerCase();if(PROVIDERS.includes(p))set.add(p);}
 function successfulProviders(row){
   const out=new Set();
+  const events=row?.trace?.providerTelemetry?.attempts;
+  if(Array.isArray(events)&&events.length){
+    for(const e of events)if(e.transport==='gateway'&&e.outcome==='success')addProvider(out,e.provider);
+    return out;
+  }
   addProvider(out,String(row?.lead_model||'').split(':')[0]);
   const trace=row?.trace||{};
   addProvider(out,trace?.lead?.provider);addProvider(out,trace?.director?.provider);addProvider(out,trace?.specialist?.provider);
@@ -17,19 +23,35 @@ function successfulProviders(row){
 }
 function failedProviders(row){
   const out=new Set();const trace=row?.trace||{};
+  const events=trace.providerTelemetry?.attempts;
+  if(Array.isArray(events)&&events.length){
+    for(const e of events)if(e.transport==='gateway'&&e.outcome==='failure')addProvider(out,e.provider);
+    return out;
+  }
   for(const item of [...(Array.isArray(trace?.attempts)?trace.attempts:[]),...(Array.isArray(trace?.fallbacks)?trace.fallbacks:[]),...(Array.isArray(trace?.failures)?trace.failures:[])])addProvider(out,item?.provider);
   return out;
 }
 
-async function persistedProviderReadiness(db,userId,configured,runtime){
+async function persistedProviderReadiness(db,userId,configured,runtime,transports){
   const rows=await db.sql`SELECT state,lead_model,trace,COALESCE(completed_at,started_at) AS observed_at FROM executions WHERE owner_id=${userId} AND started_at > now() - interval '24 hours' ORDER BY started_at DESC LIMIT 80`;
   const evidence=Object.fromEntries(PROVIDERS.map(p=>[p,{lastSuccessAt:null,lastFailureAt:null}]));
   for(const row of rows){
     const at=row.observed_at?new Date(row.observed_at).toISOString():null;
-    if(row.state==='COMPLETED'||row.state==='PARTIAL')for(const p of successfulProviders(row))if(!evidence[p].lastSuccessAt)evidence[p].lastSuccessAt=at;
-    if(row.state==='FAILED')for(const p of failedProviders(row))if(!evidence[p].lastFailureAt)evidence[p].lastFailureAt=at;
+    const events=row?.trace?.providerTelemetry?.attempts;
+    if(Array.isArray(events)&&events.length){
+      // Even a COMPLETED execution may have failed Gateway attempts before a successful direct recovery.
+      for(const item of events){
+        const p=String(item?.provider||'').toLowerCase();
+        if(item?.transport!=='gateway'||!evidence[p])continue;
+        if(item.outcome==='success'&&!evidence[p].lastSuccessAt)evidence[p].lastSuccessAt=at;
+        if(item.outcome==='failure'&&!evidence[p].lastFailureAt)evidence[p].lastFailureAt=at;
+      }
+    }else{
+      if(row.state==='COMPLETED'||row.state==='PARTIAL')for(const p of successfulProviders(row))if(!evidence[p].lastSuccessAt)evidence[p].lastSuccessAt=at;
+      if(row.state==='FAILED')for(const p of failedProviders(row))if(!evidence[p].lastFailureAt)evidence[p].lastFailureAt=at;
+    }
   }
-  return Object.fromEntries(PROVIDERS.map(provider=>{
+  const providerResults=Object.fromEntries(PROVIDERS.map(provider=>{
     const ev=evidence[provider],local=runtime[provider]||{};let status='not_configured';
     if(configured[provider]){
       if(local.circuitOpen)status='degraded';
@@ -39,6 +61,12 @@ async function persistedProviderReadiness(db,userId,configured,runtime){
     }
     return [provider,{status,configured:Boolean(configured[provider]),lastSuccessAt:ev.lastSuccessAt,lastFailureAt:ev.lastFailureAt,circuitOpen:Boolean(local.circuitOpen),retryAfterMs:Number(local.retryAfterMs||0)}];
   }));
+  const transportResults=summarizeTransportEvidence(rows,{
+    gateway:Object.values(configured).some(Boolean),
+    openrouter_direct:transports.openrouter_direct,
+    openai_direct:transports.openai_direct
+  },runtime);
+  return {providerResults,transportResults};
 }
 
 function chatReadiness(readiness,configuredModels,activeModels){
@@ -55,18 +83,22 @@ async function handler(req,context){
   const auth=await requireUser(req,requestId);if(auth.error)return auth.error;
   const{user,db}=auth;
   const providers=providerStatus();
+  const transports=providerTransportStatus();
   const runtime=providerRuntimeHealth();
+  const configuredRoutes=Object.values(providers).filter(Boolean).length+Number(transports.openrouter_direct)+Number(transports.openai_direct);
   const configuredModels=availableModels({ignoreCircuit:true});
   const activeModels=availableModels();
-  const readiness=await persistedProviderReadiness(db,user.id,providers,runtime);
+  const {providerResults:readiness,transportResults:transportReadiness}=await persistedProviderReadiness(db,user.id,providers,runtime,transports);
   const chatState=chatReadiness(readiness,configuredModels,activeModels);
   const storageMaintenance=await opportunisticDrainBlobGc(db,user.id,{limit:5}).catch(()=>({attempted:0,deleted:0,failed:0,pending:null,skipped:true}));
   const githubWrite=githubWriteConfigured();
   return json({
     requestId,
     providers,
+    transports,
     providerHealth:runtime,
     providerReadiness:readiness,
+    transportReadiness,
     models:configuredModels.map(m=>({provider:m.provider,id:m.id,roles:m.roles})),
     capabilityReadiness:{
       chat:chatState,
@@ -96,9 +128,9 @@ async function handler(req,context){
       githubPrivateRepository:Boolean(globalThis.Netlify?.env?.get?.('GITHUB_TOKEN')||process.env?.GITHUB_TOKEN),
       githubCommit:githubWrite,
     },
-    goLive:{privateAccess:Boolean(globalThis.Netlify?.env?.get?.('ZEUS_PROXY_ACCESS_TOKEN')||process.env?.ZEUS_PROXY_ACCESS_TOKEN),database:true,blobMaintenance:!storageMaintenance?.failed,configuredProviders:Object.values(providers).filter(Boolean).length,chatState,ready:Boolean((globalThis.Netlify?.env?.get?.('ZEUS_PROXY_ACCESS_TOKEN')||process.env?.ZEUS_PROXY_ACCESS_TOKEN)&&Object.values(providers).some(Boolean)&&['observed_healthy','configured_unverified'].includes(chatState))},
+    goLive:{privateAccess:Boolean(globalThis.Netlify?.env?.get?.('ZEUS_PROXY_ACCESS_TOKEN')||process.env?.ZEUS_PROXY_ACCESS_TOKEN),database:true,blobMaintenance:!storageMaintenance?.failed,configuredProviders:configuredRoutes,chatState,ready:Boolean((globalThis.Netlify?.env?.get?.('ZEUS_PROXY_ACCESS_TOKEN')||process.env?.ZEUS_PROXY_ACCESS_TOKEN)&&configuredRoutes>0&&['observed_healthy','configured_unverified'].includes(chatState))},
     storageMaintenance,
-    note:'Provider readiness uses recent execution evidence stored in OlyHub plus the current Function runtime circuit state. CONFIGURED UNVERIFIED means credentials/models are present but no recent successful execution is recorded. OBSERVED HEALTHY means OlyHub recorded a successful use in the last 24 hours. RECENT FAILURE means the latest stored evidence is a failure. Image/audio endpoint readiness remains configuration-based unless that capability is actually exercised. GitHub public repository retrieval is built in; private repository retrieval and GitHub commits require a server-side GITHUB_TOKEN with access to the target repositories. GitHub writes are atomic, non-force branch updates from validated ZIP project packages. Web search uses the OpenAI Responses web_search capability through the configured OpenAI gateway and is invoked only for explicit/current-information intent.'
+    note:'Provider readiness uses recent execution evidence stored in OlyHub plus the current Function runtime circuit state. Transport readiness uses sanitized per-model attempts from the past 24 hours; the circuit breaker shown here applies only to the current Function instance. CONFIGURED UNVERIFIED means credentials/models are present but no recent successful execution is recorded. OBSERVED HEALTHY means OlyHub recorded a successful use in the last 24 hours. RECENT FAILURE means the latest stored evidence is a failure. Image/audio endpoint readiness remains configuration-based unless that capability is actually exercised. GitHub public repository retrieval is built in; private repository retrieval and GitHub commits require a server-side GITHUB_TOKEN with access to the target repositories. GitHub writes are atomic, non-force branch updates from validated ZIP project packages. Web search uses the OpenAI Responses web_search capability through the configured OpenAI gateway and is invoked only for explicit/current-information intent.'
   });
 }
 

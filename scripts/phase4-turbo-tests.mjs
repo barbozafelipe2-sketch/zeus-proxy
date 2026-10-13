@@ -12,7 +12,7 @@ assert.ok(models.includes("roleCandidates('CREATOR'"),'Creator role routing miss
 assert.ok(models.includes("roleCandidates('DIRECTOR'"),'Director role routing missing');
 assert.ok(models.includes("roleCandidates('CEO'"),'CEO role routing missing');
 assert.ok(models.includes("excludeProviders:creatorProviders"),'Director must exclude creator provider families');
-assert.ok(models.includes("directorIndependent=!creatorProviders.includes(director.model.provider)"),'Director independence must be verified');
+assert.ok(models.includes("directorIndependent=!creatorProviders.includes(modelFamily(director.model))"),'Director independence must be verified');
 assert.ok(models.includes("Planner → Creators → independent Director → CEO"),'Turbo pipeline label missing');
 assert.ok(models.includes("effectiveLevel:'COMPOUND_PLUS'"),'Turbo must degrade safely when role separation cannot be preserved');
 assert.ok(chat.includes("TURBO_LIMITS.maxCalls"),'Chat must enforce the Turbo call cap');
