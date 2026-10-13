@@ -209,7 +209,7 @@ async function finalizeTurn({db,userId,projectId,conversationId,execution,mode,r
     await client.query(`UPDATE executions SET state='SAVING',lead_model=$1,trace=$2::jsonb WHERE id=$3 AND owner_id=$4`,[result.leadModel||null,JSON.stringify(result.trace||{}),execution.id,userId]);
     const assistant=(await client.query(
       `INSERT INTO messages(owner_id,conversation_id,execution_id,role,mode,content,metadata) VALUES($1,$2,$3,'assistant',$4,$5,$6::jsonb) RETURNING id,role,mode,content,metadata,created_at`,
-      [userId,conversationId,execution.id,mode,result.content,JSON.stringify({artifacts:artifacts.map(a=>a.id),sources:Array.isArray(result.sources)?result.sources.slice(0,12):[],capabilities:Array.isArray(result.capabilities)?result.capabilities:[],leadModel:result.leadModel||null,fallback:Array.isArray(result.trace?.fallbacks)&&result.trace.fallbacks.length>0,modeExplanation:result.modeExplanation||null,executionLevel:result.executionLevel||null,verificationLabel:result.verificationLabel||null,visionSummary:result.visionSummary||null})]
+      [userId,conversationId,execution.id,mode,result.content,JSON.stringify({artifacts:artifacts.map(a=>a.id),sources:Array.isArray(result.sources)?result.sources.slice(0,12):[],capabilities:Array.isArray(result.capabilities)?result.capabilities:[],leadModel:result.leadModel||null,fallback:Array.isArray(result.trace?.fallbacks)&&result.trace.fallbacks.length>0,modeExplanation:result.modeExplanation||null,executionLevel:result.executionLevel||null,pipelineLabel:result.pipelineLabel||null,verificationLabel:result.verificationLabel||null,visionSummary:result.visionSummary||null})]
     )).rows[0];
     await client.query(`UPDATE executions SET state='COMPLETED',completed_at=now() WHERE id=$1 AND owner_id=$2`,[execution.id,userId]);
     await client.query(`UPDATE conversations SET updated_at=now() WHERE id=$1 AND owner_id=$2`,[conversationId,userId]);
@@ -303,7 +303,7 @@ async function chatHandler(req, context, startedAt){
   const decision=decideExecutionMode(modelText,{requestedMode});
   const levelDecision=decideExecutionLevel(modelText,{mode:decision.mode,action:intent.action,route,hasFiles:attachmentRows.length>0,hasImage,requirementCount:requirementSpec.items.length,artifactType:intent.artifactType,requiresVerification:verificationSignal});
   const mode=decision.mode,level=levelDecision.level;
-  const verify=mode==='ZEUS'&&level==='COMPOUND';
+  const zeusCompound=mode==='ZEUS'&&level==='COMPOUND';
   let modeExplanation=explainExecutionLevel(levelDecision);
 
   let init=null;let olympusDispatchFallback=false;
@@ -345,8 +345,9 @@ async function chatHandler(req, context, startedAt){
     const webIntent=shouldSearchWeb(modelText)&&intent.action!=='IMAGE_CREATE'&&intent.action!=='IMAGE_EDIT';
     const githubIntent=hasGitHubRepoUrl(modelText);
     const actualMode=olympusDispatchFallback?'ZEUS':mode;
-    const maxCalls=(intent.action==='IMAGE_CREATE'||intent.action==='IMAGE_EDIT'?3:(actualMode==='OLYMPUS'?8:(verify||olympusDispatchFallback?9:5)))+(webIntent?1:0);
-    const timeoutMs=worker?150000:((webIntent||githubIntent)?CHAT_WEB_TIMEOUT_MS:(route==='fast'&&!verify&&!olympusDispatchFallback?FAST_CHAT_TIMEOUT_MS:CHAT_TIMEOUT_MS));
+    const zeusLevel=actualMode==='ZEUS'?(mode==='OLYMPUS'?'COMPOUND':level):null;
+    const maxCalls=(intent.action==='IMAGE_CREATE'||intent.action==='IMAGE_EDIT'?3:(actualMode==='OLYMPUS'?8:(zeusLevel==='COMPOUND'?6:4)))+(webIntent?1:0);
+    const timeoutMs=worker?150000:((webIntent||githubIntent)?CHAT_WEB_TIMEOUT_MS:(route==='fast'&&zeusLevel==='SIMPLE'?FAST_CHAT_TIMEOUT_MS:CHAT_TIMEOUT_MS));
     executionBudget=createExecutionBudget({startedAt,timeoutMs,maxCalls,reserveMs:6500});
     const vision=hasImage?await loadVisionInputs(attachmentRows):{images:[],skipped:[]};
     const sharedBlockedProviders=await loadSharedProviderBlocks(db,user.id);
@@ -375,11 +376,11 @@ async function chatHandler(req, context, startedAt){
         try{result=await runOlympus({text:modelText,context:enrichedContext,images:vision.images,history,requirements:requirementSpec,deliveryContract,blockedProviders:sharedBlockedProviders,budget:executionBudget});}
         catch(olympusError){
           if(!executionBudget.canCall())throw olympusError;
-          const fallback=await runZeus({text:modelText,context:enrichedContext,images:vision.images,history,requirements:requirementSpec,verify:true,deliveryContract,blockedProviders:sharedBlockedProviders,budget:executionBudget});
+          const fallback=await runZeus({text:modelText,context:enrichedContext,images:vision.images,history,requirements:requirementSpec,level:'COMPOUND',deliveryContract,blockedProviders:sharedBlockedProviders,budget:executionBudget});
           fallback.trace={...(fallback.trace||{}),olympusFallback:String(olympusError?.message||olympusError).slice(0,220)};
           result=fallback;
         }
-      }else result=await runZeus({text:modelText,context:enrichedContext,images:vision.images,history,requirements:requirementSpec,verify:verify||olympusDispatchFallback,deliveryContract,blockedProviders:sharedBlockedProviders,budget:executionBudget});
+      }else result=await runZeus({text:modelText,context:enrichedContext,images:vision.images,history,requirements:requirementSpec,level:zeusLevel||'COMPOUND',deliveryContract,blockedProviders:sharedBlockedProviders,budget:executionBudget});
       if(intent.action==='ARTIFACT_CREATE'&&intent.artifactType){
         try{
           stagedArtifacts.push(await stageArtifact({ownerId:user.id,type:intent.artifactType,title:titleFrom(content),content:result.content,metadata:{title:titleFrom(content),intent:intent.reason}}));
@@ -396,7 +397,7 @@ async function chatHandler(req, context, startedAt){
     result.sources=[...(web.sources||[]),...(github.sources||[])].slice(0,12);
     result.capabilities=[web.trace,github.trace].filter(Boolean);
     const visionSummary={attached:attachmentRows.filter(r=>(r.mime_type||'').startsWith('image/')).length,analyzed:vision.images.length,skipped:vision.skipped.length};
-    result.trace={...(result.trace||{}),intent,modeDecision:decision,levelDecision,executionLevel:level,route,verificationSignal,verificationRequested:verify||olympusDispatchFallback,olympusDispatchFallback,secretsRedacted,visionSkipped:vision.skipped,visionSummary,sharedBlockedProviders,webSearch:web.trace||null,githubRepository:github.trace||null};
+    result.trace={...(result.trace||{}),intent,modeDecision:decision,levelDecision,executionLevel:level,route,verificationSignal,zeusCompoundRequested:zeusCompound||olympusDispatchFallback,olympusDispatchFallback,secretsRedacted,visionSkipped:vision.skipped,visionSummary,sharedBlockedProviders,webSearch:web.trace||null,githubRepository:github.trace||null};
     result.visionSummary=visionSummary;
     const finalMode=result.effectiveMode||(olympusDispatchFallback?'ZEUS':mode);
     if(finalMode==='ZEUS'&&mode==='OLYMPUS'&&result.trace?.olympusDescended){

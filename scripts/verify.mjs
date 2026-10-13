@@ -126,7 +126,10 @@ const mustContain = [
   [contextBuilder,'FILES ATTACHED TO THIS TURN','attachment-first context priority'],
   [runtime,'createExecutionBudget','global execution deadline/call budget'],
   [models,'providerRuntimeHealth','provider runtime health'],
-  [models,'reviewedAfterFallback','Zeus review survives lead fallback'],
+  [models,'zeusBaseCandidates','Zeus Compound economical base selector'],
+  [models,'gptFinisherCandidates','Zeus Compound GPT finalizer selector'],
+  [models,"strategy:'zeus_simple_single_model'",'Zeus Simple single-model engine'],
+  [models,"strategy:'zeus_compound_base_gpt_finalizer'",'Zeus Compound base-to-GPT engine'],
   [reliability,'validateAdversaryFindings','mechanical quoted-evidence adversary filter'],
   [memoryPolicy,'selectMemoryContext','deterministic project memory selection'],
   [health,"started_at > now() - interval '24 hours'",'persisted provider readiness evidence'],
@@ -318,3 +321,7 @@ if (!app.includes('data-github-commit')) throw new Error('ZIP outputs do not exp
 if (chat.includes("reason:'fewer_than_three_requirements'")) throw new Error('Manual Olympus may not be auto-downgraded by requirement count.');
 if (!chat.includes("normalizeRequestedMode(body.mode||'ZEUS')")) throw new Error('Chat is not honoring the manual top-level mode.');
 if (!models.includes("if(!checklist.length)checklist=[{id:'R1'")) throw new Error('Manual Olympus cannot handle a small request safely.');
+
+if (models.includes("strategy:verify?'author_adversary_patch':'single_author'")) throw new Error('Legacy Zeus author/adversary engine returned after phase 2.');
+if (!chat.includes("level:zeusLevel||'COMPOUND'")) throw new Error('Chat does not pass the deterministic Zeus level into the engine.');
+if (!chat.includes('pipelineLabel:result.pipelineLabel||null')) throw new Error('Zeus pipeline label is not persisted.');

@@ -145,4 +145,7 @@ assert.ok(modelsSource.includes("maxAttempts:4,budget:localBudget,images,history
 assert.ok(chat.includes("finalMode==='ZEUS'&&mode==='OLYMPUS'&&result.trace?.olympusDescended"),'UI mode explanation must match an Olympus-to-Zeus runtime downgrade');
 
 assert.ok(chat.includes('executionLevel:result.executionLevel||null'),'selected execution level must persist with the assistant message');
+assert.ok(chat.includes('pipelineLabel:result.pipelineLabel||null'),'Zeus pipeline label must persist with the assistant message');
+assert.ok(modelsSource.includes("strategy:'zeus_simple_single_model'"),'Zeus Simple engine missing');
+assert.ok(modelsSource.includes("strategy:'zeus_compound_base_gpt_finalizer'"),'Zeus Compound base→GPT engine missing');
 assert.ok(chat.includes("Mode must be ZEUS or OLYMPUS."),'server must reject invalid intelligence modes');
