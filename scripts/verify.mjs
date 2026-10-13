@@ -242,7 +242,7 @@ if (zipOutput.includes("files.push({ path: 'README.md', data: `# ${title}")) thr
 if (!archiveSafety.includes('maxTotalUncompressed') || !archiveSafety.includes('maxCompressionRatio')) throw new Error('Archive safety budgets missing.');
 if (!projects.includes('queueProjectBlobs') || !projects.includes('drainBlobGc')) throw new Error('Project deletion does not clean Blob storage safely.');
 
-if (!chat.includes('classifyIntent(content')) throw new Error('Chat no longer uses the deterministic intent router.');
+if (!chat.includes('classifyIntent(modelText') || !chat.includes('isArtifactContinuation(content)')) throw new Error('Chat intent routing and artifact continuity must use the resolved request context.');
 if (!chat.includes('loadVisionInputs')) throw new Error('Real image understanding input loader is missing.');
 if (!chat.includes('redactSecrets(content)')) throw new Error('User/provider context secret redaction missing.');
 if (!models.includes('maxCreators:3') || !models.includes('roleCandidates(\'CREATOR\'')) throw new Error('Olympus Turbo must remain bounded to role-scoped creator workstreams.');
