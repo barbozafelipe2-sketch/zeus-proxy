@@ -6,6 +6,8 @@ const mod=await import('../netlify/functions/_shared/github-write.mjs');
 
 assert.equal(mod.normalizeGitBranch('main'),'main');
 assert.equal(mod.normalizeGitBranch('release/next'),'release/next');
+assert.deepEqual(mod.githubRepoAllowlist(),[]);
+const allowedRef=mod.assertGithubRepoAllowed('https://github.com/acme/demo');assert.equal(allowedRef.owner,'acme');assert.equal(allowedRef.repo,'demo');
 assert.throws(()=>mod.normalizeGitBranch('../main'),e=>e?.code==='GITHUB_BRANCH_INVALID');
 assert.throws(()=>mod.normalizeGitBranch('bad branch'),e=>e?.code==='GITHUB_BRANCH_INVALID');
 

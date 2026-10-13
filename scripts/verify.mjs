@@ -7,7 +7,7 @@ const required = [
   'netlify/functions/chat.mjs','netlify/functions/projects.mjs','netlify/functions/tasks.mjs','netlify/functions/memories.mjs',
   'netlify/functions/files.mjs','netlify/functions/file-download.mjs','netlify/functions/file-preview.mjs','netlify/functions/github-commit.mjs',
   'netlify/functions/artifacts.mjs','netlify/functions/artifact-download.mjs','netlify/functions/health.mjs','netlify/functions/transcribe.mjs',
-  'netlify/functions/_shared/models.mjs','netlify/functions/_shared/reliability.mjs','netlify/functions/_shared/web-search.mjs','netlify/functions/_shared/github-context.mjs','netlify/functions/_shared/memory.mjs','netlify/functions/_shared/artifact.mjs','netlify/functions/_shared/artifact-limits.mjs','netlify/functions/_shared/pdf-layout.mjs','netlify/functions/_shared/extract.mjs','netlify/functions/_shared/auth.mjs','netlify/functions/_shared/db.mjs','netlify/functions/_shared/relations.mjs','netlify/functions/_shared/intent.mjs','netlify/functions/_shared/security.mjs','netlify/functions/_shared/context.mjs','netlify/functions/_shared/runtime.mjs','netlify/functions/_shared/archive-safety.mjs','netlify/functions/_shared/zip-output.mjs','netlify/functions/_shared/pagination.mjs','netlify/functions/_shared/limits.mjs','netlify/functions/_shared/storage.mjs',
+  'netlify/functions/_shared/models.mjs','netlify/functions/_shared/reliability.mjs','netlify/functions/_shared/web-search.mjs','netlify/functions/_shared/github-context.mjs','netlify/functions/_shared/execution-policy.mjs','netlify/functions/_shared/memory.mjs','netlify/functions/_shared/artifact.mjs','netlify/functions/_shared/artifact-limits.mjs','netlify/functions/_shared/pdf-layout.mjs','netlify/functions/_shared/extract.mjs','netlify/functions/_shared/auth.mjs','netlify/functions/_shared/db.mjs','netlify/functions/_shared/relations.mjs','netlify/functions/_shared/intent.mjs','netlify/functions/_shared/security.mjs','netlify/functions/_shared/context.mjs','netlify/functions/_shared/runtime.mjs','netlify/functions/_shared/archive-safety.mjs','netlify/functions/_shared/zip-output.mjs','netlify/functions/_shared/pagination.mjs','netlify/functions/_shared/limits.mjs','netlify/functions/_shared/storage.mjs',
   'netlify/database/migrations/20260930044607_create_olyhub_foundation/migration.sql',
   'netlify/database/migrations/20260930080000_add_files/migration.sql',
   'netlify/database/migrations/20261001030000_hard-fix-1-integrity/migration.sql',
@@ -55,6 +55,7 @@ const fileDownload = read('netlify/functions/file-download.mjs');
 const filePreview = read('netlify/functions/file-preview.mjs');
 const githubCommit = read('netlify/functions/github-commit.mjs');
 const githubWrite = read('netlify/functions/_shared/github-write.mjs');
+const executionPolicy = read('netlify/functions/_shared/execution-policy.mjs');
 const artifactDownload = read('netlify/functions/artifact-download.mjs');
 const pdfLayout = read('netlify/functions/_shared/pdf-layout.mjs');
 const npmrc = read('.npmrc');
@@ -141,13 +142,17 @@ const mustContain = [
   [models,'inlineData','Gemini vision input'],
   [models,'olympusCriticCandidates','Olympus Compound Plus independent critic selector'],
   [models,"strategy:'olympus_compound_plus_author_critic_gpt'",'Olympus Compound Plus author-critic-GPT pipeline'],
-  [models,'scoped_specialists_director_adversary_patch','legacy Complex Turbo compatibility pipeline'],
+  [models,"strategy:'olympus_complex_turbo_roles'",'Olympus Complex Turbo role pipeline'],
+  [models,'TURBO_LIMITS','Olympus Complex Turbo hard caps'],
+  [models,'roleCandidates','role-based model selection'],
+  [executionPolicy,'estimateTurboQuote','deterministic Turbo workload quote'],
+  [executionPolicy,'turboApprovalFingerprint','request-bound Turbo approval'],
+  [executionPolicy,'externalMutationPolicy','external mutation policy'],
   [health,'serverTranscriptionConfigured()','health reports actual transcription readiness'],
   [auth,'ZEUS_PROXY_ACCESS_TOKEN','server-side private access verification'],
   [auth,'timingSafeEqual','constant-time private access comparison'],
   [auth,'DATABASE_UNAVAILABLE','controlled database bootstrap failure'],
   [chat,'olympusFallback','Olympus to Zeus fallback'],
-  [models,'scoped_specialists_director_adversary_patch','Olympus scoped specialist strategy'],
   [models,'Director','Olympus Director synthesis'],
   [projects,'INSERT INTO projects','project persistence'],
   [tasks,'syncProjectProgress','task completion updates project progress'],
@@ -216,7 +221,7 @@ if (chat.includes("state='CREATING_ARTIFACT'")) throw new Error('Invalid executi
 if (/db\.sql[^\n]*\.catch\s*\(/.test(chat)) throw new Error('db.sql tagged result must not use Promise .catch().');
 if (/Open in Zeus|Open in Olympus/.test(app)) throw new Error('Project workspace regressed to Home launcher buttons.');
 if (/Understanding your request','2s'|Creating the deliverable','15s'/.test(app)) throw new Error('Simulated execution timings returned to the UI.');
-if (!app.includes('lastFailedRequestId') || !app.includes('await sendText(text,pending,requestId,mode)')) throw new Error('Retry no longer preserves the original request id and mode.');
+if (!app.includes('lastFailedRequestId') || !app.includes('lastFailedTurboApproval') || !app.includes('await sendText(text,pending,requestId,mode,turboApproval)')) throw new Error('Retry no longer preserves the original request id, mode and Turbo approval.');
 if (!chat.includes('ON CONFLICT (owner_id,project_id) WHERE project_id IS NOT NULL')) throw new Error('Canonical project conversation upsert missing.');
 if (!chat.includes('ON CONFLICT (owner_id,request_id) WHERE request_id IS NOT NULL')) throw new Error('Execution idempotency upsert missing.');
 if (!chat.includes('discardStagedArtifact')) throw new Error('Staged artifact rollback cleanup missing.');
@@ -236,14 +241,14 @@ if (!projects.includes('queueProjectBlobs') || !projects.includes('drainBlobGc')
 if (!chat.includes('classifyIntent(content')) throw new Error('Chat no longer uses the deterministic intent router.');
 if (!chat.includes('loadVisionInputs')) throw new Error('Real image understanding input loader is missing.');
 if (!chat.includes('redactSecrets(content)')) throw new Error('User/provider context secret redaction missing.');
-if (!models.includes('split=splitRequirementScopes(checklist)') || !models.includes('scopeA=split[0].length?split[0]:checklist') || !models.includes('scopeB=split[1].length?split[1]:checklist')) throw new Error('Olympus must remain bounded to two requirement-scoped specialist workstreams.');
+if (!models.includes('maxCreators:3') || !models.includes('roleCandidates(\'CREATOR\'')) throw new Error('Olympus Turbo must remain bounded to role-scoped creator workstreams.');
 if (!models.includes("String(env('OLYHUB_SERVER_TRANSCRIPTION')).toLowerCase() === 'true' && Boolean(audioBase() && audioKey())")) throw new Error('Server transcription no longer requires an explicit audio endpoint/key.');
 if (Object.prototype.hasOwnProperty.call(pkg.dependencies||{},'xlsx')) throw new Error('Redundant legacy xlsx dependency returned.');
 if (!app.includes("if(state.tab==='Tools')await Promise.all([loadHealth(),loadFiles(),loadArtifacts()])")) throw new Error('Tools can still render stale Project-scoped outputs.');
 if (!app.includes('await hydrateProjectWorkspace(state.currentProject.id,{loadConversation:false})')) throw new Error('Opening a Project conversation does not hydrate the full workspace.');
 
 if (models.includes('level >= 2 && lead.attempts.length === 0')) throw new Error('Zeus review is still disabled after a lead fallback.');
-if (!models.includes('splitRequirementScopes(checklist)')) throw new Error('Olympus no longer splits persisted requirements into distinct scopes.');
+if (!models.includes('validateTurboPlan') || !models.includes('requirement_ids')) throw new Error('Olympus Turbo no longer assigns persisted requirements to bounded creator tasks.');
 if (models.includes("ui_ux: 'writing'")) throw new Error('UI/UX specialist routing regressed to writing-only need.');
 if (!chat.includes('selectMemoryContext(memories)')) throw new Error('Project memory no longer uses deterministic selection policy.');
 if (!storage.includes("attempts < 8") || !storage.includes("interval '5 minutes' * LEAST(attempts,6)")) throw new Error('Blob GC retry bound/backoff missing.');
@@ -307,11 +312,11 @@ if (!security.includes('REDACTED NETLIFY TOKEN')) throw new Error('Netlify token
 if (!tasks.includes('syncProjectProgressClient')) throw new Error('Task/project progress updates are not transactional.');
 
 if (models.includes('planSpecialists') || models.includes('DOMAIN_PRIORITY')) throw new Error('Legacy keyword-domain Olympus planner returned.');
-if (!models.includes('splitRequirementScopes(checklist)')) throw new Error('Olympus requirement-scope partitioning missing.');
+if (!models.includes('validateTurboPlan') || !models.includes('creatorSettled=await Promise.allSettled')) throw new Error('Olympus Turbo requirement partitioning or parallel creators missing.');
 
-if (!models.includes("olympusDescended:'scope_failure'")) throw new Error('Olympus scope failure no longer degrades to verified Zeus.');
-if (!models.includes('specialistPrompt(scopeA),{images,history')) throw new Error('Olympus specialists lost conversation history.');
-if (!models.includes('images,history,blockedProviders')) throw new Error('Olympus Director lost conversation history.');
+if (!models.includes("olympusDescended:'turbo_creator_failure'")) throw new Error('Olympus creator failure no longer degrades safely to Compound Plus.');
+if (!models.includes('executeCandidateOrder(candidates,turboCreatorSystem(task,deliveryContract),prompt')) throw new Error('Olympus creators lost bounded role execution.');
+if (!models.includes('executeCandidateOrder(directorCandidates,turboDirectorSystem(deliveryContract),directorPrompt')) throw new Error('Olympus Director integration path missing.');
 
 if (!githubCommit.includes("path:'/api/github-commit'")) throw new Error('GitHub commit endpoint missing.');
 if (!githubWrite.includes('force:false')) throw new Error('GitHub commit must never force-push.');
@@ -322,7 +327,7 @@ if (!app.includes('data-github-commit')) throw new Error('ZIP outputs do not exp
 
 if (chat.includes("reason:'fewer_than_three_requirements'")) throw new Error('Manual Olympus may not be auto-downgraded by requirement count.');
 if (!chat.includes("normalizeRequestedMode(body.mode||'ZEUS')")) throw new Error('Chat is not honoring the manual top-level mode.');
-if (!models.includes("if(!checklist.length)checklist=[{id:'R1'")) throw new Error('Manual Olympus cannot handle a small request safely.');
+if (!models.includes("[{id:'R1',text:'Complete the owner request and requested delivery.'") || !models.includes("[{id:'R1',text:'Answer the owner request directly and completely.'")) throw new Error('Manual Olympus fallback checklist handling is missing.');
 
 if (models.includes("strategy:verify?'author_adversary_patch':'single_author'")) throw new Error('Legacy Zeus author/adversary engine returned after phase 2.');
 if (!chat.includes("level:zeusLevel||'COMPOUND'")) throw new Error('Chat does not pass the deterministic Zeus level into the engine.');
@@ -330,3 +335,14 @@ if (!chat.includes('pipelineLabel:result.pipelineLabel||null')) throw new Error(
 
 if (!chat.includes("level==='COMPOUND_PLUS'")) throw new Error('Compound Plus is not routed separately from Complex Turbo.');
 if (!models.includes('independentCritic:Boolean(critic&&critic.model.provider!==author.model.provider)')) throw new Error('Compound Plus does not prove critic-family independence.');
+
+if (models.includes("strategy:'scoped_specialists_director_adversary_patch'")) throw new Error('Legacy Complex Turbo compatibility pipeline returned.');
+if (!models.includes('excludeProviders:creatorProviders')) throw new Error('Turbo Director is not isolated from creator provider families.');
+if (!models.includes('maxCreators:3') || !models.includes('maxCalls:10')) throw new Error('Turbo hard caps regressed.');
+if (!chat.includes('result.effectiveLevel||')) throw new Error('Turbo downgrade level is not persisted.');
+
+if (!chat.includes("TURBO_APPROVAL_REQUIRED") || !chat.includes('turboApprovalFingerprint')) throw new Error('High-budget Turbo approval gate is missing.');
+if (chat.indexOf("TURBO_APPROVAL_REQUIRED") > chat.indexOf('init=await initializeTurn')) throw new Error('Turbo approval must happen before execution/user-message creation.');
+if (!app.includes('turboApprovalModal') || !app.includes('approvalFingerprint')) throw new Error('Turbo approval UI is missing.');
+if (!githubCommit.includes("body.confirm!==true")) throw new Error('GitHub commit no longer requires explicit owner confirmation.');
+if (!githubWrite.includes('GITHUB_REPO_ALLOWLIST') || !githubWrite.includes('GITHUB_REPO_NOT_ALLOWED')) throw new Error('GitHub repo allowlist guard is missing.');

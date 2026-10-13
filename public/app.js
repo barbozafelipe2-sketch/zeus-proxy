@@ -12,7 +12,7 @@ const state = {
   messagePage:{hasMore:false,nextCursor:null}, filesPage:{scope:'global',hasMore:false,nextCursor:null}, artifactsPage:{scope:'global',hasMore:false,nextCursor:null}, chatRestore:null,
   voiceBusy:false, voiceRecorder:null, voiceStream:null, voiceChunks:[], voiceStopTimer:null, voiceRecognition:null, voiceBytes:0, voiceHitSizeLimit:false,
   draft:'', offline:typeof navigator!=='undefined'&&navigator.onLine===false,
-  lastFailedText:'', lastFailedMessageId:null, lastFailedAttachments:[], lastFailedRequestId:null, lastFailedMode:null,
+  lastFailedText:'', lastFailedMessageId:null, lastFailedAttachments:[], lastFailedRequestId:null, lastFailedMode:null, lastFailedTurboApproval:null,
 };
 const privateBlobUrls=new Map();const PRIVATE_BLOB_CACHE_MAX=16;
 function revokePrivateBlobUrls(){for(const entry of privateBlobUrls.values())try{URL.revokeObjectURL(entry?.url||entry)}catch{}privateBlobUrls.clear();}
@@ -120,7 +120,7 @@ async function api(path, options={}){
     }
     const ref=isJson&&data.requestId?` · ref ${String(data.requestId).slice(0,18)}`:'';
     const code=isJson?data.code:'HTTP_ERROR';
-    const friendly={AI_PROVIDER_AUTH:'AI Gateway/provider authentication failed for this runtime.',AI_PROVIDER_QUOTA:'AI Gateway credits or provider quota are exhausted.',AI_PROVIDER_RATE_LIMIT:'The selected AI provider is rate-limiting Zeus right now.',AI_MODEL_UNAVAILABLE:'A configured model is unavailable; Zeus could not complete fallback safely.',EXECUTION_DEADLINE:'The AI request exceeded Zeus’s execution budget before a provider completed it.',AI_PROVIDERS_FAILED:'No configured AI provider completed this request.',APP_ACCESS_REQUIRED:'Your private Zeus access is no longer valid on this screen. Unlock Zeus again.',GITHUB_WRITE_NOT_CONFIGURED:'GitHub commit is not configured on the server yet.',GITHUB_AUTH_FAILED:'GitHub rejected the server credential. Update the GitHub token and try again.',GITHUB_WRITE_DENIED:'GitHub denied this commit. Check repository permission or branch protection.',GITHUB_SECRET_DETECTED:'The commit was blocked because a credential-like value was detected in the ZIP.',GITHUB_BRANCH_CONFLICT:'The target branch changed or rejected the safe non-force update.'}[code];
+    const friendly={AI_PROVIDER_AUTH:'AI Gateway/provider authentication failed for this runtime.',AI_PROVIDER_QUOTA:'AI Gateway credits or provider quota are exhausted.',AI_PROVIDER_RATE_LIMIT:'The selected AI provider is rate-limiting Zeus right now.',AI_MODEL_UNAVAILABLE:'A configured model is unavailable; Zeus could not complete fallback safely.',EXECUTION_DEADLINE:'The AI request exceeded Zeus’s execution budget before a provider completed it.',AI_PROVIDERS_FAILED:'No configured AI provider completed this request.',APP_ACCESS_REQUIRED:'Your private Zeus access is no longer valid on this screen. Unlock Zeus again.',GITHUB_WRITE_NOT_CONFIGURED:'GitHub commit is not configured on the server yet.',GITHUB_AUTH_FAILED:'GitHub rejected the server credential. Update the GitHub token and try again.',GITHUB_WRITE_DENIED:'GitHub denied this commit. Check repository permission or branch protection.',GITHUB_SECRET_DETECTED:'The commit was blocked because a credential-like value was detected in the ZIP.',GITHUB_BRANCH_CONFLICT:'The target branch changed or rejected the safe non-force update.',GITHUB_CONFIRMATION_REQUIRED:'GitHub commit needs an explicit confirmation from this screen.',GITHUB_REPO_NOT_ALLOWED:'This repository is outside the configured GitHub allowlist.',TURBO_APPROVAL_REQUIRED:'Complex Turbo needs your approval before this higher-budget run starts.'}[code];
     throw apiError(`${friendly||msg||`Request failed (HTTP ${r.status}).`}${ref}`,r.status,code,isJson?data:null);
   }
   return data;
@@ -169,7 +169,7 @@ function announce(text){
   if(!region||!value||value===lastAnnouncement)return;
   lastAnnouncement=value;region.textContent=value;
 }
-function dismissError(){state.error='';state.lastFailedText='';state.lastFailedMessageId=null;state.lastFailedAttachments=[];state.lastFailedRequestId=null;state.lastFailedMode=null;render();}
+function dismissError(){state.error='';state.lastFailedText='';state.lastFailedMessageId=null;state.lastFailedAttachments=[];state.lastFailedRequestId=null;state.lastFailedMode=null;state.lastFailedTurboApproval=null;render();}
 function errorBanner(extraClass=''){
   if(!state.error)return '';
   return `<div class="chat-error ${extraClass}"><span>${esc(state.error)}</span><div class="error-actions">${state.lastFailedText?`<button type="button" id="retry-last">Retry</button>`:''}<button type="button" class="error-dismiss" data-dismiss-error aria-label="Dismiss message">${icon('close')}</button></div></div>`;
@@ -505,14 +505,24 @@ function showModal(markup,{initialFocus,onClose}={}){
   return dialog;
 }
 function setModalError(message){const el=$('#modal-notice');if(!el)return;el.textContent=message||'';el.classList.toggle('hidden',!message);}
+function turboApprovalModal(quote={}){
+  return new Promise(resolve=>{
+    let settled=false;
+    const finish=value=>{if(settled)return;settled=true;closeModal();resolve(value);};
+    const expected=Number(quote.expectedCalls||0),hard=Number(quote.hardCallCap||0),creators=Number(quote.creatorCount||0),tokens=Number(quote.maxOutputTokens||0),seconds=Number(quote.timeoutSeconds||0);
+    showModal(`<div class="modal-backdrop"><div class="modal" aria-labelledby="turbo-approval-title"><div class="modal-head"><h2 id="turbo-approval-title">Approve Complex Turbo</h2><button class="ghost" id="modal-close" aria-label="Close dialog">${icon('close')}</button></div><div class="card" style="padding:18px"><strong>Higher-budget execution</strong><p class="muted" style="margin-top:8px">Expected successful path: ${expected} model calls · up to ${creators} creator workstreams.</p><p class="muted tiny" style="margin-top:8px">Hard ceiling: ${hard} model calls · ${seconds}s runtime · up to ${tokens.toLocaleString()} output tokens across the pipeline.</p><p class="muted tiny" style="margin-top:8px">This is a workload bound, not a dollar quote; provider pricing varies.</p></div><div class="modal-actions"><button type="button" class="secondary" id="turbo-cancel">Cancel</button><button type="button" class="primary" id="turbo-approve">Approve Turbo</button></div></div></div>`,{initialFocus:'#turbo-approve',onClose:()=>{if(!settled){settled=true;resolve(false);}}});
+    $('#modal-close').onclick=$('#turbo-cancel').onclick=()=>finish(false);
+    $('#turbo-approve').onclick=()=>finish(true);
+  });
+}
 function githubCommitModal(sourceKind,sourceId,sourceName='project.zip'){
   const defaultMessage=`OlyHub: update ${String(sourceName||'project').replace(/\.zip$/i,'')}`;
-  showModal(`<div class="modal-backdrop"><div class="modal" aria-labelledby="github-commit-title"><div class="modal-head"><h2 id="github-commit-title">Commit ZIP to GitHub</h2><button class="ghost" id="modal-close" aria-label="Close dialog">${icon('close')}</button></div><div id="modal-notice" class="notice error-notice hidden" role="alert" aria-live="assertive"></div><form id="github-commit-form" class="form-grid"><div class="field"><label for="github-repo">Repository URL</label><input id="github-repo" required inputmode="url" placeholder="https://github.com/owner/repository"></div><div class="field"><label for="github-branch">Branch</label><input id="github-branch" maxlength="120" placeholder="Default branch"></div><div class="field"><label for="github-message">Commit message</label><input id="github-message" maxlength="180" value="${esc(defaultMessage)}"></div><p class="muted tiny">One atomic, non-force commit. OlyHub blocks .env/private-key files and credential-like values before writing.</p><div class="modal-actions"><button type="button" class="secondary" id="modal-cancel">Cancel</button><button class="primary" id="github-commit-submit">Commit</button></div></form></div></div>`,{initialFocus:'#github-repo'});
+  showModal(`<div class="modal-backdrop"><div class="modal" aria-labelledby="github-commit-title"><div class="modal-head"><h2 id="github-commit-title">Commit ZIP to GitHub</h2><button class="ghost" id="modal-close" aria-label="Close dialog">${icon('close')}</button></div><div id="modal-notice" class="notice error-notice hidden" role="alert" aria-live="assertive"></div><form id="github-commit-form" class="form-grid"><div class="field"><label for="github-repo">Repository URL</label><input id="github-repo" required inputmode="url" placeholder="https://github.com/owner/repository"></div><div class="field"><label for="github-branch">Branch</label><input id="github-branch" maxlength="120" placeholder="Default branch"></div><div class="field"><label for="github-message">Commit message</label><input id="github-message" maxlength="180" value="${esc(defaultMessage)}"></div><p class="muted tiny">One explicit, atomic, non-force commit. OlyHub blocks .env/private-key files and credential-like values before writing. If GITHUB_REPO_ALLOWLIST is configured, only listed repositories are accepted.</p><div class="modal-actions"><button type="button" class="secondary" id="modal-cancel">Cancel</button><button class="primary" id="github-commit-submit">Commit</button></div></form></div></div>`,{initialFocus:'#github-repo'});
   $('#modal-close').onclick=$('#modal-cancel').onclick=()=>closeModal();
   $('#github-commit-form').addEventListener('submit',async e=>{
     e.preventDefault();setModalError('');const submit=$('#github-commit-submit');submit.disabled=true;submit.textContent='Committing…';
     try{
-      const d=await api('/api/github-commit',{method:'POST',body:JSON.stringify({sourceKind,sourceId,repoUrl:$('#github-repo').value,branch:$('#github-branch').value,message:$('#github-message').value})});
+      const d=await api('/api/github-commit',{method:'POST',body:JSON.stringify({sourceKind,sourceId,repoUrl:$('#github-repo').value,branch:$('#github-branch').value,message:$('#github-message').value,confirm:true})});
       const commit=d.commit||{};const label=commit.noChange?'Repository already matches this ZIP.':commit.replayed?'This commit was already completed.':'Commit completed.';
       showModal(`<div class="modal-backdrop"><div class="modal" aria-labelledby="github-result-title"><div class="modal-head"><h2 id="github-result-title">GitHub</h2><button class="ghost" id="modal-close" aria-label="Close dialog">${icon('close')}</button></div><div class="card" style="padding:18px"><strong>${esc(label)}</strong><p class="muted" style="margin-top:8px">${esc(commit.repository||'')} · ${esc(commit.branch||'')} · ${Number(commit.filesCommitted||0)} files</p><p class="muted tiny" style="margin-top:8px">${esc(String(commit.sha||'').slice(0,12))}</p></div><div class="modal-actions"><button type="button" class="secondary" id="modal-done">Done</button>${commit.url?`<a class="primary" href="${esc(commit.url)}" target="_blank" rel="noreferrer noopener">Open commit</a>`:''}</div></div></div>`);
       $('#modal-close').onclick=$('#modal-done').onclick=()=>closeModal();
@@ -707,13 +717,13 @@ async function pollForReply(conversationId, executionId){
   }
   throw apiError('Olympus is still working. Wait a moment, then tap Retry to collect the reply.',503,'REQUEST_IN_PROGRESS');
 }
-async function sendText(text,pendingAttachments=[],requestId=crypto.randomUUID(),requestedMode=state.mode){
+async function sendText(text,pendingAttachments=[],requestId=crypto.randomUUID(),requestedMode=state.mode,turboApproval=null){
   if(!text||state.sending)return;
   const pending=[...(pendingAttachments||[])],mode=requestedMode==='OLYMPUS'?'OLYMPUS':'ZEUS';
   const optimistic={id:crypto.randomUUID(),role:'user',mode,content:text,artifacts:[],attachments:pending};
   state.messages.push(optimistic);
   state.attachedFiles=[];state.draft='';
-  state.sending=true;state.activeMode=mode;state.activeLevel=null;state.error='';state.lastFailedText='';state.lastFailedMessageId=null;state.lastFailedAttachments=[];state.lastFailedRequestId=null;state.lastFailedMode=null;
+  state.sending=true;state.activeMode=mode;state.activeLevel=null;state.error='';state.lastFailedText='';state.lastFailedMessageId=null;state.lastFailedAttachments=[];state.lastFailedRequestId=null;state.lastFailedMode=null;state.lastFailedTurboApproval=null;
   state.execTitle=mode==='OLYMPUS'?'Olympus is working':'Zeus is working';
   state.execStatus='Choosing the model for this request…';render();
   const timer=setTimeout(()=>{
@@ -721,14 +731,31 @@ async function sendText(text,pendingAttachments=[],requestId=crypto.randomUUID()
     state.execStatus=state.activeMode==='OLYMPUS'?'Olympus is drafting, then writing one answer…':'Running the selected model…';render();
   },1400);
   try{
-    const d=await api('/api/chat',{method:'POST',body:JSON.stringify({
+    const payload={
       conversationId:state.currentConversation,
       projectId:state.currentProject?.id||null,
       content:text,
       fileIds:pending.map(f=>f.id),
       mode,
-      requestId
-    }),requestId});
+      requestId,
+      ...(turboApproval?{turboApproval}:{})
+    };
+    let d;
+    try{
+      d=await api('/api/chat',{method:'POST',body:JSON.stringify(payload),requestId});
+    }catch(firstError){
+      if(firstError?.code!=='TURBO_APPROVAL_REQUIRED'||!firstError?.data?.approvalFingerprint)throw firstError;
+      const approved=await turboApprovalModal(firstError.data.quote||{});
+      if(!approved){
+        state.messages=state.messages.filter(m=>m.id!==optimistic.id);
+        state.attachedFiles=pending;state.draft=text;state.execStatus='';state.activeLevel=null;state.activeMode=mode;
+        return;
+      }
+      turboApproval=firstError.data.approvalFingerprint;
+      payload.turboApproval=turboApproval;
+      state.execStatus='Complex Turbo approved · starting bounded execution…';render();
+      d=await api('/api/chat',{method:'POST',body:JSON.stringify(payload),requestId});
+    }
     state.currentConversation=d.conversationId;
     if(d.mode)state.activeMode=d.mode;if(d.level)state.activeLevel=d.level;
     state.execTitle=d.mode==='OLYMPUS'?'Olympus is working':'Zeus is working';
@@ -765,17 +792,17 @@ async function sendText(text,pendingAttachments=[],requestId=crypto.randomUUID()
     state.lastFailedText=text;
     state.lastFailedMessageId=optimistic.id;
     state.lastFailedAttachments=pending;
-    state.lastFailedRequestId=requestId;state.lastFailedMode=mode;
+    state.lastFailedRequestId=requestId;state.lastFailedMode=mode;state.lastFailedTurboApproval=turboApproval;
   }finally{clearTimeout(timer);state.sending=false;render();}
 }
 async function retryLastMessage(){
   if(!state.lastFailedText||state.sending)return;
   const text=state.lastFailedText;
   const pending=[...state.lastFailedAttachments];
-  const requestId=state.lastFailedRequestId||crypto.randomUUID(),mode=state.lastFailedMode||state.mode;
+  const requestId=state.lastFailedRequestId||crypto.randomUUID(),mode=state.lastFailedMode||state.mode,turboApproval=state.lastFailedTurboApproval||null;
   if(state.lastFailedMessageId)state.messages=state.messages.filter(m=>m.id!==state.lastFailedMessageId);
-  state.error='';state.lastFailedText='';state.lastFailedMessageId=null;state.lastFailedAttachments=[];state.lastFailedRequestId=null;state.lastFailedMode=null;render();
-  await sendText(text,pending,requestId,mode);
+  state.error='';state.lastFailedText='';state.lastFailedMessageId=null;state.lastFailedAttachments=[];state.lastFailedRequestId=null;state.lastFailedMode=null;state.lastFailedTurboApproval=null;render();
+  await sendText(text,pending,requestId,mode,turboApproval);
 }
 function mediaBaseName(name='media'){return String(name||'media').replace(/\.[^.]+$/,'').replace(/[^a-z0-9._-]+/gi,'-').slice(0,100)||'media';}
 function canvasJpeg(canvas,quality=.82){return new Promise((resolve,reject)=>canvas.toBlob(blob=>blob?resolve(blob):reject(new Error('Could not encode image.')),'image/jpeg',quality));}

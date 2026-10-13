@@ -9,6 +9,7 @@ async function handler(req,context){
   const auth=await requireUser(req,requestId);if(auth.error)return auth.error;const {user,db}=auth;
   if(req.method!=='POST')return errorJson('Method not allowed.',405,'METHOD_NOT_ALLOWED',requestId);
   const body=await readJson(req);if(!body)return errorJson('Invalid JSON.',400,'INVALID_JSON',requestId);
+  if(body.confirm!==true)return errorJson('GitHub commit requires explicit owner confirmation.',409,'GITHUB_CONFIRMATION_REQUIRED',requestId);
   const sourceKind=body.sourceKind==='file'?'file':'artifact',sourceId=body.sourceId;
   if(!isUuid(sourceId))return errorJson('Choose a valid ZIP source.',400,'INVALID_SOURCE_ID',requestId);
   const repoUrl=cleanText(body.repoUrl,500);if(!repoUrl)return errorJson('GitHub repository URL is required.',400,'GITHUB_REPO_URL_REQUIRED',requestId);

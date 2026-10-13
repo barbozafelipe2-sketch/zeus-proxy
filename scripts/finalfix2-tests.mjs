@@ -21,7 +21,7 @@ assert.ok(modelsSource.includes("strategy:'zeus_simple_single_model'"));
 assert.ok(modelsSource.includes("strategy:'zeus_compound_base_gpt_finalizer'"));
 assert.ok(modelsSource.includes('zeusBaseCandidates'));
 assert.ok(modelsSource.includes('gptFinisherCandidates'));
-assert.ok(modelsSource.includes("strategy:'scoped_specialists_director_adversary_patch'"));
+assert.ok(modelsSource.includes("strategy:'olympus_complex_turbo_roles'"));
 assert.ok(!modelsSource.includes("strategy:verify?'author_adversary_patch':'single_author'"));
 assert.ok(chatSource.includes("level:zeusLevel||'COMPOUND'"));
 assert.ok(chatSource.includes('pipelineLabel:result.pipelineLabel||null'));

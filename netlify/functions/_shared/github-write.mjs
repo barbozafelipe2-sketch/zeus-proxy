@@ -11,6 +11,16 @@ function coded(message,status=400,code='GITHUB_COMMIT_FAILED',details=null){
   const error=new Error(message);error.status=status;error.code=code;if(details)error.details=details;return error;
 }
 export function githubWriteConfigured(){return Boolean(env('GITHUB_TOKEN'));}
+export function githubRepoAllowlist(){
+  return [...new Set(String(env('GITHUB_REPO_ALLOWLIST')||'').split(/[\s,;]+/).map(v=>v.trim().toLowerCase()).filter(Boolean).map(v=>v.replace(/^https?:\/\/github\.com\//,'').replace(/\.git$/,'').replace(/^\/+|\/+$/g,'')))];
+}
+export function assertGithubRepoAllowed(repoUrl){
+  const ref=parseGitHubRepoUrl(repoUrl);
+  if(!ref)throw coded('Provide a valid GitHub repository URL.',400,'GITHUB_REPO_URL_INVALID');
+  const allowed=githubRepoAllowlist(),key=`${ref.owner}/${ref.repo}`.toLowerCase();
+  if(allowed.length&&!allowed.includes(key))throw coded('This repository is outside the configured GitHub allowlist.',403,'GITHUB_REPO_NOT_ALLOWED');
+  return ref;
+}
 
 export function normalizeGitBranch(value=''){
   const branch=String(value||'').trim();
@@ -97,8 +107,7 @@ async function mapLimit(items,limit,fn){
 }
 
 export async function commitZipToGitHub({repoUrl,branch='',message='',zipBytes,requestId,timeoutMs=30000}){
-  const ref=parseGitHubRepoUrl(repoUrl);
-  if(!ref)throw coded('Provide a valid GitHub repository URL.',400,'GITHUB_REPO_URL_INVALID');
+  const ref=assertGithubRepoAllowed(repoUrl);
   const files=await extractCommitFilesFromZip(zipBytes);
   const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeoutMs);
   try{

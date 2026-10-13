@@ -139,9 +139,9 @@ assert.ok(app.includes('assistant:{...assistant,artifacts}'),'background artifac
 assert.ok(app.includes('await Promise.allSettled([loadConversations(),loadProjects()])'),'chat completion should not reload the whole file library on every turn');
 
 const modelsSource=read('netlify/functions/_shared/models.mjs');
-assert.ok(modelsSource.includes("olympusDescended:'scope_failure'"),'Olympus specialist failure must degrade to verified Zeus when budget remains');
-assert.ok(modelsSource.includes("callModel(authorA,specialistSystem,specialistPrompt(scopeA),{images,history"),'Olympus specialists must receive real conversation history');
-assert.ok(modelsSource.includes("maxAttempts:4,budget:localBudget,images,history,blockedProviders"),'Olympus Director must receive real conversation history');
+assert.ok(modelsSource.includes("olympusDescended:'turbo_creator_failure'"),'Olympus creator failure must degrade safely to Compound Plus');
+assert.ok(modelsSource.includes("executeCandidateOrder(candidates,turboCreatorSystem(task,deliveryContract),prompt"),'Olympus creators must receive bounded role execution');
+assert.ok(modelsSource.includes("executeCandidateOrder(directorCandidates,turboDirectorSystem(deliveryContract),directorPrompt"),'Olympus Director must integrate creator outputs through the independent role path');
 assert.ok(chat.includes("finalMode==='ZEUS'&&mode==='OLYMPUS'&&result.trace?.olympusDescended"),'UI mode explanation must match an Olympus-to-Zeus runtime downgrade');
 
 assert.ok(chat.includes('executionLevel:result.executionLevel||null'),'selected execution level must persist with the assistant message');

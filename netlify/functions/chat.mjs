@@ -1,6 +1,6 @@
 import { requireUser } from './_shared/auth.mjs';
 import { json, readJson, cleanText, isUuid, getRequestId, errorJson } from './_shared/http.mjs';
-import { runZeus, runOlympus, runOlympusCompoundPlus, generateImage, editImage, routeFor } from './_shared/models.mjs';
+import { runZeus, runOlympus, runOlympusCompoundPlus, TURBO_LIMITS, generateImage, editImage, routeFor } from './_shared/models.mjs';
 import { stageArtifact, stageBinaryArtifact, discardStagedArtifact } from './_shared/artifact.mjs';
 import { blobStore } from './_shared/blob.mjs';
 import { withTransaction } from './_shared/db.mjs';
@@ -17,6 +17,7 @@ import { runWebSearch, shouldSearchWeb } from './_shared/web-search.mjs';
 import { extractRequirementChecklist, formatChecklist, isWhatMissingIntent, shouldVerifyDelivery } from './_shared/reliability.mjs';
 import { hasGitHubRepoUrl, loadGitHubContext } from './_shared/github-context.mjs';
 import { stripStructuredZipManifest } from './_shared/zip-output.mjs';
+import { estimateTurboQuote, turboApprovalFingerprint, externalMutationPolicy } from './_shared/execution-policy.mjs';
 
 function titleFrom(text){return text.replace(/\s+/g,' ').trim().slice(0,72) || 'OlyHub output';}
 function clip(value,max=6000){const text=String(value||'');return text.length>max?`${text.slice(0,max)}\n[truncated]`:text;}
@@ -289,8 +290,6 @@ async function chatHandler(req, context, startedAt){
     const prior=await db.sql`SELECT conversation_id FROM executions WHERE owner_id=${user.id} AND request_id=${requestId} LIMIT 1`;
     if(prior.length&&prior[0].conversation_id)conversationId=prior[0].conversation_id;
   }
-  if(!conversationId){const c=await canonicalConversation(db,user.id,projectId,titleFrom(content));conversationId=c.id;}
-
   const fileIds=normalizedIds(body.fileIds);
   const attachmentRows=await validateAttachedFiles(db,user.id,projectId,fileIds);
   const hasImage=attachmentRows.some(r=>(r.mime_type||'').startsWith('image/'));
@@ -305,6 +304,22 @@ async function chatHandler(req, context, startedAt){
   const mode=decision.mode,level=levelDecision.level;
   const zeusCompound=mode==='ZEUS'&&level==='COMPOUND';
   let modeExplanation=explainExecutionLevel(levelDecision);
+  const externalActions=externalMutationPolicy(modelText);
+  const turboQuote=level==='COMPLEX_TURBO'?estimateTurboQuote({
+    requirementCount:requirementSpec.items.length,
+    workstreamCount:levelDecision.workstreams?.length||decision.workstreams?.length||0,
+    hasFiles:attachmentRows.length>0,
+    artifactType:intent.artifactType,
+    limits:TURBO_LIMITS,
+  }):null;
+  let approvedTurboFingerprint=null;
+  if(turboQuote?.approvalRequired){
+    approvedTurboFingerprint=turboApprovalFingerprint({requestId,content:modelText,fileIds,quote:turboQuote});
+    if(String(body.turboApproval||'')!==approvedTurboFingerprint){
+      return errorJson('This Complex Turbo run crosses your approval threshold. Review the workload quote before it starts.',409,'TURBO_APPROVAL_REQUIRED',requestId,{quote:turboQuote,approvalFingerprint:approvedTurboFingerprint});
+    }
+  }
+  if(!conversationId){const c=await canonicalConversation(db,user.id,projectId,titleFrom(content));conversationId=c.id;}
 
   let init=null;let olympusDispatchFallback=false;
   const stagedArtifacts=[];
@@ -346,7 +361,7 @@ async function chatHandler(req, context, startedAt){
     const githubIntent=hasGitHubRepoUrl(modelText);
     const actualMode=olympusDispatchFallback?'ZEUS':mode;
     const zeusLevel=actualMode==='ZEUS'?(mode==='OLYMPUS'?'COMPOUND':level):null;
-    const maxCalls=(intent.action==='IMAGE_CREATE'||intent.action==='IMAGE_EDIT'?3:(actualMode==='OLYMPUS'?(level==='COMPOUND_PLUS'?7:8):(zeusLevel==='COMPOUND'?6:4)))+(webIntent?1:0);
+    const maxCalls=(intent.action==='IMAGE_CREATE'||intent.action==='IMAGE_EDIT'?3:(actualMode==='OLYMPUS'?(level==='COMPOUND_PLUS'?7:TURBO_LIMITS.maxCalls):(zeusLevel==='COMPOUND'?6:4)))+(webIntent?1:0);
     const timeoutMs=worker?150000:((webIntent||githubIntent)?CHAT_WEB_TIMEOUT_MS:(route==='fast'&&zeusLevel==='SIMPLE'?FAST_CHAT_TIMEOUT_MS:CHAT_TIMEOUT_MS));
     executionBudget=createExecutionBudget({startedAt,timeoutMs,maxCalls,reserveMs:6500});
     const vision=hasImage?await loadVisionInputs(attachmentRows):{images:[],skipped:[]};
@@ -354,7 +369,8 @@ async function chatHandler(req, context, startedAt){
     const web=webIntent?await runWebSearch(modelText,{budget:executionBudget,reserveAfterMs:actualMode==='OLYMPUS'?17000:12000}):{requested:false,context:'',sources:[],trace:null};
     const github=githubIntent?await loadGitHubContext(modelText,{timeoutMs:worker?12000:7000,maxFiles:worker?14:10,maxChars:worker?62000:42000}):{requested:false,context:'',sources:[],trace:null};
     const deliveryContract=intent.action==='ARTIFACT_CREATE'&&intent.artifactType==='zip'?'For a ZIP deliverable, include exactly one machine-readable block delimited by <olyhub_zip_manifest> and </olyhub_zip_manifest>. Inside it output valid JSON with shape {"files":[{"path":"relative/path.ext","content":"complete file contents"}]}. Include every file required to run/deploy the requested project, use safe relative paths, no placeholders, no omitted-file prose, and keep any human summary outside the manifest.':'';
-    const enrichedContext=`${aiContext}${web.context||''}${github.context||''}`;
+    const actionPolicyContext=externalActions.requested.length?`\n\nEXTERNAL ACTION POLICY\nRequested external actions: ${externalActions.requested.join(', ')}. Chat/Turbo may prepare the work but MUST NOT claim commit, deploy, merge, or destructive production changes occurred. Those mutations require the owner's explicit dedicated action flow.`:'';
+    const enrichedContext=`${aiContext}${web.context||''}${github.context||''}${actionPolicyContext}`;
 
     let result;
     if(intent.action==='IMAGE_EDIT'){
@@ -399,7 +415,7 @@ async function chatHandler(req, context, startedAt){
     result.sources=[...(web.sources||[]),...(github.sources||[])].slice(0,12);
     result.capabilities=[web.trace,github.trace].filter(Boolean);
     const visionSummary={attached:attachmentRows.filter(r=>(r.mime_type||'').startsWith('image/')).length,analyzed:vision.images.length,skipped:vision.skipped.length};
-    result.trace={...(result.trace||{}),intent,modeDecision:decision,levelDecision,executionLevel:level,route,verificationSignal,zeusCompoundRequested:zeusCompound||olympusDispatchFallback,olympusDispatchFallback,secretsRedacted,visionSkipped:vision.skipped,visionSummary,sharedBlockedProviders,webSearch:web.trace||null,githubRepository:github.trace||null};
+    result.trace={...(result.trace||{}),intent,modeDecision:decision,levelDecision,executionLevel:level,route,verificationSignal,zeusCompoundRequested:zeusCompound||olympusDispatchFallback,olympusDispatchFallback,turboQuote:turboQuote||null,turboApproved:Boolean(turboQuote?.approvalRequired&&approvedTurboFingerprint),externalActionPolicy:externalActions,secretsRedacted,visionSkipped:vision.skipped,visionSummary,sharedBlockedProviders,webSearch:web.trace||null,githubRepository:github.trace||null};
     result.visionSummary=visionSummary;
     const finalMode=result.effectiveMode||(olympusDispatchFallback?'ZEUS':mode);
     if(finalMode==='ZEUS'&&mode==='OLYMPUS'&&result.trace?.olympusDescended){
@@ -410,7 +426,8 @@ async function chatHandler(req, context, startedAt){
           ?'Olympus did not have two independent specialist families available, so Zeus produced a verified fallback answer.'
           :'The request did not need a full Olympus team, so Zeus completed it with independent verification.';
     }
-    const finalLevel=finalMode==='ZEUS'&&mode==='OLYMPUS'?'COMPOUND':level;
+    const finalLevel=result.effectiveLevel||(finalMode==='ZEUS'&&mode==='OLYMPUS'?'COMPOUND':level);
+    if(finalMode==='OLYMPUS'&&level==='COMPLEX_TURBO'&&finalLevel==='COMPOUND_PLUS'&&result.trace?.olympusDescended){modeExplanation='Olympus Complex Turbo could not preserve its role-separation guarantees, so it safely downgraded to Compound Plus.';}
     result.executionLevel=finalLevel;result.trace={...(result.trace||{}),finalExecutionLevel:finalLevel};
     result.modeExplanation=modeExplanation;
     const final=await finalizeTurn({db,userId:user.id,projectId,conversationId,execution,mode:finalMode,result,stagedArtifacts});
