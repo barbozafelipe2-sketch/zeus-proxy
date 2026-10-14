@@ -462,6 +462,27 @@ function memoryItem(m){return `<article class="memory-item"><div class="memory-i
 function taskHtml(t){const status=String(t.status||'TODO');const next=status==='TODO'?'IN_PROGRESS':status==='IN_PROGRESS'?'DONE':'TODO';const label=status==='TODO'?'Start task':status==='IN_PROGRESS'?'Mark task done':'Reopen task';const mark=status==='DONE'?icon('check'):status==='IN_PROGRESS'?'<span class="task-state-dot" aria-hidden="true"></span>':'';return `<div class="task-item"><button class="task-check ${status==='DONE'?'done':status==='IN_PROGRESS'?'in-progress':''}" data-task="${t.id}" data-status="${status}" data-next-status="${next}" aria-label="${label}: ${esc(t.title)}" title="${label}">${mark}</button><div><strong style="font-size:13px">${esc(t.title)}</strong><div class="muted tiny">${esc(status.replaceAll('_',' '))}${t.due_at?` · ${fmtDate(t.due_at)}`:''}</div></div><span class="priority ${esc(t.priority)}">${esc(t.priority)}</span></div>`}
 
 function capabilityState(key,fallbackReady=false){const raw=state.health?.capabilityReadiness?.[key];if(raw==='observed_healthy')return {enabled:true,label:'READY'};if(raw==='configured_unverified')return {enabled:true,label:'CONFIGURED'};if(raw==='degraded'||raw==='recent_failure')return {enabled:false,label:'DEGRADED'};return {enabled:Boolean(fallbackReady),label:fallbackReady?'READY':'UNAVAILABLE'};}
+// Compare & Evolve entry points. These are requests, not a claim that every
+// format has an independent generation backend. Unsupported generators ask for
+// user-supplied files, never invent downloadable results.
+const COMPARE_FORMATS=Object.freeze([
+  {id:'images',title:'Images',formats:'PNG / JPG / SVG',capability:'imageGeneration',prompt:'Create two independently generated image alternatives from different model families, only if two real image generation backends are configured. Preserve both as separate artifacts, show their actual provenance and let me choose A, B, or request another pair. If independent generators are unavailable, explain the limitation; do not invent images.'},
+  {id:'documents',title:'Documents & PDFs',formats:'PDF / DOCX / TXT / MD',capability:'chat',prompt:'Create two alternative document drafts of the same request, ideally using different model families, and deliver real files only where the artifact engine supports them. Give me a clear A/B comparison and wait for my selection. Do not claim independent family routing unless verified.'},
+  {id:'spreadsheets',title:'Spreadsheets',formats:'XLSX / CSV',capability:'chat',prompt:'Prepare two alternative spreadsheet designs for my task. Validate formulas, totals, and required data independently before comparing layouts. Generate real XLSX/CSV files where supported; otherwise explain what is missing. I want to select A, B, or request another pair.'},
+  {id:'presentations',title:'Presentations',formats:'PPTX',capability:'chat',prompt:'Prepare two different presentation approaches for the same objective. Check required slide content and deliver actual PPTX files using the supported artifact engine. Compare storytelling and visual hierarchy and let me choose A, B, or try again.'},
+  {id:'code',title:'Code & UI',formats:'HTML / CSS / JS / ZIP',capability:'chat',prompt:'Propose two independent implementation approaches for this code or UI task. Keep them separate, preserve source files if the tool supports them, and do not claim build or test success without execution evidence. Compare correctness and UX; let me choose A, B, or try again.'},
+  {id:'3d',title:'3D Models',formats:'STL / 3MF / OBJ',capability:'upload',prompt:'Compare two 3D model files that I upload, focusing on geometry, dimensions, printability and design tradeoffs where inspectable. Creating two genuine STL/3MF/OBJ models requires a connected 3D generation engine; do not claim one is available until verified.'},
+  {id:'video',title:'Video',formats:'MP4 / MOV',capability:'upload',prompt:'Compare two video files I upload, focusing on pacing, style and storytelling to the extent the available tools can inspect them. Independent video generation requires configured video generation providers. Do not invent video artifacts or claim frame analysis without evidence.'},
+  {id:'audio',title:'Audio',formats:'MP3 / WAV',capability:'upload',prompt:'Compare two audio files I upload, including voice, pacing and clarity to the extent inspection tools permit. Generating two independent audio files requires configured audio generation providers. Never represent text or transcription as generated audio.'}
+]);
+function startCompareFormat(id){
+  const format=COMPARE_FORMATS.find(x=>x.id===id);if(!format)return;
+  state.draft=format.prompt+'\\n\\nMy specific goal: ';
+  state.tab='Home';state.drawer=false;state.error='';
+  // Keep the active project and conversation rather than discarding their context.
+  render();requestAnimationFrame(()=>{$('#composer-text')?.focus();});
+}
+
 function toolsView(){const h=state.health?.capabilities||{};const chat=capabilityState('chat',Boolean(h.chat));const images=capabilityState('imageGeneration',Boolean(h.imageGeneration));const tools=[
   ['web','Web Search','Current web retrieval with sources',icon('globe'),Boolean(h.webSearch),h.webSearch?'READY':'NOT CONFIGURED','Search the web for '],
   ['code','Code','Build and review code with explicit test status',icon('code'),chat.enabled,chat.label,'Build or review code for '],
@@ -473,6 +494,15 @@ function toolsView(){const h=state.health?.capabilities||{};const chat=capabilit
   return `<section class="page tools-page">
     <div class="page-head tight"><div><h1>Tools & Capabilities</h1><p class="eyebrow">REAL CAPABILITIES. REAL OUTPUTS.</p></div><button class="text-gold" data-tab="Files">Explore All ></button></div>
     ${errorBanner('page-alert')}<div class="tool-grid">${tools.map(([kind,title,sub,ico,ok,label,prompt])=>`<button class="tool-card ${ok?'':'disabled'}" data-kind="${kind}" ${ok?`data-tool-prompt="${esc(prompt)}"`:'disabled aria-disabled="true"'}><div class="tool-ico">${ico}</div><div class="tool-copy"><strong>${title}</strong><span>${sub}</span></div><span class="tool-state">${esc(label)}</span><span class="chev">›</span></button>`).join('')}</div>
+    <section class="card" aria-labelledby="compare-title" style="padding:20px;margin-top:18px">
+      <h2 id="compare-title">Compare &amp; Evolve</h2>
+      <p class="muted">Start an A/B request. Compare real outputs, then choose your favorite. Independent generation and preference learning require connected backends.</p>
+      <div class="tool-grid">${COMPARE_FORMATS.map(f=>{
+        const available=f.capability==='upload'||Boolean(h[f.capability]);
+        const label=f.capability==='upload'?'UPLOAD & COMPARE':available?'START COMPARISON':'NOT CONFIGURED';
+        return `<button type="button" class="tool-card" data-compare-start="${esc(f.id)}" aria-label="Compare ${esc(f.title)}"><div class="tool-copy"><strong>${esc(f.title)}</strong><span>${esc(f.formats)}</span></div><span class="tool-state">${esc(label)}</span><span class="chev">›</span></button>`;
+      }).join('')}</div>
+    </section>
     <button class="panel library-card" data-tab="Files"><div class="tool-ico">${icon('folder')}</div><div><strong>Files & Library</strong><p>Upload, analyze, and keep everything in context across all your projects and conversations.</p></div><span class="chev">›</span></button>
   </section>`;
 }
@@ -617,7 +647,8 @@ function bind(){
   $$('[data-delete-output]').forEach(b=>b.addEventListener('click',()=>deleteOutput(b.dataset.deleteOutput,b.dataset.outputId)));
   $('#delete-project')?.addEventListener('click',deleteCurrentProject);
   $('#upload-project-file')?.addEventListener('click',()=>$('#global-file-input').click());
-  $$('[data-tool-prompt]').forEach(b=>b.addEventListener('click',()=>{state.currentProject=null;state.currentConversation=null;state.messages=[];state.chatArtifacts=[];state.attachedFiles=[];state.activeMode=null;state.messagePage={hasMore:false,nextCursor:null};state.error='';state.tab='Home';history.replaceState({},'',location.pathname);state.draft=b.dataset.toolPrompt;render();setTimeout(()=>{const t=$('#composer-text');if(t){t.focus();t.setSelectionRange(t.value.length,t.value.length)}},0)}));
+  $('[data-compare-start]').forEach(b=>b.addEventListener('click',()=>startCompareFormat(b.dataset.compareStart)));
+  $('[data-tool-prompt]').forEach(b=>b.addEventListener('click',()=>{state.currentProject=null;state.currentConversation=null;state.messages=[];state.chatArtifacts=[];state.attachedFiles=[];state.activeMode=null;state.messagePage={hasMore:false,nextCursor:null};state.error='';state.tab='Home';history.replaceState({},'',location.pathname);state.draft=b.dataset.toolPrompt;render();setTimeout(()=>{const t=$('#composer-text');if(t){t.focus();t.setSelectionRange(t.value.length,t.value.length)}},0)}));
 }
 document.addEventListener('keydown',e=>{
   if(e.key!=='Escape'||$('#modal-root')?.childElementCount)return;
