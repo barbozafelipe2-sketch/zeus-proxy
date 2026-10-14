@@ -1,35 +1,36 @@
 import { requireUser } from './_shared/auth.mjs';
-import { json, getRequestId, errorJson } from './_shared/http.mjs';
+import { getRequestId, errorJson } from './_shared/http.mjs';
 import { consumeEndpointRate } from './_shared/limits.mjs';
 
-// Optional ElevenLabs integration: the API key is server-only. Browser clients
-// submit a public voice ID, never credentials.
+// ElevenLabs speech through OpenRouter, with server-side credentials only.
+// Accepts OpenRouter preset voices or an ElevenLabs Voice ID (subject to BYOK rules).
 const env=name=>globalThis.Netlify?.env?.get?.(name)||process.env?.[name]||'';
-const validVoice=id=>/^[A-Za-z0-9_-]{8,80}$/.test(String(id||''));
+const validVoice=id=>/^[A-Za-z0-9_-]{2,80}$/.test(String(id||''));
 export default async function(req,context){
   const requestId=getRequestId(req,context,null);
   try{
     const auth=await requireUser(req,requestId);
     if(auth.error)return auth.error;
     if(req.method!=='POST')return errorJson('Method not allowed.',405,'METHOD_NOT_ALLOWED',requestId);
-    const key=env('ELEVENLABS_API_KEY');
-    if(!key)return errorJson('ElevenLabs speech output is not configured.',501,'SPEECH_NOT_CONFIGURED',requestId);
+    const key=env('OPENROUTER_DIRECT_API_KEY')||env('OPENROUTER_API_KEY');
+    if(!key)return errorJson('OpenRouter speech output is not configured.',501,'SPEECH_NOT_CONFIGURED',requestId);
     await consumeEndpointRate(auth.db,auth.user.id,'speech',requestId,30);
     let body;try{body=await req.json()}catch{return errorJson('Invalid JSON.',400,'INVALID_JSON',requestId)}
     const text=String(body?.text||'').trim();
     if(!text||text.length>2500)return errorJson('Speech text must be between 1 and 2500 characters.',400,'INVALID_SPEECH_TEXT',requestId);
-    const voiceId=String(body?.voiceId||env('ELEVENLABS_VOICE_ID')||'').trim();
-    if(!validVoice(voiceId))return errorJson('Choose a valid ElevenLabs Voice ID in Settings.',400,'INVALID_VOICE_ID',requestId);
+    const voiceId=String(body?.voiceId||env('OPENROUTER_SPEECH_VOICE')||'sarah').trim();
+    if(!validVoice(voiceId))return errorJson('Choose an OpenRouter voice name or valid Voice ID.',400,'INVALID_VOICE_ID',requestId);
     const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),24000);
+    const model=env('OPENROUTER_SPEECH_MODEL')||'elevenlabs/eleven-v4-turbo';
     let upstream;
     try{
-      upstream=await fetch('https://api.elevenlabs.io/v1/text-to-speech/'+encodeURIComponent(voiceId)+'?output_format=mp3_44100_128',{
+      upstream=await fetch('https://openrouter.ai/api/v1/audio/speech',{
         method:'POST',signal:controller.signal,
-        headers:{'xi-api-key':key,'Content-Type':'application/json'},
-        body:JSON.stringify({text,model_id:env('ELEVENLABS_TTS_MODEL')||'eleven_multilingual_v2'})
+        headers:{'Authorization':`Bearer ${key}`,'Content-Type':'application/json','X-Title':'Zeus Proxy'},
+        body:JSON.stringify({input:text,model,voice:voiceId,response_format:'mp3'})
       });
     }finally{clearTimeout(timeout)}
-    if(!upstream.ok)return errorJson('ElevenLabs could not generate speech for this voice.',502,'SPEECH_PROVIDER_FAILED',requestId);
+    if(!upstream.ok)return errorJson('OpenRouter could not generate speech for this voice.',502,'SPEECH_PROVIDER_FAILED',requestId);
     const length=Number(upstream.headers.get('content-length')||0);
     if(length>8*1024*1024)return errorJson('Speech file exceeds the allowed size.',413,'SPEECH_TOO_LARGE',requestId);
     const bytes=await upstream.arrayBuffer();
