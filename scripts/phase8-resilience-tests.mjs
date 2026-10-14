@@ -57,7 +57,7 @@ try{
   const models=readFileSync('netlify/functions/_shared/models.mjs','utf8');
   assert.ok(models.includes("if(entry.reason?.code==='AI_REQUEST_REJECTED')throw entry.reason"),
     'Turbo creators must not downgrade into additional paid model calls after a globally invalid request');
-  assert.ok(models.includes('maxCalls:10')&&models.includes('maxCreators:3'));
+  assert.ok(models.includes('maxCalls:4')&&models.includes('maxCreators:2'));
 }finally{
   globalThis.fetch=oldFetch;globalThis.Netlify=oldNetlify;ai.__resetProviderHealthForTests();
 }

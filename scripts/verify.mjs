@@ -245,14 +245,14 @@ if (!projects.includes('queueProjectBlobs') || !projects.includes('drainBlobGc')
 if (!chat.includes('classifyIntent(modelText') || !chat.includes('isArtifactContinuation(content)')) throw new Error('Chat intent routing and artifact continuity must use the resolved request context.');
 if (!chat.includes('loadVisionInputs')) throw new Error('Real image understanding input loader is missing.');
 if (!chat.includes('redactSecrets(content)')) throw new Error('User/provider context secret redaction missing.');
-if (!models.includes('maxCreators:3') || !models.includes('roleCandidates(\'CREATOR\'')) throw new Error('Olympus Turbo must remain bounded to role-scoped creator workstreams.');
+if (!models.includes('maxCreators:2') || !models.includes('roleCandidates(\'CREATOR\'')) throw new Error('Olympus Turbo must remain bounded to role-scoped creator workstreams.');
 if (!models.includes("String(env('OLYHUB_SERVER_TRANSCRIPTION')).toLowerCase() === 'true' && Boolean(audioBase() && audioKey())")) throw new Error('Server transcription no longer requires an explicit audio endpoint/key.');
 if (Object.prototype.hasOwnProperty.call(pkg.dependencies||{},'xlsx')) throw new Error('Redundant legacy xlsx dependency returned.');
 if (!app.includes("if(state.tab==='Tools')await Promise.all([loadHealth(),loadFiles(),loadArtifacts()])")) throw new Error('Tools can still render stale Project-scoped outputs.');
 if (!app.includes('await hydrateProjectWorkspace(state.currentProject.id,{loadConversation:false})')) throw new Error('Opening a Project conversation does not hydrate the full workspace.');
 
 if (models.includes('level >= 2 && lead.attempts.length === 0')) throw new Error('Zeus review is still disabled after a lead fallback.');
-if (!models.includes('validateTurboPlan') || !models.includes('requirement_ids')) throw new Error('Olympus Turbo no longer assigns persisted requirements to bounded creator tasks.');
+if (!models.includes('deterministicTurboPlan') || !models.includes('requirement_ids')) throw new Error('Olympus Turbo no longer assigns persisted requirements to bounded creator tasks.');
 if (models.includes("ui_ux: 'writing'")) throw new Error('UI/UX specialist routing regressed to writing-only need.');
 if (!chat.includes('selectMemoryContext(memories)')) throw new Error('Project memory no longer uses deterministic selection policy.');
 if (!storage.includes("attempts < 8") || !storage.includes("interval '5 minutes' * LEAST(attempts,6)")) throw new Error('Blob GC retry bound/backoff missing.');
@@ -316,7 +316,7 @@ if (!security.includes('REDACTED NETLIFY TOKEN')) throw new Error('Netlify token
 if (!tasks.includes('syncProjectProgressClient')) throw new Error('Task/project progress updates are not transactional.');
 
 if (models.includes('planSpecialists') || models.includes('DOMAIN_PRIORITY')) throw new Error('Legacy keyword-domain Olympus planner returned.');
-if (!models.includes('validateTurboPlan') || !models.includes('creatorSettled=await Promise.allSettled')) throw new Error('Olympus Turbo requirement partitioning or parallel creators missing.');
+if (!models.includes('deterministicTurboPlan') || !models.includes('creatorSettled=await Promise.allSettled')) throw new Error('Olympus Turbo requirement partitioning or parallel creators missing.');
 
 if (!models.includes("olympusDescended:'turbo_creator_failure'")) throw new Error('Olympus creator failure no longer degrades safely to Compound Plus.');
 if (!models.includes('executeCandidateOrder(candidates,turboCreatorSystem(task,deliveryContract),prompt')) throw new Error('Olympus creators lost bounded role execution.');
@@ -342,7 +342,7 @@ if (!models.includes('independentCritic:Boolean(critic&&modelFamily(critic.model
 
 if (models.includes("strategy:'scoped_specialists_director_adversary_patch'")) throw new Error('Legacy Complex Turbo compatibility pipeline returned.');
 if (!models.includes('excludeProviders:creatorProviders')) throw new Error('Turbo Director is not isolated from creator provider families.');
-if (!models.includes('maxCreators:3') || !models.includes('maxCalls:10')) throw new Error('Turbo hard caps regressed.');
+if (!models.includes('maxCreators:2') || !models.includes('maxCalls:4')) throw new Error('Turbo hard caps regressed.');
 if (!chat.includes('result.effectiveLevel||')) throw new Error('Turbo downgrade level is not persisted.');
 
 if (!chat.includes("TURBO_APPROVAL_REQUIRED") || !chat.includes('turboApprovalFingerprint')) throw new Error('High-budget Turbo approval gate is missing.');

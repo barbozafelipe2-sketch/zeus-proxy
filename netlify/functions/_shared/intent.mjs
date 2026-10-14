@@ -102,6 +102,21 @@ export function decideExecutionMode(text = '', { requestedMode = 'ZEUS' } = {}) 
 
 // Sublevel routing is deliberately synchronous and rule based: no model call,
 // no provider call, no hidden classification tokens.
+// 4-gear router (deterministic, zero tokens). Hard call caps live in GEAR_CALL_CAPS.
+//  Zeus Simple 1 · Zeus Compound 2 (create+review) · Olympus Compound Plus 3 · Olympus Turbo 4.
+export const GEAR_CALL_CAPS=Object.freeze({SIMPLE:1,COMPOUND:2,COMPOUND_PLUS:3,COMPLEX_TURBO:4});
+const TURBO_AREAS=[
+  ['frontend',/\b(frontend|front-end|ui|ux|interface|tela|telas|pantalla|layout|css|react)\b/i],
+  ['backend',/\b(backend|back-end|api|server|servidor|endpoint|functions?|funcoes)\b/i],
+  ['database',/\b(database|db|banco de dados|base de datos|schema|migration|migracao|postgres|sql)\b/i],
+  ['infra',/\b(deploy|netlify|infra|infraestrutura|ci|pipeline)\b/i],
+];
+const LAUNCH_PACKAGE=/\b(full app|complete app|app completo|aplicativo completo|sistema completo|launch package|pacote de lancamento|kit de lancamento|paquete de lanzamiento)\b/i;
+const COMPOUND_PLUS_SIGNAL=/\b(investor report|relatorio (?:para|de) investidores|investidores|due diligence|legal analysis|analise juridica|juridic[oa]|financial analysis|analise financeira|modelo financeiro|valuation|system design|desenho de sistema|arquitetura do sistema|multi-section|varias secoes|capitulos|chapters|relatorio completo|full report|multi-file|varios arquivos|multiplos arquivos)\b/i;
+const ZEUS_COMPOUND_WORK=/\b(fix|bug|debug|corrigir|corrija|corrige|conserta|consertar|arreglar|implement|implementar|refactor|refatorar|script|business plan|plano de negocios?|contrato|contract|planilha|spreadsheet|deck|apresentacao|video|imagem|image)\b/i;
+
+export function turboAreasIn(text=''){const v=normalize(String(text||''));return TURBO_AREAS.filter(([,re])=>re.test(v)).map(([n])=>n);}
+
 export function decideExecutionLevel(text='', {
   mode='ZEUS',
   action='CHAT',
@@ -115,46 +130,44 @@ export function decideExecutionLevel(text='', {
   const value=normalize(String(text||''));
   const selectedMode=normalizeRequestedMode(mode)||'ZEUS';
   const workstreams=workstreamsIn(value);
-  const reasons=[];
   const requirements=Math.max(0,Number(requirementCount)||0);
+  const out=(m,level,reasons)=>({mode:m,requestedMode:selectedMode,level,reason:reasons[0],reasons:[...new Set(reasons)],workstreams,maxCalls:GEAR_CALL_CAPS[level],router:'deterministic_zero_token'});
 
-  if(selectedMode==='ZEUS'){
-    if(action==='IMAGE_CREATE'||action==='IMAGE_EDIT'){
-      return {mode:selectedMode,level:'SIMPLE',reason:'single_model_media_operation',reasons:['single_model_media_operation'],workstreams,router:'deterministic_zero_token'};
-    }
-    if(requiresVerification){reasons.push('verification_required');}
-    if(action==='ARTIFACT_CREATE'){reasons.push('deliverable');}
-    if(route==='coding'||route==='hard'||route==='research'){reasons.push(route);}
-    if(hasFiles&&!hasImage){reasons.push('document_context');}
-    if(requirements>=2){reasons.push('multiple_requirements');}
-    if(DEEP_ANALYSIS.test(value)){reasons.push('deep_analysis');}
-    if(TURBO_EXECUTION.test(value)&&route!=='fast'){reasons.push('execution_work');}
-    if(value.length>1200&&requirements>0){reasons.push('long_structured_request');}
-    if(FORCE_SIMPLE.test(value)&&!requiresVerification&&action==='CHAT'&&!hasFiles&&!reasons.length){
-      return {mode:selectedMode,level:'SIMPLE',reason:'explicitly_brief',reasons:['explicitly_brief'],workstreams,router:'deterministic_zero_token'};
-    }
-    return reasons.length
-      ?{mode:selectedMode,level:'COMPOUND',reason:reasons[0],reasons:[...new Set(reasons)],workstreams,router:'deterministic_zero_token'}
-      :{mode:selectedMode,level:'SIMPLE',reason:'ordinary_turn',reasons:['ordinary_turn'],workstreams,router:'deterministic_zero_token'};
-  }
+  const zeusGear=()=>{
+    if(action==='IMAGE_CREATE'||action==='IMAGE_EDIT')return out('ZEUS','SIMPLE',['single_model_media_operation']);
+    const reasons=[];
+    if(action==='ARTIFACT_CREATE')reasons.push('deliverable');
+    if(requiresVerification)reasons.push('verification_required');
+    if(DEEP_ANALYSIS.test(value))reasons.push('deep_analysis');
+    if(TURBO_EXECUTION.test(value)&&(route==='coding'||route==='hard'))reasons.push('execution_work');
+    if(ZEUS_COMPOUND_WORK.test(value)&&CREATE.test(value))reasons.push('create_and_review');
+    if(value.length>1200&&requirements>0)reasons.push('long_structured_request');
+    if(FORCE_SIMPLE.test(value)&&action==='CHAT'&&!requiresVerification)return out('ZEUS','SIMPLE',['explicitly_brief']);
+    return reasons.length?out('ZEUS','COMPOUND',reasons):out('ZEUS','SIMPLE',['ordinary_turn']);
+  };
+  if(selectedMode==='ZEUS')return zeusGear();
 
-  // Olympus is manual. Inside Olympus, audit/investigation defaults to
-  // Compound Plus; execution/integration requests escalate to Complex Turbo.
-  const artifactExecution=action==='ARTIFACT_CREATE'&&['zip','docx','pptx','xlsx','pdf','csv'].includes(String(artifactType||'').toLowerCase());
-  const explicitTurbo=STRONG_TURBO.test(value);
+  // Olympus (manual) escalates only when the work actually needs a team.
+  const areas=turboAreasIn(value);
   const executionVerb=TURBO_EXECUTION.test(value);
-  const multiPart=requirements>=2||workstreams.length>=2||hasFiles;
-  if(explicitTurbo||artifactExecution||(executionVerb&&(multiPart||route==='coding'||route==='hard'))){
-    if(explicitTurbo)reasons.push('explicit_full_execution');
-    if(artifactExecution)reasons.push('artifact_delivery');
-    if(executionVerb)reasons.push('execution_request');
-    if(multiPart)reasons.push('multi_part_work');
-    return {mode:selectedMode,level:'COMPLEX_TURBO',reason:reasons[0]||'execution_request',reasons:[...new Set(reasons)],workstreams,router:'deterministic_zero_token'};
+  const zip=String(artifactType||'').toLowerCase()==='zip';
+  if(STRONG_TURBO.test(value)||LAUNCH_PACKAGE.test(value)||(areas.length>=2&&(executionVerb||zip))){
+    const reasons=[];
+    if(STRONG_TURBO.test(value))reasons.push('explicit_full_execution');
+    if(LAUNCH_PACKAGE.test(value))reasons.push('launch_package');
+    if(areas.length>=2)reasons.push('multi_area_execution');
+    return out('OLYMPUS','COMPLEX_TURBO',reasons);
   }
-  if(DEEP_ANALYSIS.test(value))reasons.push('audit_or_investigation');
-  if(requiresVerification)reasons.push('high_confidence_review');
-  if(requirements>=2)reasons.push('multiple_requirements');
-  return {mode:selectedMode,level:'COMPOUND_PLUS',reason:reasons[0]||'olympus_review',reasons:[...new Set(reasons.length?reasons:['olympus_review'])],workstreams,router:'deterministic_zero_token'};
+  const plusReasons=[];
+  if(COMPOUND_PLUS_SIGNAL.test(value))plusReasons.push('high_stakes_or_long_document');
+  if(DEEP_ANALYSIS.test(value))plusReasons.push('audit_or_investigation');
+  if(requiresVerification)plusReasons.push('high_confidence_review');
+  if(executionVerb&&(zip||areas.length===1)&&(requirements>=2||hasFiles))plusReasons.push('multi_file_single_area');
+  if(value.length>2500&&requirements>=3)plusReasons.push('long_structured_request');
+  if(plusReasons.length)return out('OLYMPUS','COMPOUND_PLUS',plusReasons);
+  // A single PDF/document/video/plain chat does not need Olympus: route to Zeus gears.
+  const z=zeusGear();
+  return {...z,reasons:[...z.reasons,'olympus_not_needed'],downgradedFrom:'OLYMPUS'};
 }
 
 export function explainExecutionMode(decision = {}) {

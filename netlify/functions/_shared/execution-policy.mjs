@@ -7,28 +7,32 @@ const configuredInt=(name,fallback,min,max)=>{
   return Number.isFinite(raw)&&raw>0?Math.round(clamp(raw,min,max)):fallback;
 };
 
-export const TURBO_QUOTE_VERSION='turbo-budget-v1';
+export const TURBO_QUOTE_VERSION='turbo-budget-v2';
+const TURBO_FIXED_ROLE_CALLS=2; // 1 manager (Director) + 1 CEO. No Planner call.
+const TURBO_HARD_CAP=4; // 2 specialists + Director + CEO
+
+// Deterministic (non-LLM) team sizing. The router only picks Turbo for multi-area
+// work, so Turbo normally uses both specialists; never more than maxCreators (2).
+export function turboCreatorCount({maxCreators=2}={}){
+  return Math.max(1,Math.min(2,Math.round(Number(maxCreators)||2)));
+}
 
 export function estimateTurboQuote({
   requirementCount=0,
   workstreamCount=0,
   hasFiles=false,
   artifactType=null,
-  limits={maxCreators:3,maxCalls:10,timeoutMs:150000,maxPlanTokens:3200,maxCreatorTokens:7500,maxDirectorTokens:10000,maxCeoTokens:12000},
+  limits={maxCreators:2,maxCalls:4,timeoutMs:150000,maxCreatorTokens:7500,maxDirectorTokens:10000,maxCeoTokens:12000},
 }={}){
-  const maxCreators=clamp(limits?.maxCreators||3,1,6);
-  const requirements=Math.max(0,Number(requirementCount)||0);
-  const workstreams=Math.max(0,Number(workstreamCount)||0);
-  const inferred=Math.max(1,workstreams,Math.ceil(requirements/2),artifactType?2:1,hasFiles?2:1);
-  const creatorCount=Math.round(clamp(inferred,1,maxCreators));
-  const expectedCalls=creatorCount+3;
-  const hardCallCap=Math.round(clamp(limits?.maxCalls||10,expectedCalls,20));
+  const hardCallCap=Math.round(clamp(limits?.maxCalls||TURBO_HARD_CAP,TURBO_FIXED_ROLE_CALLS+1,TURBO_HARD_CAP));
+  const maxCreators=Math.round(clamp(limits?.maxCreators||2,1,hardCallCap-TURBO_FIXED_ROLE_CALLS));
+  const creatorCount=turboCreatorCount({maxCreators});
+  const expectedCalls=creatorCount+TURBO_FIXED_ROLE_CALLS;
   const timeoutSeconds=Math.ceil((Number(limits?.timeoutMs)||150000)/1000);
-  const maxOutputTokens=(Number(limits?.maxPlanTokens)||3200)
-    +creatorCount*(Number(limits?.maxCreatorTokens)||7500)
+  const maxOutputTokens=creatorCount*(Number(limits?.maxCreatorTokens)||7500)
     +(Number(limits?.maxDirectorTokens)||10000)
     +(Number(limits?.maxCeoTokens)||12000);
-  const approvalCallThreshold=configuredInt('OLYHUB_TURBO_APPROVAL_CALLS',6,4,hardCallCap);
+  const approvalCallThreshold=configuredInt('OLYHUB_TURBO_APPROVAL_CALLS',hardCallCap+1,3,hardCallCap+1);
   const approvalTokenThreshold=configuredInt('OLYHUB_TURBO_APPROVAL_OUTPUT_TOKENS',45000,16000,120000);
   return {
     version:TURBO_QUOTE_VERSION,
@@ -38,7 +42,7 @@ export function estimateTurboQuote({
     hardCallCap,
     timeoutSeconds,
     maxOutputTokens,
-    costBand:expectedCalls>=6?'high':expectedCalls===5?'elevated':'bounded',
+    costBand:expectedCalls>=4?'elevated':'bounded',
     approvalRequired:expectedCalls>=approvalCallThreshold||maxOutputTokens>=approvalTokenThreshold,
     approvalThresholds:{calls:approvalCallThreshold,maxOutputTokens:approvalTokenThreshold},
     note:'Workload quote only; provider pricing varies and this is not a dollar estimate.',

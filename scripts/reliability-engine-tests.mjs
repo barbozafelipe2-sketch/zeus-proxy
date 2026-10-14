@@ -20,8 +20,8 @@ const cases=[
   ['Reverse engineer this application architecture and security model','OLYMPUS','CHAT','hard','COMPOUND_PLUS',true,{}],
   ['Fix all findings from the audit','OLYMPUS','ANALYZE','hard','COMPLEX_TURBO',true,{hasFiles:true}],
   ['Implement the backend API, security permissions, frontend UI, and tests','OLYMPUS','CHAT','hard','COMPLEX_TURBO',true,{}],
-  ['Create a ZIP project package','OLYMPUS','ARTIFACT_CREATE','fast','COMPLEX_TURBO',true,{}],
-  ['hello','OLYMPUS','CHAT','fast','COMPOUND_PLUS',false,{}],
+  ['Create a ZIP project package','OLYMPUS','ARTIFACT_CREATE','fast','COMPOUND_PLUS',true,{}],
+  ['hello','OLYMPUS','CHAT','fast','SIMPLE',false,{}],
 ];
 
 for(const [text,requestedMode,action,route,level,verify,opts] of cases){
@@ -48,4 +48,20 @@ assert.equal(decideExecutionMode('hello',{requestedMode:'OLYMPUS'}).mode,'OLYMPU
 
 const checklist=[{id:'R1',text:'Handle authentication errors.',evidence:'authentication',central:true}],answer='The handler calls validateToken() and then returns success. It also says authentication errors are always handled.',raw=JSON.stringify([{kind:'broken_reference',location:'handler',evidence:'validateToken()',defect:'The referenced function is not defined in the supplied answer.'},{kind:'missing_requirement',requirement_id:'R1',evidence:'authentication errors are always handled',defect:'The quoted claim does not show an error path for R1.'},{kind:'broken_reference',location:'handler',evidence:'not actually in answer',defect:'Invented evidence must be rejected.'}]),findings=validateAdversaryFindings(raw,{answer,checklist});
 assert.equal(findings.length,2);assert.equal(structuralRewriteAllowed(findings,checklist),true);assert.equal(validateAdversaryFindings('[{"kind":"broken_reference","location":"x","evidence":"ghost()","defect":"This is an opinion without a real quote."}]',{answer,checklist}).length,0);
+// 4-gear routing: single documents go to Zeus Compound (2 calls) even when Olympus is selected.
+{
+  const t='Cria um PDF com um plano de negócios para uma cafeteria em São Paulo';
+  const it=classifyIntent(t,{});
+  for(const m of ['ZEUS','OLYMPUS']){
+    const d=decideExecutionLevel(t,{mode:m,action:it.action,route:routeFor(t),artifactType:it.artifactType,requirementCount:2});
+    assert.equal(d.mode,'ZEUS',`PDF business plan must stay on Zeus (${m})`);
+    assert.equal(d.level,'COMPOUND');
+    assert.equal(d.maxCalls,2);
+  }
+  const turbo=decideExecutionLevel('Implementa login no frontend, backend e banco de dados e faz commit',{mode:'OLYMPUS',action:'CHAT',route:'coding'});
+  assert.equal(turbo.level,'COMPLEX_TURBO');assert.equal(turbo.maxCalls,4);
+  const plus=decideExecutionLevel('Relatório para investidores com análise financeira',{mode:'OLYMPUS',action:'ARTIFACT_CREATE',artifactType:'pdf'});
+  assert.equal(plus.level,'COMPOUND_PLUS');assert.equal(plus.maxCalls,3);
+  assert.equal(decideExecutionLevel('oi',{mode:'ZEUS'}).maxCalls,1);
+}
 console.log('Zeus v3 deterministic mode/level routing tests: PASS');

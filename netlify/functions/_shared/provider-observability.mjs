@@ -1,4 +1,5 @@
 import { modelFamily, modelTransport } from './provider-routing.mjs';
+import { priceFor } from './model-prices.mjs';
 
 // Per-execution audit events: no prompt, response body, files, personal data, raw errors or secrets.
 const attemptsByBudget=new WeakMap();
@@ -75,4 +76,32 @@ export function summarizeTransportEvidence(rows=[],configuration={},runtime={}){
     result[route]={configured,status,circuitOpen,attempts:successes+failures,successes,failures,lastOutcome,lastSeenAt,recoveredExecutions};
   }
   return result;
+}
+
+// Per-request usage summary for the UI: calls, tokens per role, totals, and an
+// ESTIMATED USD cost only for models with a known price. No prompts/bodies.
+export function summarizeRequestUsage(telemetry={},{maxCalls=null,webUsage=null}={}){
+  const attempts=Array.isArray(telemetry?.attempts)?telemetry.attempts:[];
+  const n=(x)=>Number.isFinite(Number(x))?Math.max(0,Number(x)):0;
+  let usd=0,priced=0,unpriced=0;
+  const byRole=attempts.map(e=>{
+    const inputTokens=n(e.inputTokens),outputTokens=n(e.outputTokens),price=e.outcome==='success'?priceFor(e.model):null;
+    let estimatedUsd=null;
+    if(price){estimatedUsd=(inputTokens*price.in+outputTokens*price.out)/1e6;usd+=estimatedUsd;priced++;}
+    else if(e.outcome==='success')unpriced++;
+    return {role:String(e.stage||'unspecified'),provider:e.provider||null,model:e.model||null,outcome:e.outcome,inputTokens,outputTokens,estimatedUsd:estimatedUsd===null?null:Number(estimatedUsd.toFixed(6))};
+  });
+  const web=webUsage&&typeof webUsage==='object'?{inputTokens:n(webUsage.inputTokens),outputTokens:n(webUsage.outputTokens)}:null;
+  const inputTokens=byRole.reduce((a,r)=>a+r.inputTokens,0)+(web?.inputTokens||0);
+  const outputTokens=byRole.reduce((a,r)=>a+r.outputTokens,0)+(web?.outputTokens||0);
+  return {
+    version:1,
+    callsUsed:Number.isFinite(telemetry?.budgetCalls)?telemetry.budgetCalls:attempts.length,
+    maxCalls:Number.isFinite(Number(maxCalls))?Number(maxCalls):null,
+    inputTokens,outputTokens,totalTokens:inputTokens+outputTokens,
+    byRole,webSearch:web,
+    estimatedUsd:priced?Number(usd.toFixed(6)):null,
+    estimateCoverage:priced&&!unpriced?'full':priced?'partial':'none',
+    estimateLabel:'estimated',
+  };
 }

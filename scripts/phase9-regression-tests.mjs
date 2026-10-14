@@ -24,8 +24,8 @@ assert.ok(policy.includes('turboApprovalFingerprint')&&policy.includes('estimate
 assert.ok(policy.includes('externalMutationPolicy'));
 assert.ok(ui.includes('turboApprovalModal')&&ui.includes('approvalFingerprint'));
 assert.ok(ui.includes('lastFailedRequestId'));
-assert.equal(ai.TURBO_LIMITS.maxCreators,3);
-assert.equal(ai.TURBO_LIMITS.maxCalls,10);
+assert.equal(ai.TURBO_LIMITS.maxCreators,2);
+assert.equal(ai.TURBO_LIMITS.maxCalls,4);
 assert.equal(ai.TURBO_LIMITS.timeoutMs,150000);
 
 const candidates=[

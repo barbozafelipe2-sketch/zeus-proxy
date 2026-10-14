@@ -1,14 +1,14 @@
 import { requireUser } from './_shared/auth.mjs';
 import { json, readJson, cleanText, isUuid, getRequestId, errorJson } from './_shared/http.mjs';
 import { runZeus, runOlympus, runOlympusCompoundPlus, TURBO_LIMITS, generateImage, editImage, routeFor } from './_shared/models.mjs';
-import { snapshotProviderTelemetry } from './_shared/provider-observability.mjs';
+import { snapshotProviderTelemetry, summarizeRequestUsage } from './_shared/provider-observability.mjs';
 import { deliveryContract as artifactDeliveryContract, parseArtifactDelivery, isArtifactContinuation } from './_shared/artifact-delivery.mjs';
 import { publicExecutionFailure } from './_shared/execution-error.mjs';
 import { stageArtifact, stageBinaryArtifact, discardStagedArtifact } from './_shared/artifact.mjs';
 import { blobStore } from './_shared/blob.mjs';
 import { withTransaction } from './_shared/db.mjs';
 import { resolveOwnedScope } from './_shared/relations.mjs';
-import { classifyIntent, decideExecutionMode, decideExecutionLevel, explainExecutionLevel, normalizeRequestedMode } from './_shared/intent.mjs';
+import { classifyIntent, decideExecutionMode, decideExecutionLevel, explainExecutionLevel, normalizeRequestedMode, GEAR_CALL_CAPS } from './_shared/intent.mjs';
 import { redactSecrets } from './_shared/security.mjs';
 import { assembleContext, relevanceScore } from './_shared/context.mjs';
 import { createExecutionBudget, FAST_CHAT_TIMEOUT_MS, CHAT_TIMEOUT_MS, CHAT_WEB_TIMEOUT_MS, STALE_EXECUTION_MS } from './_shared/runtime.mjs';
@@ -213,7 +213,7 @@ async function finalizeTurn({db,userId,projectId,conversationId,execution,mode,r
     await client.query(`UPDATE executions SET state='SAVING',lead_model=$1,trace=$2::jsonb WHERE id=$3 AND owner_id=$4`,[result.leadModel||null,JSON.stringify(result.trace||{}),execution.id,userId]);
     const assistant=(await client.query(
       `INSERT INTO messages(owner_id,conversation_id,execution_id,role,mode,content,metadata) VALUES($1,$2,$3,'assistant',$4,$5,$6::jsonb) RETURNING id,role,mode,content,metadata,created_at`,
-      [userId,conversationId,execution.id,mode,result.content,JSON.stringify({artifacts:artifacts.map(a=>a.id),sources:Array.isArray(result.sources)?result.sources.slice(0,12):[],capabilities:Array.isArray(result.capabilities)?result.capabilities:[],leadModel:result.leadModel||null,fallback:Array.isArray(result.trace?.fallbacks)&&result.trace.fallbacks.length>0,modeExplanation:result.modeExplanation||null,executionLevel:result.executionLevel||null,pipelineLabel:result.pipelineLabel||null,verificationLabel:result.verificationLabel||null,visionSummary:result.visionSummary||null})]
+      [userId,conversationId,execution.id,mode,result.content,JSON.stringify({artifacts:artifacts.map(a=>a.id),sources:Array.isArray(result.sources)?result.sources.slice(0,12):[],capabilities:Array.isArray(result.capabilities)?result.capabilities:[],leadModel:result.leadModel||null,fallback:Array.isArray(result.trace?.fallbacks)&&result.trace.fallbacks.length>0,modeExplanation:result.modeExplanation||null,executionLevel:result.executionLevel||null,pipelineLabel:result.pipelineLabel||null,verificationLabel:result.verificationLabel||null,visionSummary:result.visionSummary||null,usage:result.usage||null})]
     )).rows[0];
     await client.query(`UPDATE executions SET state='COMPLETED',completed_at=now() WHERE id=$1 AND owner_id=$2`,[execution.id,userId]);
     await client.query(`UPDATE conversations SET updated_at=now() WHERE id=$1 AND owner_id=$2`,[conversationId,userId]);
@@ -340,7 +340,7 @@ async function chatHandler(req, context, startedAt){
   if(!requestedMode)return errorJson('Mode must be ZEUS or OLYMPUS.',400,'INVALID_INTELLIGENCE_MODE',requestId);
   const decision=decideExecutionMode(modelText,{requestedMode});
   const levelDecision=decideExecutionLevel(modelText,{mode:decision.mode,action:intent.action,route,hasFiles:attachmentRows.length>0,hasImage,requirementCount:requirementSpec.items.length,artifactType:intent.artifactType,requiresVerification:verificationSignal});
-  const mode=decision.mode,level=levelDecision.level;
+  const mode=levelDecision.mode||decision.mode,level=levelDecision.level; // router may downgrade Olympus to a Zeus gear
   const zeusCompound=mode==='ZEUS'&&level==='COMPOUND';
   let modeExplanation=explainExecutionLevel(levelDecision);
   const externalActions=externalMutationPolicy(modelText);
@@ -396,11 +396,17 @@ async function chatHandler(req, context, startedAt){
       `;
     }
 
-    const webIntent=shouldSearchWeb(modelText)&&intent.action!=='IMAGE_CREATE'&&intent.action!=='IMAGE_EDIT';
-    const githubIntent=hasGitHubRepoUrl(modelText);
+    // 4-gear HARD caps (no retry headroom). Web search counts inside the cap:
+    // Simple+web => web + 1 answer (2), Compound+web => web + create (2), Compound Plus skips web (3), Turbo+web => web + 1 specialist + Director + CEO (4).
     const actualMode=olympusDispatchFallback?'ZEUS':mode;
-    const zeusLevel=actualMode==='ZEUS'?(mode==='OLYMPUS'?'COMPOUND':level):null;
-    const maxCalls=(intent.action==='IMAGE_CREATE'||intent.action==='IMAGE_EDIT'?3:(actualMode==='OLYMPUS'?(level==='COMPOUND_PLUS'?7:TURBO_LIMITS.maxCalls):(zeusLevel==='COMPOUND'?6:4)))+(webIntent?1:0);
+    const gearLevel=actualMode==='ZEUS'?(mode==='OLYMPUS'?'COMPOUND':level):level;
+    const turboHardCap=actualMode==='OLYMPUS'&&level==='COMPLEX_TURBO';
+    const isImageOp=intent.action==='IMAGE_CREATE'||intent.action==='IMAGE_EDIT';
+    const webIntent=shouldSearchWeb(modelText)&&!isImageOp&&!(actualMode==='OLYMPUS'&&level==='COMPOUND_PLUS');
+    const githubIntent=hasGitHubRepoUrl(modelText);
+    const zeusLevel=actualMode==='ZEUS'?(webIntent?'SIMPLE':gearLevel):null;
+    const turboCreatorCount=turboHardCap?(webIntent?1:Number(turboQuote?.creatorCount||TURBO_LIMITS.maxCreators)):null;
+    const maxCalls=isImageOp?GEAR_CALL_CAPS.SIMPLE:(actualMode==='ZEUS'&&webIntent?GEAR_CALL_CAPS.COMPOUND:GEAR_CALL_CAPS[gearLevel]||GEAR_CALL_CAPS.SIMPLE);
     const timeoutMs=worker?150000:((webIntent||githubIntent)?CHAT_WEB_TIMEOUT_MS:(route==='fast'&&zeusLevel==='SIMPLE'?FAST_CHAT_TIMEOUT_MS:CHAT_TIMEOUT_MS));
     executionBudget=createExecutionBudget({startedAt,timeoutMs,maxCalls,reserveMs:6500});
     const vision=hasImage?await loadVisionInputs(attachmentRows):{images:[],skipped:[]};
@@ -432,7 +438,7 @@ async function chatHandler(req, context, startedAt){
       if(actualMode==='OLYMPUS'){
         try{result=level==='COMPOUND_PLUS'
           ?await runOlympusCompoundPlus({text:modelText,context:enrichedContext,images:vision.images,history,requirements:requirementSpec,deliveryContract,blockedProviders:sharedBlockedProviders,budget:executionBudget})
-          :await runOlympus({text:modelText,context:enrichedContext,images:vision.images,history,requirements:requirementSpec,deliveryContract,blockedProviders:sharedBlockedProviders,budget:executionBudget});}
+          :await runOlympus({text:modelText,context:enrichedContext,images:vision.images,history,requirements:requirementSpec,deliveryContract,blockedProviders:sharedBlockedProviders,budget:executionBudget,creatorCount:turboCreatorCount});}
         catch(olympusError){
           if(olympusError?.code==='AI_REQUEST_REJECTED')throw olympusError;
           if(!executionBudget.canCall())throw olympusError;
@@ -483,7 +489,7 @@ async function chatHandler(req, context, startedAt){
     }
     const finalLevel=result.effectiveLevel||(finalMode==='ZEUS'&&mode==='OLYMPUS'?'COMPOUND':level);
     if(finalMode==='OLYMPUS'&&level==='COMPLEX_TURBO'&&finalLevel==='COMPOUND_PLUS'&&result.trace?.olympusDescended){modeExplanation='Olympus Complex Turbo could not preserve its role-separation guarantees, so it safely downgraded to Compound Plus.';}
-    result.executionLevel=finalLevel;result.trace={...(result.trace||{}),finalExecutionLevel:finalLevel,providerTelemetry:snapshotProviderTelemetry(executionBudget)};
+    result.executionLevel=finalLevel;{const providerTelemetry=snapshotProviderTelemetry(executionBudget);result.usage=summarizeRequestUsage(providerTelemetry,{maxCalls:executionBudget?.maxCalls,webUsage:web?.trace?.usage||null});result.trace={...(result.trace||{}),finalExecutionLevel:finalLevel,providerTelemetry,usage:result.usage};}
     result.modeExplanation=modeExplanation;
     const final=await finalizeTurn({db,userId:user.id,projectId,conversationId,execution,mode:finalMode,result,stagedArtifacts});
     return json({conversationId,message:final.assistant,userMessage,artifacts:final.artifacts,mode:finalMode,level:finalLevel,modeExplanation,execution:{id:execution.id,state:'COMPLETED'},requestId,replayed:false});

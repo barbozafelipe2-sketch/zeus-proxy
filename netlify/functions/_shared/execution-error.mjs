@@ -44,7 +44,7 @@ export function publicExecutionFailure(error){
        :code==='REQUEST_IN_PROGRESS'
          ?'This request is already running.'
          :code==='EXECUTION_BUDGET_EXHAUSTED'||code==='EXECUTION_DEADLINE'
-           ?'The execution time or call limit was reached. Please retry.'
+           ?'The execution time or AI call limit was reached (hard caps: Simple 1, Compound 2, Compound Plus 3, Turbo 4 calls; no extra retries). A model failed or was slow; retry, or use Zeus Simple.'
            :code==='IMAGE_REQUIRED'
              ?'Attach an image before asking to edit it.'
              :code==='AI_NOT_CONFIGURED'

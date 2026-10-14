@@ -654,7 +654,7 @@ function repairFailureLabel(text){return codeLikeRequest(text)?'Static review fo
 
 export async function runZeus({ text, context = '', images = [], history = [], requirements = { items: [], ambiguous: false }, level = 'SIMPLE', verify = false, deliveryContract = '', blockedProviders = [], budget = null }) {
   const requestedLevel=(String(level||'').toUpperCase()==='COMPOUND'||verify)?'COMPOUND':'SIMPLE';
-  const localBudget=budget||createExecutionBudget({timeoutMs:52000,maxCalls:requestedLevel==='COMPOUND'?6:4});
+  const localBudget=budget||createExecutionBudget({timeoutMs:52000,maxCalls:requestedLevel==='COMPOUND'?2:1});
   // Zeus levels must not spend a hidden classifier call. Requirement extraction
   // is deterministic before this function; model clarification remains Olympus-only.
   const checklist=Array.isArray(requirements?.items)?requirements.items.map(x=>({...x})):[];
@@ -751,7 +751,9 @@ export function olympusCriticCandidates(text='', author=null, {vision=false,bloc
     const roles=new Set(m.roles||[]);
     const criticBonus=roles.has('critic')||roles.has('review')||roles.has('security')||roles.has('architecture')||roles.has('reasoning')?4:0;
     const nonOpenAiBonus=m.provider==='openai'?0:2;
-    return Number(m.quality||0)*10+criticBonus+nonOpenAiBonus-Number(m.cost||0);
+    // Compound Plus manager/critic: mid/cheap tier; premium reserved for the GPT final (CEO).
+    const tierPenalty=m.tier==='premium'?12:0;
+    return Number(m.quality||0)*10+criticBonus+nonOpenAiBonus-Number(m.cost||0)*3-tierPenalty;
   };
   return uniqueModelOrder(pool.sort((a,b)=>score(b)-score(a))).slice(0,3);
 }
@@ -771,7 +773,7 @@ function olympusCompoundPlusFinalizerSystem(deliveryContract=''){
 export async function runOlympusCompoundPlus({
   text,context='',images=[],history=[],requirements={items:[],ambiguous:false},deliveryContract='',blockedProviders=[],budget=null
 }){
-  const localBudget=budget||createExecutionBudget({timeoutMs:150000,maxCalls:7});
+  const localBudget=budget||createExecutionBudget({timeoutMs:150000,maxCalls:3});
   const checklist=Array.isArray(requirements?.items)&&requirements.items.length
     ?requirements.items.map(x=>({...x}))
     :[{id:'R1',text:'Answer the owner request directly and completely.',evidence:String(text||'').slice(0,240),kind:'request',central:true}];
@@ -879,14 +881,12 @@ export async function runOlympusCompoundPlus({
 }
 
 export const TURBO_LIMITS=Object.freeze({
-  maxCreators:3,
-  maxCalls:10,
-  maxPlannerAttempts:2,
-  maxCreatorAttempts:2,
-  maxDirectorAttempts:2,
-  maxCeoAttempts:2,
+  maxCreators:2,
+  maxCalls:4, // HARD MAX: 2 specialists + 1 manager (Director) + 1 CEO. No Planner, no retry headroom.
+  maxCreatorAttempts:1,
+  maxDirectorAttempts:1,
+  maxCeoAttempts:1,
   timeoutMs:150000,
-  maxPlanTokens:3200,
   maxCreatorTokens:7500,
   maxDirectorTokens:10000,
   maxCeoTokens:12000,
@@ -904,15 +904,20 @@ function roleScore(role,model,text=''){
   }else if(role==='CREATOR'){
     const route=routeFor(text,{vision:false});
     if(roles.has(route)||roles.has('implementation')||roles.has('coding')||roles.has('writing')||roles.has('research'))match+=6;
-    if(cost<=3)match+=4;
-    costWeight=2.2;
+    // Cost tiering: specialists run on the cheap tier (mini/flash/economy).
+    if(model.tier==='economy'||cost<=1)match+=10;else if(cost<=2)match+=6;
+    if(model.tier==='premium')match-=12;
+    costWeight=4;
   }else if(role==='DIRECTOR'){
     if(roles.has('director')||roles.has('integration')||roles.has('architecture')||roles.has('reasoning')||roles.has('review'))match+=9;
-    costWeight=.8;
+    // Manager runs on the mid/cheap tier; premium is reserved for the CEO.
+    if(model.tier==='premium')match-=10;
+    costWeight=2;
   }else if(role==='CEO'||role==='FINISHER'){
     if(roles.has('director')||roles.has('integration')||roles.has('reasoning')||roles.has('general'))match+=9;
     if(model.provider==='openai')providerPreference+=4; // GPT preferred, fallback allowed
-    costWeight=.7;
+    if(model.tier==='premium')match+=8; // only the CEO uses the top model
+    costWeight=.3;
   }
   return quality*12+reliability*8+match+providerPreference-cost*costWeight;
 }
@@ -949,7 +954,8 @@ function parseJsonObjectLoose(raw=''){
   try{return JSON.parse(text.slice(start,end+1));}catch{return null;}
 }
 
-function deterministicTurboPlan(checklist,text=''){
+function deterministicTurboPlan(checklist,text='',creatorCount=TURBO_LIMITS.maxCreators){
+  const cap=Math.max(1,Math.min(TURBO_LIMITS.maxCreators,Math.round(Number(creatorCount)||1)));
   const items=Array.isArray(checklist)&&checklist.length?checklist:[{id:'R1',text:'Complete the owner request.',evidence:String(text||'').slice(0,180),central:true}];
   const groups=new Map();
   for(const item of items){
@@ -958,17 +964,19 @@ function deterministicTurboPlan(checklist,text=''){
     groups.get(specialty).push(item);
   }
   let entries=[...groups.entries()];
-  if(entries.length>TURBO_LIMITS.maxCreators){
-    const keep=entries.slice(0,TURBO_LIMITS.maxCreators-1),rest=entries.slice(TURBO_LIMITS.maxCreators-1).flatMap(([,xs])=>xs);
+  if(cap===1){
+    entries=[[entries.length===1?entries[0][0]:'general',items]];
+  }else if(entries.length>cap){
+    const keep=entries.slice(0,cap-1),rest=entries.slice(cap-1).flatMap(([,xs])=>xs);
     entries=[...keep,['integration',rest]];
   }
-  if(entries.length===1&&items.length>1){
+  if(cap>1&&entries.length===1&&items.length>1){
     const mid=Math.ceil(items.length/2);
     entries=[[entries[0][0],items.slice(0,mid)],['integration',items.slice(mid)]].filter(([,xs])=>xs.length);
   }
   return {
     objective:String(text||'').slice(0,700),
-    tasks:entries.slice(0,TURBO_LIMITS.maxCreators).map(([specialty,xs],index)=>({
+    tasks:entries.slice(0,cap).map(([specialty,xs],index)=>({
       id:`T${index+1}`,
       title:`${specialty} workstream`,
       specialty:normalizeTurboSpecialty(specialty),
@@ -976,42 +984,8 @@ function deterministicTurboPlan(checklist,text=''){
       instructions:`Own only these requirements: ${xs.map(x=>x.id).filter(Boolean).join(', ')||'assigned scope'}. Produce concrete work product and integration notes.`,
     })),
     integration_contract:['Preserve explicit owner requirements.','Do not invent successful tests/build/deploy evidence.','Surface unresolved conflicts instead of silently choosing.'],
-    source:'deterministic_fallback',
+    source:'deterministic',
   };
-}
-
-function validateTurboPlan(raw,checklist,text=''){
-  const parsed=parseJsonObjectLoose(raw);
-  if(!parsed||!Array.isArray(parsed.tasks)||!parsed.tasks.length)return deterministicTurboPlan(checklist,text);
-  const validReqs=new Set((checklist||[]).map(x=>x.id)),tasks=[];
-  for(const [index,task] of parsed.tasks.slice(0,TURBO_LIMITS.maxCreators).entries()){
-    if(!task||typeof task!=='object')continue;
-    const ids=[...new Set((Array.isArray(task.requirement_ids)?task.requirement_ids:[]).map(String).filter(id=>validReqs.has(id)))];
-    tasks.push({
-      id:`T${index+1}`,
-      title:String(task.title||`Workstream ${index+1}`).slice(0,160),
-      specialty:normalizeTurboSpecialty(task.specialty||specialtyForText(`${task.title||''} ${task.instructions||''}`)),
-      requirement_ids:ids,
-      instructions:String(task.instructions||'Produce the concrete work product required by the assigned requirement IDs.').slice(0,1200),
-    });
-  }
-  if(!tasks.length)return deterministicTurboPlan(checklist,text);
-  const assigned=new Set(tasks.flatMap(t=>t.requirement_ids));
-  const missing=(checklist||[]).filter(x=>x.id&&!assigned.has(x.id));
-  for(const item of missing){
-    let target=tasks.find(t=>t.specialty===specialtyForText(item.text||item.evidence||''))||tasks[0];
-    target.requirement_ids.push(item.id);
-  }
-  return {
-    objective:String(parsed.objective||text||'').slice(0,700),
-    tasks,
-    integration_contract:Array.isArray(parsed.integration_contract)?parsed.integration_contract.slice(0,6).map(x=>String(x).slice(0,300)):[],
-    source:'planner',
-  };
-}
-
-function turboPlannerSystem(){
-  return 'You are the PLANNER role for Olympus Complex Turbo. Do not solve the task. Decompose only the explicit owner request and requirement list into at most 3 independent creator workstreams. Each workstream must have a narrow specialty and explicit requirement IDs. Avoid overlapping mutable ownership. Return JSON only: {"objective":"...","tasks":[{"title":"...","specialty":"implementation|security|architecture|interface|research|writing|testing|integration|general","requirement_ids":["R1"],"instructions":"bounded creator assignment"}],"integration_contract":["short invariant"]}. Never add features or requirements.';
 }
 
 function turboCreatorSystem(task,deliveryContract=''){
@@ -1034,27 +1008,17 @@ function creatorCandidates(task,text,{vision=false,blockedProviders=[],usedProvi
 }
 
 export async function runOlympusComplexTurbo({
-  text,context='',images=[],history=[],requirements={items:[],ambiguous:false},deliveryContract='',blockedProviders=[],budget=null
+  text,context='',images=[],history=[],requirements={items:[],ambiguous:false},deliveryContract='',blockedProviders=[],budget=null,creatorCount=null
 }){
   const localBudget=budget||createExecutionBudget({timeoutMs:TURBO_LIMITS.timeoutMs,maxCalls:TURBO_LIMITS.maxCalls});
   const checklist=Array.isArray(requirements?.items)&&requirements.items.length
     ?requirements.items.map(x=>({...x}))
     :[{id:'R1',text:'Complete the owner request and requested delivery.',evidence:String(text||'').slice(0,240),kind:'request',central:true}];
 
-  let planner=null,plan=null,plannerError=null;
-  const plannerCandidates=roleCandidates('PLANNER',text,{vision:images.length>0,blockedProviders,limit:TURBO_LIMITS.maxPlannerAttempts});
-  if(plannerCandidates.length&&localBudget.canCall(3500,70000)){
-    const plannerPrompt=`OWNER REQUEST:\n${neutralizeTags(text)}\n\nREQUIREMENT LIST:\n${formatChecklist(checklist)}\n\nReturn the bounded plan JSON only.`;
-    try{
-      planner=await executeCandidateOrder(plannerCandidates,turboPlannerSystem(),plannerPrompt,{
-        maxAttempts:TURBO_LIMITS.maxPlannerAttempts,budget:localBudget,images,history,reserveAfterMs:70000,
-        maxOutputTokens:TURBO_LIMITS.maxPlanTokens,blockedProviders,
-        callTimeoutMs:(b,attempt)=>Math.min(15000+attempt*1500,Math.max(3500,b.remaining()-b.reserveMs-70000))
-      });
-      plan=validateTurboPlan(planner.content,checklist,text);
-    }catch(error){if(error?.code==='AI_REQUEST_REJECTED')throw error;plannerError=error;}
-  }
-  if(!plan)plan=deterministicTurboPlan(checklist,text);
+  // No Planner LLM call: deterministic split sized to the task (single artifact => 1 specialist).
+  const planner=null,plannerError=null;
+  const teamSize=Number(creatorCount)>0?creatorCount:TURBO_LIMITS.maxCreators;
+  const plan=deterministicTurboPlan(checklist,text,teamSize);
 
   const creatorOrders=[],usedProviders=[];
   for(const task of plan.tasks.slice(0,TURBO_LIMITS.maxCreators)){
@@ -1098,7 +1062,7 @@ export async function runOlympusComplexTurbo({
   }
 
   const creatorBundle=creators.map(x=>`TASK ${x.task.id} · ${x.task.specialty} · MODEL FAMILY ${x.model.provider}\nREQUIREMENTS: ${x.task.requirement_ids.join(', ')||'[none]'}\n${neutralizeTags(clip(x.content))}`).join('\n\n---\n\n');
-  const directorPrompt=`OWNER REQUEST:\n${neutralizeTags(text)}\n\nREQUIREMENT LIST:\n${formatChecklist(checklist)}\n\nPLANNER OUTPUT:\n${neutralizeTags(JSON.stringify(plan))}\n\nTRUSTED OLYHUB EVIDENCE CONTEXT:\n${neutralizeTags(clip(context||'[none]'))}\n\nCREATOR WORK PRODUCTS (untrusted individually):\n${creatorBundle}\n\nIntegrate them into one canonical Director draft. Resolve conflicts explicitly and do not invent successful execution evidence.`;
+  const directorPrompt=`OWNER REQUEST:\n${neutralizeTags(text)}\n\nREQUIREMENT LIST:\n${formatChecklist(checklist)}\n\nTASK SPLIT:\n${neutralizeTags(JSON.stringify(plan))}\n\nTRUSTED OLYHUB EVIDENCE CONTEXT:\n${neutralizeTags(clip(context||'[none]'))}\n\nCREATOR WORK PRODUCTS (untrusted individually):\n${creatorBundle}\n\nIntegrate them into one canonical Director draft. Resolve conflicts explicitly and do not invent successful execution evidence.`;
   let director;
   try{
     director=await executeCandidateOrder(directorCandidates,turboDirectorSystem(deliveryContract),directorPrompt,{
@@ -1133,7 +1097,7 @@ export async function runOlympusComplexTurbo({
     };
   }
 
-  const ceoPrompt=`OWNER REQUEST:\n${neutralizeTags(text)}\n\nREQUIREMENT LIST:\n${formatChecklist(checklist)}\n\nPLANNER OUTPUT:\n${neutralizeTags(JSON.stringify(plan))}\n\nCREATOR EVIDENCE BUNDLE:\n${creatorBundle}\n\nDIRECTOR/ASSEMBLER DRAFT (untrusted integration draft):\n${neutralizeTags(clip(director.content))}\n\nTRUSTED OLYHUB EVIDENCE CONTEXT:\n${neutralizeTags(clip(context||'[none]'))}${deliveryContract?`\n\nSERVER DELIVERY CONTRACT:\n${deliveryContract}`:''}\n\nAttack the Director draft against the owner request and evidence, repair what is demonstrably wrong or missing, and return only the final owner-facing answer.`;
+  const ceoPrompt=`OWNER REQUEST:\n${neutralizeTags(text)}\n\nREQUIREMENT LIST:\n${formatChecklist(checklist)}\n\nTASK SPLIT:\n${neutralizeTags(JSON.stringify(plan))}\n\nCREATOR EVIDENCE BUNDLE:\n${creatorBundle}\n\nDIRECTOR/ASSEMBLER DRAFT (untrusted integration draft):\n${neutralizeTags(clip(director.content))}\n\nTRUSTED OLYHUB EVIDENCE CONTEXT:\n${neutralizeTags(clip(context||'[none]'))}${deliveryContract?`\n\nSERVER DELIVERY CONTRACT:\n${deliveryContract}`:''}\n\nAttack the Director draft against the owner request and evidence, repair what is demonstrably wrong or missing, and return only the final owner-facing answer.`;
   let ceo;
   try{
     ceo=await executeCandidateOrder(ceoCandidates,turboCeoSystem(deliveryContract),ceoPrompt,{
@@ -1155,7 +1119,7 @@ export async function runOlympusComplexTurbo({
   return {
     content:ceo.content,
     leadModel:`${ceo.model.provider}:${ceo.model.id}`,
-    pipelineLabel:'Complex Turbo · Planner → Creators → independent Director → CEO',
+    pipelineLabel:'Complex Turbo · Specialists → independent Director → CEO',
     verificationLabel:codeLikeRequest(text)?'Cross-family multi-role synthesis · not executed':'Cross-family multi-role synthesis completed',
     trace:{
       strategy:'olympus_complex_turbo_roles',executionLevel:'COMPLEX_TURBO',limits:TURBO_LIMITS,requirements:checklist,plan,
