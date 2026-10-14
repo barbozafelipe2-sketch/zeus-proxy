@@ -151,7 +151,16 @@ export function decideExecutionLevel(text='', {
   const areas=turboAreasIn(value);
   const executionVerb=TURBO_EXECUTION.test(value);
   const zip=String(artifactType||'').toLowerCase()==='zip';
-  if(STRONG_TURBO.test(value)||LAUNCH_PACKAGE.test(value)||(areas.length>=2&&(executionVerb||zip))){
+  // Turbo is an exceptional, evidence-gated execution tier, never a keyword-only upgrade.
+  // An explicit full-project request or a multi-area execution is only a candidate.
+  // Require independently verifiable work scope and sufficient requirements before
+  // spending the four-call Turbo budget. Single artifacts stay in Compound Plus.
+  const candidate=STRONG_TURBO.test(value)||LAUNCH_PACKAGE.test(value)||(areas.length>=2&&(executionVerb||zip));
+  const substantiveScope=areas.length>=2 && (executionVerb||zip||LAUNCH_PACKAGE.test(value));
+  const documentedScope=requirements>=3 || (hasFiles && requirements>=2);
+  const turboEligible=candidate && substantiveScope && documentedScope
+    && action!=='IMAGE_CREATE' && action!=='IMAGE_EDIT';
+  if(turboEligible){
     const reasons=[];
     if(STRONG_TURBO.test(value))reasons.push('explicit_full_execution');
     if(LAUNCH_PACKAGE.test(value))reasons.push('launch_package');
@@ -164,10 +173,11 @@ export function decideExecutionLevel(text='', {
   if(requiresVerification)plusReasons.push('high_confidence_review');
   if(executionVerb&&(zip||areas.length===1)&&(requirements>=2||hasFiles))plusReasons.push('multi_file_single_area');
   if(value.length>2500&&requirements>=3)plusReasons.push('long_structured_request');
+  if(candidate&&!turboEligible)plusReasons.push('turbo_eligibility_not_met');
   if(plusReasons.length)return out('OLYMPUS','COMPOUND_PLUS',plusReasons);
-  // A single PDF/document/video/plain chat does not need Olympus: route to Zeus gears.
-  const z=zeusGear();
-  return {...z,reasons:[...z.reasons,'olympus_not_needed'],downgradedFrom:'OLYMPUS'};
+  // Olympus defaults to its economical Compound Plus gear; do not silently
+  // activate Turbo or switch the owner's selected mode for ordinary requests.
+  return out('OLYMPUS','COMPOUND_PLUS',['default_economical_olympus']);
 }
 
 export function explainExecutionMode(decision = {}) {
