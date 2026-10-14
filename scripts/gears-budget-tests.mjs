@@ -46,6 +46,21 @@ try{
   assert.equal(ceo[0].tier,'premium','only the CEO uses the top model');
   assert.ok(ceo.length>=1&&creators.length>=1,'multi-provider fallback lists remain');
 
+  // Zeus Compound must never use the same originating model family twice.
+  // Check the pure selector as well as the actual two-call handoff.
+  const {modelFamily}=await import('../netlify/functions/_shared/provider-routing.mjs');
+  const starter={provider:'openai',id:'gpt-4.1-mini'};
+  const independent=models.zeusIndependentFinisherCandidates('Cria um PDF',starter);
+  assert.ok(independent.every(candidate=>modelFamily(candidate)!=='openai'),'same-family finisher must be excluded');
+  const uiCandidates=models.zeusIndependentFinisherCandidates('Fix the UI layout',starter);
+  assert.ok(uiCandidates.every(candidate=>modelFamily(candidate)!=='openai'),'UI fallback must also exclude starter family');
+  reset(models);
+  const paired=await models.runZeus({text:'Cria um PDF com um plano de negócios',requirements:req,level:'COMPOUND',budget:budget('COMPOUND')});
+  assert.equal(calls.length,2,'Compound requires exactly two successful role calls');
+  assert.equal(paired.trace.independentFamilies,true,'Compound must report distinct families');
+  assert.notEqual(modelFamily(paired.trace.base),modelFamily(paired.trace.finalizer),'base and finisher must be different families');
+  assert.ok(paired.trace.budget.callsUsed<=2,'no extra hidden classifier or retry call');
+
   // Usage capture + summary (no prompts stored).
   reset(models);
   const b=budget('COMPOUND');
