@@ -1029,18 +1029,20 @@ function turboCreatorSystem(task,deliveryContract=''){
 }
 
 function turboDirectorSystem(deliveryContract=''){
-  return `${zeusCoreSystem(deliveryContract)} You are the DIRECTOR/ASSEMBLER role in Olympus Complex Turbo. You are responsible for the integrated draft and you must exercise independent judgment rather than concatenate creator outputs. Resolve conflicts, reject incompatible or unsupported pieces, preserve interfaces and owner requirements, and identify any unresolved gaps. You are not the final owner-facing voice. Never claim execution evidence that is not present.`;
+  return `${zeusCoreSystem(deliveryContract)} You are the DIRECTOR/ASSEMBLER role in Olympus Complex Turbo. Actively repair code, UI, and architecture when defects are found. You are responsible for the integrated draft and you must exercise independent judgment rather than concatenate creator outputs. Resolve conflicts, reject incompatible or unsupported pieces, preserve interfaces and owner requirements, and identify any unresolved gaps. You are not the final owner-facing voice. Never claim execution evidence that is not present.`;
 }
 
 function turboCeoSystem(deliveryContract=''){
-  return `${zeusCoreSystem(deliveryContract)} You are the CEO/FINAL AUTHORITY role in Olympus Complex Turbo. The Director has signed an integrated draft, but you must attack it against the original owner request, requirement list, plan, creator evidence, and trusted context. Correct remaining defects, reject unsupported assumptions, close missing requirements when the evidence permits, and deliver one definitive owner-facing result. Do not mention internal orchestration, model families, or providers. Never claim tests/build/deploy/commit ran unless tool evidence proves it.`;
+  return `${zeusCoreSystem(deliveryContract)} You are the CEO/FINAL AUTHORITY role in Olympus Complex Turbo. Correct defects in code, UI, and architecture rather than just reporting them. The Director has signed an integrated draft, but you must attack it against the original owner request, requirement list, plan, creator evidence, and trusted context. Correct remaining defects, reject unsupported assumptions, close missing requirements when the evidence permits, and deliver one definitive owner-facing result. Do not mention internal orchestration, model families, or providers. Never claim tests/build/deploy/commit ran unless tool evidence proves it.`;
 }
 
 function creatorCandidates(task,text,{vision=false,blockedProviders=[],usedProviders=[]}={}){
   const scoped=`${text}\n${task.title}\n${task.instructions}\n${task.specialty}`,used=new Set(usedProviders||[]);
   const ranked=roleCandidates('CREATOR',scoped,{vision,blockedProviders,limit:4});
-  const diverse=ranked.filter(m=>!used.has(modelFamily(m))),rest=ranked.filter(m=>used.has(modelFamily(m)));
-  return uniqueModelOrder([...diverse,...rest]).slice(0,4);
+  const preferred=task.specialty==='interface'?'meta':
+    ['implementation','architecture','testing','security'].includes(task.specialty)?'anthropic':null;
+  const score=m=>(used.has(modelFamily(m))?100:0)+(preferred&&modelFamily(m)!==preferred?10:0);
+  return uniqueModelOrder([...ranked].sort((a,b)=>score(a)-score(b))).slice(0,4);
 }
 
 export async function runOlympusComplexTurbo({
@@ -1091,7 +1093,9 @@ export async function runOlympusComplexTurbo({
   }
 
   const creatorProviders=[...new Set(creators.map(x=>modelFamily(x.model)))];
-  let directorCandidates=roleCandidates('DIRECTOR',text,{vision:images.length>0,blockedProviders,excludeProviders:creatorProviders,limit:TURBO_LIMITS.maxDirectorAttempts});
+  let directorCandidates=roleCandidates('DIRECTOR',text,{vision:images.length>0,blockedProviders,excludeProviders:creatorProviders,limit:4});
+  directorCandidates.sort((a,b)=>Number(modelFamily(a)!=='openai')-Number(modelFamily(b)!=='openai'));
+  directorCandidates=directorCandidates.slice(0,TURBO_LIMITS.maxDirectorAttempts);
   if(!directorCandidates.length){
     const fallback=await runOlympusCompoundPlus({text,context,images,history,requirements:{items:checklist,ambiguous:false},deliveryContract,blockedProviders,budget:localBudget});
     return {...fallback,effectiveLevel:'COMPOUND_PLUS',trace:{...(fallback.trace||{}),olympusDescended:'turbo_independent_director_unavailable',turboPlan:plan,creatorProviders}};
@@ -1118,11 +1122,14 @@ export async function runOlympusComplexTurbo({
     return {...fallback,effectiveLevel:'COMPOUND_PLUS',trace:{...(fallback.trace||{}),olympusDescended:'turbo_director_not_independent',turboPlan:plan,creatorProviders,directorProvider:director.model.provider}};
   }
 
-  let ceoCandidates=roleCandidates('CEO',text,{
-    vision:images.length>0,blockedProviders,excludeProviders:[modelFamily(director.model)],
-    exclude:new Set([`${director.model.provider}:${director.model.id}`]),limit:TURBO_LIMITS.maxCeoAttempts
-  });
-  if(!ceoCandidates.length)ceoCandidates=roleCandidates('CEO',text,{vision:images.length>0,blockedProviders,exclude:new Set([`${director.model.provider}:${director.model.id}`]),limit:TURBO_LIMITS.maxCeoAttempts});
+  const previousFamilies=[...new Set([...creatorProviders,modelFamily(director.model)])];
+  const ceoOrder=(excluded)=>roleCandidates('CEO',text,{
+    vision:images.length>0,blockedProviders,excludeProviders:excluded,
+    exclude:new Set([`${director.model.provider}:${director.model.id}`]),limit:4
+  }).sort((a,b)=>Number(modelFamily(a)!=='xai')-Number(modelFamily(b)!=='xai'))
+    .slice(0,TURBO_LIMITS.maxCeoAttempts);
+  let ceoCandidates=ceoOrder(previousFamilies);
+  if(!ceoCandidates.length)ceoCandidates=ceoOrder([modelFamily(director.model)]);
   if(!ceoCandidates.length){
     return {
       content:director.content,
