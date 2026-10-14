@@ -65,6 +65,7 @@ async function handler(req,context){
       UPDATE projects SET name=${name},description=${description},goal=${goal},status=${status},progress=${progress},updated_at=now()
       WHERE id=${body.id} AND owner_id=${user.id} RETURNING *
     `;
+    if(!row)return errorJson('Project not found.',404,'PROJECT_NOT_FOUND',requestId);
     return json({project:row,requestId});
   }
 
