@@ -55,7 +55,9 @@ try{
   assert.equal(usage.byRole.length,2);
   assert.ok(usage.inputTokens>=210&&usage.outputTokens>=85,'tokens summed incl. web search');
   assert.equal(usage.totalTokens,usage.inputTokens+usage.outputTokens);
-  assert.equal(usage.estimateLabel,'estimated');
+  const hasPricedAttempts=usage.byRole.some(item=>item.estimatedUsd!==null);
+  assert.equal(usage.estimateLabel,hasPricedAttempts?'known_subtotal':'unknown','Web charges and unpriced models cannot yield full cost coverage');
+  assert.equal(usage.estimateCoverage,hasPricedAttempts?'partial':'none');
   assert.ok(!JSON.stringify(usage).includes('plano de neg'),'usage must not contain prompt text');
   const priced=summarizeRequestUsage({budgetCalls:1,attempts:[{stage:'zeus_simple',model:'gpt-4.1-mini',outcome:'success',inputTokens:1_000_000,outputTokens:1_000_000}]});
   assert.equal(priced.estimatedUsd,2);assert.equal(priced.estimateCoverage,'full');

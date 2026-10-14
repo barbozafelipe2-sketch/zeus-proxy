@@ -1,7 +1,12 @@
 export function json(data, status = 200, headers = {}) {
+  const safeHeaders = new Headers(headers);
+  safeHeaders.set('Content-Type', 'application/json; charset=utf-8');
+  // Functions can bypass static netlify.toml caching headers. Enforce privacy
+  // here, including when callers supply a conflicting case-insensitive header.
+  safeHeaders.set('Cache-Control', 'no-store');
   return new Response(JSON.stringify(data), {
     status,
-    headers: { 'Content-Type': 'application/json; charset=utf-8', ...headers },
+    headers: safeHeaders,
   });
 }
 

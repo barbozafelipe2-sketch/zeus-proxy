@@ -55,7 +55,7 @@ assert.equal(shouldSearchWeb('Busca las noticias de hoy sobre Netlify'),true,'Sp
 assert.ok(app.includes('sampleVideoFrames')&&app.includes('normalizeMediaImage'),'media preprocessing/video sampling missing');
 assert.ok(!app.includes("['automation','Automation'"),'unfinished Automation shell must not be visible');
 
-assert.ok(chat.includes("const resumable=worker&&existing.state==='QUEUED'"),'duplicate Olympus workers can still resume an active execution');
+assert.ok(chat.includes('const claimed=await claimOlympusWorker(client,')&&chat.includes('if(!claimed)return')&&chat.includes('executionLeaseExpired(existing)'),'Olympus workers must use exclusive dispatch claims and lease-aware recovery');
 
 assert.ok(chat.includes("normalizeRequestedMode(body.mode||'ZEUS')"),'server does not enforce the owner-selected mode');
 assert.ok(chat.includes('decideExecutionLevel'),'deterministic internal level router is not wired into chat');

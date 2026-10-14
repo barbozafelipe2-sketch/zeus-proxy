@@ -14,6 +14,8 @@ const authored={
   OLYMPUS_CREATOR_UNAVAILABLE:'No AI model was available for an Olympus specialist (provider credits, quota or configuration). Check provider credits or use Zeus mode.',
   OLYMPUS_CRITIC_UNAVAILABLE:'No AI model was available for the Olympus reviewer (provider credits, quota or configuration). Check provider credits or use Zeus mode.',
   PROVIDER_MODEL_INVALID_CACHED:'A configured model ID is invalid and was skipped. Check the model environment variables.',
+  WORKER_LEASE_CONFLICT:'A previous Olympus worker no longer owns this execution. Its late response was discarded.',
+  WEB_RESEARCH_UNAVAILABLE:'Current web research was requested but no verified live sources were retrieved. No up-to-date analysis was claimed. Check the AI Gateway web-search configuration or retry later.',
   AI_RATE_LIMIT:'Hourly execution limit reached (default Olympus 3/h, Zeus 15/h). Wait for the window to reset. Limits count runs, not money.',
   AI_CONCURRENCY_LIMIT:'Another execution is still running. Wait for it to finish, then retry.',
   RATE_LIMIT:'Request safety limit reached. Try again later.',

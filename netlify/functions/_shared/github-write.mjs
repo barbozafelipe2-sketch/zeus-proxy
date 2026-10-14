@@ -10,7 +10,7 @@ const API='https://api.github.com';
 function coded(message,status=400,code='GITHUB_COMMIT_FAILED',details=null){
   const error=new Error(message);error.status=status;error.code=code;if(details)error.details=details;return error;
 }
-export function githubWriteConfigured(){return Boolean(env('GITHUB_TOKEN'));}
+export function githubWriteConfigured(){return Boolean(env('GITHUB_TOKEN')) && githubRepoAllowlist().some(entry=>/^[a-z0-9_.-]+\/[a-z0-9_.-]+$/i.test(entry));}
 export function githubRepoAllowlist(){
   return [...new Set(String(env('GITHUB_REPO_ALLOWLIST')||'').split(/[\s,;]+/).map(v=>v.trim().toLowerCase()).filter(Boolean).map(v=>v.replace(/^https?:\/\/github\.com\//,'').replace(/\.git$/,'').replace(/^\/+|\/+$/g,'')))];
 }

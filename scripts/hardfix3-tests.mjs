@@ -73,9 +73,8 @@ assert.equal(page.hasMore,true);assert.equal(page.page.length,2);assert.ok(page.
 function guardClient({existing=null,activeZeus=0,activeOlympus=0,recent=0}={}){
   return {async query(q){
     if(q.includes('pg_advisory_xact_lock'))return {rows:[{}],rowCount:1};
-    if(q.includes('WHERE owner_id=$1 AND request_id=$2 LIMIT 1'))return {rows:existing?[existing]:[],rowCount:existing?1:0};
-    if(q.includes("state NOT IN"))return {rows:[{zeus:activeZeus,olympus:activeOlympus}],rowCount:1};
-    if(q.includes("started_at > now() - interval '1 hour'"))return {rows:[{total:recent}],rowCount:1};
+    if(q.includes('count(*) FILTER'))return {rows:[{zeus:activeZeus,olympus:activeOlympus}],rowCount:1};
+    if(q.includes('count(*)::int AS total FROM execution_attempts'))return {rows:[{total:recent}],rowCount:1};
     throw new Error(`Unexpected guard query: ${q}`);
   }};
 }

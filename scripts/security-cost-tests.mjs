@@ -23,7 +23,7 @@ try{
  await assert.rejects(()=>guardAiExecution(fakeDb('new',15),'one','ZEUS','r'),e=>e.code==='AI_RATE_LIMIT');
  await assert.rejects(()=>guardAiExecution(fakeDb('FAILED',15),'one','ZEUS','r'),e=>e.code==='AI_RATE_LIMIT');
  await guardAiExecution(fakeDb('FAILED',14),'one','ZEUS','r');
- await guardAiExecution(fakeDb('COMPLETED',999),'one','ZEUS','r');
+ await assert.rejects(()=>guardAiExecution(fakeDb('COMPLETED',999),'one','ZEUS','r'),e=>e.code==='AI_RATE_LIMIT'); // Admission would charge; caller skips guard for a free completed replay.
  assert.deepEqual(githubRepoAllowlist(),[]);
  assert.throws(()=>assertGithubRepoAllowed('https://github.com/acme/demo'),e=>e.code==='GITHUB_ALLOWLIST_REQUIRED');
  variables.GITHUB_REPO_ALLOWLIST='acme/demo';

@@ -14,11 +14,11 @@ assert.ok(source.includes('excludeProviders:[modelFamily(director.model)]'),
   'The CEO must exclude Director MODEL FAMILY, not its API adapter, including OpenRouter');
 assert.ok(source.includes("gptFinished:modelFamily(final.model)==='openai'"),
   'Do not claim a non-GPT fallback was finished by GPT');
-assert.ok(source.includes("pipelineLabel:modelFamily(final.model)==='openai'"),
+assert.ok(source.includes("pipelineLabel:webResearchUsed?'Compound Plus · live web research")&&source.includes("modelFamily(final.model)==='openai'"),
   'User-facing pipeline label must describe the model that actually finished');
 assert.ok(source.includes("if(isNonRetryableRequestFailure(error))throw rejectedRequestError(error,attempts)"));
 assert.ok(chat.includes("if(olympusError?.code==='AI_REQUEST_REJECTED')throw olympusError"));
-assert.ok(chat.includes('providerTelemetry:snapshotProviderTelemetry(executionBudget)'));
+assert.ok(chat.includes('const providerTelemetry=snapshotProviderTelemetry(executionBudget)')&&chat.includes('usage:failedUsage'),'successful and failed runs must persist telemetry');
 assert.ok(chat.includes('const safeAttempts=')&&chat.includes('publicFailure=publicExecutionFailure(error)'), 'safe diagnostic behavior must be present');
 assert.ok(policy.includes('turboApprovalFingerprint')&&policy.includes('estimateTurboQuote'));
 assert.ok(policy.includes('externalMutationPolicy'));

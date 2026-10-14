@@ -50,8 +50,9 @@ export function snapshotProviderTelemetry(budget){
     version:1,modelCalls:events.length,budgetCalls:Number.isFinite(budgetCalls)?budgetCalls:null,
     succeeded:success.length,failed:failed.length,
     recovered:failed.length>0&&success.length>0,
-    inputTokens:events.reduce((n,e)=>n+(Number.isFinite(e.inputTokens)?e.inputTokens:0),0),
-    outputTokens:events.reduce((n,e)=>n+(Number.isFinite(e.outputTokens)?e.outputTokens:0),0),
+    // Null means the provider omitted usage: never misrepresent missing tokens as zero.
+    inputTokens:events.length&&events.some(e=>!Number.isFinite(e.inputTokens))?null:events.reduce((n,e)=>n+(Number.isFinite(e.inputTokens)?e.inputTokens:0),0),
+    outputTokens:events.length&&events.some(e=>!Number.isFinite(e.outputTokens))?null:events.reduce((n,e)=>n+(Number.isFinite(e.outputTokens)?e.outputTokens:0),0),
     byTransport:events.reduce((acc,e)=>{acc[e.transport]=(acc[e.transport]||0)+1;return acc;},{}),
     independentFallbackUsed:success.some(e=>e.transport==='openrouter_direct'||e.transport==='openai_direct'),
     attempts:events
@@ -78,30 +79,78 @@ export function summarizeTransportEvidence(rows=[],configuration={},runtime={}){
   return result;
 }
 
-// Per-request usage summary for the UI: calls, tokens per role, totals, and an
-// ESTIMATED USD cost only for models with a known price. No prompts/bodies.
-export function summarizeRequestUsage(telemetry={},{maxCalls=null,webUsage=null}={}){
+// Missing provider usage, unknown prices, potentially billable failed requests,
+// and web search tool fees MUST NOT be reported as $0 or as complete coverage.
+// Prices are estimates only; the provider/gateway invoice is authoritative.
+function tokenCount(value){
+  if(value===null||value===undefined||value==='')return null;
+  const n=Number(value);
+  return Number.isFinite(n)&&n>=0?n:null;
+}
+function totals(items,key){
+  const known=items.reduce((a,item)=>a+(item[key]??0),0);
+  const missing=items.filter(item=>item[key]===null).length;
+  return {value:missing?null:known,known,missing};
+}
+export function summarizeRequestUsage(telemetry={},{maxCalls=null,webUsage=null,webTrace=null}={}){
   const attempts=Array.isArray(telemetry?.attempts)?telemetry.attempts:[];
-  const n=(x)=>Number.isFinite(Number(x))?Math.max(0,Number(x)):0;
+  const countedCalls=tokenCount(telemetry?.budgetCalls);
+  const callsUsed=countedCalls??attempts.length;
+  const webAttempted=Boolean(
+    webTrace&&(webTrace.attempted===true||webTrace.status==='completed') ||
+    (!webTrace&&webUsage&&typeof webUsage==='object')
+  );
+  // Status from the web tool, not invented from token metrics alone.
+  const webStatus=webTrace?.status||null;
+  const webData=webUsage&&typeof webUsage==='object'?webUsage:
+    webTrace?.usage&&typeof webTrace.usage==='object'?webTrace.usage:null;
+  const web=webAttempted?{
+    status:webStatus||'recorded',
+    inputTokens:tokenCount(webData?.inputTokens),
+    outputTokens:tokenCount(webData?.outputTokens),
+    estimatedUsd:null,
+    toolFeesIncluded:false
+  }:webTrace?{status:webStatus,inputTokens:null,outputTokens:null,estimatedUsd:null,toolFeesIncluded:false}:null;
+
   let usd=0,priced=0,unpriced=0;
   const byRole=attempts.map(e=>{
-    const inputTokens=n(e.inputTokens),outputTokens=n(e.outputTokens),price=e.outcome==='success'?priceFor(e.model):null;
-    let estimatedUsd=null;
-    if(price){estimatedUsd=(inputTokens*price.in+outputTokens*price.out)/1e6;usd+=estimatedUsd;priced++;}
-    else if(e.outcome==='success')unpriced++;
-    return {role:String(e.stage||'unspecified'),provider:e.provider||null,model:e.model||null,outcome:e.outcome,inputTokens,outputTokens,estimatedUsd:estimatedUsd===null?null:Number(estimatedUsd.toFixed(6))};
+    const inputTokens=tokenCount(e.inputTokens),outputTokens=tokenCount(e.outputTokens);
+    const price=e.outcome==='success'?priceFor(e.model):null;
+    // A posted unit price alone is insufficient unless BOTH usage fields are known.
+    const priceKnown=Boolean(price&&inputTokens!==null&&outputTokens!==null);
+    const estimatedUsd=priceKnown?(inputTokens*price.in+outputTokens*price.out)/1e6:null;
+    if(priceKnown){usd+=estimatedUsd;priced++;}
+    else unpriced++; // Failure could have been billed; never assert zero.
+    return {
+      role:String(e.stage||'unspecified'),provider:e.provider||null,
+      model:e.model||null,outcome:e.outcome,
+      inputTokens,outputTokens,
+      estimatedUsd:estimatedUsd===null?null:Number(estimatedUsd.toFixed(6)),
+      costKnown:priceKnown
+    };
   });
-  const web=webUsage&&typeof webUsage==='object'?{inputTokens:n(webUsage.inputTokens),outputTokens:n(webUsage.outputTokens)}:null;
-  const inputTokens=byRole.reduce((a,r)=>a+r.inputTokens,0)+(web?.inputTokens||0);
-  const outputTokens=byRole.reduce((a,r)=>a+r.outputTokens,0)+(web?.outputTokens||0);
+  const tokenItems=[...byRole,...(webAttempted?[web]:[])];
+  const input=totals(tokenItems,'inputTokens');
+  const output=totals(tokenItems,'outputTokens');
+  const totalKnown=input.known+output.known;
+  const totalMissing=input.missing+output.missing;
+  const untrackedCalls=Math.max(0,callsUsed-attempts.length-(webAttempted?1:0));
+  // Web inference tokens and search tool calls have separate billable components.
+  // Until a complete authoritative web price breakdown is available they stay unknown.
+  const unknownCostCalls=unpriced+(webAttempted?1:0)+untrackedCalls;
+  const estimateCoverage=priced&&!unknownCostCalls?'full':priced?'partial':'none';
   return {
-    version:1,
-    callsUsed:Number.isFinite(telemetry?.budgetCalls)?telemetry.budgetCalls:attempts.length,
-    maxCalls:Number.isFinite(Number(maxCalls))?Number(maxCalls):null,
-    inputTokens,outputTokens,totalTokens:inputTokens+outputTokens,
+    version:2,
+    callsUsed,maxCalls:tokenCount(maxCalls),
+    inputTokens:input.value,outputTokens:output.value,
+    totalTokens:totalMissing?null:totalKnown,
+    reportedInputTokens:input.known,reportedOutputTokens:output.known,
+    reportedTotalTokens:totalKnown,
+    tokenCoverage:tokenItems.length===0?'none':totalMissing===0?'full':totalMissing===tokenItems.length*2?'none':'partial',
+    missingTokenFields:totalMissing,
     byRole,webSearch:web,
     estimatedUsd:priced?Number(usd.toFixed(6)):null,
-    estimateCoverage:priced&&!unpriced?'full':priced?'partial':'none',
-    estimateLabel:'estimated',
+    estimateCoverage,unknownCostCalls,pricedCalls:priced,untrackedCalls,
+    estimateLabel:estimateCoverage==='full'?'estimated':estimateCoverage==='partial'?'known_subtotal':'unknown',
   };
 }

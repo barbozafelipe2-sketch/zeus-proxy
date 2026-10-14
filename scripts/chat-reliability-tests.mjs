@@ -106,13 +106,15 @@ models.__resetProviderHealthForTests();
 
 // ---- Server static invariants ----
 const chat = read('netlify/functions/chat.mjs');
-assert.ok(chat.includes('STALE_EXECUTION_MS') && /started_at=now\(\)/.test(chat), 'orphaned (killed) executions must be restartable');
+assert.ok(chat.includes('executionLeaseExpired(existing)') && /started_at=now\(\)/.test(chat), 'orphaned executions must be restartable only after their execution-specific lease expires');
 assert.ok(chat.includes("if(intent.artifactType==='zip')")&&chat.includes('stagedArtifacts.push(staged)'), 'ZIP must remain structurally validated; failed output must not masquerade as a completed file.');
 assert.ok(chat.includes('reuse the conversation already bound to this request id'), 'retry of a lost first message must reuse its conversation');
 assert.ok(chat.includes('CHAT_TIMEOUT_MS') && chat.includes('CHAT_WEB_TIMEOUT_MS'));
 const limitsSource=read('netlify/functions/_shared/limits.mjs');
 assert.ok(limitsSource.includes("'90 seconds'")&&limitsSource.includes("'16 minutes'"), 'concurrency guard needs separate Zeus and Olympus liveness windows');
-assert.ok(chat.includes("const resumable=worker&&existing.state==='QUEUED'"), 'only a queued Olympus execution may be claimed by a background worker');
+assert.ok(chat.includes("if(existing.mode!=='OLYMPUS'||existing.state!=='QUEUED')") &&
+  chat.includes('const claimed=await claimOlympusWorker(client,') &&
+  chat.includes('if(!claimed)return'), 'only a queued, exclusively claimed Olympus execution may be resumed by a background worker');
 
 // ---- Client: long-request drops and gateway timeouts are not mislabeled as user network errors ----
 const app = read('public/app.js');
@@ -150,6 +152,6 @@ assert.ok(modelsSource.includes("strategy:'zeus_simple_single_model'"),'Zeus Sim
 assert.ok(modelsSource.includes("strategy:'zeus_compound_base_gpt_finalizer'"),'Zeus Compound base→GPT engine missing');
 assert.ok(chat.includes("Mode must be ZEUS or OLYMPUS."),'server must reject invalid intelligence modes');
 
-assert.ok(modelsSource.includes("strategy:'olympus_compound_plus_author_critic_gpt'"),'Olympus Compound Plus engine missing');
+assert.ok(modelsSource.includes("'olympus_compound_plus_author_critic_gpt'")&&modelsSource.includes("'olympus_compound_plus_web_author_finisher'"),'Compound Plus regular and live-web routes missing');
 assert.ok(modelsSource.includes('olympusCriticCandidates'),'Olympus independent critic selector missing');
 assert.ok(chat.includes("level==='COMPOUND_PLUS'"),'chat does not dispatch the Compound Plus pipeline');

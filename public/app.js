@@ -335,8 +335,16 @@ function messageHtml(m){
   const capabilityNotes=(Array.isArray(m.metadata?.capabilities)?m.metadata.capabilities:[]).map(c=>c?.name==='github_repository'&&c?.status==='completed'?`GitHub ${Number(c.fileCount||0)}/${Number(c.treeEntries||0)} files sampled`:c?.name==='web_search'&&c?.status==='completed'?`Web ${Number(c.sourceCount||0)} sources`:null).filter(Boolean);
   const level=m.metadata?.executionLevel?String(m.metadata.executionLevel).replaceAll('_',' '):'';
   const u=m.role==='assistant'&&m.metadata?.usage&&typeof m.metadata.usage==='object'?m.metadata.usage:null;
-  const fmt=(x)=>Number(x||0).toLocaleString();
-  const usageNote=u?[`Calls ${Number(u.callsUsed||0)}${u.maxCalls?`/${Number(u.maxCalls)}`:''}`,`Tokens in ${fmt(u.inputTokens)} · out ${fmt(u.outputTokens)} · total ${fmt(u.totalTokens)}`,...(Array.isArray(u.byRole)?u.byRole.slice(0,8).map(r=>`${String(r.role||'').replaceAll('_',' ')}: ${fmt(r.inputTokens)}/${fmt(r.outputTokens)}${r.outcome==='failure'?' (failed)':''}`):[]),u.estimatedUsd!=null?`≈ US$${Number(u.estimatedUsd).toFixed(4)} estimated${u.estimateCoverage==='partial'?' (partial: some models unpriced)':''}`:'Cost: no price table for these models'].join(' · '):'';
+  // A missing provider field is unknown, not zero. Partial prices are *subtotals*
+  // and can exclude web-search tool fees, failed calls and other unpriced usage.
+  const fmt=(x)=>x===null||x===undefined||x===''?'unknown':Number(x).toLocaleString();
+  const usd=(x)=>Number(x)>0&&Number(x)<0.000001?'less than US$0.000001':`US${Number(x).toFixed(6)}`;
+  const costNote=u?.estimateCoverage==='full'&&u.estimatedUsd!=null
+    ?`≈ ${usd(u.estimatedUsd)} estimated`
+    :u?.estimatedUsd!=null
+      ?`Known cost subtotal ≈ ${usd(u.estimatedUsd)}; actual cost unknown (unpriced models, usage or web fees)`
+      :'Cost unknown (missing price, token usage or tool charges)';
+  const usageNote=u?[`Calls ${fmt(u.callsUsed)}${u.maxCalls!=null?`/${fmt(u.maxCalls)}`:''}`,`Tokens in ${fmt(u.inputTokens)} · out ${fmt(u.outputTokens)} · total ${fmt(u.totalTokens)}`,...(Array.isArray(u.byRole)?u.byRole.slice(0,8).map(r=>`${String(r.role||'').replaceAll('_',' ')}: ${fmt(r.inputTokens)}/${fmt(r.outputTokens)}${r.outcome==='failure'?' (failed)':''}`):[]),costNote].join(' · '):'';
   const note=[level,m.metadata?.modeExplanation,m.metadata?.pipelineLabel,lead,m.metadata?.fallback?'fallback':'',m.metadata?.verificationLabel,visionNote,...capabilityNotes,usageNote].filter(Boolean).join(' · ');
   return `<article class="message ${m.role==='user'?'user':'assistant'}"><div class="message-label">${m.role==='user'?'YOU':esc(m.mode||'ZEUS')}</div><div class="message-body">${esc(m.content||'')}</div>${note?`<details class="message-debug"><summary>Execution details</summary><div class="message-model">${esc(note)}</div></details>`:''}${sourceHtml}${attached?`<div class="attachments in-message">${attached}</div>`:''}${artifacts?`<div class="artifact-row">${artifacts}</div>`:''}</article>`;
 }

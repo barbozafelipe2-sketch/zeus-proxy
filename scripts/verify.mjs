@@ -7,13 +7,15 @@ const required = [
   'netlify/functions/chat.mjs','netlify/functions/projects.mjs','netlify/functions/tasks.mjs','netlify/functions/memories.mjs',
   'netlify/functions/files.mjs','netlify/functions/file-download.mjs','netlify/functions/file-preview.mjs','netlify/functions/github-commit.mjs',
   'netlify/functions/artifacts.mjs','netlify/functions/artifact-download.mjs','netlify/functions/health.mjs','netlify/functions/transcribe.mjs',
-  'netlify/functions/_shared/models.mjs','netlify/functions/_shared/provider-routing.mjs','netlify/functions/_shared/provider-observability.mjs','netlify/functions/_shared/execution-error.mjs','netlify/functions/_shared/reliability.mjs','netlify/functions/_shared/web-search.mjs','netlify/functions/_shared/github-context.mjs','netlify/functions/_shared/execution-policy.mjs','netlify/functions/_shared/memory.mjs','netlify/functions/_shared/artifact.mjs','netlify/functions/_shared/artifact-delivery.mjs','netlify/functions/_shared/artifact-limits.mjs','netlify/functions/_shared/pdf-layout.mjs','netlify/functions/_shared/extract.mjs','netlify/functions/_shared/auth.mjs','netlify/functions/_shared/db.mjs','netlify/functions/_shared/relations.mjs','netlify/functions/_shared/intent.mjs','netlify/functions/_shared/security.mjs','netlify/functions/_shared/context.mjs','netlify/functions/_shared/runtime.mjs','netlify/functions/_shared/archive-safety.mjs','netlify/functions/_shared/zip-output.mjs','netlify/functions/_shared/pagination.mjs','netlify/functions/_shared/limits.mjs','netlify/functions/_shared/storage.mjs',
+  'netlify/functions/_shared/models.mjs','netlify/functions/_shared/provider-routing.mjs','netlify/functions/_shared/provider-observability.mjs','netlify/functions/_shared/execution-error.mjs','netlify/functions/_shared/reliability.mjs','netlify/functions/_shared/web-search.mjs','netlify/functions/_shared/github-context.mjs','netlify/functions/_shared/execution-policy.mjs','netlify/functions/_shared/memory.mjs','netlify/functions/_shared/artifact.mjs','netlify/functions/_shared/artifact-delivery.mjs','netlify/functions/_shared/artifact-limits.mjs','netlify/functions/_shared/pdf-layout.mjs','netlify/functions/_shared/extract.mjs','netlify/functions/_shared/auth.mjs','netlify/functions/_shared/db.mjs','netlify/functions/_shared/relations.mjs','netlify/functions/_shared/intent.mjs','netlify/functions/_shared/security.mjs','netlify/functions/_shared/context.mjs','netlify/functions/_shared/runtime.mjs','netlify/functions/_shared/worker-lease.mjs','netlify/functions/_shared/history.mjs','netlify/functions/_shared/archive-safety.mjs','netlify/functions/_shared/zip-output.mjs','netlify/functions/_shared/pagination.mjs','netlify/functions/_shared/limits.mjs','netlify/functions/_shared/storage.mjs',
   'netlify/database/migrations/20260930044607_create_olyhub_foundation/migration.sql',
   'netlify/database/migrations/20260930080000_add_files/migration.sql',
   'netlify/database/migrations/20261001030000_hard-fix-1-integrity/migration.sql',
   'netlify/database/migrations/20261001043000_hard-fix-3-operations/migration.sql',
   'netlify/database/migrations/20261013180000_add_queued_execution_state/migration.sql',
-  'scripts/hardfix1-tests.mjs','scripts/hardfix2-tests.mjs','scripts/hardfix3-tests.mjs','scripts/reliability-engine-tests.mjs','scripts/phase10-queued-db-tests.mjs','scripts/artifact-engine-tests.mjs','scripts/security-cost-tests.mjs','scripts/finalfix1-tests.mjs','scripts/finalfix2-tests.mjs','scripts/finalfix3-tests.mjs','scripts/polish-tests.mjs','scripts/smoke-live.mjs','.npmrc','netlify/functions/storage-maintenance.mjs','.github/workflows/verify.yml','.github/workflows/smoke-live.yml',
+  'netlify/database/migrations/20261014043000_ai_execution_attempt_ledger/migration.sql',
+  'netlify/database/migrations/20261014050000_olympus_worker_leases/migration.sql',
+  'scripts/hardfix1-tests.mjs','scripts/hardfix2-tests.mjs','scripts/hardfix3-tests.mjs','scripts/reliability-engine-tests.mjs','scripts/phase10-queued-db-tests.mjs','scripts/artifact-engine-tests.mjs','scripts/security-cost-tests.mjs','scripts/phase1-privacy-tests.mjs','scripts/phase2-attempt-ledger-tests.mjs','scripts/phase3-endpoint-rate-tests.mjs','scripts/phase4-worker-lease-tests.mjs','scripts/phase5-history-tests.mjs','scripts/phase6-compound-web-tests.mjs','scripts/phase7-cost-coverage-tests.mjs','scripts/audit-privacy-readiness-tests.mjs','scripts/finalfix1-tests.mjs','scripts/finalfix2-tests.mjs','scripts/finalfix3-tests.mjs','scripts/polish-tests.mjs','scripts/smoke-live.mjs','.npmrc','netlify/functions/storage-maintenance.mjs','.github/workflows/verify.yml','.github/workflows/smoke-live.yml',
   'netlify.toml','package-lock.json','README.md','CHANGELOG.md','SMOKE-TEST.md'
 ];
 for (const file of required) if (!existsSync(file)) throw new Error(`Missing required file: ${file}`);
@@ -145,7 +147,7 @@ const mustContain = [
   [models,'image_url','OpenAI-compatible vision input'],
   [models,'inlineData','Gemini vision input'],
   [models,'olympusCriticCandidates','Olympus Compound Plus independent critic selector'],
-  [models,"strategy:'olympus_compound_plus_author_critic_gpt'",'Olympus Compound Plus author-critic-GPT pipeline'],
+  [models,"'olympus_compound_plus_author_critic_gpt'",'Olympus Compound Plus author-critic-GPT pipeline'],
   [models,"strategy:'olympus_complex_turbo_roles'",'Olympus Complex Turbo role pipeline'],
   [models,'TURBO_LIMITS','Olympus Complex Turbo hard caps'],
   [models,'roleCandidates','role-based model selection'],
@@ -311,7 +313,8 @@ if (!chat.includes('olympusDispatchFallback=true')) throw new Error('Olympus dis
 if (!app.includes('sampleVideoFrames') || !app.includes('normalizeMediaImage')) throw new Error('Media analysis preprocessing missing.');
 
 if (!limits.includes("'16 minutes'")) throw new Error('Olympus background concurrency window is too short.');
-if (!chat.includes("const resumable=worker&&existing.state==='QUEUED'")) throw new Error('Background execution claim is not idempotent.');
+if(!chat.includes('claimOlympusWorker(client,')||!chat.includes('executionLeaseExpired(existing)')||!chat.includes('claimInlineFallback(db,'))
+  throw new Error('Background dispatch lacks exclusive lease and deadline-safe recovery.');
 if (!security.includes('REDACTED NETLIFY TOKEN')) throw new Error('Netlify token redaction missing.');
 if (!tasks.includes('syncProjectProgressClient')) throw new Error('Task/project progress updates are not transactional.');
 
@@ -351,7 +354,10 @@ if (!app.includes('turboApprovalModal') || !app.includes('approvalFingerprint'))
 if (!githubCommit.includes("body.confirm!==true")) throw new Error('GitHub commit no longer requires explicit owner confirmation.');
 if (!githubWrite.includes('GITHUB_REPO_ALLOWLIST') || !githubWrite.includes('GITHUB_REPO_NOT_ALLOWED')) throw new Error('GitHub repo allowlist guard is missing.');
 
-if (!chat.includes('providerTelemetry:snapshotProviderTelemetry(executionBudget)')) throw new Error('Model telemetry missing from persisted trace.');
+if (!chat.includes('const providerTelemetry=snapshotProviderTelemetry(executionBudget)') ||
+    !chat.includes('trace={error:publicFailure.traceError') ||
+    !chat.includes('usage:failedUsage'))
+  throw new Error('Model telemetry and usage summaries must be persisted for successful and failed turns.');
 if (!health.includes('transportReadiness')) throw new Error('Transport health visibility missing.');
 if (!providerObservability.includes('WeakMap')) throw new Error('Budget-scoped telemetry missing.');
 
@@ -377,3 +383,75 @@ if(!deliveryEngine.includes('parseArtifactDelivery')||!deliveryEngine.includes('
 if(!chat.includes('for(const file of bundle.artifacts)')||!artifact.includes('readback.xlsx.load(Buffer.from(bytes))'))throw new Error('Multi-file verification missing.');
 if(!securityLimits.includes('DEFAULT_AI_HOURLY_LIMITS')||!githubWrites.includes('GITHUB_ALLOWLIST_REQUIRED'))throw new Error('Cost/security controls missing.');
 if(/^\s*schedule\s*:/m.test(liveSmoke))throw new Error('Scheduled paid AI smoke must be disabled.');
+
+
+// Phase 1/7: model-bound history is scrubbed even when persisted owner messages are raw.
+if(!chat.includes('selectRecentHistory(rows,{maxChars:18000,perMessageChars:4000})') ||
+   !chat.includes('safeExtractedText(f.extracted_text,f.filename)') ||
+   !chat.includes('const enrichedContext=redactSecrets(') ||
+   !models.includes('history:safeHistory') ||
+   !models.includes('safeSystem=redactSecrets(system),safeUser=redactSecrets(user)')){
+  throw new Error('Phase 1 privacy boundary is missing.');
+}
+
+const attemptMigration=read('netlify/database/migrations/20261014043000_ai_execution_attempt_ledger/migration.sql');
+if(!attemptMigration.includes('CREATE TABLE IF NOT EXISTS execution_attempts') ||
+  !securityLimits.includes('INSERT INTO execution_attempts(') ||
+  !securityLimits.includes('FROM execution_attempts WHERE owner_id=$1') ||
+  !chat.includes("recordAiExecutionAttempt(client,userId,mode,existing.id,'retry')")){
+    throw new Error('Phase 2 attempt ledger or retry budget guard missing.');
+}
+
+const endpointRateCode=read('netlify/functions/_shared/limits.mjs');
+if(endpointRateCode.includes('SELECT 1 FROM request_rate_events WHERE owner_id=$1 AND kind=$2 AND request_id=$3')||
+  !endpointRateCode.includes('gen_random_uuid()::text')||
+  !endpointRateCode.includes('pg_advisory_xact_lock')){
+    throw new Error('Phase 3 endpoint limit replay bypass remains.');
+}
+
+const leaseSource=read('netlify/functions/_shared/worker-lease.mjs');
+const leaseMigration=read('netlify/database/migrations/20261014050000_olympus_worker_leases/migration.sql');
+if(!leaseSource.includes('assertWorkerFence(client,')||!leaseSource.includes('AND dispatch_token=$3::uuid')||
+  !leaseMigration.includes('lease_expires_at timestamptz')||!chat.includes('userMessageId:init.userMessage?.id||null'))
+  throw new Error('Phase 4 exclusive worker fencing or failure ownership is missing.');
+
+const recentHistory=read('netlify/functions/_shared/history.mjs');
+if(!recentHistory.includes('return selected.reverse();')||
+  !recentHistory.includes('redactSecrets(String(item.content')||
+  !chat.includes('ORDER BY created_at DESC,id DESC LIMIT 30')||
+  chat.includes('rows.reverse();')){
+  throw new Error('Phase 5 history must prioritize recent turns, keep chronological provider order and preserve privacy.');
+}
+
+const webCompoundModels=read('netlify/functions/_shared/models.mjs');
+const compoundWebError=read('netlify/functions/_shared/execution-error.mjs');
+if(!chat.includes("const webIntent=shouldSearchWeb(modelText)&&!isImageOp;")||
+  !chat.includes("webResearchUsed:compoundPlusWithWeb")||
+  !webCompoundModels.includes("const criticCandidates=webResearchUsed?[]:olympusCriticCandidates(")||
+  !compoundWebError.includes('WEB_RESEARCH_UNAVAILABLE'))
+  throw new Error('Phase 6: explicit Compound Plus web research must be honored without exceeding 3 calls.');
+
+const costCoverageCode=read('netlify/functions/_shared/provider-observability.mjs');
+const webUsageCode=read('netlify/functions/_shared/web-search.mjs');
+const appUsageCode=read('public/app.js');
+if(!costCoverageCode.includes("estimateCoverage==='full'") &&
+  (!costCoverageCode.includes("unknownCostCalls")||!costCoverageCode.includes("tokenCount(value)"))){
+  throw new Error('Phase 7 cost coverage and missing usage accounting regressed.');
+}
+if(!chat.includes('webTrace:webUsageTrace')||
+  !chat.includes('failedUsage=summarizeRequestUsage(')||
+  !webUsageCode.includes("status:'failed',attempted")||
+  !appUsageCode.includes('Known cost subtotal')||
+  !appUsageCode.includes('Cost unknown')){
+  throw new Error('Phase 7 partial/unknown token and web fee display missing.');
+}
+
+const auditSecurity=read('netlify/functions/_shared/security.mjs');
+const auditHttp=read('netlify/functions/_shared/http.mjs');
+const auditGitHub=read('netlify/functions/_shared/github-write.mjs');
+if(!auditSecurity.includes('sensitiveJsonField')||
+  !auditSecurity.includes('api[_-]?key|access[_-]?token')||
+  !auditHttp.includes("safeHeaders.set('Cache-Control', 'no-store')")||
+  !auditGitHub.includes("githubRepoAllowlist().some(entry=>")){
+  throw new Error('Audit 7/7: sensitive JSON, private API caching or GitHub readiness regressed.');
+}

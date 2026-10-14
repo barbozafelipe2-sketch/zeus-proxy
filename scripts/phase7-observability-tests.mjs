@@ -5,7 +5,7 @@ import { failureCategory,recordProviderAttempt,snapshotProviderTelemetry,summari
 import * as ai from '../netlify/functions/_shared/models.mjs';
 
 const source=readFileSync('netlify/functions/chat.mjs','utf8');
-assert.ok(source.includes('providerTelemetry:snapshotProviderTelemetry(executionBudget)'),'successful and failed requests must persist telemetry');
+assert.ok(source.includes('const providerTelemetry=snapshotProviderTelemetry(executionBudget)')&&source.includes('usage:failedUsage'),'successful and failed requests must persist telemetry');
 assert.ok(source.includes('item.transport===\'gateway\''),'Gateway and direct blocks must be isolated');
 assert.equal(failureCategory({status:401,message:'secret-untrusted'}),'auth');
 assert.equal(failureCategory({status:429}),'rate_limit');

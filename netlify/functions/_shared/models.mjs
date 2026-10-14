@@ -1,4 +1,5 @@
 import { createExecutionBudget } from './runtime.mjs';
+import { redactSecrets } from './security.mjs';
 import { recordProviderAttempt, failureCategory } from './provider-observability.mjs';
 import { modelFamily, modelCircuitScope, modelTransport, buildTransportRoutes } from './provider-routing.mjs';
 import { formatChecklist, mergeClarifiedRequirements, splitRequirementScopes, structuralRewriteAllowed, validateAdversaryFindings } from './reliability.mjs';
@@ -237,7 +238,8 @@ function normalizeHistory(history = []) {
   const out = [];
   for (const turn of Array.isArray(history) ? history : []) {
     const role = turn?.role === 'assistant' ? 'assistant' : turn?.role === 'user' ? 'user' : '';
-    const content = String(turn?.content || '').trim();
+    // Defense in depth: persisted user/assistant turns must never bypass redaction.
+    const content = redactSecrets(String(turn?.content || '')).trim();
     if (!role || !content) continue;
     const prev = out[out.length - 1];
     if (prev && prev.role === role) prev.content += `\n\n${content}`;
@@ -427,11 +429,15 @@ export async function callModel(model, system, user, { images = [], history = []
   const callStartedAt=Date.now();
   try {
     let content;
-    const call = { images, history, budget, reserveAfterMs, callTimeoutMs, maxOutputTokens, transport:modelTransport(model) };
-    if (model.provider === 'openai') content = await callOpenAI(model.id, system, user, call);
-    else if (model.provider === 'anthropic') content = await callAnthropic(model.id, system, user, call);
-    else if (model.provider === 'gemini') content = await callGemini(model.id, system, user, call);
-    else if (model.provider === 'openrouter') content = await callOpenRouter(model.id, system, user, call);
+    // Last trust boundary: sanitization is mandatory for every provider and transport.
+    // Do not alter stored conversation records or the owner's locally displayed messages.
+    const safeSystem=redactSecrets(system),safeUser=redactSecrets(user);
+    const safeHistory=Array.isArray(history)?history.map(turn=>({...turn,content:redactSecrets(turn?.content||'')})):[];
+    const call = { images, history:safeHistory, budget, reserveAfterMs, callTimeoutMs, maxOutputTokens, transport:modelTransport(model) };
+    if (model.provider === 'openai') content = await callOpenAI(model.id, safeSystem, safeUser, call);
+    else if (model.provider === 'anthropic') content = await callAnthropic(model.id, safeSystem, safeUser, call);
+    else if (model.provider === 'gemini') content = await callGemini(model.id, safeSystem, safeUser, call);
+    else if (model.provider === 'openrouter') content = await callOpenRouter(model.id, safeSystem, safeUser, call);
     else throw providerError(`Unsupported provider ${model.provider}`);
     recordProviderSuccess(scope);
     recordProviderSuccess(`${scope}:${model.id}`);
@@ -771,7 +777,7 @@ function olympusCompoundPlusFinalizerSystem(deliveryContract=''){
 }
 
 export async function runOlympusCompoundPlus({
-  text,context='',images=[],history=[],requirements={items:[],ambiguous:false},deliveryContract='',blockedProviders=[],budget=null
+  text,context='',images=[],history=[],requirements={items:[],ambiguous:false},deliveryContract='',blockedProviders=[],budget=null,webResearchUsed=false
 }){
   const localBudget=budget||createExecutionBudget({timeoutMs:150000,maxCalls:3});
   const checklist=Array.isArray(requirements?.items)&&requirements.items.length
@@ -787,20 +793,22 @@ export async function runOlympusCompoundPlus({
   let author;
   try{
     author=await executeCandidateOrder(authorCandidates,olympusCompoundPlusAuthorSystem(deliveryContract),authorPrompt,{
-      maxAttempts:2,budget:localBudget,images,history,reserveAfterMs:30000,
+      maxAttempts:webResearchUsed?1:2,budget:localBudget,images,history,reserveAfterMs:30000,
       maxOutputTokens:deliveryContract?10000:7500,blockedProviders,
       callTimeoutMs:(b,attempt)=>Math.min(12000+attempt*1500,Math.max(3000,b.remaining()-b.reserveMs-30000))
     });
   }catch(error){
     if(error?.code==='AI_REQUEST_REJECTED')throw error;
-    if(localBudget.canCall(6000)){
+    if(!webResearchUsed&&localBudget.canCall(6000)){
       const zeus=await runZeus({text,context,images,history,requirements:{items:checklist,ambiguous:false},level:'COMPOUND',deliveryContract,blockedProviders,budget:localBudget});
       return {...zeus,effectiveMode:'ZEUS',trace:{...(zeus.trace||{}),olympusDescended:'compound_plus_author_failed',olympusAuthorError:redactProviderText(String(error?.message||error)).slice(0,220)}};
     }
     throw error;
   }
 
-  const criticCandidates=olympusCriticCandidates(text,author.model,{vision:images.length>0,blockedProviders});
+  // Live research has already spent the first of three call slots. Preserve the
+  // finalizer slot by replacing independent critique, never silently exceeding the cap.
+  const criticCandidates=webResearchUsed?[]:olympusCriticCandidates(text,author.model,{vision:images.length>0,blockedProviders});
   let critic=null,criticError=null;
   if(criticCandidates.length&&localBudget.canCall(3500,18000)){
     const criticPrompt=`ORIGINAL USER REQUEST:\n${neutralizeTags(text)}\n\nREQUIREMENT LIST:\n${formatChecklist(checklist)}\n\nTRUSTED EVIDENCE CONTEXT:\n${neutralizeTags(clip(context||'[none]'))}\n\nAUTHOR DRAFT (untrusted):\n${neutralizeTags(clip(author.content))}\n\nReturn JSON only.`;
@@ -810,28 +818,28 @@ export async function runOlympusCompoundPlus({
         callTimeoutMs:(b,attempt)=>Math.min(14000+attempt*1500,Math.max(3000,b.remaining()-b.reserveMs-18000))
       });
     }catch(error){if(error?.code==='AI_REQUEST_REJECTED')throw error;criticError=error;}
-  }else if(!criticCandidates.length){
+  }else if(!criticCandidates.length&&!webResearchUsed){
     criticError=Object.assign(new Error('No independent critic family is currently available.'),{code:'OLYMPUS_CRITIC_UNAVAILABLE'});
   }
 
   const excluded=new Set([`${author.model.provider}:${author.model.id}`,...(critic?.model?[`${critic.model.provider}:${critic.model.id}`]:[])]);
   const finishers=gptFinisherCandidates({vision:images.length>0,blockedProviders,exclude:excluded});
-  const criticReview=critic?.content||'[Independent critic unavailable. Finalize conservatively from the original request, requirements, trusted evidence, and author draft.]';
+  const criticReview=webResearchUsed?'[Independent critic intentionally omitted: the web research consumed one of three reserved calls. Verify the draft against the retrieved evidence and cite actual source numbers.]':critic?.content||'[Independent critic unavailable. Finalize conservatively from the original request, requirements, trusted evidence, and author draft.]';
   const finalPrompt=`ORIGINAL USER REQUEST:\n${neutralizeTags(text)}\n\nREQUIREMENT LIST:\n${formatChecklist(checklist)}\n\nTRUSTED OLYHUB EVIDENCE CONTEXT:\n${neutralizeTags(clip(context||'[none]'))}\n\nAUTHOR DRAFT (untrusted work product):\n${neutralizeTags(clip(author.content))}\n\nINDEPENDENT CRITIC REVIEW (untrusted review; verify before applying):\n${neutralizeTags(clip(criticReview))}${deliveryContract?`\n\nSERVER DELIVERY CONTRACT:\n${deliveryContract}`:''}\n\nReturn only the final answer for the owner.`;
 
   if(finishers.length&&localBudget.canCall(3500)){
     try{
       const final=await executeCandidateOrder(finishers,olympusCompoundPlusFinalizerSystem(deliveryContract),finalPrompt,{
-        maxAttempts:3,budget:localBudget,images,history,maxOutputTokens:deliveryContract?12000:9000,blockedProviders,
+        maxAttempts:webResearchUsed?1:3,budget:localBudget,images,history,maxOutputTokens:deliveryContract?12000:9000,blockedProviders,
         callTimeoutMs:(b,attempt)=>answerCallTimeout(b,0,attempt===0?0.76:0.9)
       });
       return {
         content:final.content,
         leadModel:`${final.model.provider}:${final.model.id}`,
-        pipelineLabel:modelFamily(final.model)==='openai'?'Compound Plus · author → independent critic → GPT final':'Compound Plus · author → independent critic → routed finisher',
-        verificationLabel:codeLikeRequest(text)?'Independent static critique + finisher synthesis · not executed':'Independent critique + finisher synthesis completed',
+        pipelineLabel:webResearchUsed?'Compound Plus · live web research → author → finalizer':modelFamily(final.model)==='openai'?'Compound Plus · author → independent critic → GPT final':'Compound Plus · author → independent critic → routed finisher',
+        verificationLabel:webResearchUsed?'Live web research + final synthesis; independent critique omitted':codeLikeRequest(text)?'Independent static critique + finisher synthesis · not executed':'Independent critique + finisher synthesis completed',
         trace:{
-          strategy:'olympus_compound_plus_author_critic_gpt',executionLevel:'COMPOUND_PLUS',requirements:checklist,
+          strategy:webResearchUsed?'olympus_compound_plus_web_author_finisher':'olympus_compound_plus_author_critic_gpt',executionLevel:'COMPOUND_PLUS',webResearchReplacedCritic:Boolean(webResearchUsed),requirements:checklist,
           author:{provider:author.model.provider,model:author.model.id,fallbacks:author.attempts},
           critic:critic?{provider:critic.model.provider,model:critic.model.id,fallbacks:critic.attempts}:null,
           criticError:criticError?{code:criticError.code||null,message:redactProviderText(String(criticError?.message||criticError)).slice(0,220),attempts:criticError.attempts||[]}:null,
@@ -847,10 +855,10 @@ export async function runOlympusCompoundPlus({
       return {
         content:author.content,
         leadModel:`${author.model.provider}:${author.model.id}`,
-        pipelineLabel:'Compound Plus · GPT unavailable · author draft returned',
-        verificationLabel:codeLikeRequest(text)?'Compound Plus incomplete · author draft returned · not executed':'Compound Plus incomplete · author draft returned',
+        pipelineLabel:webResearchUsed?'Compound Plus · web + author · finalizer unavailable':'Compound Plus · GPT unavailable · author draft returned',
+        verificationLabel:webResearchUsed?'Web research completed, but final synthesis did not complete':codeLikeRequest(text)?'Compound Plus incomplete · author draft returned · not executed':'Compound Plus incomplete · author draft returned',
         trace:{
-          strategy:'olympus_compound_plus_author_critic_gpt',executionLevel:'COMPOUND_PLUS',requirements:checklist,
+          strategy:webResearchUsed?'olympus_compound_plus_web_author_finisher':'olympus_compound_plus_author_critic_gpt',executionLevel:'COMPOUND_PLUS',webResearchReplacedCritic:Boolean(webResearchUsed),requirements:checklist,
           author:{provider:author.model.provider,model:author.model.id,fallbacks:author.attempts},
           critic:critic?{provider:critic.model.provider,model:critic.model.id,fallbacks:critic.attempts}:null,
           criticError:criticError?{code:criticError.code||null,message:redactProviderText(String(criticError?.message||criticError)).slice(0,220)}:null,
@@ -867,10 +875,10 @@ export async function runOlympusCompoundPlus({
   return {
     content:author.content,
     leadModel:`${author.model.provider}:${author.model.id}`,
-    pipelineLabel:'Compound Plus · GPT unavailable · author draft returned',
-    verificationLabel:codeLikeRequest(text)?'Compound Plus incomplete · author draft returned · not executed':'Compound Plus incomplete · author draft returned',
+    pipelineLabel:webResearchUsed?'Compound Plus · web + author · finalizer unavailable':'Compound Plus · GPT unavailable · author draft returned',
+    verificationLabel:webResearchUsed?'Web research completed, but final synthesis did not complete':codeLikeRequest(text)?'Compound Plus incomplete · author draft returned · not executed':'Compound Plus incomplete · author draft returned',
     trace:{
-      strategy:'olympus_compound_plus_author_critic_gpt',executionLevel:'COMPOUND_PLUS',requirements:checklist,
+      strategy:webResearchUsed?'olympus_compound_plus_web_author_finisher':'olympus_compound_plus_author_critic_gpt',executionLevel:'COMPOUND_PLUS',webResearchReplacedCritic:Boolean(webResearchUsed),requirements:checklist,
       author:{provider:author.model.provider,model:author.model.id,fallbacks:author.attempts},
       critic:critic?{provider:critic.model.provider,model:critic.model.id,fallbacks:critic.attempts}:null,
       criticError:criticError?{code:criticError.code||null,message:redactProviderText(String(criticError?.message||criticError)).slice(0,220)}:null,

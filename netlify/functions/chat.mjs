@@ -7,12 +7,14 @@ import { publicExecutionFailure } from './_shared/execution-error.mjs';
 import { stageArtifact, stageBinaryArtifact, discardStagedArtifact } from './_shared/artifact.mjs';
 import { blobStore } from './_shared/blob.mjs';
 import { withTransaction } from './_shared/db.mjs';
+import { executionLeaseExpired, claimOlympusWorker, queueOlympusExecution, claimInlineFallback, assertWorkerFence, markFailureIfOwner } from './_shared/worker-lease.mjs';
 import { resolveOwnedScope } from './_shared/relations.mjs';
 import { classifyIntent, decideExecutionMode, decideExecutionLevel, explainExecutionLevel, normalizeRequestedMode, GEAR_CALL_CAPS } from './_shared/intent.mjs';
-import { redactSecrets } from './_shared/security.mjs';
+import { redactSecrets, safeExtractedText } from './_shared/security.mjs';
 import { assembleContext, relevanceScore } from './_shared/context.mjs';
-import { createExecutionBudget, FAST_CHAT_TIMEOUT_MS, CHAT_TIMEOUT_MS, CHAT_WEB_TIMEOUT_MS, STALE_EXECUTION_MS } from './_shared/runtime.mjs';
-import { guardAiExecution } from './_shared/limits.mjs';
+import { selectRecentHistory } from './_shared/history.mjs';
+import { createExecutionBudget, FAST_CHAT_TIMEOUT_MS, CHAT_TIMEOUT_MS, CHAT_WEB_TIMEOUT_MS } from './_shared/runtime.mjs';
+import { lockAiExecutionOwner, guardAiExecution, recordAiExecutionAttempt } from './_shared/limits.mjs';
 import { pageLimit, decodeCursor, pageResult } from './_shared/pagination.mjs';
 import { queueBlobGc } from './_shared/storage.mjs';
 import { MEMORY_POLICY, selectMemoryContext, formatMemoryContext } from './_shared/memory.mjs';
@@ -75,25 +77,19 @@ async function buildContext({db,userId,projectId,conversationId,currentMessageId
       .map(f=>({...f,_score:relevanceScore(currentText,`${f.filename}\n${String(f.extracted_text||'').slice(0,4000)}`)}))
       .sort((a,b)=>b._score-a._score || new Date(b.created_at)-new Date(a.created_at))
       .slice(0,8);
-    if(relevant.length)projectFilesText=relevant.map(f=>{const status=f.metadata?.extractionStatus||'stored_only',note=status==='analyzable'?(f.metadata?.truncated?'[Text extraction is partial/truncated.]':''):status==='vision_only'?'[Image file: use vision only when explicitly attached to this turn.]':status==='failed'?'[Text extraction failed. Do not claim the file contents were read.]':'[Stored file has no extracted text. Do not claim the binary contents were read.]';return `PROJECT FILE: ${f.filename} (${f.mime_type})\n${note}${f.extracted_text?`\n${clip(f.extracted_text,6500)}`:''}`;}).join('\n\n');
+    if(relevant.length)projectFilesText=relevant.map(f=>{const status=f.metadata?.extractionStatus||'stored_only',note=status==='analyzable'?(f.metadata?.truncated?'[Text extraction is partial/truncated.]':''):status==='vision_only'?'[Image file: use vision only when explicitly attached to this turn.]':status==='failed'?'[Text extraction failed. Do not claim the file contents were read.]':'[Stored file has no extracted text. Do not claim the binary contents were read.]';return `PROJECT FILE: ${redactSecrets(f.filename)} (${f.mime_type})\n${note}${f.extracted_text?`\n${clip(safeExtractedText(f.extracted_text,f.filename),6500)}`:''}`;}).join('\n\n');
   }
 
   const history=[];
   if(conversationId){
-    const rows=await db.sql`SELECT role,mode,content,created_at FROM messages WHERE conversation_id=${conversationId} AND owner_id=${userId} AND id<>${currentMessageId} AND COALESCE(metadata->>'failed','false')<>'true' ORDER BY created_at DESC LIMIT 30`;
-    rows.reverse();
-    let chars=0;
-    for(const m of rows){
-      if(m.role!=='user'&&m.role!=='assistant')continue;
-      const content=clip(m.content,4000);
-      if(chars+content.length>18000)break;
-      history.push({role:m.role,content});
-      chars+=content.length;
-    }
+    // Stable newest-first fetch; allocate the limited history window to recent
+    // corrections/decisions, then restore chronological order for the providers.
+    const rows=await db.sql`SELECT role,mode,content,created_at FROM messages WHERE conversation_id=${conversationId} AND owner_id=${userId} AND id<>${currentMessageId} AND COALESCE(metadata->>'failed','false')<>'true' ORDER BY created_at DESC,id DESC LIMIT 30`;
+    history.push(...selectRecentHistory(rows,{maxChars:18000,perMessageChars:4000}));
   }
 
   const attachmentsText=attachmentRows.length
-    ? attachmentRows.map(f=>{const status=f.metadata?.extractionStatus||'stored_only',role=f.metadata?.analysisRole||'';let note='';if(role==='video_source')note='VIDEO SOURCE: visual analysis is based only on attached sampled frames; audio and motion between samples were not analyzed.';else if(role==='video_frame')note=`VIDEO FRAME sampled from ${f.metadata?.sourceName||'video source'}.`;else if(status==='failed')note='Text extraction failed. Do not claim the binary contents were read.';else if(status==='stored_only'||status==='unsupported')note='Stored-only binary. Do not claim the file contents were read.';else if(status==='vision_only')note='Image content is available only through the vision inputs for this turn.';else if(f.metadata?.truncated)note='Text extraction is partial/truncated; do not claim full-file coverage.';const text=f.extracted_text?queryAwareExcerpt(f.extracted_text,currentText,18000):'';return `FILE: ${f.filename} (${f.mime_type})\n${note}${text?`\n${text}`:''}`;}).join('\n\n')
+    ? attachmentRows.map(f=>{const status=f.metadata?.extractionStatus||'stored_only',role=f.metadata?.analysisRole||'';let note='';if(role==='video_source')note='VIDEO SOURCE: visual analysis is based only on attached sampled frames; audio and motion between samples were not analyzed.';else if(role==='video_frame')note=`VIDEO FRAME sampled from ${f.metadata?.sourceName||'video source'}.`;else if(status==='failed')note='Text extraction failed. Do not claim the binary contents were read.';else if(status==='stored_only'||status==='unsupported')note='Stored-only binary. Do not claim the file contents were read.';else if(status==='vision_only')note='Image content is available only through the vision inputs for this turn.';else if(f.metadata?.truncated)note='Text extraction is partial/truncated; do not claim full-file coverage.';const text=f.extracted_text?queryAwareExcerpt(safeExtractedText(f.extracted_text,f.filename),currentText,18000):'';return `FILE: ${redactSecrets(f.filename)} (${f.mime_type})\n${note}${text?`\n${text}`:''}`;}).join('\n\n')
     : '';
 
   return {context:assembleContext({attachments:attachmentsText,memories:memoriesText,history:'',identity,tasks:tasksText,projectFiles:projectFilesText,maxChars:90000}),history};
@@ -143,15 +139,21 @@ async function loadVisionInputs(attachmentRows){
   return {images,skipped};
 }
 
-async function initializeTurn({db,userId,conversationId,projectId,mode,level,content,fileIds,requestId,worker=false}){
+async function initializeTurn({db,userId,conversationId,projectId,mode,level,content,fileIds,requestId,worker=false,dispatchToken=null}){
   return withTransaction(db,async(client)=>{
-    await guardAiExecution(client,userId,mode,requestId);
-    const inserted=await client.query(
+    // Serialize admission, requestId collision handling and ledger writes in one transaction.
+    await lockAiExecutionOwner(client,userId);
+    // A background request is a CLAIM only: it must never insert a new execution.
+    const inserted=worker?{rowCount:0,rows:[]}:await client.query(
       `INSERT INTO executions(owner_id,conversation_id,mode,state,request_id) VALUES($1,$2,$3,'UNDERSTANDING',$4) ON CONFLICT (owner_id,request_id) WHERE request_id IS NOT NULL DO NOTHING RETURNING id,conversation_id,mode,state,request_id`,
       [userId,conversationId,mode,requestId]
     );
     if(inserted.rowCount){
       const execution=inserted.rows[0];
+      // A newly inserted row is provisional until this transaction commits.
+      // Exclude it from concurrent work while checking other active executions.
+      await guardAiExecution(client,userId,mode,requestId,{excludeExecutionId:execution.id});
+      await recordAiExecutionAttempt(client,userId,mode,execution.id,'initial');
       const userMessage=(await client.query(
         `INSERT INTO messages(owner_id,conversation_id,execution_id,role,mode,content,metadata) VALUES($1,$2,$3,'user',$4,$5,$6::jsonb) RETURNING id,role,mode,content,metadata,created_at`,
         [userId,conversationId,execution.id,mode,content,JSON.stringify({attachments:fileIds,requestId,executionLevel:level})]
@@ -160,7 +162,7 @@ async function initializeTurn({db,userId,conversationId,projectId,mode,level,con
       return {kind:'new',execution,userMessage};
     }
 
-    const existing=(await client.query(`SELECT id,conversation_id,mode,state,request_id,started_at FROM executions WHERE owner_id=$1 AND request_id=$2 FOR UPDATE`,[userId,requestId])).rows[0];
+    const existing=(await client.query(`SELECT id,conversation_id,mode,state,request_id,started_at,dispatch_token,worker_token,lease_expires_at FROM executions WHERE owner_id=$1 AND request_id=$2 FOR UPDATE`,[userId,requestId])).rows[0];
     if(!existing)throw codedError('Request id conflict could not be resolved.',409,'REQUEST_ID_CONFLICT');
     if(String(existing.conversation_id)!==String(conversationId))throw codedError('This request id is already bound to another conversation.',409,'REQUEST_ID_REUSED');
     if(existing.mode!==mode)throw codedError('This request id is already bound to another intelligence mode.',409,'REQUEST_ID_REUSED');
@@ -171,14 +173,28 @@ async function initializeTurn({db,userId,conversationId,projectId,mode,level,con
     if(prior && !sameIds(priorIds,fileIds))throw codedError('This request id was already used with different attachments.',409,'REQUEST_ID_REUSED');
     if(prior?.metadata?.executionLevel&&prior.metadata.executionLevel!==level)throw codedError('This request id is already bound to another execution level.',409,'REQUEST_ID_REUSED');
 
+    if(worker){
+      // Even a delayed duplicate dispatch cannot create work or steal a newer generation.
+      if(existing.mode!=='OLYMPUS'||existing.state!=='QUEUED')
+        return {kind:'in_progress',execution:existing,userMessage:prior};
+      const claimed=await claimOlympusWorker(client,{executionId:existing.id,ownerId:userId,dispatchToken});
+      if(!claimed)return {kind:'in_progress',execution:existing,userMessage:prior};
+      return {kind:'claimed',execution:{...existing,state:'UNDERSTANDING',worker_token:claimed.worker_token,lease_expires_at:claimed.lease_expires_at},userMessage:prior};
+    }
     if(existing.state==='COMPLETED'||existing.state==='PARTIAL')return {kind:'replay',execution:existing,userMessage:prior};
-    // A run killed by the platform timeout never reaches FAILED; once it is older than any possible
-    // live run, let Retry (same request id) restart it instead of reporting 'already running' forever.
-    const orphaned=existing.started_at&&Date.now()-new Date(existing.started_at).getTime()>STALE_EXECUTION_MS;
-    const resumable=worker&&existing.state==='QUEUED';
-    if(existing.state!=='FAILED'&&existing.state!=='CANCELLED'&&!orphaned&&!resumable)return {kind:'in_progress',execution:existing,userMessage:prior};
+    // A stale worker cannot be recovered while its lease is still valid.
+    // For Olympus the deadline is beyond the entire 150s background runtime.
+    const orphaned=executionLeaseExpired(existing);
+    if(existing.state!=='FAILED'&&existing.state!=='CANCELLED'&&!orphaned)
+      return {kind:'in_progress',execution:existing,userMessage:prior};
 
-    await client.query(`UPDATE executions SET state='UNDERSTANDING',error_code=NULL,trace='{}'::jsonb,completed_at=NULL,lead_model=NULL,started_at=now() WHERE id=$1 AND owner_id=$2`,[existing.id,userId]);
+    // A true browser-initiated restart is billable and invalidates all old
+    // dispatch nonces/worker tokens in the same serialized transaction.
+    await guardAiExecution(client,userId,mode,requestId,{excludeExecutionId:existing.id});
+    await recordAiExecutionAttempt(client,userId,mode,existing.id,'retry');
+    await client.query(`UPDATE executions SET state='UNDERSTANDING',error_code=NULL,trace='{}'::jsonb,completed_at=NULL,
+      lead_model=NULL,started_at=now(),dispatch_token=NULL,worker_token=NULL,lease_expires_at=NULL
+      WHERE id=$1 AND owner_id=$2`,[existing.id,userId]);
     if(prior)await client.query(`UPDATE messages SET metadata=COALESCE(metadata,'{}'::jsonb)-'failed' WHERE id=$1 AND owner_id=$2`,[prior.id,userId]);
     let userMessage=prior?{...prior,metadata:{...(prior.metadata||{})}}:prior;
     if(userMessage?.metadata)delete userMessage.metadata.failed;
@@ -202,6 +218,9 @@ async function replayCompleted(db,userId,conversationId,execution,userMessage,re
 
 async function finalizeTurn({db,userId,projectId,conversationId,execution,mode,result,stagedArtifacts}){
   return withTransaction(db,async(client)=>{
+    // Fence before creating artifacts or the assistant message: no stale worker
+    // may persist an answer after a newer browser retry has claimed ownership.
+    if(execution.worker_token)await assertWorkerFence(client,{executionId:execution.id,ownerId:userId,workerToken:execution.worker_token});
     const artifacts=[];
     for(const staged of stagedArtifacts){
       const row=(await client.query(
@@ -215,7 +234,7 @@ async function finalizeTurn({db,userId,projectId,conversationId,execution,mode,r
       `INSERT INTO messages(owner_id,conversation_id,execution_id,role,mode,content,metadata) VALUES($1,$2,$3,'assistant',$4,$5,$6::jsonb) RETURNING id,role,mode,content,metadata,created_at`,
       [userId,conversationId,execution.id,mode,result.content,JSON.stringify({artifacts:artifacts.map(a=>a.id),sources:Array.isArray(result.sources)?result.sources.slice(0,12):[],capabilities:Array.isArray(result.capabilities)?result.capabilities:[],leadModel:result.leadModel||null,fallback:Array.isArray(result.trace?.fallbacks)&&result.trace.fallbacks.length>0,modeExplanation:result.modeExplanation||null,executionLevel:result.executionLevel||null,pipelineLabel:result.pipelineLabel||null,verificationLabel:result.verificationLabel||null,visionSummary:result.visionSummary||null,usage:result.usage||null})]
     )).rows[0];
-    await client.query(`UPDATE executions SET state='COMPLETED',completed_at=now() WHERE id=$1 AND owner_id=$2`,[execution.id,userId]);
+    await client.query(`UPDATE executions SET state='COMPLETED',completed_at=now(),lease_expires_at=NULL,dispatch_token=NULL,worker_token=NULL WHERE id=$1 AND owner_id=$2`,[execution.id,userId]);
     await client.query(`UPDATE conversations SET updated_at=now() WHERE id=$1 AND owner_id=$2`,[conversationId,userId]);
     return {assistant,artifacts};
   });
@@ -362,24 +381,31 @@ async function chatHandler(req, context, startedAt){
 
   let init=null;let olympusDispatchFallback=false;
   const stagedArtifacts=[];
-  let executionBudget=null;
+  let executionBudget=null,webUsageTrace=null;
   try{
-    init=await initializeTurn({db,userId:user.id,conversationId,projectId,mode,level,content,fileIds,requestId,worker});
+    init=await initializeTurn({db,userId:user.id,conversationId,projectId,mode,level,content,fileIds,requestId,worker,dispatchToken:body.dispatchToken});
     if(init.kind==='replay')return replayCompleted(db,user.id,conversationId,init.execution,init.userMessage,requestId);
     if(init.kind==='in_progress')return errorJson('This request is already running.',409,'REQUEST_IN_PROGRESS',requestId,{conversationId,executionId:init.execution.id});
     if(mode==='OLYMPUS'&&!worker){
-      await db.sql`UPDATE executions SET state='QUEUED' WHERE id=${init.execution.id} AND owner_id=${user.id}`;
-      const dispatched=await dispatchOlympus(req,{...body,content,conversationId,projectId,mode,requestId,fileIds});
+      const dispatchToken=await queueOlympusExecution(db,{executionId:init.execution.id,ownerId:user.id});
+      const dispatched=await dispatchOlympus(req,{...body,content,conversationId,projectId,mode,requestId,fileIds,dispatchToken});
       if(dispatched)return json({pending:true,mode,level,modeExplanation,conversationId,userMessage:init.userMessage,execution:{id:init.execution.id,state:'QUEUED'},requestId,replayed:false},202);
-      olympusDispatchFallback=true;modeExplanation='Olympus background dispatch was unavailable, so Zeus verified the request instead of running a heavy team inline.';
-      await db.sql`UPDATE executions SET state='UNDERSTANDING' WHERE id=${init.execution.id} AND owner_id=${user.id}`;
+      // A lost HTTP acknowledgement does NOT prove the background worker failed.
+      // Claim the queue atomically only if no worker started in the meantime.
+      const inlineClaim=await claimInlineFallback(db,{executionId:init.execution.id,ownerId:user.id,dispatchToken});
+      if(!inlineClaim)
+        return json({pending:true,mode,level,modeExplanation,conversationId,userMessage:init.userMessage,execution:{id:init.execution.id,state:'QUEUED'},requestId,replayed:false},202);
+      init.execution.worker_token=inlineClaim.worker_token;
+      init.execution.lease_expires_at=inlineClaim.lease_expires_at;
+      olympusDispatchFallback=true;
+      modeExplanation='Background dispatch was unavailable; this execution was exclusively claimed for a Zeus fallback.';
     }
     const execution=init.execution,userMessage=init.userMessage;
     const built=await buildContext({db,userId:user.id,projectId,conversationId,currentMessageId:userMessage.id,currentText:modelText,attachmentRows});
-    let aiContext=built.context;const history=built.history;
+    let aiContext=redactSecrets(built.context);const history=built.history;
     if(isWhatMissingIntent(content)){
       const priorRequirements=await loadPriorRequirements(db,user.id,conversationId,execution.id);
-      if(priorRequirements.length)aiContext+=`${aiContext?'\n\n---\n\n':''}PREVIOUS EXECUTION REQUIREMENTS\n${formatChecklist(priorRequirements)}\nOnly evaluate coverage against this saved list. Do not invent new requirements unless the user added a new request in the current message.`;
+      if(priorRequirements.length)aiContext=redactSecrets(aiContext+`${aiContext?'\n\n---\n\n':''}PREVIOUS EXECUTION REQUIREMENTS\n${formatChecklist(priorRequirements)}\nOnly evaluate coverage against this saved list. Do not invent new requirements unless the user added a new request in the current message.`);
     }
 
     if(projectId && explicitMemoryIntent(content)){
@@ -396,13 +422,14 @@ async function chatHandler(req, context, startedAt){
       `;
     }
 
-    // 4-gear HARD caps (no retry headroom). Web search counts inside the cap:
-    // Simple+web => web + 1 answer (2), Compound+web => web + create (2), Compound Plus skips web (3), Turbo+web => web + 1 specialist + Director + CEO (4).
+    // 4-gear hard caps. Compound Plus+web uses web + author + finalizer (3).
+    // Independent critique is deliberately omitted in that route, not hidden.
+    // Simple/Zeus+web => web + one answer (2); Turbo+web => web + specialist + Director + CEO (4).
     const actualMode=olympusDispatchFallback?'ZEUS':mode;
     const gearLevel=actualMode==='ZEUS'?(mode==='OLYMPUS'?'COMPOUND':level):level;
     const turboHardCap=actualMode==='OLYMPUS'&&level==='COMPLEX_TURBO';
     const isImageOp=intent.action==='IMAGE_CREATE'||intent.action==='IMAGE_EDIT';
-    const webIntent=shouldSearchWeb(modelText)&&!isImageOp&&!(actualMode==='OLYMPUS'&&level==='COMPOUND_PLUS');
+    const webIntent=shouldSearchWeb(modelText)&&!isImageOp;
     const githubIntent=hasGitHubRepoUrl(modelText);
     const zeusLevel=actualMode==='ZEUS'?(webIntent?'SIMPLE':gearLevel):null;
     const turboCreatorCount=turboHardCap?(webIntent?1:Number(turboQuote?.creatorCount||TURBO_LIMITS.maxCreators)):null;
@@ -412,12 +439,22 @@ async function chatHandler(req, context, startedAt){
     const vision=hasImage?await loadVisionInputs(attachmentRows):{images:[],skipped:[]};
     const sharedBlockedProviders=await loadSharedProviderBlocks(db,user.id);
     const web=webIntent?await runWebSearch(modelText,{budget:executionBudget,reserveAfterMs:actualMode==='OLYMPUS'?17000:12000}):{requested:false,context:'',sources:[],trace:null};
+    webUsageTrace=web.trace||null;
+    const compoundPlusWithWeb=actualMode==='OLYMPUS'&&level==='COMPOUND_PLUS'&&webIntent;
+    if(compoundPlusWithWeb){
+      // Never claim that current law/finance research was verified without a live search
+      // and actual source references. Do not spend two additional AI calls on that premise.
+      if(web.trace?.status!=='completed'||!Array.isArray(web.sources)||!web.sources.length)
+        throw codedError('Live web research was unavailable or yielded no verifiable sources.',503,'WEB_RESEARCH_UNAVAILABLE');
+      modeExplanation+=' Live web research replaces the independent critic to preserve the 3-call cap.';
+    }
     const github=githubIntent?await loadGitHubContext(modelText,{timeoutMs:worker?12000:7000,maxFiles:worker?14:10,maxChars:worker?62000:42000}):{requested:false,context:'',sources:[],trace:null};
     const deliveryContract=intent.action==='ARTIFACT_CREATE'&&intent.artifactType==='zip'
       ?'For a ZIP deliverable, include exactly one machine-readable block delimited by <olyhub_zip_manifest> and </olyhub_zip_manifest>. Inside it output valid JSON with shape {"files":[{"path":"relative/path.ext","content":"complete file contents"}]}. Include every file required to run/deploy the requested project, use safe relative paths, no placeholders, no omitted-file prose, and keep any human summary outside the manifest.'
       :intent.action==='ARTIFACT_CREATE'?artifactDeliveryContract(requestedArtifacts,modelText):'';
     const actionPolicyContext=externalActions.requested.length?`\n\nEXTERNAL ACTION POLICY\nRequested external actions: ${externalActions.requested.join(', ')}. Chat/Turbo may prepare the work but MUST NOT claim commit, deploy, merge, or destructive production changes occurred. Those mutations require the owner's explicit dedicated action flow.`:'';
-    const enrichedContext=`${aiContext}${web.context||''}${github.context||''}${actionPolicyContext}`;
+    // Retrieved web pages and GitHub files are untrusted and can contain credentials.
+    const enrichedContext=redactSecrets(`${aiContext}${web.context||''}${github.context||''}${actionPolicyContext}`);
 
     let result;
     if(intent.action==='IMAGE_EDIT'){
@@ -437,7 +474,7 @@ async function chatHandler(req, context, startedAt){
       await db.sql`UPDATE executions SET state='RUNNING' WHERE id=${execution.id} AND owner_id=${user.id}`;
       if(actualMode==='OLYMPUS'){
         try{result=level==='COMPOUND_PLUS'
-          ?await runOlympusCompoundPlus({text:modelText,context:enrichedContext,images:vision.images,history,requirements:requirementSpec,deliveryContract,blockedProviders:sharedBlockedProviders,budget:executionBudget})
+          ?await runOlympusCompoundPlus({text:modelText,context:enrichedContext,images:vision.images,history,requirements:requirementSpec,deliveryContract,blockedProviders:sharedBlockedProviders,budget:executionBudget,webResearchUsed:compoundPlusWithWeb})
           :await runOlympus({text:modelText,context:enrichedContext,images:vision.images,history,requirements:requirementSpec,deliveryContract,blockedProviders:sharedBlockedProviders,budget:executionBudget,creatorCount:turboCreatorCount});}
         catch(olympusError){
           if(olympusError?.code==='AI_REQUEST_REJECTED')throw olympusError;
@@ -489,7 +526,7 @@ async function chatHandler(req, context, startedAt){
     }
     const finalLevel=result.effectiveLevel||(finalMode==='ZEUS'&&mode==='OLYMPUS'?'COMPOUND':level);
     if(finalMode==='OLYMPUS'&&level==='COMPLEX_TURBO'&&finalLevel==='COMPOUND_PLUS'&&result.trace?.olympusDescended){modeExplanation='Olympus Complex Turbo could not preserve its role-separation guarantees, so it safely downgraded to Compound Plus.';}
-    result.executionLevel=finalLevel;{const providerTelemetry=snapshotProviderTelemetry(executionBudget);result.usage=summarizeRequestUsage(providerTelemetry,{maxCalls:executionBudget?.maxCalls,webUsage:web?.trace?.usage||null});result.trace={...(result.trace||{}),finalExecutionLevel:finalLevel,providerTelemetry,usage:result.usage};}
+    result.executionLevel=finalLevel;{const providerTelemetry=snapshotProviderTelemetry(executionBudget);result.usage=summarizeRequestUsage(providerTelemetry,{maxCalls:executionBudget?.maxCalls,webTrace:webUsageTrace});result.trace={...(result.trace||{}),finalExecutionLevel:finalLevel,providerTelemetry,usage:result.usage};}
     result.modeExplanation=modeExplanation;
     const final=await finalizeTurn({db,userId:user.id,projectId,conversationId,execution,mode:finalMode,result,stagedArtifacts});
     return json({conversationId,message:final.assistant,userMessage,artifacts:final.artifacts,mode:finalMode,level:finalLevel,modeExplanation,execution:{id:execution.id,state:'COMPLETED'},requestId,replayed:false});
@@ -505,9 +542,16 @@ async function chatHandler(req, context, startedAt){
       status:Number(item?.status)>=400&&Number(item?.status)<=599?Number(item.status):null,
       code:/^[A-Z][A-Z0-9_]{1,63}$/.test(String(item?.code||''))?item.code:null
     }));
-    const trace={error:publicFailure.traceError,attempts:safeAttempts,budget:executionBudget?.snapshot?.()||null,providerTelemetry:snapshotProviderTelemetry(executionBudget)};
-    if(init?.execution?.id){try{await db.sql`UPDATE executions SET state='FAILED',error_code=${error?.code||'EXECUTION_FAILED'},trace=${trace},completed_at=now() WHERE id=${init.execution.id} AND owner_id=${user.id}`;}catch{}
-      try{if(init?.userMessage?.id)await db.sql`UPDATE messages SET metadata=COALESCE(metadata,'{}'::jsonb)||${JSON.stringify({failed:true})}::jsonb WHERE id=${init.userMessage.id} AND owner_id=${user.id}`;}catch{}
+    const providerTelemetry=snapshotProviderTelemetry(executionBudget);
+    const failedUsage=summarizeRequestUsage(providerTelemetry,{maxCalls:executionBudget?.maxCalls,webTrace:webUsageTrace});
+    const trace={error:publicFailure.traceError,attempts:safeAttempts,budget:executionBudget?.snapshot?.()||null,providerTelemetry,usage:failedUsage,
+      webSearch:webUsageTrace?{status:webUsageTrace.status,attempted:Boolean(webUsageTrace.attempted),provider:webUsageTrace.provider||null,model:webUsageTrace.model||null}:null};
+    if(init?.execution?.id){
+      // The fenced execution update and original-message failure marker are
+      // atomic. A stale/superseded worker cannot poison another generation.
+      try{await markFailureIfOwner(db,{executionId:init.execution.id,ownerId:user.id,
+        workerToken:init.execution.worker_token||null,errorCode:error?.code||'EXECUTION_FAILED',
+        trace,userMessageId:init.userMessage?.id||null});}catch{}
     }
     return errorJson(publicFailure.message,publicFailure.status,publicFailure.code,requestId,{conversationId,executionId:init?.execution?.id||null,attempts:trace.attempts,...(error?.retryAfter?{retryAfter:error.retryAfter}:{})});
   }

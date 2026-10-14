@@ -5,6 +5,7 @@ import { publicExecutionFailure } from '../netlify/functions/_shared/execution-e
 const base=readFileSync('netlify/database/migrations/20260930044607_create_olyhub_foundation/migration.sql','utf8');
 const patch=readFileSync('netlify/database/migrations/20261013180000_add_queued_execution_state/migration.sql','utf8');
 const chat=readFileSync('netlify/functions/chat.mjs','utf8');
+const lease=readFileSync('netlify/functions/_shared/worker-lease.mjs','utf8');
 
 const match=base.match(/CREATE TYPE "execution_state" AS ENUM\(([^)]+)\)/);
 assert.ok(match,'initial execution_state enum must exist');
@@ -16,7 +17,7 @@ validStates.add('QUEUED');
 for(const [,state] of chat.matchAll(/UPDATE executions SET state='([A-Z_]+)'/g)){
   assert.ok(validStates.has(state),'execution state not declared in migrations: '+state);
 }
-assert.ok(chat.includes("state='QUEUED'"),'Olympus background queue must remain enabled');
+assert.ok(chat.includes('queueOlympusExecution(db,')&&lease.includes("SET state='QUEUED'"),'Olympus background queue must remain enabled');
 assert.ok(chat.includes("publicFailure=publicExecutionFailure(error)"),'unsafe DB errors must be normalized');
 assert.ok(chat.includes('return errorJson(publicFailure.message'),'raw error text must not reach the client');
 assert.ok(chat.includes('const safeAttempts='),'provider upstream errors must be suppressed');

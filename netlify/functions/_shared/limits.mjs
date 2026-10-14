@@ -26,36 +26,49 @@ function limitError(message, code, retryAfter=60) {
   return error;
 }
 
-export async function guardAiExecution(client, ownerId, mode, requestId) {
-  await client.query(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, [`olyhub-ai:${ownerId}`]);
-  const existing = (await client.query(`SELECT id,state FROM executions WHERE owner_id=$1 AND request_id=$2 LIMIT 1`, [ownerId, requestId])).rows[0];
+// This lock must be held from the execution lookup through the attempt INSERT.
+// Call inside a PostgreSQL transaction; the lock releases automatically at COMMIT/ROLLBACK.
+export async function lockAiExecutionOwner(client,ownerId){
+  await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))',[`olyhub-ai:${ownerId}`]);
+}
+
+// Admission only. Distinct paid-capable STARTS (not unique request IDs) count per hour.
+// Call only for a new execution or an actual restart, never for a replay, an in-progress
+// poll, or the first handoff of a previously billed QUEUED job to the Olympus worker.
+export async function guardAiExecution(client,ownerId,mode,requestId,{excludeExecutionId=null}={}){
   const limits=aiLimits(mode);
-  if(existing){
-    // An in-progress or completed replay never invokes another model. Failed/cancelled
-    // requests retry with fresh paid calls and must obey the current hourly limit.
-    if(existing.state==='FAILED'||existing.state==='CANCELLED'){
-      const r=(await client.query("SELECT count(*)::int AS total FROM executions WHERE owner_id=$1 AND mode=$2 AND started_at > now() - interval '1 hour'",[ownerId,mode])).rows[0];
-      if(Number(r?.total||0)>=limits.hourly)throw limitError('Hourly AI safety budget reached. Try again later.','AI_RATE_LIMIT',300);
-    }
-    return {existing};
-  }
-  const active = (await client.query(
+  const active=(await client.query(
     `SELECT
        count(*) FILTER (WHERE mode='ZEUS' AND started_at > now() - interval '90 seconds')::int AS zeus,
        count(*) FILTER (WHERE mode='OLYMPUS' AND started_at > now() - interval '16 minutes')::int AS olympus
      FROM executions
      WHERE owner_id=$1
+       AND ($2::uuid IS NULL OR id<>$2::uuid)
        AND state NOT IN ('COMPLETED','PARTIAL','FAILED','CANCELLED')`,
-    [ownerId]
-  )).rows[0] || { zeus:0, olympus:0 };
-  // Zeus is synchronous and should age out quickly. Olympus is a Netlify background
-  // function and may legitimately run for many minutes, so never forget it after 90 s.
-  if (mode === 'OLYMPUS' && Number(active.olympus || 0) >= limits.concurrent) throw limitError('An Olympus execution is already running. Wait for it to finish before starting another.', 'AI_CONCURRENCY_LIMIT', 15);
-  if (mode !== 'OLYMPUS' && Number(active.zeus || 0) >= limits.concurrent) throw limitError('Too many Zeus executions are already running. Wait a moment and try again.', 'AI_CONCURRENCY_LIMIT', 10);
+    [ownerId,excludeExecutionId]
+  )).rows[0]||{zeus:0,olympus:0};
+  if(mode==='OLYMPUS'&&Number(active.olympus||0)>=limits.concurrent)
+    throw limitError('An Olympus execution is already running. Wait for it to finish before starting another.','AI_CONCURRENCY_LIMIT',15);
+  if(mode!=='OLYMPUS'&&Number(active.zeus||0)>=limits.concurrent)
+    throw limitError('Too many Zeus executions are already running. Wait a moment and try again.','AI_CONCURRENCY_LIMIT',10);
+  const recent=(await client.query(
+    `SELECT count(*)::int AS total FROM execution_attempts WHERE owner_id=$1 AND mode=$2 AND created_at>now()-interval '1 hour'`,
+    [ownerId,mode]
+  )).rows[0];
+  if(Number(recent?.total||0)>=limits.hourly)
+    throw limitError(`${mode==='OLYMPUS'?'Olympus':'Zeus'} hourly safety budget reached. Try again later.`,'AI_RATE_LIMIT',300);
+  return {admitted:true};
+}
 
-  const recent = (await client.query(`SELECT count(*)::int AS total FROM executions WHERE owner_id=$1 AND mode=$2 AND started_at > now() - interval '1 hour'`, [ownerId, mode])).rows[0];
-  if (Number(recent?.total || 0) >= limits.hourly) throw limitError(`${mode === 'OLYMPUS' ? 'Olympus' : 'Zeus'} hourly safety budget reached. Try again later.`, 'AI_RATE_LIMIT', 300);
-  return { existing:null };
+// Atomic durable ledger. An execution ID can appear multiple times, one per charged
+// start. This INSERT must remain in the SAME transaction and advisory-lock scope as
+// guardAiExecution and the new/retry execution state transition.
+export async function recordAiExecutionAttempt(client,ownerId,mode,executionId,kind='initial'){
+  if(kind!=='initial'&&kind!=='retry')throw new Error('Invalid AI execution attempt kind.');
+  await client.query(
+    `INSERT INTO execution_attempts(owner_id,execution_id,mode,attempt_kind) VALUES($1,$2,$3,$4)`,
+    [ownerId,executionId,mode,kind]
+  );
 }
 
 export async function consumeEndpointRate(db, ownerId, kind, requestId, limit=endpointLimit(kind)) {
@@ -63,11 +76,17 @@ export async function consumeEndpointRate(db, ownerId, kind, requestId, limit=en
   try {
     await client.query('BEGIN');
     await client.query(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, [`olyhub-rate:${ownerId}:${kind}`]);
-    const exists = (await client.query(`SELECT 1 FROM request_rate_events WHERE owner_id=$1 AND kind=$2 AND request_id=$3 LIMIT 1`, [ownerId, kind, requestId])).rowCount > 0;
-    if (exists) { await client.query('COMMIT'); return; }
+    // This endpoint has no durable replay result. A repeated client requestId is
+    // another invocation, never a free idempotent replay. Count each admitted operation.
+    // The ledger's request_id column is a unique *server-side event ID*, not the
+    // caller-supplied requestId, preventing unlimited reprocessing using one value.
     const count = Number((await client.query(`SELECT count(*)::int AS total FROM request_rate_events WHERE owner_id=$1 AND kind=$2 AND created_at > now() - interval '1 hour'`, [ownerId, kind])).rows[0]?.total || 0);
     if (count >= limit) throw limitError('Request safety limit reached. Try again later.', 'RATE_LIMIT', 300);
-    await client.query(`INSERT INTO request_rate_events(owner_id,kind,request_id) VALUES($1,$2,$3) ON CONFLICT DO NOTHING`, [ownerId, kind, requestId]);
+    const logged=await client.query(
+      'INSERT INTO request_rate_events(owner_id,kind,request_id) VALUES($1,$2,gen_random_uuid()::text) RETURNING id',
+      [ownerId,kind]
+    );
+    if(logged.rowCount!==1)throw new Error('Endpoint rate reservation was not recorded.');
     await client.query(`DELETE FROM request_rate_events WHERE created_at < now() - interval '48 hours'`);
     await client.query('COMMIT');
   } catch (error) {

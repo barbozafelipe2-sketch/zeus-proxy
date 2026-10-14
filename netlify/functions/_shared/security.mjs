@@ -48,6 +48,23 @@ export function redactSecrets(value = '') {
     '$1[REDACTED]$3',
   );
 
+  // Arbitrarily prefixed JSON credentials need key-aware redaction.
+  // The older JSON regexp only matched a handful of exact names and missed
+  // ZEUS_PROXY_ACCESS_TOKEN, OPENAI_API_KEY and access_token fields.
+  // Preserve innocuous fields (for example token_usage and token_count).
+  const sensitiveJsonField = /"(?:[^"\\]|\\.){1,160}"\s*:\s*(?:"(?:\\.|[^"\\])*"|[A-Za-z0-9._/+:-]+)/g;
+  text = text.replace(sensitiveJsonField, (entry) => {
+    const match = /^"([^"\\]+)"\s*:/.exec(entry);
+    if (!match) return entry;
+    const key = match[1];
+    // Normalize camelCase (apiKey, accessToken) as well as snake_case.
+    const normalizedKey = key.replace(/([a-z0-9])([A-Z])/g, '$1_$2');
+    // These are metrics, not credentials. Preserve them in traces.
+    if (/^(?:token_usage|token_count|token_budget|token_total)$/i.test(normalizedKey)) return entry;
+    const hasSecretName = /(?:^|[_.-])(?:api[_-]?key|access[_-]?token|auth[_-]?token|refresh[_-]?token|token|secret|password|passwd|private[_-]?key|database[_-]?url|connection[_-]?string|credentials?|authorization)(?:$|[_.-])/i.test(normalizedKey);
+    return hasSecretName ? `"${key}":"[REDACTED]"` : entry;
+  });
+
   // URLs containing embedded credentials.
   text = text.replace(/([a-z][a-z0-9+.-]*:\/\/[^\s:@/]+:)([^\s@/]+)(@)/gi, '$1[REDACTED]$3');
   return text;
