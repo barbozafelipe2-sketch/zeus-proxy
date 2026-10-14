@@ -11,6 +11,7 @@ const state = {
   projectSection:'CHAT', projectMemories:[], memoryPolicy:null,
   messagePage:{hasMore:false,nextCursor:null}, filesPage:{scope:'global',hasMore:false,nextCursor:null}, artifactsPage:{scope:'global',hasMore:false,nextCursor:null}, chatRestore:null,
   voiceBusy:false, voiceRecorder:null, voiceStream:null, voiceChunks:[], voiceStopTimer:null, voiceRecognition:null, voiceBytes:0, voiceHitSizeLimit:false,
+  liveTalk:false, liveRecognizer:null, voiceId:'', voiceReplyAudio:null,
   draft:'', offline:typeof navigator!=='undefined'&&navigator.onLine===false,
   lastFailedText:'', lastFailedMessageId:null, lastFailedAttachments:[], lastFailedRequestId:null, lastFailedMode:null, lastFailedTurboApproval:null,
 };
@@ -349,6 +350,7 @@ function messageHtml(m){
   return `<article class="message ${m.role==='user'?'user':'assistant'}"><div class="message-label">${m.role==='user'?'YOU':esc(m.mode||'ZEUS')}</div><div class="message-body">${esc(m.content||'')}</div>${note?`<details class="message-debug"><summary>Execution details</summary><div class="message-model">${esc(note)}</div></details>`:''}${sourceHtml}${attached?`<div class="attachments in-message">${attached}</div>`:''}${artifacts?`<div class="artifact-row">${artifacts}</div>`:''}</article>`;
 }
 function artifactCard(a){const tag=esc((a.type||'FILE').toUpperCase().slice(0,4)),url=esc(a.downloadUrl||''),name=esc(a.filename||'Zeus Proxy output'),mime=esc(a.mime_type||a.type||'application/octet-stream'),isImage=String(a.mime_type||'').startsWith('image/'),isZip=a.type==='zip'||/zip/i.test(a.mime_type||'')||String(a.filename||'').toLowerCase().endsWith('.zip'),git=Boolean(state.health?.capabilities?.githubCommit);return `<div class="artifact-card">${isImage?`<button type="button" class="artifact-thumb-wrap" data-open-output="${url}" data-output-name="${name}" data-output-mime="${mime}" aria-label="Open ${name}"><img class="artifact-thumb" data-private-image="${url}" alt=""></button>`:`<div class="out-badge">${tag}</div>`}<div><strong>${name}</strong><small>${fmtSize(a.size)} · ${mime}</small></div><div class="artifact-actions"><button type="button" data-open-output="${url}" data-output-name="${name}" data-output-mime="${mime}">Open</button><button type="button" class="ghost-a" data-download-output="${url}" data-output-name="${name}">Download</button>${isZip&&git?`<button type="button" class="ghost-a" data-github-commit="artifact" data-source-id="${esc(a.id)}" data-source-name="${name}">Commit</button>`:''}</div></div>`}
+function liveTalkSupported(){return Boolean((window.SpeechRecognition||window.webkitSpeechRecognition)&&window.speechSynthesis)}
 function voiceSupported(){
   return Boolean(window.SpeechRecognition||window.webkitSpeechRecognition||(navigator.mediaDevices&&window.MediaRecorder));
 }
@@ -357,7 +359,7 @@ function composer(){
   const chips=state.attachedFiles.map(f=>`<span class="file-chip">${icon('files')} ${esc(f.filename)}<button type="button" data-remove-file="${esc(f.id)}" aria-label="Remove ${esc(f.filename)}" title="Remove attachment">${icon('close')}</button></span>`).join('');
   const showMic=voiceSupported();
   const scope=state.currentProject?`Project: ${esc(state.currentProject.name)}`:'This conversation';
-  return `<div class="composer-shell">${state.attachMenu?`<div class="attach-menu" role="menu" id="attach-menu" aria-label="Add attachment"><button type="button" role="menuitem" id="attach-media">${icon('image')}<span>Photo / Video</span></button><button type="button" role="menuitem" id="attach-camera">${icon('camera')}<span>Camera</span></button><button type="button" role="menuitem" id="attach-file">${icon('files')}<span>File</span></button></div>`:''}${chips?`<div class="attachments pending">${chips}</div>`:''}<form class="composer" id="composer"><button type="button" class="icon-btn attach-plus" id="attach" title="Add photo, video or file" aria-label="Add photo, video or file" aria-haspopup="menu" aria-expanded="${state.attachMenu}" ${state.attachMenu?'aria-controls="attach-menu"':''}>＋</button><textarea id="composer-text" rows="1" aria-label="Message ${composerMode}" placeholder="Message ${composerMode}…" ${state.sending?'disabled':''}>${esc(state.draft)}</textarea>${showMic?`<button type="button" class="icon-btn ${state.recording?'recording':''}" id="voice" title="${state.recording?'Stop recording':state.voiceBusy?'Transcribing…':'Voice input'}" aria-label="${state.recording?'Stop recording':state.voiceBusy?'Transcribing voice':'Voice input'}" ${state.voiceBusy?'disabled':''}>${icon('mic')}</button>`:''}<button type="submit" class="icon-btn send-btn" title="Send (Ctrl/⌘+Enter)" aria-label="Send message" ${state.sending?'disabled':''}>${icon('send')}</button></form><div class="composer-meta"><span>${state.currentProject?'Permanent Project chat · dedicated memory + files':'Conversation history available · no Project memory'}</span><span>Enter adds a new line · use the arrow to send</span></div></div>`;
+  return `<div class="composer-shell">${state.attachMenu?`<div class="attach-menu" role="menu" id="attach-menu" aria-label="Add attachment"><button type="button" role="menuitem" id="attach-media">${icon('image')}<span>Photo / Video</span></button><button type="button" role="menuitem" id="attach-camera">${icon('camera')}<span>Camera</span></button><button type="button" role="menuitem" id="attach-file">${icon('files')}<span>File</span></button></div>`:''}${chips?`<div class="attachments pending">${chips}</div>`:''}<form class="composer" id="composer"><button type="button" class="icon-btn attach-plus" id="attach" title="Add photo, video or file" aria-label="Add photo, video or file" aria-haspopup="menu" aria-expanded="${state.attachMenu}" ${state.attachMenu?'aria-controls="attach-menu"':''}>＋</button><textarea id="composer-text" rows="1" aria-label="Message ${composerMode}" placeholder="Message ${composerMode}…" ${state.sending?'disabled':''}>${esc(state.draft)}</textarea>${showMic?`<button type="button" class="icon-btn ${state.recording?'recording':''}" id="voice" title="${state.recording?'Stop recording':state.voiceBusy?'Transcribing…':'Voice input'}" aria-label="${state.recording?'Stop recording':state.voiceBusy?'Transcribing voice':'Voice input'}" ${state.voiceBusy?'disabled':''}>${icon('mic')}</button>`:''}${liveTalkSupported()?`<button type="button" class="icon-btn" id="live-talk" aria-pressed="${state.liveTalk}" aria-label="${state.liveTalk?'Stop Live Talk':'Start Live Talk'}" title="${state.liveTalk?'Stop Live Talk':'Start Live Talk'}">${state.liveTalk?'■':'◉'}</button>`:''}<button type="submit" class="icon-btn send-btn" title="Send (Ctrl/⌘+Enter)" aria-label="Send message" ${state.sending?'disabled':''}>${icon('send')}</button></form><div class="composer-meta"><span>${state.currentProject?'Permanent Project chat · dedicated memory + files':'Conversation history available · no Project memory'}</span><span>Enter adds a new line · use the arrow to send</span></div></div>`;
 }
 
 function projectsView(){
@@ -661,6 +663,7 @@ function bind(){
   $('#global-file-input').onchange=handleUpload; $('#global-media-input').onchange=handleMedia; $('#global-camera-input').onchange=handleMedia;
   $$('[data-remove-file]').forEach(b=>b.addEventListener('click',()=>{state.attachedFiles=state.attachedFiles.filter(f=>f.id!==b.dataset.removeFile);render()}));
   $('#voice')?.addEventListener('click',startVoice);
+  $('#live-talk')?.addEventListener('click',toggleLiveTalk);
   $('#retry-last')?.addEventListener('click',retryLastMessage);
   $('#load-older-messages')?.addEventListener('click',loadOlderMessages);
   $('#load-older-outputs')?.addEventListener('click',loadOlderOutputs);
@@ -895,6 +898,61 @@ async function uploadFile(file,{analysisRole='',sourceName='',attach=true}={}){
   }catch(e){state.error=e.message;state.execStatus='';}
   finally{render();const shown=state.execStatus;setTimeout(()=>{if(state.execStatus===shown&&!state.sending){state.execStatus='';render();}},1200)}
 }
+async function sayZeusReply(text){
+  if(!state.liveTalk||!text)return;
+  const line=String(text).slice(0,1800);
+  const selected=state.voiceId||localStorage.getItem('zeus-voice-id')||'';
+  if(selected){
+    try{
+      const headers=new Headers({'Content-Type':'application/json','x-zeus-access-token':state.accessKey});
+      const res=await fetch('/api/speech',{method:'POST',headers,body:JSON.stringify({text:line,voiceId:selected})});
+      if(res.ok){
+        const blob=await res.blob(),url=URL.createObjectURL(blob),audio=new Audio(url);
+        state.voiceReplyAudio=audio;
+        audio.onended=()=>{URL.revokeObjectURL(url);if(state.liveTalk)listenLiveTalk();};
+        audio.onerror=()=>{URL.revokeObjectURL(url);if(state.liveTalk)listenLiveTalk();};
+        await audio.play();return;
+      }
+    }catch{}
+  }
+  const msg=new SpeechSynthesisUtterance(line);
+  msg.lang=/(?:[ãõáéíóúç]|\\b(?:você|porque|então|não)\\b)/i.test(line)?'pt-BR':'en-US';
+  msg.onend=()=>{if(state.liveTalk)listenLiveTalk()};
+  msg.onerror=()=>{if(state.liveTalk)listenLiveTalk()};
+  speechSynthesis.speak(msg);
+}
+function listenLiveTalk(){
+  if(!state.liveTalk)return;
+  const Engine=window.SpeechRecognition||window.webkitSpeechRecognition;
+  if(!Engine)return;
+  const recognition=new Engine();state.liveRecognizer=recognition;
+  recognition.lang=navigator.language||'en-US';recognition.continuous=false;recognition.interimResults=false;
+  recognition.onresult=async e=>{
+    const words=e.results?.[0]?.[0]?.transcript?.trim();
+    state.liveRecognizer=null;
+    if(!words||!state.liveTalk)return;
+    await sendText(words,[]);
+    if(!state.liveTalk)return;
+    const latest=[...state.messages].reverse().find(m=>m.role==='assistant');
+    if(latest)await sayZeusReply(latest.content);else listenLiveTalk();
+  };
+  recognition.onerror=()=>{state.liveRecognizer=null;state.liveTalk=false;state.error='Live Talk microphone is unavailable. Voice Message remains available.';render();};
+  recognition.onend=()=>{if(state.liveRecognizer===recognition){state.liveRecognizer=null;}};
+  try{recognition.start()}catch{state.liveTalk=false;render()}
+}
+function toggleLiveTalk(){
+  if(state.liveTalk){
+    state.liveTalk=false;
+    try{state.liveRecognizer?.abort()}catch{}
+    state.liveRecognizer=null;
+    try{state.voiceReplyAudio?.pause()}catch{}
+    speechSynthesis.cancel();render();return;
+  }
+  if(!liveTalkSupported()){state.error='Live Talk requires browser speech recognition and speech output.';render();return;}
+  state.voiceId=localStorage.getItem('zeus-voice-id')||'';
+  state.liveTalk=true;render();listenLiveTalk();
+}
+
 async function startVoice(){
   if(state.voiceBusy&&state.voiceRecognition){try{state.voiceRecognition.stop()}catch{}return;}
   if(state.recording&&state.voiceRecorder){try{state.voiceRecorder.stop()}catch{}return;}
