@@ -37,9 +37,11 @@ export async function lockAiExecutionOwner(client,ownerId){
 // poll, or the first handoff of a previously billed QUEUED job to the Olympus worker.
 export async function guardAiExecution(client,ownerId,mode,requestId,{excludeExecutionId=null}={}){
   const limits=aiLimits(mode);
-  // Approximate known USD usage for all text inference across Zeus/Olympus.
-  // This is a threshold, not a guarantee against unknown provider costs.
-  const monthlyCap=envInt('ZEUS_TEXT_MONTHLY_USD',60,1,10000);
+  // One shared $60 monthly budget target for Zeus and Olympus, including media.
+  // Admission currently accounts only for known text-inference estimates;
+  // unknown media charges and actual provider invoices need separate reconciliation.
+  // This is not a guaranteed provider-level spending stop.
+  const monthlyCap=envInt('ZEUS_MONTHLY_TOTAL_USD',60,1,10000);
   const spending=(await client.query(
     `SELECT COALESCE(SUM(CASE WHEN (trace->'usage'->>'estimatedUsd') ~ '^[0-9]+([.][0-9]+)?$'
       THEN (trace->'usage'->>'estimatedUsd')::numeric ELSE 0 END),0)::float8 AS known_usd
@@ -49,7 +51,7 @@ export async function guardAiExecution(client,ownerId,mode,requestId,{excludeExe
        AND trace IS NOT NULL`,[ownerId]
   )).rows[0]||{known_usd:0};
   if(Number(spending.known_usd||0)>=monthlyCap)
-    throw limitError(`Zeus monthly text estimate reached $ ${monthlyCap}. Text AI is paused until the monthly budget is raised.`,'ZEUS_MONTHLY_TEXT_BUDGET',3600);
+    throw limitError(`Zeus shared monthly estimated budget reached ${monthlyCap}. New text requests are paused; check provider invoices for untracked image, video and audio costs.`,'ZEUS_MONTHLY_BUDGET',3600);
   const active=(await client.query(
     `SELECT
        count(*) FILTER (WHERE mode='ZEUS' AND started_at > now() - interval '90 seconds')::int AS zeus,
