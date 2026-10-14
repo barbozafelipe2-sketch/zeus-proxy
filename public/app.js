@@ -12,6 +12,7 @@ const state = {
   messagePage:{hasMore:false,nextCursor:null}, filesPage:{scope:'global',hasMore:false,nextCursor:null}, artifactsPage:{scope:'global',hasMore:false,nextCursor:null}, chatRestore:null,
   voiceBusy:false, voiceRecorder:null, voiceStream:null, voiceChunks:[], voiceStopTimer:null, voiceRecognition:null, voiceBytes:0, voiceHitSizeLimit:false,
   liveTalk:false, liveRecognizer:null, voiceId:'', voiceReplyAudio:null,
+  preferences:{personality:'balanced',instructions:''}, preferencesLoaded:false,
   draft:'', offline:typeof navigator!=='undefined'&&navigator.onLine===false,
   lastFailedText:'', lastFailedMessageId:null, lastFailedAttachments:[], lastFailedRequestId:null, lastFailedMode:null, lastFailedTurboApproval:null,
 };
@@ -183,6 +184,7 @@ async function bootstrapApp(){
     ['Files',loadFiles()],
     ['Artifacts',loadArtifacts()],
     ['Runtime diagnostics',loadHealth()],
+    ['Personalization',loadPreferences()],
   ];
   const settled=await Promise.allSettled(jobs.map(([,promise])=>promise));
   const failed=[];
@@ -538,6 +540,29 @@ function googleIntegrationSettings(){
    }).join('')}</div><p class="muted tiny">${info.configured?'OAuth ready for authorization.':'Awaiting Google OAuth client ID, client secret, redirect URI and encryption key in Netlify.'}</p></article>`;
 }
 
+async function loadPreferences(){
+  const data=await api('/api/preferences');
+  state.preferences={personality:data.personality||'balanced',instructions:data.instructions||''};
+  state.preferencesLoaded=true;
+}
+function preferencesSettings(){
+  const prefs=state.preferences||{};
+  return `<article class="card settings-card">
+    <h3>Personality &amp; Instructions</h3>
+    <p class="muted tiny">One personality for Zeus and Olympus, across text chat, recorded voice messages and Live Talk. Project-specific memory remains separate.</p>
+    <form id="preferences-form" class="form-grid">
+      <div class="field"><label for="zeus-personality">Personality</label>
+        <select id="zeus-personality" name="personality" required>
+          ${[['balanced','Balanced'],['direct','Direct'],['warm','Warm & conversational'],['creative','Creative & expressive'],['professional','Professional']].map(([key,label])=>`<option value="${key}" ${prefs.personality===key?'selected':''}>${label}</option>`).join('')}
+        </select></div>
+      <div class="field"><label for="zeus-global-instructions">Custom instructions</label>
+        <textarea id="zeus-global-instructions" rows="6" maxlength="4000" placeholder="Tell Zeus how to respond, what to prioritize, and how to speak to you…">${esc(prefs.instructions||'')}</textarea></div>
+      <p class="muted tiny">Preferences apply to future replies. Your saved chats are not rewritten. System safety and factual accuracy always take priority.</p>
+      <div class="row"><button class="primary" type="submit" ${!state.preferencesLoaded?'disabled':''}>Save preferences</button><span id="preferences-saved" role="status" aria-live="polite"></span></div>
+    </form>
+  </article>`;
+}
+
 function settingsView(){const providers=state.health?.providerReadiness||{};const statusLabel=(v)=>String(v||'not_configured').toUpperCase().replaceAll('_',' ');const statusGood=(v)=>v==='observed_healthy';return `<section class="page"><div class="page-head"><div><div class="eyebrow">Settings</div><h1>Workspace settings</h1><p>Account and advanced runtime diagnostics.</p></div></div>${errorBanner('page-alert')}<div class="settings-grid"><article class="card settings-card"><h3>Account</h3><div class="user-chip"><div class="avatar">${esc(initials())}</div><div><strong>${esc(state.user?.user_metadata?.full_name||'Felipe')}</strong><div class="muted tiny">${esc(state.user?.email||'')}</div></div></div><button class="secondary" id="settings-logout" style="margin-top:18px">Lock</button><p class="muted tiny" style="margin-top:12px">The private key stays in localStorage on this device until Lock or 14 days without use.</p></article><article class="card settings-card"><h3>Monthly cost monitor</h3>
   <p class="muted tiny">One shared $60 testing target for text, images, videos, audio and tools. This is an alert only; nothing is disabled when the target is reached.</p>
   <div class="diag-list"><div class="diag-row"><span>Known text estimate</span><strong>${Number(state.health?.monthlyBudget?.knownTextUsd||0).toFixed(2)}</strong></div>
@@ -545,7 +570,7 @@ function settingsView(){const providers=state.health?.providerReadiness||{};cons
   <div class="diag-row"><span>Media usage</span><strong>Not yet metered</strong></div></div>
   <p class="muted tiny">Actual spending may be higher than shown. Reconcile Netlify and external provider billing before treating this as an accurate total.</p>
   ${state.health?.monthlyBudget?.targetReached?'<p class="status-warn">Target reached in known estimates. Services remain available.</p>':''}
-</article>${googleIntegrationSettings()}<article class="card settings-card"><h3>Voice settings</h3>
+</article>${preferencesSettings()}${googleIntegrationSettings()}<article class="card settings-card"><h3>Voice settings</h3>
 <p class="muted tiny">Voice Message records and sends once. Live Talk listens and replies aloud. OpenRouter powers optional ElevenLabs voices; the browser voice remains a fallback.</p>
 <label for="zeus-voice-preset">OpenRouter / ElevenLabs voice</label>
 <select id="zeus-voice-preset">
@@ -646,6 +671,27 @@ function bind(){
   $$('[data-google-service]').forEach(b=>b.addEventListener('click',()=>googleConnectionAction(b.dataset.googleService,b.dataset.googleAction)));
   $$('#logout,#settings-logout').forEach(b=>b.addEventListener('click',logout));
 
+  $('#preferences-form')?.addEventListener('submit',async event=>{
+    event.preventDefault();
+    const form=event.currentTarget;
+    const button=form.querySelector('button[type="submit"]');
+    const label=$('#preferences-saved');
+    if(button)button.disabled=true;
+    if(label)label.textContent='Saving…';
+    try{
+      const value={
+        personality:$('#zeus-personality').value,
+        instructions:$('#zeus-global-instructions').value
+      };
+      const saved=await api('/api/preferences',{method:'PUT',body:JSON.stringify(value)});
+      state.preferences={personality:saved.personality,instructions:saved.instructions};
+      state.preferencesLoaded=true;
+      if(label)label.textContent='Saved for chat and Live Talk.';
+    }catch(error){
+      if(label)label.textContent='Could not save.';
+      state.error=error.message||'Could not save preferences.';
+    }finally{if(button)button.disabled=false;}
+  });
   $('#save-voice-id')?.addEventListener('click',()=>{
     const preset=String($('#zeus-voice-preset')?.value||'sarah');
     const value=preset==='custom'?String($('#zeus-voice-id')?.value||'').trim():preset;
@@ -663,7 +709,7 @@ function bind(){
       if(state.tab==='Projects'){await loadProjects();if(state.currentProject?.id)await hydrateProjectWorkspace(state.currentProject.id,{loadConversation:false});else state.tasks=[];}
       if(state.tab==='Files')await Promise.all([loadFiles(),loadArtifacts()]);
       if(state.tab==='Tools')await Promise.all([loadHealth(),loadFiles(),loadArtifacts()]);
-      if(state.tab==='Settings')await Promise.all([loadHealth(),loadGoogleConnections()]);
+      if(state.tab==='Settings')await Promise.all([loadHealth(),loadGoogleConnections(),loadPreferences()]);
     }catch(err){
       console.error(`Could not load ${next}`,err);
       state.error=err?.message||`Could not load ${next}.`;

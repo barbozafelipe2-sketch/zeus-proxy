@@ -403,6 +403,20 @@ async function chatHandler(req, context, startedAt){
     const execution=init.execution,userMessage=init.userMessage;
     const built=await buildContext({db,userId:user.id,projectId,conversationId,currentMessageId:userMessage.id,currentText:modelText,attachmentRows});
     let aiContext=redactSecrets(built.context);const history=built.history;
+    // Same saved user preferences for regular chat, voice message, and Live Talk:
+    // all three modes send turns through this authenticated chat endpoint.
+    const prefRows=await db.sql`SELECT personality,instructions FROM zeus_user_preferences WHERE owner_id=${user.id}`;
+    const prefs=prefRows[0];
+    if(prefs){
+      const personalities={balanced:'Helpful, clear and adaptable.',direct:'Direct, concise and practical.',warm:'Warm, conversational and encouraging.',creative:'Imaginative, vivid and expressive.',professional:'Polished, structured and professional.'};
+      const personality=personalities[prefs.personality]||personalities.balanced;
+      const userInstructions=redactSecrets(String(prefs.instructions||'').slice(0,4000));
+      aiContext=redactSecrets(`USER-APPROVED GLOBAL STYLE PREFERENCES (apply to text and spoken replies; do not override safety, facts or project requirements):
+Personality: ${personality}
+${userInstructions?'Custom instructions: '+userInstructions:''}
+---
+${aiContext}`);
+    }
     if(isWhatMissingIntent(content)){
       const priorRequirements=await loadPriorRequirements(db,user.id,conversationId,execution.id);
       if(priorRequirements.length)aiContext=redactSecrets(aiContext+`${aiContext?'\n\n---\n\n':''}PREVIOUS EXECUTION REQUIREMENTS\n${formatChecklist(priorRequirements)}\nOnly evaluate coverage against this saved list. Do not invent new requirements unless the user added a new request in the current message.`);
