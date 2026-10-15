@@ -582,13 +582,18 @@ export function zeusIndependentFinisherCandidates(text='',starter=null,{vision=f
     ['openai','anthropic','xai','gemini','qwen'];
   const excluded=starter?modelFamily(starter):null;
   const blocked=new Set(blockedProviders||[]);
-  const pool=availableModels({vision}).filter(m=>
-    modelFamily(m)!==excluded&&routeEligibleWhenGatewayBlocked(m,blocked)
+  const all=availableModels({vision}).filter(m=>
+    (!starter||m.provider!==starter.provider||m.id!==starter.id)&&routeEligibleWhenGatewayBlocked(m,blocked)
   );
+  // Prefer an independent provider family when available, but do not silently
+  // skip professional review when an installation only has one provider.
+  const independent=all.filter(m=>modelFamily(m)!==excluded);
+  const pool=independent.length?independent:all;
   return uniqueModelOrder(pool.sort((a,b)=>{
+    const qa=Number(a.quality||0),qb=Number(b.quality||0);
     const pa=preferred.indexOf(modelFamily(a)),pb=preferred.indexOf(modelFamily(b));
     const ra=pa<0?preferred.length:pa,rb=pb<0?preferred.length:pb;
-    return roleScore('DIRECTOR',b,text)-roleScore('DIRECTOR',a,text)||ra-rb||Number(a.cost||99)-Number(b.cost||99);
+    return qb-qa||roleScore('DIRECTOR',b,text)-roleScore('DIRECTOR',a,text)||ra-rb||Number(a.cost||99)-Number(b.cost||99);
   }));
 }
 
@@ -744,10 +749,10 @@ export async function runZeus({ text, context = '', images = [], history = [], r
       return {
         content:final.content,
         leadModel:`${final.model.provider}:${final.model.id}`,
-        pipelineLabel:'Compound · two independent model families',
+        pipelineLabel:firstFamily!==modelFamily(final.model)?'Compound · independent domain Director':'Compound · same-family domain Director',
         verificationLabel:codeLikeRequest(text)?'Static synthesis only · not executed':null,
         trace:{
-          strategy:'zeus_compound_independent_finisher',executionLevel:'COMPOUND',requirements:checklist,
+          strategy:firstFamily!==modelFamily(final.model)?'zeus_compound_independent_finisher':'zeus_compound_base_gpt_finalizer',executionLevel:'COMPOUND',requirements:checklist,
           base:base?{provider:base.model.provider,model:base.model.id,fallbacks:base.attempts}:null,
           baseError:baseError?{code:baseError.code||null,message:redactProviderText(String(baseError?.message||baseError)).slice(0,220),attempts:baseError.attempts||[]}:null,
           finalizer:{provider:final.model.provider,model:final.model.id,fallbacks:final.attempts},
