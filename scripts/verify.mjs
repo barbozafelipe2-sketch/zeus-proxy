@@ -227,7 +227,7 @@ if (chat.includes("state='CREATING_ARTIFACT'")) throw new Error('Invalid executi
 if (/db\.sql[^\n]*\.catch\s*\(/.test(chat)) throw new Error('db.sql tagged result must not use Promise .catch().');
 if (/Open in Zeus|Open in Olympus/.test(app)) throw new Error('Project workspace regressed to Home launcher buttons.');
 if (/Understanding your request','2s'|Creating the deliverable','15s'/.test(app)) throw new Error('Simulated execution timings returned to the UI.');
-if (!app.includes('lastFailedRequestId') || !app.includes('lastFailedTurboApproval') || !app.includes('await sendText(text,pending,requestId,mode,turboApproval)')) throw new Error('Retry no longer preserves the original request id, mode and Turbo approval.');
+if (!app.includes('lastFailedRequestId') || !app.includes('lastFailedTurboApproval') || !app.includes('await sendText(text,pending,requestId,mode,turboApproval,resumeExecutionId)')) throw new Error('Retry no longer preserves the original request id, mode and Turbo approval.');
 if (!chat.includes('ON CONFLICT (owner_id,project_id) WHERE project_id IS NOT NULL')) throw new Error('Canonical project conversation upsert missing.');
 if (!chat.includes('ON CONFLICT (owner_id,request_id) WHERE request_id IS NOT NULL')) throw new Error('Execution idempotency upsert missing.');
 if (!chat.includes('discardStagedArtifact')) throw new Error('Staged artifact rollback cleanup missing.');
