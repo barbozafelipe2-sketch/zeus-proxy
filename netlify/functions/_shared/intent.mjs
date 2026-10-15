@@ -155,6 +155,7 @@ export function decideExecutionLevel(text='', {
   if(selectedMode==='ZEUS')return zeusGear();
 
   // Olympus (manual) escalates only when the work actually needs a team.
+  if(action==='CHAT'&&requirements===0&&!requiresVerification&&workstreams.length===0&&!TURBO_EXECUTION.test(value)&&!COMPOUND_PLUS_SIGNAL.test(value)&&!DEEP_ANALYSIS.test(value))return out('ZEUS','SIMPLE',['simple_turn_no_team_needed']);
   const areas=turboAreasIn(value);
   const executionVerb=TURBO_EXECUTION.test(value);
   const zip=String(artifactType||'').toLowerCase()==='zip';
