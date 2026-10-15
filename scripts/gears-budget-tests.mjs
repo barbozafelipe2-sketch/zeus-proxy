@@ -74,7 +74,7 @@ try{
   assert.equal(calls.length,2,'Compound requires exactly two successful role calls');
   assert.equal(paired.trace.independentFamilies,true,'Compound must report distinct families');
   assert.notEqual(modelFamily(paired.trace.base),modelFamily(paired.trace.finalizer),'base and finisher must be different families');
-  assert.ok(paired.trace.budget.callsUsed<=2,'no extra hidden classifier or retry call');
+  assert.ok(Number.isInteger(paired.trace.budget.calls)&&paired.trace.budget.calls<=2,'no extra hidden classifier or retry call');
 
   // Usage capture + summary (no prompts stored).
   reset(models);
