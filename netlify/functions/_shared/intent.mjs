@@ -156,6 +156,9 @@ export function decideExecutionLevel(text='', {
 
   // Olympus (manual) escalates only when the work actually needs a team.
   if(action==='CHAT'&&requirements===0&&!requiresVerification&&workstreams.length===0&&!TURBO_EXECUTION.test(value)&&!COMPOUND_PLUS_SIGNAL.test(value)&&!DEEP_ANALYSIS.test(value))return out('ZEUS','SIMPLE',['simple_turn_no_team_needed']);
+  // A single ordinary PDF is cheaper and adequately reviewed by Zeus L2.
+  if(action==='ARTIFACT_CREATE'&&artifactType==='pdf'&&!DEEP_ANALYSIS.test(value)&&!COMPOUND_PLUS_SIGNAL.test(value)&&turboAreasIn(value).length===0)
+    return out('ZEUS','COMPOUND',['single_document_review']);
   const areas=turboAreasIn(value);
   const executionVerb=TURBO_EXECUTION.test(value);
   const zip=String(artifactType||'').toLowerCase()==='zip';
@@ -166,8 +169,9 @@ export function decideExecutionLevel(text='', {
   const candidate=STRONG_TURBO.test(value)||LAUNCH_PACKAGE.test(value)||(areas.length>=2&&(executionVerb||zip));
   const substantiveScope=areas.length>=2 && (executionVerb||zip||LAUNCH_PACKAGE.test(value));
   const documentedScope=requirements>=3 || (hasFiles && requirements>=2);
+  const explicitMultiArea=areas.length>=3&&executionVerb&&/\b(commit|deploy|release|production|build|implementar|implement)\b/i.test(value);
   const explicitAuditRepair=STRONG_TURBO.test(value)&&hasFiles&&/\b(audit|auditoria|findings|achados|relatorio de auditoria)\b/i.test(value);
-  const turboEligible=candidate && ((substantiveScope && documentedScope)||explicitAuditRepair)
+  const turboEligible=candidate && ((substantiveScope && (documentedScope||explicitMultiArea))||explicitAuditRepair)
     && action!=='IMAGE_CREATE' && action!=='IMAGE_EDIT';
   if(turboEligible){
     const reasons=[];
