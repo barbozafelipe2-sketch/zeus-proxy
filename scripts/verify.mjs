@@ -365,7 +365,7 @@ if (!models.includes('isNonRetryableRequestFailure') || !models.includes('AI_REQ
 if (!chat.includes("if(olympusError?.code==='AI_REQUEST_REJECTED')throw olympusError")) throw new Error('Olympus invalid requests incorrectly downgrade to Zeus.');
 if (!phase8Source.includes('snapshotProviderTelemetry') || !phase8Source.includes('maxCalls:4')) throw new Error('Phase 8 resilience coverage missing.');
 
-if (!models.includes('excludeProviders:[modelFamily(director.model)]')) throw new Error('Turbo CEO must exclude Director model family, not merely adapter.');
+if (!models.includes('let ceoCandidates=ceoOrder(previousFamilies)') || !models.includes('ceoCandidates=ceoOrder([modelFamily(director.model)])') || !models.includes('excludeProviders:excluded')) throw new Error('Turbo CEO must exclude Director family in both primary and fallback selection.');
 if (!models.includes("gptFinished:modelFamily(final.model)==='openai'")) throw new Error('Non-GPT finishing must not be attributed to GPT.');
 if (!phase9Source.includes('buildTransportRoutes') || !phase9Source.includes('snapshotProviderTelemetry')) throw new Error('Phase 9 route/family regression tests missing.');
 

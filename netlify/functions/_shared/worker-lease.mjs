@@ -80,7 +80,7 @@ export async function assertWorkerFence(client,{executionId,ownerId,workerToken}
 // user message. Reinitialization uses SELECT FOR UPDATE on the same execution,
 // preventing a late error writer from re-marking a new attempt as failed.
 export async function markFailureIfOwner(db,{executionId,ownerId,workerToken,errorCode,trace,userMessageId=null}){
-  const failureMarker=JSON.stringify({failed:true});
+  const failureMarker=JSON.stringify({failed:true,errorCode:/^[A-Z][A-Z0-9_]{1,63}$/.test(String(errorCode||''))?errorCode:'EXECUTION_FAILED'});
   if(workerToken){
     if(!validDispatchToken(workerToken))return false;
     const rows=await db.sql`
@@ -102,7 +102,7 @@ export async function markFailureIfOwner(db,{executionId,ownerId,workerToken,err
     WITH owned AS (
       UPDATE executions SET state='FAILED',error_code=${errorCode},trace=${trace},completed_at=now()
       WHERE id=${executionId} AND owner_id=${ownerId} AND worker_token IS NULL
-        AND state IN ('CREATED','UNDERSTANDING','QUEUED')
+        AND state NOT IN ('COMPLETED','PARTIAL','FAILED','CANCELLED')
       RETURNING id
     ), marked AS (
       UPDATE messages SET metadata=COALESCE(metadata,'{}'::jsonb)||${failureMarker}::jsonb

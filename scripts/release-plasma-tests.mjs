@@ -1,0 +1,13 @@
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+const app=readFileSync('public/app.js','utf8');
+const style=readFileSync('public/ui-premium.css','utf8');
+const revise=readFileSync('netlify/functions/artifact-revise.mjs','utf8');
+assert.match(app,/function startPlasmaOrb/);
+assert.match(app,/zeus-plasma-canvas/);
+assert.match(app,/startPlasmaOrb\(\)/);
+assert.doesNotMatch(app,/zeus-voice-symbol">ϟ/);
+assert.match(style,/\.zeus-plasma-canvas/);
+assert.match(style,/prefers-reduced-motion/);
+assert.match(revise,/consumeEndpointRate\(db,user.id,'artifact',id\)/);
+console.log('Release plasma voice orb and artifact revision rate limit PASS');

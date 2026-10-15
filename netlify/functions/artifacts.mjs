@@ -21,8 +21,8 @@ async function handler(req,context){
     let rows;
     if(projectId&&before)rows=await db.sql`SELECT id,project_id,conversation_id,type,mime_type,filename,size,version,metadata,created_at FROM artifacts WHERE owner_id=${user.id} AND project_id=${projectId} AND (created_at < ${before.t}::timestamptz OR (created_at = ${before.t}::timestamptz AND id < ${before.id}::uuid)) ORDER BY created_at DESC,id DESC LIMIT ${limit+1}`;
     else if(projectId)rows=await db.sql`SELECT id,project_id,conversation_id,type,mime_type,filename,size,version,metadata,created_at FROM artifacts WHERE owner_id=${user.id} AND project_id=${projectId} ORDER BY created_at DESC,id DESC LIMIT ${limit+1}`;
-    else if(before)rows=await db.sql`SELECT id,project_id,conversation_id,type,mime_type,filename,size,version,metadata,created_at FROM artifacts WHERE owner_id=${user.id} AND (created_at < ${before.t}::timestamptz OR (created_at = ${before.t}::timestamptz AND id < ${before.id}::uuid)) ORDER BY created_at DESC,id DESC LIMIT ${limit+1}`;
-    else rows=await db.sql`SELECT id,project_id,conversation_id,type,mime_type,filename,size,version,metadata,created_at FROM artifacts WHERE owner_id=${user.id} ORDER BY created_at DESC,id DESC LIMIT ${limit+1}`;
+    else if(before)rows=await db.sql`SELECT id,project_id,conversation_id,type,mime_type,filename,size,version,metadata,created_at FROM artifacts WHERE owner_id=${user.id} AND project_id IS NULL AND (created_at < ${before.t}::timestamptz OR (created_at = ${before.t}::timestamptz AND id < ${before.id}::uuid)) ORDER BY created_at DESC,id DESC LIMIT ${limit+1}`;
+    else rows=await db.sql`SELECT id,project_id,conversation_id,type,mime_type,filename,size,version,metadata,created_at FROM artifacts WHERE owner_id=${user.id} AND project_id IS NULL ORDER BY created_at DESC,id DESC LIMIT ${limit+1}`;
     const paged=pageResult(rows,limit);
     return json({artifacts:paged.page.map(r=>({...r,downloadUrl:`/api/artifact-download?id=${r.id}`})),page:{hasMore:paged.hasMore,nextCursor:paged.nextCursor},requestId});
   }
@@ -45,8 +45,8 @@ async function handler(req,context){
   await consumeEndpointRate(db,user.id,'artifact',requestId);
   const body=await readJson(req);if(!body)return errorJson('Invalid JSON.',400,'INVALID_JSON',requestId);
   const requestedType=String(body.type||'').toLowerCase();
-  if(body.type&&!['pdf','docx','pptx','xlsx','csv','md','zip'].includes(requestedType))return errorJson('Unsupported artifact type.',400,'INVALID_ARTIFACT_TYPE',requestId);
-  const type=['pdf','docx','pptx','xlsx','csv','md','zip'].includes(requestedType)?requestedType:'pdf';
+  if(body.type&&!['pdf','docx','pptx','xlsx','csv','md','html','zip'].includes(requestedType))return errorJson('Unsupported artifact type.',400,'INVALID_ARTIFACT_TYPE',requestId);
+  const type=['pdf','docx','pptx','xlsx','csv','md','html','zip'].includes(requestedType)?requestedType:'pdf';
   const title=cleanText(body.title,140)||'OlyHub Output',content=cleanText(body.content,120000);if(!content)return errorJson('Artifact content is required.',400,'ARTIFACT_CONTENT_REQUIRED',requestId);
   try{validateArtifactInput(type,content);}catch(error){return errorJson(error.message,Number(error.status)||413,error.code||'ARTIFACT_TOO_LARGE',requestId);}
   let projectId=body.projectId||null,conversationId=body.conversationId||null;

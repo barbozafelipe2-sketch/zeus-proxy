@@ -8,10 +8,11 @@ const state = {
   conversations:[], currentConversation:null, messages:[], chatArtifacts:[], sending:false, execStatus:'', error:'',
   attachedFiles:[], projects:[], projectFilter:'ALL', currentProject:null, tasks:[],
   files:[], artifacts:[], health:null, recording:false,
-  projectSection:'CHAT', projectMemories:[], memoryPolicy:null,
+  projectSection:'CHAT', projectMemories:[], projectSources:[], memoryPolicy:null,
   messagePage:{hasMore:false,nextCursor:null}, filesPage:{scope:'global',hasMore:false,nextCursor:null}, artifactsPage:{scope:'global',hasMore:false,nextCursor:null}, chatRestore:null,
   voiceBusy:false, voiceRecorder:null, voiceStream:null, voiceChunks:[], voiceStopTimer:null, voiceRecognition:null, voiceBytes:0, voiceHitSizeLimit:false,
-  liveTalk:false, liveRecognizer:null, voiceId:'', voiceReplyAudio:null,
+  liveTalk:false, liveRecognizer:null, liveCapture:null, liveGeneration:0, liveStage:'idle', voiceId:'sarah', voiceReplyAudio:null, liveAudioUrl:null, liveSpeechController:null,
+  liveLocale:'auto', voiceAvatar:'lightning',
   preferences:{personality:'balanced',instructions:''}, preferencesLoaded:false,
   draft:'', offline:typeof navigator!=='undefined'&&navigator.onLine===false,
   lastFailedText:'', lastFailedMessageId:null, lastFailedAttachments:[], lastFailedRequestId:null, lastFailedMode:null, lastFailedTurboApproval:null,
@@ -148,7 +149,11 @@ async function downloadPrivateOutput(url,filename='Zeus-Proxy-output'){
 }
 async function openPrivateOutput(url,filename='Zeus Proxy output',mime='application/octet-stream'){
   const blob=await fetchPrivateBlob(url),objectUrl=URL.createObjectURL(blob),type=blob.type||mime||'application/octet-stream';
-  let body;if(type.startsWith('image/'))body=`<img class="private-preview-image" src="${objectUrl}" alt="${esc(filename)}">`;else if(type==='application/pdf')body=`<iframe class="private-preview-frame" src="${objectUrl}" title="${esc(filename)}"></iframe>`;else if(type.startsWith('text/')||type.includes('json')||type.includes('csv')){const text=await blob.text();body=`<pre class="private-preview-text">${esc(text.slice(0,240000))}${text.length>240000?'\n[preview truncated]':''}</pre>`;}else body=`<div class="private-preview-generic">${icon('files')}<strong>${esc(filename)}</strong><p>This file is private. Use Download to save it to your device.</p></div>`;
+  let body;if(type.startsWith('image/'))body=`<img class="private-preview-image" src="${objectUrl}" alt="${esc(filename)}">`;else if(type==='application/pdf')body=`<iframe class="private-preview-frame" src="${objectUrl}" title="${esc(filename)}"></iframe>`;else if(type==='text/html'){
+    const source=(await blob.text()).slice(0,240000);
+    const lockedCsp=`<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; connect-src 'none'; form-action 'none'; base-uri 'none'">`;
+    body=`<p class="muted tiny">Isolated preview: scripts run inside a sandbox; network and parent-session access are blocked.</p><iframe class="private-preview-frame" sandbox="allow-scripts" referrerpolicy="no-referrer" title="${esc(filename)}" srcdoc="${esc(lockedCsp+source)}"></iframe>`;
+  }else if(type.startsWith('text/')||type.includes('json')||type.includes('csv')){const text=await blob.text();body=`<pre class="private-preview-text">${esc(text.slice(0,240000))}${text.length>240000?'\n[preview truncated]':''}</pre>`;}else body=`<div class="private-preview-generic">${icon('files')}<strong>${esc(filename)}</strong><p>This file is private. Use Download to save it to your device.</p></div>`;
   showModal(`<div class="modal-backdrop private-preview-backdrop"><section class="modal private-preview-modal"><header class="private-preview-head"><button class="secondary compact" id="private-preview-close" type="button">← Back</button><strong>${esc(filename)}</strong><button class="secondary compact" id="private-preview-download" type="button">Download</button></header><div class="private-preview-body">${body}</div></section></div>`,{initialFocus:'#private-preview-close',onClose:()=>URL.revokeObjectURL(objectUrl)});
   $('#private-preview-close')?.addEventListener('click',()=>closeModal());
   $('#private-preview-download')?.addEventListener('click',()=>downloadPrivateOutput(url,filename).catch(e=>{state.error=e.message;closeModal();render();}));
@@ -174,7 +179,7 @@ function announce(text){
 function dismissError(){state.error='';state.lastFailedText='';state.lastFailedMessageId=null;state.lastFailedAttachments=[];state.lastFailedRequestId=null;state.lastFailedMode=null;state.lastFailedTurboApproval=null;render();}
 function errorBanner(extraClass=''){
   if(!state.error)return '';
-  return `<div class="chat-error ${extraClass}"><span>${esc(state.error)}</span><div class="error-actions">${state.lastFailedText?`<button type="button" id="retry-last">Retry</button>`:''}<button type="button" class="error-dismiss" data-dismiss-error aria-label="Dismiss message">${icon('close')}</button></div></div>`;
+  return `<div class="chat-error ${extraClass}"><span>${esc(state.error)}</span><div class="error-actions">${state.lastFailedBudgetExecutionId?`<button type="button" id="approve-olympus-five">Approve +$5</button>`:''}${state.lastFailedText?`<button type="button" id="retry-last">Retry</button>`:''}<button type="button" class="error-dismiss" data-dismiss-error aria-label="Dismiss message">${icon('close')}</button></div></div>`;
 }
 async function bootstrapApp(){
   state.authReady=true; render();
@@ -212,6 +217,11 @@ async function loadArtifacts(projectId=null,{append=false}={}){
 }
 async function loadHealth(){ try{state.health=await api('/api/health');state.healthError=false;}catch(error){state.healthError=true;throw error;} }
 async function loadTasks(projectId){ const d=await api(`/api/tasks?projectId=${encodeURIComponent(projectId)}`);state.tasks=d.tasks||[]; }
+async function loadProjectSources(){
+  if(!state.currentProject?.id){state.projectSources=[];return;}
+  const d=await api(`/api/project-sources?projectId=${encodeURIComponent(state.currentProject.id)}`);
+  state.projectSources=d.sources||[];
+}
 async function loadMemories(projectId){ if(!projectId){state.projectMemories=[];state.memoryPolicy=null;return;} const d=await api(`/api/memories?projectId=${encodeURIComponent(projectId)}`);state.projectMemories=d.memories||[];state.memoryPolicy=d.policy||null; }
 
 function icon(name){
@@ -310,6 +320,7 @@ function homeView(){
   const exec=state.execStatus?`<div class="exec-card live" aria-hidden="true"><div class="exec-head"><span class="exec-pulse"></span><div><strong>${esc(state.execTitle||'Zeus is working')}</strong><div class="muted tiny">${esc(state.execStatus)}</div></div></div><div class="exec-foot">Live execution status — no simulated timings.</div></div>`:'';
   return `<section class="page chat-page">
     ${modeStrip()}
+    ${state.currentConversation&&!state.currentProject?`<div style="padding:6px 16px;text-align:right"><button class="secondary compact" data-move-current="${esc(state.currentConversation)}">Move to project</button></div>`:''}
     <div class="chat-scroll" id="chat-scroll">
       ${isEmpty?`<div class="welcome"><div class="eyebrow">${state.currentProject?esc(state.currentProject.name):'ONE AI ENVIRONMENT. REAL RESULTS.'}</div><h1>Turn the request into a result.</h1><p>Attach the source, give the goal, and keep the conversation, files and deliverables together.</p><div class="quick-prompts"><button data-prompt="Analyze the attached file and ground every important claim in the source. Call out anything the source does not support.">Review a source</button><button data-prompt="Create the next professional deliverable for this work and keep it connected to the conversation.">Create a deliverable</button><button data-prompt="Build this as runnable code. Include focused tests and tell me clearly which tests were not actually executed.">Build with tests</button><button data-prompt="Turn this goal into a project plan with clear tasks, risks, and milestones.">Plan a project</button></div></div>`:`${state.messagePage?.hasMore?'<div class="history-more"><button class="secondary compact" id="load-older-messages">Load older messages</button></div>':''}<div class="message-list">${msgs}</div>`}
       ${exec}
@@ -352,16 +363,173 @@ function messageHtml(m){
   return `<article class="message ${m.role==='user'?'user':'assistant'}"><div class="message-label">${m.role==='user'?'YOU':esc(m.mode||'ZEUS')}</div><div class="message-body">${esc(m.content||'')}</div>${note?`<details class="message-debug"><summary>Execution details</summary><div class="message-model">${esc(note)}</div></details>`:''}${sourceHtml}${attached?`<div class="attachments in-message">${attached}</div>`:''}${artifacts?`<div class="artifact-row">${artifacts}</div>`:''}</article>`;
 }
 function artifactCard(a){const tag=esc((a.type||'FILE').toUpperCase().slice(0,4)),url=esc(a.downloadUrl||''),name=esc(a.filename||'Zeus Proxy output'),mime=esc(a.mime_type||a.type||'application/octet-stream'),isImage=String(a.mime_type||'').startsWith('image/'),isZip=a.type==='zip'||/zip/i.test(a.mime_type||'')||String(a.filename||'').toLowerCase().endsWith('.zip'),git=Boolean(state.health?.capabilities?.githubCommit);return `<div class="artifact-card">${isImage?`<button type="button" class="artifact-thumb-wrap" data-open-output="${url}" data-output-name="${name}" data-output-mime="${mime}" aria-label="Open ${name}"><img class="artifact-thumb" data-private-image="${url}" alt=""></button>`:`<div class="out-badge">${tag}</div>`}<div><strong>${name}</strong><small>${fmtSize(a.size)} · ${mime}</small></div><div class="artifact-actions"><button type="button" data-open-output="${url}" data-output-name="${name}" data-output-mime="${mime}">Open</button><button type="button" class="ghost-a" data-download-output="${url}" data-output-name="${name}">Download</button>${isZip&&git?`<button type="button" class="ghost-a" data-github-commit="artifact" data-source-id="${esc(a.id)}" data-source-name="${name}">Commit</button>`:''}</div></div>`}
-function liveTalkSupported(){return Boolean((window.SpeechRecognition||window.webkitSpeechRecognition)&&window.speechSynthesis)}
+const LIVE_LOCALES={auto:'auto',pt:'pt-BR',en:'en-US',es:'es-ES'};
+const VOICE_AVATARS=new Set(['lightning','classic','olympus','liquid']);
+function initVoicePrefs(){
+ try{const l=localStorage.getItem('zeus-live-locale');state.liveLocale=Object.prototype.hasOwnProperty.call(LIVE_LOCALES,l)?l:'auto';
+ const a=localStorage.getItem('zeus-voice-avatar');state.voiceAvatar=VOICE_AVATARS.has(a)?a:'lightning';
+ state.voiceId=localStorage.getItem('zeus-voice-id')||'sarah';}catch{}
+}
+function browserInputLocale(){const v=LIVE_LOCALES[state.liveLocale]||'auto';return v==='auto'?(navigator.language||'en-US'):v;}
+function speechLocale(text=''){
+ const v=LIVE_LOCALES[state.liveLocale]||'auto';if(v!=='auto')return v;
+ const t=String(text||'');
+ if(/[ãõçáâêôà]/i.test(t)||/\b(você|vocês|então|obrigado|não)\b/i.test(t))return 'pt-BR';
+ if(/[ñ¿¡]/.test(t)||/\b(gracias|hola|usted|quiero|mañana)\b/i.test(t))return 'es-ES';
+ return navigator.language||'en-US';
+}
+
+function startPlasmaOrb(){
+  const canvas=document.querySelector('.zeus-plasma-canvas');
+  if(!canvas||canvas.dataset.started)return;
+  canvas.dataset.started='1';
+  const ctx=canvas.getContext('2d',{alpha:true});
+  if(!ctx)return;
+  const reduced=window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
+  const W=256,C=128,R=94;
+  let frame=0,last=0;
+  function lightning(x1,y1,x2,y2,depth,alpha){
+    const spread=depth>1?10:3;
+    const dx=x2-x1,dy=y2-y1;
+    const midX=(x1+x2)/2+(Math.random()-.5)*spread,midY=(y1+y2)/2+(Math.random()-.5)*spread;
+    if(depth>0){lightning(x1,y1,midX,midY,depth-1,alpha);lightning(midX,midY,x2,y2,depth-1,alpha);return;}
+    ctx.strokeStyle='rgba(139,234,255,'+alpha+')';ctx.lineWidth=.5+alpha*.8;
+    ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();
+  }
+  function paint(){
+    ctx.clearRect(0,0,W,W);
+    // The glow, ring and flash stay inside the same fixed-diameter canvas.
+    const halo=ctx.createRadialGradient(C,C,15,C,C,126);
+    halo.addColorStop(0,'rgba(40,160,255,.27)');
+    halo.addColorStop(.68,'rgba(0,80,255,.20)');
+    halo.addColorStop(1,'rgba(0,80,255,0)');
+    ctx.fillStyle=halo;ctx.fillRect(0,0,W,W);
+    ctx.save();ctx.shadowColor='#00aaff';ctx.shadowBlur=18;
+    ctx.strokeStyle='#0065fc';ctx.lineWidth=8;
+    ctx.beginPath();ctx.arc(C,C,R,0,Math.PI*2);ctx.stroke();
+    ctx.strokeStyle='#39e4ff';ctx.lineWidth=2.8;
+    ctx.beginPath();ctx.arc(C,C,R-1,0,Math.PI*2);ctx.stroke();
+    ctx.restore();
+    ctx.save();ctx.beginPath();ctx.arc(C,C,R-2,0,Math.PI*2);ctx.clip();
+    const intensity=state.liveStage==='speaking'?1:state.liveStage==='processing'?.83:.65;
+    ctx.shadowColor='#47dfff';ctx.shadowBlur=9;
+    for(let i=0;i<32;i++){
+      const angle=i*Math.PI*2/32+(Math.random()-.5)*.45;
+      const radius=R*(.68+Math.random()*.28);
+      const x=C+Math.cos(angle)*radius,y=C+Math.sin(angle)*radius;
+      lightning(C,C,x,y,4,(.35+Math.random()*.6)*intensity);
+      if(i%3===0){
+        const forkAngle=angle+(.1+Math.random()*.48)*(i%2?1:-1);
+        lightning(C+Math.cos(angle)*30,C+Math.sin(angle)*30,C+Math.cos(forkAngle)*(radius*.83),C+Math.sin(forkAngle)*(radius*.83),3,.24*intensity);
+      }
+    }
+    ctx.restore();
+    ctx.save();ctx.shadowColor='#c7ffff';ctx.shadowBlur=22;
+    const core=ctx.createRadialGradient(C,C,1,C,C,28);
+    core.addColorStop(0,'#fff');core.addColorStop(.34,'rgba(236,255,255,.99)');
+    core.addColorStop(.7,'rgba(38,232,255,.64)');core.addColorStop(1,'rgba(5,122,255,0)');
+    ctx.fillStyle=core;ctx.beginPath();ctx.arc(C,C,28,0,Math.PI*2);ctx.fill();
+    ctx.restore();
+  }
+  function tick(now){
+    if(!canvas.isConnected||!state.liveTalk)return;
+    if(now-last>=75){last=now;paint();}
+    frame=requestAnimationFrame(tick);
+  }
+  paint();
+  if(!reduced&&state.liveTalk)frame=requestAnimationFrame(tick);
+}
+
+function voiceAvatarMarkup(){
+ const kind=VOICE_AVATARS.has(state.voiceAvatar)?state.voiceAvatar:'lightning';
+ return kind==='lightning'
+ ? `<div class="zeus-voice-presence lightning ${state.liveTalk?'active':''}" aria-hidden="true"><canvas class="zeus-plasma-canvas" width="256" height="256"></canvas></div>`
+ : `<div class="zeus-voice-presence ${kind} ${state.liveTalk?'active':''}" aria-hidden="true"><div class="zeus-voice-core"><span class="zeus-voice-symbol">●</span></div></div>`;
+}
+function discardLiveAudio(){try{state.voiceReplyAudio?.pause()}catch{}state.voiceReplyAudio=null;
+ if(state.liveAudioUrl){URL.revokeObjectURL(state.liveAudioUrl);state.liveAudioUrl=null;}}
+initVoicePrefs();
+function liveTalkSupported(){return Boolean(window.speechSynthesis&&((window.SpeechRecognition||window.webkitSpeechRecognition)||(state.health?.capabilities?.serverTranscription&&navigator.mediaDevices?.getUserMedia&&window.MediaRecorder)))}
 function voiceSupported(){
   return Boolean(window.SpeechRecognition||window.webkitSpeechRecognition||(navigator.mediaDevices&&window.MediaRecorder));
+}
+async function attachSavedArtifact(artifactId){
+ const artifact=state.artifacts.find(a=>a.id===artifactId);
+ if(!artifact||((artifact.project_id||null)!==(state.currentProject?.id||null))){state.error='Artifact not in this workspace.';render();return;}
+ try{
+  state.execStatus='Preparing saved artifact…';render();
+  const d=await api('/api/artifact-attach',{method:'POST',body:JSON.stringify({
+   artifactId,projectId:state.currentProject?.id||null,conversationId:state.currentConversation||null
+  })});
+  state.attachedFiles.push(d.file);
+  await loadFiles(state.currentProject?.id||null);
+  state.execStatus='Saved artifact attached. Add instructions and send.';state.error='';
+ }catch(error){state.error=error?.message||'Artifact could not be attached.';state.execStatus='';}
+ render();
+}
+async function openHtmlEditor(artifactId){
+ const artifact=state.artifacts.find(a=>a.id===artifactId&&a.type==='html');
+ if(!artifact){state.error='HTML artifact unavailable in this workspace.';render();return;}
+ try{
+  const original=await(await fetchPrivateBlob(artifact.downloadUrl)).text();
+  if(original.length>120000)throw Error('HTML editing limit exceeded.');
+  showModal(`<div class="modal-backdrop private-preview-backdrop"><section class="modal private-preview-modal" aria-labelledby="html-edit-title"><header class="private-preview-head"><button id="html-edit-close" class="secondary compact" type="button">Back</button><strong id="html-edit-title">Edit ${esc(artifact.filename)} · v${artifact.version||1}</strong><button type="button" class="primary compact" id="html-edit-save">Save new version</button></header><div class="private-preview-body"><p class="muted tiny">Live sandbox preview. Saving creates a new artifact and preserves the original.</p><textarea id="html-edit-code" aria-label="HTML code" spellcheck="false" style="width:100%;min-height:230px;font:12px/1.5 monospace"></textarea><iframe id="html-edit-preview" class="private-preview-frame" sandbox="allow-scripts" referrerpolicy="no-referrer" title="HTML preview"></iframe><p class="muted tiny" id="html-edit-message" role="status"></p></div></section></div>`,{initialFocus:'#html-edit-code'});
+  const editor=$('#html-edit-code'),preview=$('#html-edit-preview');
+  editor.value=original;
+  const csp=`<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; connect-src 'none'; form-action 'none'; base-uri 'none'">`;
+  const update=()=>{preview.srcdoc=csp+editor.value;};
+  editor.addEventListener('input',update);update();
+  $('#html-edit-close').onclick=()=>closeModal();
+  $('#html-edit-save').onclick=async()=>{
+   const button=$('#html-edit-save');button.disabled=true;
+   try{
+    const response=await api('/api/artifact-revise',{method:'POST',body:JSON.stringify({parentArtifactId:artifact.id,content:editor.value})});
+    await loadArtifacts(state.currentProject?.id||null);
+    closeModal();state.execStatus=`Saved independent revision v${response.artifact.version}.`;render();
+   }catch(error){$('#html-edit-message').textContent=error.message||'Revision could not be saved.';button.disabled=false;}
+  };
+ }catch(error){state.error=error.message||'Could not load HTML.';render();}
+}
+function openCompareArtifacts(){
+ const items=state.artifacts.filter(a=>(a.project_id||null)===(state.currentProject?.id||null));
+ if(items.length<2){state.error='At least two saved artifacts are needed for comparison.';render();return;}
+ const opts=items.map(a=>`<option value="${esc(a.id)}">${esc(a.filename)} (v${a.version||1})</option>`).join('');
+ showModal(`<div class="modal-backdrop"><div class="modal" aria-labelledby="compare-title"><div class="modal-head"><h2 id="compare-title">Compare &amp; Evolve</h2><button id="modal-close" class="ghost" type="button">Close</button></div><div id="modal-notice" class="notice error-notice hidden" role="alert"></div><form id="compare-form" class="form-grid"><label for="compare-a">Version A</label><select id="compare-a">${opts}</select><label for="compare-b">Version B</label><select id="compare-b">${opts}</select><button class="primary" type="submit">Compare</button></form><div id="compare-results"></div></div></div>`,{initialFocus:'#compare-a'});
+ $('#modal-close')?.addEventListener('click',()=>closeModal());$('#compare-b').selectedIndex=1;
+ $('#compare-form')?.addEventListener('submit',e=>{
+  e.preventDefault();const a=items.find(v=>v.id===$('#compare-a').value),b=items.find(v=>v.id===$('#compare-b').value);
+  if(!a||!b||a.id===b.id){setModalError('Choose two different artifacts.');return;}
+  $('#compare-results').innerHTML=`<div class="diag-list"><div class="diag-row">A: ${esc(a.filename)} <strong>${fmtSize(a.size)}</strong></div><div class="diag-row">B: ${esc(b.filename)} <strong>${fmtSize(b.size)}</strong></div></div><p class="muted tiny">Metadata comparison only; binary contents are not examined here.</p><div class="modal-actions"><button type="button" class="secondary" data-approve="${esc(a.id)}">Approve A</button><button type="button" class="secondary" data-approve="${esc(b.id)}">Approve B</button><button type="button" class="primary" id="compare-combine">Prepare C</button></div>`;
+  $('[data-approve]').forEach(el=>el.addEventListener('click',async()=>{
+   const raw=prompt('Alias for approved artifact (example: approved_logo)');
+   if(!raw)return;const alias=raw.trim().toLowerCase();
+   if(!/^[a-z][a-z0-9_-]{1,63}$/.test(alias)){setModalError('Invalid alias. Use lowercase letters, numbers, _ or -.');return;}
+   try{await api('/api/artifact-aliases',{method:'PUT',body:JSON.stringify({projectId:state.currentProject?.id||null,artifactId:el.dataset.approve,alias})});setModalError('');$('#compare-results').insertAdjacentHTML('beforeend',`<p class="muted tiny">Approved: ${esc(alias)}</p>`);}
+   catch(error){setModalError(error.message||'Approval failed.');}
+  }));
+  $('#compare-combine')?.addEventListener('click',async()=>{
+   closeModal();
+   await attachSavedArtifact(a.id);if(state.error)return;
+   await attachSavedArtifact(b.id);if(state.error)return;
+   state.draft=`Create a new version C by comparing and combining the two saved attachments. A: ${a.filename}; B: ${b.filename}. Preserve both originals and state which source contents are actually analyzable. Output a NEW ${a.type===b.type?a.type:'zip'} file.`;
+   state.tab=state.currentProject?'Projects':'Home';if(state.currentProject)state.projectSection='CHAT';render();$('#composer-text')?.focus();
+  });
+ });
+}
+function openSavedArtifactPicker(){
+ const items=state.artifacts.filter(a=>(a.project_id||null)===(state.currentProject?.id||null));
+ if(!items.length){state.error='No saved artifacts available in this workspace.';render();return;}
+ const options=items.map(a=>`<option value="${esc(a.id)}">${esc(a.filename)} · v${Number(a.version||1)}</option>`).join('');
+ showModal(`<div class="modal-backdrop"><div class="modal" aria-labelledby="saved-artifact-title"><div class="modal-head"><h2 id="saved-artifact-title">Use saved artifact</h2><button type="button" id="modal-close" class="ghost">Close</button></div><div id="modal-notice" class="notice error-notice hidden" role="alert"></div><p class="muted tiny">This creates an independent attachment; your original is preserved.</p><form id="saved-artifact-form" class="form-grid"><label for="saved-artifact-select">Artifact</label><select id="saved-artifact-select">${options}</select><div class="modal-actions"><button type="submit" class="primary">Attach</button></div></form></div></div>`,{initialFocus:'#saved-artifact-select'});
+ $('#modal-close')?.addEventListener('click',()=>closeModal());
+ $('#saved-artifact-form')?.addEventListener('submit',async e=>{e.preventDefault();const id=$('#saved-artifact-select')?.value;closeModal();await attachSavedArtifact(id);});
 }
 function composer(){
   const composerMode=state.mode==='OLYMPUS'?'Olympus':'Zeus';
   const chips=state.attachedFiles.map(f=>`<span class="file-chip">${icon('files')} ${esc(f.filename)}<button type="button" data-remove-file="${esc(f.id)}" aria-label="Remove ${esc(f.filename)}" title="Remove attachment">${icon('close')}</button></span>`).join('');
   const showMic=voiceSupported();
   const scope=state.currentProject?`Project: ${esc(state.currentProject.name)}`:'This conversation';
-  return `<div class="composer-shell">${state.attachMenu?`<div class="attach-menu" role="menu" id="attach-menu" aria-label="Add attachment"><button type="button" role="menuitem" id="attach-media">${icon('image')}<span>Photo / Video</span></button><button type="button" role="menuitem" id="attach-camera">${icon('camera')}<span>Camera</span></button><button type="button" role="menuitem" id="attach-file">${icon('files')}<span>File</span></button></div>`:''}${chips?`<div class="attachments pending">${chips}</div>`:''}<form class="composer" id="composer"><button type="button" class="icon-btn attach-plus" id="attach" title="Add photo, video or file" aria-label="Add photo, video or file" aria-haspopup="menu" aria-expanded="${state.attachMenu}" ${state.attachMenu?'aria-controls="attach-menu"':''}>＋</button><textarea id="composer-text" rows="1" aria-label="Message ${composerMode}" placeholder="Message ${composerMode}…" ${state.sending?'disabled':''}>${esc(state.draft)}</textarea>${showMic?`<button type="button" class="icon-btn ${state.recording?'recording':''}" id="voice" title="${state.recording?'Stop recording':state.voiceBusy?'Transcribing…':'Voice input'}" aria-label="${state.recording?'Stop recording':state.voiceBusy?'Transcribing voice':'Voice input'}" ${state.voiceBusy?'disabled':''}>${icon('mic')}</button>`:''}${liveTalkSupported()?`<button type="button" class="icon-btn" id="live-talk" aria-pressed="${state.liveTalk}" aria-label="${state.liveTalk?'Stop Live Talk':'Start Live Talk'}" title="${state.liveTalk?'Stop Live Talk':'Start Live Talk'}">${state.liveTalk?'■':'◉'}</button>`:''}<button type="submit" class="icon-btn send-btn" title="Send (Ctrl/⌘+Enter)" aria-label="Send message" ${state.sending?'disabled':''}>${icon('send')}</button></form><div class="composer-meta"><span>${state.currentProject?'Permanent Project chat · dedicated memory + files':'Conversation history available · no Project memory'}</span><span>Enter adds a new line · use the arrow to send</span></div></div>`;
+  return `<div class="composer-shell">${state.liveTalk?`<div class="zeus-live-stage" role="status" aria-label="Live Talk active">${voiceAvatarMarkup()}<span>Live Talk · ${esc(state.liveStage==='speaking'?'Speaking':state.liveStage==='processing'?'Processing':state.liveStage==='listening'?'Listening':'Connected')} · ${esc(state.liveLocale==='auto'?'Device language':state.liveLocale.toUpperCase())}</span></div>`:''}${state.attachMenu?`<div class="attach-menu" role="menu" id="attach-menu" aria-label="Add attachment"><button type="button" role="menuitem" id="attach-media">${icon('image')}<span>Photo / Video</span></button><button type="button" role="menuitem" id="attach-camera">${icon('camera')}<span>Camera</span></button><button type="button" role="menuitem" id="attach-file">${icon('files')}<span>File</span></button><button type="button" role="menuitem" id="attach-saved">${icon('folder')}<span>Saved artifact</span></button></div>`:''}${chips?`<div class="attachments pending">${chips}</div>`:''}<form class="composer" id="composer"><button type="button" class="icon-btn attach-plus" id="attach" title="Add photo, video or file" aria-label="Add photo, video or file" aria-haspopup="menu" aria-expanded="${state.attachMenu}" ${state.attachMenu?'aria-controls="attach-menu"':''}>＋</button><textarea id="composer-text" rows="1" aria-label="Message ${composerMode}" placeholder="Message ${composerMode}…" ${state.sending?'disabled':''}>${esc(state.draft)}</textarea>${showMic?`<button type="button" class="icon-btn ${state.recording?'recording':''}" id="voice" title="${state.recording?'Stop recording':state.voiceBusy?'Transcribing…':'Voice input'}" aria-label="${state.recording?'Stop recording':state.voiceBusy?'Transcribing voice':'Voice input'}" ${state.voiceBusy?'disabled':''}>${icon('mic')}</button>`:''}${liveTalkSupported()?`<button type="button" class="icon-btn" id="live-talk" aria-pressed="${state.liveTalk}" aria-label="${state.liveTalk?'Stop Live Talk':'Start Live Talk'}" title="${state.liveTalk?'Stop Live Talk':'Start Live Talk'}">${state.liveTalk?'■':'◉'}</button>`:''}<button type="submit" class="icon-btn send-btn" title="Send (Ctrl/⌘+Enter)" aria-label="Send message" ${state.sending?'disabled':''}>${icon('send')}</button></form><div class="composer-meta"><span>${state.currentProject?'Permanent Project chat · dedicated memory + files':'Conversation history available · no Project memory'}</span><span>Enter adds a new line · use the arrow to send</span></div></div>`;
 }
 
 function projectsView(){
@@ -376,7 +544,7 @@ function projectCard(p){const status=String(p.status||'IN_PROGRESS').replaceAll(
 function projectWorkspace(){
   const p=state.currentProject;
   const section=state.projectSection||'CHAT';
-  const tabs=[['CHAT','Chat'],['OVERVIEW','Overview'],['TASKS','Tasks'],['FILES','Files'],['MEMORY','Memory']];
+  const tabs=[['CHAT','Chat'],['OVERVIEW','Overview'],['TASKS','Tasks'],['FILES','Files'],['SOURCE','Source of Truth'],['MEMORY','Memory']];
   return `<section class="page project-workspace-page">
     <div class="project-workspace-head">
       <button type="button" class="ghost project-back" id="back-projects">← All projects</button>
@@ -406,6 +574,7 @@ function projectSectionView(section){
   if(section==='TASKS')return projectTasksView();
   if(section==='FILES')return projectFilesView();
   if(section==='MEMORY')return projectMemoryView();
+  if(section==='SOURCE')return projectSourceView();
   return projectChatView();
 }
 function projectChatView(){
@@ -457,6 +626,17 @@ function projectFilesView(){
   const all=[...projectArtifacts.map(a=>({...a,kind:'artifact'})),...projectFiles.map(f=>({...f,kind:'file',type:(f.mime_type||'file').split('/').pop()}))].sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
   const more=Boolean(state.filesPage?.hasMore||state.artifactsPage?.hasMore);
   return `<div class="project-single-column"><div class="panel"><div class="panel-head"><div><h2>Files & outputs</h2><p class="muted tiny">Anything uploaded here is automatically attached to this project's context.</p></div><button class="primary compact" id="upload-project-file">${icon('plus')} Upload</button></div>${all.length?`<div class="output-list">${all.map(outputItem).join('')}</div>`:`<div class="empty-mini">No files or generated outputs yet.</div>`}${more?'<div class="history-more"><button class="secondary compact" id="load-older-outputs">Load older</button></div>':''}</div></div>`;
+}
+function projectSourceView(){
+  const items=state.projectSources||[];
+  return `<div class="project-single-column"><div class="panel"><div class="panel-head"><div><h2>Project Source of Truth</h2><p class="muted tiny">Approved instructions and reference content. Newer revisions take priority over old drafts; security rules still apply.</p></div></div>
+    <form id="project-source-form" class="memory-create">
+      <input id="project-source-title" maxlength="140" placeholder="Document title (e.g. Design requirements)" required>
+      <textarea id="project-source-content" rows="6" maxlength="20000" placeholder="Paste permanent requirements and specifications…" required></textarea>
+      <button class="primary compact" type="submit">Save Source of Truth</button>
+    </form>
+    <div class="memory-list">${items.map(s=>`<article class="memory-item"><div class="memory-icon">${icon('files')}</div><div><strong>${esc(s.title)} · v${Number(s.revision||1)}</strong><p>${esc(String(s.content||'').slice(0,1600))}</p><button class="secondary compact" type="button" data-source-remove="${esc(s.id)}">Remove source</button></div></article>`).join('')||'<div class="empty-mini">No sources yet. Add a document or project instructions here.</div>'}</div>
+  </div></div>`;
 }
 function projectMemoryView(){
   const policy=state.memoryPolicy;const policyText=policy?`At most ${Number(policy.maxItems||40)} approved memories are selected for each turn within a ${Math.round(Number(policy.maxChars||15000)/1000)}k-character memory budget. Explicit instructions and high-confidence items rank first, then recency.`:'Approved memory is selected deterministically by priority and recency within the AI context budget.';
@@ -511,7 +691,7 @@ function toolsView(){const h=state.health?.capabilities||{};const chat=capabilit
   </section>`;
 }
 function outputsList(limit=12){let all=[...state.artifacts.map(a=>({...a,kind:'artifact'})),...state.files.map(f=>({...f,kind:'file',type:(f.mime_type||'file').split('/').pop()}))].sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));if(Number.isFinite(limit))all=all.slice(0,limit);return all.length?`<div class="output-list">${all.map(outputItem).join('')}</div>`:`<div class="card" style="padding:24px"><strong>Your library starts with the first source or deliverable.</strong><p class="muted">Upload a source for analysis, or ask Zeus/Olympus to create a document, image, spreadsheet, presentation or ZIP.</p></div>`}
-function outputItem(o){const tag=String(o.type||o.mime_type||'FILE').split('/').pop().toUpperCase().slice(0,4),kind=o.kind==='artifact'?'artifact':'file',download=esc(o.downloadUrl||''),open=esc((kind==='file'&&o.previewUrl)||o.downloadUrl||''),name=esc(o.filename||'Output'),mime=esc(kind==='file'&&o.previewUrl?'text/plain':(o.mime_type||o.type||'application/octet-stream')),status=kind==='file'?(o.metadata?.extractionStatus||'stored_only'):'',isZip=o.type==='zip'||/zip/i.test(o.mime_type||'')||String(o.filename||'').toLowerCase().endsWith('.zip'),git=Boolean(state.health?.capabilities?.githubCommit);return `<article class="out-row"><div class="out-badge ${tag.toLowerCase()}">${esc(tag)}</div><div><strong>${name}</strong><small>${fmtSize(o.size)}${status?` · ${esc(status.replaceAll('_',' '))}`:''}${fmtDateTime(o.created_at)?` · ${fmtDateTime(o.created_at)}`:''}</small></div><div class="out-actions"><button class="chev-link" type="button" data-open-output="${open}" data-output-name="${name}" data-output-mime="${mime}">Open</button><button class="chev-link" type="button" data-download-output="${download}" data-output-name="${name}">Download</button>${isZip&&git?`<button class="chev-link" type="button" data-github-commit="${kind}" data-source-id="${esc(o.id)}" data-source-name="${name}">Commit</button>`:''}<button class="icon-danger" type="button" data-delete-output="${kind}" data-output-id="${esc(o.id)}" aria-label="Delete ${kind} ${name}" title="Delete ${kind}">${icon('close')}</button></div></article>`}
+function outputItem(o){const tag=String(o.type||o.mime_type||'FILE').split('/').pop().toUpperCase().slice(0,4),kind=o.kind==='artifact'?'artifact':'file',download=esc(o.downloadUrl||''),open=esc((kind==='file'&&o.previewUrl)||o.downloadUrl||''),name=esc(o.filename||'Output'),mime=esc(kind==='file'&&o.previewUrl?'text/plain':(o.mime_type||o.type||'application/octet-stream')),status=kind==='file'?(o.metadata?.extractionStatus||'stored_only'):'',isZip=o.type==='zip'||/zip/i.test(o.mime_type||'')||String(o.filename||'').toLowerCase().endsWith('.zip'),git=Boolean(state.health?.capabilities?.githubCommit);return `<article class="out-row"><div class="out-badge ${tag.toLowerCase()}">${esc(tag)}</div><div><strong>${name}</strong><small>${fmtSize(o.size)}${status?` · ${esc(status.replaceAll('_',' '))}`:''}${fmtDateTime(o.created_at)?` · ${fmtDateTime(o.created_at)}`:''}</small></div><div class="out-actions"><button class="chev-link" type="button" data-open-output="${open}" data-output-name="${name}" data-output-mime="${mime}">Open</button><button class="chev-link" type="button" data-download-output="${download}" data-output-name="${name}">Download</button>${kind==='artifact'?`<button class="chev-link" type="button" data-use-artifact="${esc(o.id)}">Use in chat</button><button class="chev-link" type="button" data-compare-artifact="1">Compare</button>${o.type==='html'?`<button class="chev-link" type="button" data-edit-html="${esc(o.id)}">Edit preview</button>`:''}`:''}${isZip&&git?`<button class="chev-link" type="button" data-github-commit="${kind}" data-source-id="${esc(o.id)}" data-source-name="${name}">Commit</button>`:''}<button class="icon-danger" type="button" data-delete-output="${kind}" data-output-id="${esc(o.id)}" aria-label="Delete ${kind} ${name}" title="Delete ${kind}">${icon('close')}</button></div></article>`}
 function filesView(){const more=Boolean(state.filesPage?.hasMore||state.artifactsPage?.hasMore);return `<section class="page files-page"><div class="page-head"><div><div class="eyebrow">Files</div><h1>Files & Library</h1><p>Upload, analyze, and keep files and generated artifacts connected to your conversations and projects.</p></div><button class="primary" id="upload-files">${icon('plus')} Upload files</button></div><div class="project-tabs" style="margin-bottom:18px"><button type="button" class="active" aria-pressed="true">All outputs</button></div>${errorBanner('page-alert')}${outputsList(null)}${more?'<div class="history-more"><button class="secondary compact" id="load-older-outputs">Load older</button></div>':''}</section>`}
 async function googleConnectionAction(service,action){
   try{
@@ -580,6 +760,11 @@ ${['sarah','george','adam','alice','bella','brian','charlie','daniel','jessica',
 <label for="zeus-voice-id">Custom Voice ID (optional)</label>
 <input id="zeus-voice-id" maxlength="80" autocomplete="off" placeholder="Voice ID for supported custom voices" value="${esc(localStorage.getItem('zeus-voice-id')||'')}">
 <p class="muted tiny">Preset voices use the OpenRouter key. Voices private to an ElevenLabs account can require that account's BYOK configuration.</p>
+<div class="field"><label for="live-language">Speech recognition language</label><select id="live-language">
+${[['auto','Auto (device locale in browser)'],['pt','Português (Brasil)'],['en','English (US)'],['es','Español']].map(([v,label])=>`<option value="${v}" ${state.liveLocale===v?'selected':''}>${label}</option>`).join('')}
+</select></div><div class="field"><label for="voice-avatar">Live Talk avatar</label><select id="voice-avatar">
+${[['lightning','Lightning plasma'],['classic','Classic orb'],['olympus','Olympus'],['liquid','Liquid metal']].map(([v,label])=>`<option value="${v}" ${state.voiceAvatar===v?'selected':''}>${label}</option>`).join('')}</select></div>
+<p class="muted tiny">Browser speech recognition handles one locale at a time. Voice Message uses server language detection if available.</p>
 <button type="button" class="secondary compact" id="save-voice-id">Save voice</button>
 </article><article class="card settings-card"><h3>Go-live checklist</h3><div class="diag-list">${[['Private access token',state.health?.goLive?.privateAccess],['Database',state.health?.goLive?.database],['Blob maintenance',state.health?.goLive?.blobMaintenance],['Provider configured',Number(state.health?.goLive?.configuredProviders||0)>0],['Chat callable',['observed_healthy','configured_unverified'].includes(state.health?.goLive?.chatState)]].map(([label,ok])=>`<div class="diag-row"><span>${esc(label)}</span><strong class="${ok?'status-good':'status-warn'}">${ok?'READY':'BLOCKED'}</strong></div>`).join('')}</div><p class="muted tiny" style="line-height:1.55;margin-top:14px">${state.health?.goLive?.ready?'Go-live gate is ready for this owner.':'Go-live gate is blocked until token, a configured provider and a callable chat state are all present.'}</p></article><article class="card settings-card"><h3>AI provider diagnostics</h3><div class="diag-list">${['openai','anthropic','gemini','openrouter'].map(p=>{const v=providers[p]?.status||'not_configured';return `<div class="diag-row"><span>${p}</span><strong class="${statusGood(v)?'status-good':'status-warn'}">${esc(statusLabel(v))}</strong></div>`}).join('')}</div><p class="muted tiny" style="line-height:1.55;margin-top:14px">Diagnostics are runtime-local evidence. CONFIGURED UNVERIFIED means credentials/models were detected but this warm Function runtime has not observed a successful call yet. DEGRADED means the temporary circuit breaker is open.</p></article><article class="card settings-card"><h3>Capabilities</h3><div class="diag-list">${Object.keys(state.health?.capabilityReadiness||{}).length?'':`<div class="muted tiny">${state.health?'No capability diagnostics reported.':'Diagnostics load when the workspace runtime responds.'}</div>`}${Object.entries(state.health?.capabilityReadiness||{}).map(([k,v])=>`<div class="diag-row"><span>${esc(k)}</span><strong class="${v==='observed_healthy'?'status-good':'status-warn'}">${esc(statusLabel(v))}</strong></div>`).join('')}</div></article></div></section>`}
 
@@ -692,6 +877,8 @@ function bind(){
       state.error=error.message||'Could not save preferences.';
     }finally{if(button)button.disabled=false;}
   });
+  $('#voice-avatar')?.addEventListener('change',e=>{const v=e.target.value;if(VOICE_AVATARS.has(v)){state.voiceAvatar=v;localStorage.setItem('zeus-voice-avatar',v);render();}});
+  $('#live-language')?.addEventListener('change',e=>{const v=e.target.value;if(Object.prototype.hasOwnProperty.call(LIVE_LOCALES,v)){state.liveLocale=v;localStorage.setItem('zeus-live-locale',v);render();}});
   $('#save-voice-id')?.addEventListener('click',()=>{
     const preset=String($('#zeus-voice-preset')?.value||'sarah');
     const value=preset==='custom'?String($('#zeus-voice-id')?.value||'').trim():preset;
@@ -717,18 +904,33 @@ function bind(){
     render();resetViewport();
   }));
   $('#new-chat')?.addEventListener('click',newChat);
+  $('#project-source-form')?.addEventListener('submit',async e=>{
+    e.preventDefault();
+    try{await api('/api/project-sources',{method:'POST',body:JSON.stringify({projectId:state.currentProject.id,title:$('#project-source-title').value,content:$('#project-source-content').value})});await loadProjectSources();state.error='';}
+    catch(err){state.error=err.message||'Could not save source.';}render();
+  });
+  $('[data-source-remove]').forEach(b=>b.addEventListener('click',async()=>{
+    if(!confirm('Remove this Source of Truth?'))return;
+    try{await api('/api/project-sources',{method:'DELETE',body:JSON.stringify({projectId:state.currentProject.id,id:b.dataset.sourceRemove})});await loadProjectSources();state.error='';}
+    catch(err){state.error=err.message||'Could not remove source.';}render();
+  }));
+  $('[data-move-current]').forEach(b=>b.addEventListener('click',()=>moveConversationModal(b.dataset.moveCurrent)));
   $('#chat-search')?.addEventListener('input',e=>{const q=e.target.value.toLowerCase();let shown=0;$$('.recent-item').forEach(x=>{const match=x.textContent.toLowerCase().includes(q);x.style.display=match?'block':'none';if(match)shown++;});$('#recent-empty')?.classList.toggle('hidden',!q||shown>0||!$$('.recent-item').length);});
   $$('[data-dismiss-error]').forEach(b=>b.addEventListener('click',dismissError));
   $$('[data-mode]').forEach(b=>b.addEventListener('click',()=>{if(state.sending)return;state.mode=b.dataset.mode==='OLYMPUS'?'OLYMPUS':'ZEUS';state.activeLevel=null;render();}));
   $$('[data-open-output]').forEach(b=>b.addEventListener('click',()=>openPrivateOutput(b.dataset.openOutput,b.dataset.outputName,b.dataset.outputMime).catch(e=>{state.error=e.message;render();})));
   $$('[data-download-output]').forEach(b=>b.addEventListener('click',()=>downloadPrivateOutput(b.dataset.downloadOutput,b.dataset.outputName).catch(e=>{state.error=e.message;render();})));
-  $$('[data-github-commit]').forEach(b=>b.addEventListener('click',()=>githubCommitModal(b.dataset.githubCommit,b.dataset.sourceId,b.dataset.sourceName)));
-  hydratePrivateImages();
+  $('[data-use-artifact]').forEach(b=>b.addEventListener('click',async()=>{await attachSavedArtifact(b.dataset.useArtifact);if(!state.error){state.tab=state.currentProject?'Projects':'Home';if(state.currentProject)state.projectSection='CHAT';render();$('#composer-text')?.focus();}}));
+  $('[data-edit-html]').forEach(b=>b.addEventListener('click',()=>openHtmlEditor(b.dataset.editHtml)));
+  $('[data-compare-artifact]').forEach(b=>b.addEventListener('click',openCompareArtifacts));
+  $('[data-github-commit]').forEach(b=>b.addEventListener('click',()=>githubCommitModal(b.dataset.githubCommit,b.dataset.sourceId,b.dataset.sourceName)));
+  hydratePrivateImages();startPlasmaOrb();
   $$('[data-conv]').forEach(b=>b.addEventListener('click',()=>openConversation(b.dataset.conv)));
   $$('.quick-prompts button').forEach(b=>b.addEventListener('click',()=>{const t=$('#composer-text');if(!t)return;t.value=b.dataset.prompt;t.dispatchEvent(new Event('input',{bubbles:true}));t.focus()}));
   $('#composer')?.addEventListener('submit',sendMessage); const composerText=$('#composer-text');const sizeComposer=()=>{if(!composerText)return;composerText.style.height='auto';composerText.style.height=`${Math.min(160,Math.max(26,composerText.scrollHeight))}px`;};composerText?.addEventListener('input',()=>{state.draft=composerText.value;sizeComposer();});composerText?.addEventListener('keydown',e=>{if(e.key==='Enter'&&(e.metaKey||e.ctrlKey)){e.preventDefault();$('#composer')?.requestSubmit();}});if(composerText?.value)sizeComposer();
   $('#attach')?.addEventListener('click',()=>{state.attachMenu=!state.attachMenu;render();if(state.attachMenu)requestAnimationFrame(()=>$('#attach-media')?.focus());}); $('#upload-files')?.addEventListener('click',()=>$('#global-file-input').click());
   $('#attach-media')?.addEventListener('click',()=>$('#global-media-input').click()); $('#attach-camera')?.addEventListener('click',()=>$('#global-camera-input').click()); $('#attach-file')?.addEventListener('click',()=>$('#global-file-input').click());
+  $('#attach-saved')?.addEventListener('click',()=>{state.attachMenu=false;openSavedArtifactPicker();});
   const handleUpload=async e=>{const files=[...e.target.files];e.target.value='';state.attachMenu=false;for(const f of files)await uploadFile(f);};
   const handleMedia=async e=>{const files=[...e.target.files];e.target.value='';await handleMediaFiles(files);render();};
   $('#global-file-input').onchange=handleUpload; $('#global-media-input').onchange=handleMedia; $('#global-camera-input').onchange=handleMedia;
@@ -736,12 +938,13 @@ function bind(){
   $('#voice')?.addEventListener('click',startVoice);
   $('#live-talk')?.addEventListener('click',toggleLiveTalk);
   $('#retry-last')?.addEventListener('click',retryLastMessage);
+  $('#approve-olympus-five')?.addEventListener('click',approveNextOlympusFive);
   $('#load-older-messages')?.addEventListener('click',loadOlderMessages);
   $('#load-older-outputs')?.addEventListener('click',loadOlderOutputs);
   $('#create-project')?.addEventListener('click',projectModal); $('#create-project-empty')?.addEventListener('click',projectModal);
   $$('[data-filter]').forEach(b=>b.addEventListener('click',()=>{state.projectFilter=b.dataset.filter;render()}));
   $$('[data-project]').forEach(b=>{b.addEventListener('click',()=>openProjectWorkspace(b.dataset.project));b.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();openProjectWorkspace(b.dataset.project);}});});
-  $$('[data-project-section]').forEach(b=>b.addEventListener('click',async()=>{state.projectSection=b.dataset.projectSection;try{if(state.projectSection==='MEMORY'&&state.currentProject)await loadMemories(state.currentProject.id);}catch(err){state.error=err?.message||'Could not load project memory.';}render();resetViewport()}));
+  $$('[data-project-section]').forEach(b=>b.addEventListener('click',async()=>{state.projectSection=b.dataset.projectSection;try{if(state.projectSection==='MEMORY'&&state.currentProject)await loadMemories(state.currentProject.id);if(state.projectSection==='SOURCE'&&state.currentProject)await loadProjectSources();}catch(err){state.error=err?.message||'Could not load project memory.';}render();resetViewport()}));
   $('#edit-project')?.addEventListener('click',projectEditModal);
   $('#back-projects')?.addEventListener('click',async()=>{state.currentProject=null;state.currentConversation=null;state.messages=[];state.chatArtifacts=[];state.attachedFiles=[];state.activeMode=null;state.projectMemories=[];state.memoryPolicy=null;state.projectSection='CHAT';state.messagePage={hasMore:false,nextCursor:null};state.tasks=[];state.error='';history.replaceState({},'',location.pathname);render()});
   $('#task-form')?.addEventListener('submit',createTask); $$('[data-task]').forEach(b=>b.addEventListener('click',()=>{if(b.disabled)return;b.disabled=true;b.setAttribute('aria-busy','true');toggleTask(b.dataset.task,b.dataset.status);}));
@@ -774,6 +977,19 @@ async function newChat(){
   state.currentConversation=null;state.currentProject=null;state.messages=[];state.chatArtifacts=[];state.attachedFiles=[];state.draft='';state.activeMode=null;state.activeLevel=null;
   state.error='';state.lastFailedText='';state.lastFailedMessageId=null;state.lastFailedAttachments=[];state.lastFailedRequestId=null;state.lastFailedMode=null;state.messagePage={hasMore:false,nextCursor:null};
   state.tab='Home';state.drawer=false;history.replaceState({},'',location.pathname);render();resetViewport();
+}
+function moveConversationModal(conversationId){
+  const projects=state.projects||[];
+  if(!projects.length){state.error='Create a project first.';render();return;}
+  const options=projects.map(p=>`<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('');
+  showModal(`<div class="modal-backdrop"><div class="modal" aria-labelledby="conversation-transfer-title"><div class="modal-head"><h2 id="conversation-transfer-title">Move conversation</h2><button type="button" class="ghost" id="modal-close" aria-label="Close dialog">×</button></div><div id="modal-notice" class="notice error-notice hidden" role="alert"></div><form id="conversation-transfer-form" class="form-grid"><p class="muted tiny">Move this conversation, its files and artifacts into a project.</p><label for="conversation-target-project">Destination project</label><select id="conversation-target-project" required>${options}</select><div class="modal-actions"><button type="submit" class="primary">Move to project</button></div></form></div></div>`,{initialFocus:'#conversation-target-project'});
+  $('#modal-close')?.addEventListener('click',()=>closeModal());
+  $('#conversation-transfer-form')?.addEventListener('submit',async e=>{
+    e.preventDefault();
+    try{const d=await api('/api/conversations',{method:'PATCH',body:JSON.stringify({conversationId,projectId:$('#conversation-target-project').value,operation:'move'})});
+      closeModal();await Promise.all([loadProjects(),loadConversations()]);await openConversation(d.conversationId);}
+    catch(err){setModalError(err.message||'Transfer failed.');}
+  });
 }
 async function openConversation(id,doRender=true){
   try{
@@ -851,7 +1067,7 @@ async function pollForReply(conversationId, executionId){
         return {page,assistant:{...assistant,artifacts}};
       }
       const userRow=(page.messages||[]).find(m=>m.role==='user'&&m.execution_id===executionId);
-      if(userRow?.metadata?.failed)throw apiError('Olympus could not finish that request. Tap Retry.',503,'AI_EXECUTION_FAILED');
+      if(userRow?.metadata?.failed){const code=userRow.metadata.errorCode||'AI_EXECUTION_FAILED';throw apiError(code==='OLYMPUS_APPROVAL_REQUIRED'?'Olympus needs explicitly authorized extra $5.':'Olympus could not finish. Tap Retry.',code==='OLYMPUS_APPROVAL_REQUIRED'?402:503,code,{executionId});}
       if(Date.now()-lastStatusPaint>12000){state.execStatus='Olympus is still writing one answer…';lastStatusPaint=Date.now();render();}
     }catch(error){
       if(error?.code==='AI_EXECUTION_FAILED'||error?.status===401)throw error;
@@ -862,7 +1078,7 @@ async function pollForReply(conversationId, executionId){
   }
   throw apiError('Olympus is still working. Wait a moment, then tap Retry to collect the reply.',503,'REQUEST_IN_PROGRESS');
 }
-async function sendText(text,pendingAttachments=[],requestId=crypto.randomUUID(),requestedMode=state.mode,turboApproval=null){
+async function sendText(text,pendingAttachments=[],requestId=crypto.randomUUID(),requestedMode=state.mode,turboApproval=null,resumeExecutionId=null){
   if(!text||state.sending)return;
   const pending=[...(pendingAttachments||[])],mode=requestedMode==='OLYMPUS'?'OLYMPUS':'ZEUS';
   const optimistic={id:crypto.randomUUID(),role:'user',mode,content:text,artifacts:[],attachments:pending};
@@ -883,7 +1099,8 @@ async function sendText(text,pendingAttachments=[],requestId=crypto.randomUUID()
       fileIds:pending.map(f=>f.id),
       mode,
       requestId,
-      ...(turboApproval?{turboApproval}:{})
+      ...(turboApproval?{turboApproval}:{}),
+      ...(resumeExecutionId?{resumeExecutionId}:{})
     };
     let d;
     try{
@@ -938,16 +1155,42 @@ async function sendText(text,pendingAttachments=[],requestId=crypto.randomUUID()
     state.lastFailedMessageId=optimistic.id;
     state.lastFailedAttachments=pending;
     state.lastFailedRequestId=requestId;state.lastFailedMode=mode;state.lastFailedTurboApproval=turboApproval;
+    state.lastFailedBudgetExecutionId=err?.code==='OLYMPUS_APPROVAL_REQUIRED'?err?.data?.executionId||null:null;
+    state.lastFailedResumeExecutionId=mode==='ZEUS'?err?.data?.executionId||null:null;
   }finally{clearTimeout(timer);state.sending=false;render();}
+}
+async function approveNextOlympusFive(){
+ const executionId=state.lastFailedBudgetExecutionId;
+ if(!executionId||state.sending)return;
+ try{
+  const before=await api('/api/olympus-budget?executionId='+encodeURIComponent(executionId));
+  const beforeDollars=(before.authorizedCents/100).toFixed(2);
+  const afterDollars=((before.authorizedCents+500)/100).toFixed(2);
+  if(!confirm('Authorize exactly $5 additional spend for this Olympus job? '+beforeDollars+' → '+afterDollars+' USD.'))return;
+  await api('/api/olympus-budget',{method:'POST',body:JSON.stringify({executionId,authorization:'add_five_usd',expectedAuthorizedCents:before.authorizedCents})});
+  state.lastFailedBudgetExecutionId=null;
+  await retryLastMessage();
+ }catch(error){state.error=error.message||'Budget authorization failed.';render();}
 }
 async function retryLastMessage(){
   if(!state.lastFailedText||state.sending)return;
   const text=state.lastFailedText;
   const pending=[...state.lastFailedAttachments];
-  const requestId=state.lastFailedRequestId||crypto.randomUUID(),mode=state.lastFailedMode||state.mode,turboApproval=state.lastFailedTurboApproval||null;
+  let requestId=state.lastFailedRequestId||crypto.randomUUID();
+  const mode=state.lastFailedMode||state.mode,turboApproval=state.lastFailedTurboApproval||null;
+  let resumeExecutionId=null;
+  if(mode==='ZEUS'&&state.lastFailedResumeExecutionId){
+    try{
+      const checkpoints=await api('/api/production-checkpoints?executionId='+encodeURIComponent(state.lastFailedResumeExecutionId));
+      if((checkpoints.phases||[]).some(x=>x.state==='COMPLETED')){
+        resumeExecutionId=state.lastFailedResumeExecutionId;
+        requestId=crypto.randomUUID();
+      }
+    }catch{}
+  }
   if(state.lastFailedMessageId)state.messages=state.messages.filter(m=>m.id!==state.lastFailedMessageId);
   state.error='';state.lastFailedText='';state.lastFailedMessageId=null;state.lastFailedAttachments=[];state.lastFailedRequestId=null;state.lastFailedMode=null;state.lastFailedTurboApproval=null;render();
-  await sendText(text,pending,requestId,mode,turboApproval);
+  await sendText(text,pending,requestId,mode,turboApproval,resumeExecutionId);
 }
 function mediaBaseName(name='media'){return String(name||'media').replace(/\.[^.]+$/,'').replace(/[^a-z0-9._-]+/gi,'-').slice(0,100)||'media';}
 function canvasJpeg(canvas,quality=.82){return new Promise((resolve,reject)=>canvas.toBlob(blob=>blob?resolve(blob):reject(new Error('Could not encode image.')),'image/jpeg',quality));}
@@ -971,33 +1214,128 @@ async function uploadFile(file,{analysisRole='',sourceName='',attach=true}={}){
 }
 async function sayZeusReply(text){
   if(!state.liveTalk||!text)return;
+  state.liveStage='speaking';render();
   const line=String(text).slice(0,1800);
-  const selected=state.voiceId||localStorage.getItem('zeus-voice-id')||'';
+  const selected=state.voiceId||localStorage.getItem('zeus-voice-id')||'sarah';
+  try{state.liveSpeechController?.abort()}catch{}
+  const speechController=new AbortController();state.liveSpeechController=speechController;
   if(selected){
     try{
       const headers=new Headers({'Content-Type':'application/json','x-zeus-access-token':state.accessKey});
-      const res=await fetch('/api/speech',{method:'POST',headers,body:JSON.stringify({text:line,voiceId:selected})});
-      if(res.ok){
-        const blob=await res.blob(),url=URL.createObjectURL(blob),audio=new Audio(url);
-        state.voiceReplyAudio=audio;
-        audio.onended=()=>{URL.revokeObjectURL(url);if(state.liveTalk)listenLiveTalk();};
-        audio.onerror=()=>{URL.revokeObjectURL(url);if(state.liveTalk)listenLiveTalk();};
+      const res=await fetch('/api/speech',{method:'POST',headers,signal:speechController.signal,body:JSON.stringify({text:line,voiceId:selected})});
+      if(res.ok&&state.liveTalk&&!speechController.signal.aborted){
+        const blob=await res.blob();
+        if(!state.liveTalk||speechController.signal.aborted)return;
+        const url=URL.createObjectURL(blob),audio=new Audio(url);
+        discardLiveAudio();state.voiceReplyAudio=audio;state.liveAudioUrl=url;
+        audio.onended=()=>{discardLiveAudio();if(state.liveTalk)listenLiveTalk();};
+        audio.onerror=()=>{discardLiveAudio();if(state.liveTalk)listenLiveTalk();};
         await audio.play();return;
       }
-    }catch{}
+    }catch{discardLiveAudio();if(!state.liveTalk)return;}
   }
+  if(!state.liveTalk)return;
   const msg=new SpeechSynthesisUtterance(line);
-  msg.lang=/(?:[ãõáéíóúç]|\\b(?:você|porque|então|não)\\b)/i.test(line)?'pt-BR':'en-US';
+  msg.lang=speechLocale(line);
   msg.onend=()=>{if(state.liveTalk)listenLiveTalk()};
   msg.onerror=()=>{if(state.liveTalk)listenLiveTalk()};
   speechSynthesis.speak(msg);
 }
+function stopLiveCapture(){
+  const session=state.liveCapture;
+  if(!session)return;
+  session.cancelled=true;
+  if(session.frame)cancelAnimationFrame(session.frame);
+  try{if(session.recorder.state==='recording')session.recorder.stop()}catch{}
+  try{session.stream.getTracks().forEach(t=>t.stop())}catch{}
+  try{session.audioContext.close()}catch{}
+  state.liveCapture=null;
+}
+async function listenServerLiveTalk(){
+  if(!state.liveTalk||state.liveCapture)return;
+  const generation=state.liveGeneration;
+  let stream=null,context=null,recorder=null;
+  try{
+    stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}});
+    if(!state.liveTalk||generation!==state.liveGeneration){stream.getTracks().forEach(t=>t.stop());return;}
+    const AudioContextType=window.AudioContext||window.webkitAudioContext;
+    if(!AudioContextType)throw Error('Audio activity detection is unavailable');
+    context=new AudioContextType();
+    const analyzer=context.createAnalyser();analyzer.fftSize=1024;
+    context.createMediaStreamSource(stream).connect(analyzer);
+    const options=['audio/mp4','audio/webm;codecs=opus','audio/webm'];
+    const mime=options.find(x=>MediaRecorder.isTypeSupported(x))||'';
+    recorder=new MediaRecorder(stream,mime?{mimeType:mime}:undefined);
+    const chunks=[],samples=new Uint8Array(analyzer.fftSize);
+    const session={stream,audioContext:context,recorder,frame:0,cancelled:false,detected:false,startedAt:performance.now(),lastActive:0,voiceStarted:0,bytes:0};
+    state.liveCapture=session;
+    recorder.ondataavailable=e=>{if(e.data?.size){chunks.push(e.data);session.bytes+=e.data.size;if(session.bytes>3600*1024&&recorder.state==='recording')recorder.stop();}};
+    recorder.onstop=async()=>{
+      if(session.frame)cancelAnimationFrame(session.frame);
+      stream.getTracks().forEach(t=>t.stop());
+      try{await context.close()}catch{}
+      if(state.liveCapture===session)state.liveCapture=null;
+      if(session.cancelled||!state.liveTalk||generation!==state.liveGeneration)return;
+      if(!session.detected||!chunks.length){
+        // Silence never starts a charged transcription request.
+        listenLiveTalk();return;
+      }
+      try{
+        state.liveStage='processing';render();
+        const type=recorder.mimeType||'audio/webm';
+        const blob=new Blob(chunks,{type});
+        if(blob.size>4*1024*1024)return;
+        const fd=new FormData();fd.append('audio',blob,type.includes('mp4')?'live.m4a':'live.webm');
+        const answer=await api('/api/transcribe',{method:'POST',body:fd});
+        if(!state.liveTalk||generation!==state.liveGeneration)return;
+        const words=String(answer.text||'').trim();
+        if(!words){listenLiveTalk();return;}
+        await sendText(words,[]);
+        if(!state.liveTalk||generation!==state.liveGeneration)return;
+        if(state.lastFailedText){state.error='Voice reply failed. Use Retry to continue.';render();return;}
+        const latest=[...state.messages].reverse().find(m=>m.role==='assistant');
+        if(latest)await sayZeusReply(latest.content);else listenLiveTalk();
+      }catch(error){
+        if(!state.liveTalk||generation!==state.liveGeneration)return;
+        state.error=error?.message||'Automatic speech transcription is unavailable.';
+        state.liveTalk=false;render();
+      }
+    };
+    recorder.start(250);
+    const tick=()=>{
+      if(session.cancelled||!state.liveTalk||generation!==state.liveGeneration)return;
+      analyzer.getByteTimeDomainData(samples);
+      let sum=0;for(let i=0;i<samples.length;i++){const v=(samples[i]-128)/128;sum+=v*v;}
+      const rms=Math.sqrt(sum/samples.length),now=performance.now();
+      if(rms>0.024){
+        if(!session.voiceStarted)session.voiceStarted=now;
+        session.lastActive=now;
+        if(now-session.voiceStarted>220)session.detected=true;
+      }
+      if(session.detected&&now-session.lastActive>1050 || now-session.startedAt>18000){
+        if(recorder.state==='recording')recorder.stop();
+        return;
+      }
+      session.frame=requestAnimationFrame(tick);
+    };
+    session.frame=requestAnimationFrame(tick);
+  }catch(error){
+    try{if(recorder?.state==='recording')recorder.stop()}catch{}
+    try{stream?.getTracks().forEach(t=>t.stop())}catch{}
+    try{context?.close()}catch{}
+    state.liveCapture=null;
+    if(!state.liveTalk||generation!==state.liveGeneration)return;
+    state.liveTalk=false;state.error=error?.name==='NotAllowedError'?'Allow microphone access for Live Talk.':'Live Talk audio capture failed. Voice Message remains available.';render();
+  }
+}
 function listenLiveTalk(){
+  state.liveStage='listening';render();
+  if(state.health?.capabilities?.serverTranscription&&navigator.mediaDevices?.getUserMedia&&window.MediaRecorder){void listenServerLiveTalk();return;}
   if(!state.liveTalk)return;
   const Engine=window.SpeechRecognition||window.webkitSpeechRecognition;
   if(!Engine)return;
   const recognition=new Engine();state.liveRecognizer=recognition;
-  recognition.lang=navigator.language||'en-US';recognition.continuous=false;recognition.interimResults=false;
+  recognition.lang=browserInputLocale();recognition.continuous=false;recognition.interimResults=false;
   recognition.onresult=async e=>{
     const words=e.results?.[0]?.[0]?.transcript?.trim();
     state.liveRecognizer=null;
@@ -1013,15 +1351,18 @@ function listenLiveTalk(){
 }
 function toggleLiveTalk(){
   if(state.liveTalk){
-    state.liveTalk=false;
+    state.liveTalk=false;state.liveStage='idle';state.liveGeneration++;
+    stopLiveCapture();
     try{state.liveRecognizer?.abort()}catch{}
     state.liveRecognizer=null;
-    try{state.voiceReplyAudio?.pause()}catch{}
+    try{state.liveSpeechController?.abort()}catch{}
+    state.liveSpeechController=null;
+    discardLiveAudio();
     speechSynthesis.cancel();render();return;
   }
   if(!liveTalkSupported()){state.error='Live Talk requires browser speech recognition and speech output.';render();return;}
-  state.voiceId=localStorage.getItem('zeus-voice-id')||'';
-  state.liveTalk=true;render();listenLiveTalk();
+  state.voiceId=localStorage.getItem('zeus-voice-id')||'sarah';
+  state.liveTalk=true;state.liveStage='listening';state.liveGeneration++;render();listenLiveTalk();
 }
 
 async function startVoice(){
@@ -1077,7 +1418,7 @@ async function startVoice(){
     try{
       const r=new SR();
       state.voiceRecognition=r;state.voiceBusy=true;state.error='';state.execStatus='Listening…';
-      r.lang=navigator.language||'en-US';r.interimResults=false;r.continuous=false;r.maxAlternatives=3;
+      r.lang=browserInputLocale();r.interimResults=false;r.continuous=false;r.maxAlternatives=3;
       r.onresult=async e=>{
         const alternatives=[...(e.results?.[0]||[])];
         const best=alternatives.sort((a,b)=>(Number(b.confidence)||0)-(Number(a.confidence)||0))[0];
@@ -1155,7 +1496,7 @@ async function deleteMemory(id){
 }
 async function hydrateProjectWorkspace(projectId,{loadConversation=true}={}){
   if(!projectId)return;
-  await Promise.all([loadTasks(projectId),loadMemories(projectId),loadFiles(projectId),loadArtifacts(projectId)]);
+  await Promise.all([loadTasks(projectId),loadMemories(projectId),loadFiles(projectId),loadArtifacts(projectId)]);await loadProjectSources();
   const refreshed=state.projects.find(p=>p.id===projectId);
   if(refreshed)state.currentProject=refreshed;
   if(loadConversation&&state.currentProject)await loadProjectConversation(state.currentProject);

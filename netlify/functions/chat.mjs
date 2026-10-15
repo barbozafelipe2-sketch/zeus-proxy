@@ -1,3 +1,4 @@
+import {authorizeOlympusModelCall} from './_shared/olympus-budget.mjs';
 import { requireUser } from './_shared/auth.mjs';
 import { json, readJson, cleanText, isUuid, getRequestId, errorJson } from './_shared/http.mjs';
 import { runZeus, runOlympus, runOlympusCompoundPlus, TURBO_LIMITS, generateImage, editImage, routeFor } from './_shared/models.mjs';
@@ -7,6 +8,7 @@ import { publicExecutionFailure } from './_shared/execution-error.mjs';
 import { stageArtifact, stageBinaryArtifact, discardStagedArtifact } from './_shared/artifact.mjs';
 import { blobStore } from './_shared/blob.mjs';
 import { withTransaction } from './_shared/db.mjs';
+import { savePhaseCheckpoint } from './_shared/phase-checkpoint.mjs';
 import { executionLeaseExpired, claimOlympusWorker, queueOlympusExecution, claimInlineFallback, assertWorkerFence, markFailureIfOwner } from './_shared/worker-lease.mjs';
 import { resolveOwnedScope } from './_shared/relations.mjs';
 import { classifyIntent, decideExecutionMode, decideExecutionLevel, explainExecutionLevel, normalizeRequestedMode, GEAR_CALL_CAPS } from './_shared/intent.mjs';
@@ -77,7 +79,37 @@ async function buildContext({db,userId,projectId,conversationId,currentMessageId
       .map(f=>({...f,_score:relevanceScore(currentText,`${f.filename}\n${String(f.extracted_text||'').slice(0,4000)}`)}))
       .sort((a,b)=>b._score-a._score || new Date(b.created_at)-new Date(a.created_at))
       .slice(0,8);
+    // Expose scoped artifact metadata for resolving named saved references.
+    // Listing metadata never proves that the artifact binary has been examined.
+    const assetRows=await db.sql`SELECT id,filename,type,mime_type,version,created_at FROM artifacts WHERE owner_id=${userId} AND project_id=${projectId} ORDER BY created_at DESC LIMIT 60`;
+    const matchingAssets=assetRows.map(a=>({...a,_score:relevanceScore(currentText,a.filename)})).sort((a,b)=>b._score-a._score||new Date(b.created_at)-new Date(a.created_at)).slice(0,15);
+    const artifactCatalog=matchingAssets.map(a=>`ARTIFACT REFERENCE: ${redactSecrets(a.filename)} | id=${a.id} | version=${a.version} | type=${a.type}. Stored in this project; binary content NOT inspected automatically.`).join('\n');
     if(relevant.length)projectFilesText=relevant.map(f=>{const status=f.metadata?.extractionStatus||'stored_only',note=status==='analyzable'?(f.metadata?.truncated?'[Text extraction is partial/truncated.]':''):status==='vision_only'?'[Image file: use vision only when explicitly attached to this turn.]':status==='failed'?'[Text extraction failed. Do not claim the file contents were read.]':'[Stored file has no extracted text. Do not claim the binary contents were read.]';return `PROJECT FILE: ${redactSecrets(f.filename)} (${f.mime_type})\n${note}${f.extracted_text?`\n${clip(safeExtractedText(f.extracted_text,f.filename),6500)}`:''}`;}).join('\n\n');
+    if(artifactCatalog)projectFilesText=[projectFilesText,artifactCatalog].filter(Boolean).join('\n\n');
+    const approved=await db.sql`SELECT x.alias,a.id,a.filename,a.version,a.type FROM artifact_aliases x
+      JOIN artifacts a ON a.id=x.artifact_id
+      WHERE x.owner_id=${userId} AND x.scope_key=${projectId}
+      AND a.owner_id=${userId} AND a.project_id=${projectId}
+      ORDER BY x.alias LIMIT 40`;
+    if(approved.length){
+      const approvedText=approved.map(a=>`APPROVED PROJECT ARTIFACT ALIAS: ${a.alias} = ${redactSecrets(a.filename)} (id=${a.id}, version=${a.version}, type=${a.type}). Refer to metadata; actual content requires explicit attachment.`).join('\n');
+      projectFilesText=[projectFilesText,approvedText].filter(Boolean).join('\n\n');
+    }
+
+  }
+
+  if(!projectId){
+    const globalAssets=await db.sql`SELECT id,filename,type,version,created_at FROM artifacts
+      WHERE owner_id=${userId} AND project_id IS NULL ORDER BY created_at DESC LIMIT 60`;
+    const relevantAssets=globalAssets.map(a=>({...a,_score:relevanceScore(currentText,a.filename)}))
+      .sort((a,b)=>b._score-a._score||new Date(b.created_at)-new Date(a.created_at)).slice(0,12);
+    const globalAliases=await db.sql`SELECT x.alias,a.id,a.filename,a.type,a.version
+      FROM artifact_aliases x JOIN artifacts a ON a.id=x.artifact_id
+      WHERE x.owner_id=${userId} AND x.scope_key='general'
+      AND a.owner_id=${userId} AND a.project_id IS NULL ORDER BY x.alias LIMIT 40`;
+    const catalog=relevantAssets.map(a=>`GENERAL ARTIFACT REFERENCE: ${redactSecrets(a.filename)} | id=${a.id} | version=${a.version} | type=${a.type}. Binary not inspected; explicitly attach before analyzing.`);
+    const approved=globalAliases.map(a=>`APPROVED GENERAL ARTIFACT ALIAS: ${a.alias} = ${redactSecrets(a.filename)} (id=${a.id}, version=${a.version}, type=${a.type}). Content not yet inspected.`);
+    projectFilesText=[...catalog,...approved].join('\n');
   }
 
   const history=[];
@@ -379,6 +411,24 @@ async function chatHandler(req, context, startedAt){
   }
   if(!conversationId){const c=await canonicalConversation(db,user.id,projectId,titleFrom(content));conversationId=c.id;}
 
+  let resumeStages=[];
+  if(body.resumeExecutionId){
+    if(!isUuid(body.resumeExecutionId)||mode!=='ZEUS'||level!=='ZEUS_DIRECTED')
+      return errorJson('Only Zeus Level 3 phases can be resumed.',400,'INVALID_RESUME',requestId);
+    const prior=await db.sql`SELECT e.id,e.state,m.content AS original_text,m.metadata AS original_metadata
+      FROM executions e JOIN messages m ON m.execution_id=e.id AND m.owner_id=e.owner_id AND m.role='user'
+      WHERE e.id=${body.resumeExecutionId} AND e.owner_id=${user.id} AND e.conversation_id=${conversationId} AND e.mode='ZEUS' ORDER BY m.created_at ASC LIMIT 1`;
+    if(!prior.length||!['PARTIAL','FAILED'].includes(prior[0].state)||prior[0].original_text!==content||!sameIds(prior[0].original_metadata?.attachments||[],fileIds))
+      return errorJson('Prior failed execution and identical original request required.',409,'RESUME_SOURCE_MISMATCH',requestId);
+    const rows=await db.sql`SELECT phase_number,phase_label,manifest->>'content' AS content,manifest->>'model' AS model
+      FROM production_checkpoints WHERE owner_id=${user.id} AND execution_id=${body.resumeExecutionId} AND conversation_id=${conversationId} AND state='COMPLETED'
+      ORDER BY phase_number ASC`;
+    if(!rows.length)return errorJson('No completed phases to resume.',409,'NO_RESUME_CHECKPOINTS',requestId);
+    // Reuse only a contiguous prefix of the exact expected role sequence.
+    const expected=['CREATOR','DIRECTOR','CEO'];
+    for(const row of rows){if(row.phase_number!==resumeStages.length+1||row.phase_label!==expected[resumeStages.length]||!row.content)break;resumeStages.push({phaseLabel:row.phase_label,content:row.content,model:row.model});}
+    if(!resumeStages.length)return errorJson('Saved phase manifest is incompatible.',409,'INVALID_RESUME_CHECKPOINT',requestId);
+  }
   let init=null;let olympusDispatchFallback=false;
   const stagedArtifacts=[];
   let executionBudget=null,webUsageTrace=null;
@@ -403,6 +453,15 @@ async function chatHandler(req, context, startedAt){
     const execution=init.execution,userMessage=init.userMessage;
     const built=await buildContext({db,userId:user.id,projectId,conversationId,currentMessageId:userMessage.id,currentText:modelText,attachmentRows});
     let aiContext=redactSecrets(built.context);const history=built.history;
+    // Project Source of Truth has precedence over historical chat notes,
+    // but cannot override system policy or security rules.
+    if(projectId){
+      const projectSources=await db.sql`SELECT title,content,revision FROM project_sources WHERE owner_id=${user.id} AND project_id=${projectId} AND active=true ORDER BY updated_at DESC LIMIT 20`;
+      if(projectSources.length){
+        const sourceText=projectSources.map(x=>`SOURCE: ${redactSecrets(String(x.title)).slice(0,140)} (revision ${x.revision})\n${redactSecrets(String(x.content)).slice(0,9000)}`).join('\n\n').slice(0,20000);
+        aiContext=redactSecrets(`PROJECT SOURCE OF TRUTH (owner approved; prioritize over earlier project drafts and memories when they conflict; never override system safeguards):\n${sourceText}\n\n---\n${aiContext}`);
+      }
+    }
     // Same saved user preferences for regular chat, voice message, and Live Talk:
     // all three modes send turns through this authenticated chat endpoint.
     const prefRows=await db.sql`SELECT personality,instructions FROM zeus_user_preferences WHERE owner_id=${user.id}`;
@@ -445,11 +504,13 @@ ${aiContext}`);
     const isImageOp=intent.action==='IMAGE_CREATE'||intent.action==='IMAGE_EDIT';
     const webIntent=shouldSearchWeb(modelText)&&!isImageOp;
     const githubIntent=hasGitHubRepoUrl(modelText);
+    if(actualMode==='OLYMPUS'&&(isImageOp||webIntent))throw codedError('This Olympus media/research route requires a verified price reservation before it can run. Use Zeus for now.',409,'OLYMPUS_UNPRICED_ROUTE');
     const zeusLevel=actualMode==='ZEUS'?(webIntent?'SIMPLE':gearLevel):null;
     const turboCreatorCount=turboHardCap?(webIntent?1:Number(turboQuote?.creatorCount||TURBO_LIMITS.maxCreators)):null;
     const maxCalls=isImageOp?GEAR_CALL_CAPS.SIMPLE:(actualMode==='ZEUS'&&webIntent?GEAR_CALL_CAPS.COMPOUND:GEAR_CALL_CAPS[gearLevel]||GEAR_CALL_CAPS.SIMPLE);
-    const timeoutMs=worker?150000:((webIntent||githubIntent)?CHAT_WEB_TIMEOUT_MS:(route==='fast'&&zeusLevel==='SIMPLE'?FAST_CHAT_TIMEOUT_MS:CHAT_TIMEOUT_MS));
+    const timeoutMs=worker?150000:((webIntent||githubIntent||zeusLevel==='ZEUS_DIRECTED')?CHAT_WEB_TIMEOUT_MS:(route==='fast'&&zeusLevel==='SIMPLE'?FAST_CHAT_TIMEOUT_MS:CHAT_TIMEOUT_MS));
     executionBudget=createExecutionBudget({startedAt,timeoutMs,maxCalls,reserveMs:6500});
+    if(actualMode==='OLYMPUS')executionBudget.authorizeProviderCall=info=>authorizeOlympusModelCall(db,{ownerId:user.id,executionId:execution.id,...info});
     const vision=hasImage?await loadVisionInputs(attachmentRows):{images:[],skipped:[]};
     const sharedBlockedProviders=await loadSharedProviderBlocks(db,user.id);
     const web=webIntent?await runWebSearch(modelText,{budget:executionBudget,reserveAfterMs:actualMode==='OLYMPUS'?17000:12000}):{requested:false,context:'',sources:[],trace:null};
@@ -491,13 +552,14 @@ ${aiContext}`);
           ?await runOlympusCompoundPlus({text:modelText,context:enrichedContext,images:vision.images,history,requirements:requirementSpec,deliveryContract,blockedProviders:sharedBlockedProviders,budget:executionBudget,webResearchUsed:compoundPlusWithWeb})
           :await runOlympus({text:modelText,context:enrichedContext,images:vision.images,history,requirements:requirementSpec,deliveryContract,blockedProviders:sharedBlockedProviders,budget:executionBudget,creatorCount:turboCreatorCount});}
         catch(olympusError){
+          if(String(olympusError?.code||'').startsWith('OLYMPUS_'))throw olympusError;
           if(olympusError?.code==='AI_REQUEST_REJECTED')throw olympusError;
           if(!executionBudget.canCall())throw olympusError;
           const fallback=await runZeus({text:modelText,context:enrichedContext,images:vision.images,history,requirements:requirementSpec,level:'COMPOUND',deliveryContract,blockedProviders:sharedBlockedProviders,budget:executionBudget});
           fallback.trace={...(fallback.trace||{}),olympusFallback:String(olympusError?.message||olympusError).slice(0,220)};
           result=fallback;
         }
-      }else result=await runZeus({text:modelText,context:enrichedContext,images:vision.images,history,requirements:requirementSpec,level:zeusLevel||'COMPOUND',deliveryContract,blockedProviders:sharedBlockedProviders,budget:executionBudget});
+      }else result=await runZeus({text:modelText,context:enrichedContext,images:vision.images,history,requirements:requirementSpec,level:zeusLevel||'COMPOUND',deliveryContract,blockedProviders:sharedBlockedProviders,budget:executionBudget,onStage:zeusLevel==='ZEUS_DIRECTED'?data=>savePhaseCheckpoint(db,{ownerId:user.id,executionId:execution.id,conversationId,projectId,...data}):null,resumeStages});
       if(intent.action==='ARTIFACT_CREATE'&&intent.artifactType){
         if(intent.artifactType==='zip'){
           // Preserve the existing structured ZIP package contract, with bounded structural validation.

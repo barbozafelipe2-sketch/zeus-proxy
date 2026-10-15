@@ -22,7 +22,7 @@ async function handler(req, context, requestId) {
     const bytes = new Uint8Array(await file.arrayBuffer());
     const budget=createExecutionBudget({startedAt,timeoutMs:44000,maxCalls:2,reserveMs:5000});
     const result = await transcribeAudio(bytes, file.name || 'voice.webm', file.type || 'audio/webm',{budget});
-    return json({ text: result.text, model: result.model, requestId });
+    return json({ text: result.text, model: result.model, detectedLanguage: result.language || null, requestId });
   } catch (error) {
     const status=Number(error?.status)||503;
     return errorJson(error?.message || 'Voice transcription failed.',status,error?.code||'TRANSCRIPTION_FAILED',requestId,error?.retryAfter?{retryAfter:error.retryAfter}:{});

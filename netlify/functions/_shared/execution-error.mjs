@@ -7,6 +7,10 @@ const safeCodes=new Set([
 ]);
 // Actionable, secret-free messages for non-provider failures that previously collapsed into the generic text.
 const authored={
+  OLYMPUS_APPROVAL_REQUIRED:'This Olympus job has reached its authorized spend. Approve one additional $5, then retry the same request.',
+  OLYMPUS_UNKNOWN_MODEL_PRICE:'A provider model has no verified price, so Olympus did not call it. Configure pricing or choose Zeus.',
+  OLYMPUS_UNPRICED_ROUTE:'This Olympus media or web tool does not yet have a safe price reservation. Use Zeus for this request.',
+  OLYMPUS_UNPRICED_MEDIA:'Image inputs in Olympus are paused until their cost can be reserved.',
   ARTIFACT_INCOMPLETE:'The requested files failed validation (incomplete, placeholder or missing file). Nothing partial was delivered. Retry, or ask for fewer files at once.',
   ARTIFACT_VERIFICATION_FAILED:'A generated file failed its integrity check, so it was not delivered. Please retry.',
   ARTIFACT_FORMAT_UNSUPPORTED:'This combination of file types is not supported (max 4 of PDF, DOCX, XLSX, PPTX, CSV).',

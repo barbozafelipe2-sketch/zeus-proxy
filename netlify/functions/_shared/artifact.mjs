@@ -117,6 +117,7 @@ async function artifactBytes(type, title, content, workbook=null) {
   else if (normalized === 'docx') { bytes=await docxBytes(title,content); mime='application/vnd.openxmlformats-officedocument.wordprocessingml.document'; ext='docx'; }
   else if (normalized === 'pptx') { bytes=await pptxBytes(title,content); mime='application/vnd.openxmlformats-officedocument.presentationml.presentation'; ext='pptx'; }
   else if (normalized === 'xlsx') { bytes=await xlsxBytes(title,content,workbook); mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'; ext='xlsx'; }
+  else if (normalized === 'html') { bytes=new TextEncoder().encode(content); mime='text/html'; ext='html'; }
   else if (normalized === 'csv') { bytes=new TextEncoder().encode(content); mime='text/csv'; ext='csv'; }
   else if (normalized === 'zip') { bytes=await zipBytes(title,content); mime='application/zip'; ext='zip'; }
   else { bytes=new TextEncoder().encode(content); mime='text/markdown'; ext='md'; }

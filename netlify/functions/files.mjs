@@ -21,8 +21,8 @@ async function handler(req,context){
     let rows;
     if(projectId&&before)rows=await db.sql`SELECT id,project_id,conversation_id,filename,mime_type,size,status,metadata,created_at FROM files WHERE owner_id=${user.id} AND project_id=${projectId} AND (created_at < ${before.t}::timestamptz OR (created_at = ${before.t}::timestamptz AND id < ${before.id}::uuid)) ORDER BY created_at DESC,id DESC LIMIT ${limit+1}`;
     else if(projectId)rows=await db.sql`SELECT id,project_id,conversation_id,filename,mime_type,size,status,metadata,created_at FROM files WHERE owner_id=${user.id} AND project_id=${projectId} ORDER BY created_at DESC,id DESC LIMIT ${limit+1}`;
-    else if(before)rows=await db.sql`SELECT id,project_id,conversation_id,filename,mime_type,size,status,metadata,created_at FROM files WHERE owner_id=${user.id} AND (created_at < ${before.t}::timestamptz OR (created_at = ${before.t}::timestamptz AND id < ${before.id}::uuid)) ORDER BY created_at DESC,id DESC LIMIT ${limit+1}`;
-    else rows=await db.sql`SELECT id,project_id,conversation_id,filename,mime_type,size,status,metadata,created_at FROM files WHERE owner_id=${user.id} ORDER BY created_at DESC,id DESC LIMIT ${limit+1}`;
+    else if(before)rows=await db.sql`SELECT id,project_id,conversation_id,filename,mime_type,size,status,metadata,created_at FROM files WHERE owner_id=${user.id} AND project_id IS NULL AND (created_at < ${before.t}::timestamptz OR (created_at = ${before.t}::timestamptz AND id < ${before.id}::uuid)) ORDER BY created_at DESC,id DESC LIMIT ${limit+1}`;
+    else rows=await db.sql`SELECT id,project_id,conversation_id,filename,mime_type,size,status,metadata,created_at FROM files WHERE owner_id=${user.id} AND project_id IS NULL ORDER BY created_at DESC,id DESC LIMIT ${limit+1}`;
     const paged=pageResult(rows,limit);
     return json({files:paged.page.map(r=>({...r,downloadUrl:`/api/file-download?id=${r.id}`,previewUrl:r.metadata?.extractable?`/api/file-preview?id=${r.id}`:null})),page:{hasMore:paged.hasMore,nextCursor:paged.nextCursor},requestId});
   }

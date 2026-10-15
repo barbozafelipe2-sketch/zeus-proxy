@@ -1,0 +1,14 @@
+import assert from 'node:assert/strict';
+import{readFileSync}from'node:fs';
+const ui=readFileSync('public/app.js','utf8');const css=readFileSync('public/ui-premium.css','utf8');
+assert.match(ui,/voiceId:'sarah'/);assert.match(ui,/voiceAvatar:'lightning'/);assert.match(ui,/function browserInputLocale/);assert.match(ui,/function speechLocale/);
+assert.match(ui,/discardLiveAudio/);assert.match(ui,/zeus-live-stage/);assert.match(ui,/id="voice-avatar"/);assert.match(ui,/id="live-language"/);
+assert.match(ui,/recognition.lang=browserInputLocale/);assert.match(css,/prefers-reduced-motion/);assert.match(css,/width:108px;height:108px/);
+assert.match(ui,/function listenServerLiveTalk/);
+assert.match(ui,/if\(!session.detected\|\|!chunks.length\)/);
+assert.match(ui,/session.cancelled=true/);
+assert.match(ui,/state.liveGeneration\+\+/);
+assert.match(ui,/state.liveStage='processing'/);
+assert.match(ui,/signal:speechController.signal/);
+assert.match(ui,/await sendText\(words,\[\]\)/);
+console.log('Phase 3 voice, VAD, cancellation and avatar regressions PASS');

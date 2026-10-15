@@ -1,6 +1,6 @@
 // Deterministic, bounded deliverable contract. The model drafts; the server validates and saves.
 const MAX_MANIFEST_CHARS=160000;
-const TYPES=new Set(['pdf','docx','xlsx','pptx','csv']);
+const TYPES=new Set(['pdf','docx','xlsx','pptx','csv','html']);
 const normalize=s=>String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
 const coded=(code,message)=>Object.assign(new Error(message),{code,status:422});
 const pending=(message)=>coded('ARTIFACT_INCOMPLETE',message||'The requested files were not complete. No partial document was marked as delivered.');

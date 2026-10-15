@@ -7,6 +7,7 @@ const IMAGE = /\b(image|picture|photo|logo|illustration|poster|graphic|artwork|s
 
 const ARTIFACTS = [
   ['pdf', /\bpdf\b/i],
+  ['html', /\b(?:html|single.page web app|pagina html)\b/i],
   ['docx', /\b(docx|word document|documento word|documento de word)\b/i],
   ['pptx', /\b(pptx|powerpoint|pitch deck|slide deck|presentation|apresentacao|apresentacao de slides|presentacion|presentacion de diapositivas)\b/i],
   ['xlsx', /\b(xlsx|excel|spreadsheet|planilha|hoja de calculo)\b/i],
@@ -104,7 +105,7 @@ export function decideExecutionMode(text = '', { requestedMode = 'ZEUS' } = {}) 
 // no provider call, no hidden classification tokens.
 // 4-gear router (deterministic, zero tokens). Hard call caps live in GEAR_CALL_CAPS.
 //  Zeus Simple 1 · Zeus Compound 2 (create+review) · Olympus Compound Plus 3 · Olympus Turbo 4.
-export const GEAR_CALL_CAPS=Object.freeze({SIMPLE:1,COMPOUND:2,COMPOUND_PLUS:3,COMPLEX_TURBO:4});
+export const GEAR_CALL_CAPS=Object.freeze({SIMPLE:1,COMPOUND:2,ZEUS_DIRECTED:3,COMPOUND_PLUS:3,COMPLEX_TURBO:4});
 const TURBO_AREAS=[
   ['frontend',/\b(frontend|front-end|ui|ux|interface|tela|telas|pantalla|layout|css|react)\b/i],
   ['backend',/\b(backend|back-end|api|server|servidor|endpoint|functions?|funcoes)\b/i],
@@ -113,6 +114,10 @@ const TURBO_AREAS=[
 ];
 const LAUNCH_PACKAGE=/\b(full app|complete app|app completo|aplicativo completo|sistema completo|launch package|pacote de lancamento|kit de lancamento|paquete de lanzamiento)\b/i;
 const COMPOUND_PLUS_SIGNAL=/\b(investor report|relatorio (?:para|de) investidores|investidores|due diligence|legal analysis|analise juridica|juridic[oa]|financial analysis|analise financeira|modelo financeiro|valuation|system design|desenho de sistema|arquitetura do sistema|multi-section|varias secoes|capitulos|chapters|relatorio completo|full report|multi-file|varios arquivos|multiplos arquivos)\b/i;
+// A full book chapter is substantive writing: draft + independent editor.
+// Pure regex routing uses zero provider calls and incurs zero router tokens.
+const BOOK_CHAPTER_WORK=/\b(?:write|draft|rewrite|compose|create|generate|escreva?|escrever|redija?|redigir|reescreva?|crie|criar|redacta?|escribe|escribir|crear|crea|generar|genera)\b[\s\S]{0,100}\b(?:chapter|chapters|capitulo|capitulos|capitula|capitulas|cap[ií]tulo|cap[ií]tulos)\b|\b(?:chapter|capitulo|capitulos|cap[ií]tulo|cap[ií]tulos)\s*\d{0,3}\b[\s\S]{0,80}\b(?:write|draft|rewrite|escrever|escreva|redija|escribe|escribir)\b/i;
+const PROFESSIONAL_DOMAIN=/\b(frontend|front.end|ui design|design system|backend|back.end|api service|presentation|powerpoint|pitch deck|apresentacao|projeto de codigo|aplicativo web)\b/i;
 const ZEUS_COMPOUND_WORK=/\b(fix|bug|debug|corrigir|corrija|corrige|conserta|consertar|arreglar|implement|implementar|refactor|refatorar|script|business plan|plano de negocios?|contrato|contract|planilha|spreadsheet|deck|apresentacao|video|imagem|image)\b/i;
 
 export function turboAreasIn(text=''){const v=normalize(String(text||''));return TURBO_AREAS.filter(([,re])=>re.test(v)).map(([n])=>n);}
@@ -136,9 +141,11 @@ export function decideExecutionLevel(text='', {
   const zeusGear=()=>{
     if(action==='IMAGE_CREATE'||action==='IMAGE_EDIT')return out('ZEUS','SIMPLE',['single_model_media_operation']);
     const reasons=[];
+    if(PROFESSIONAL_DOMAIN.test(value)&&CREATE.test(value)&&['ARTIFACT_CREATE','CHAT'].includes(action))return out('ZEUS','ZEUS_DIRECTED',['professional_domain_artifact']);
     if(action==='ARTIFACT_CREATE')reasons.push('deliverable');
     if(requiresVerification)reasons.push('verification_required');
     if(DEEP_ANALYSIS.test(value))reasons.push('deep_analysis');
+    if(BOOK_CHAPTER_WORK.test(value))reasons.push('long_form_chapter_writing');
     if(TURBO_EXECUTION.test(value)&&(route==='coding'||route==='hard'))reasons.push('execution_work');
     if(ZEUS_COMPOUND_WORK.test(value)&&CREATE.test(value))reasons.push('create_and_review');
     if(value.length>1200&&requirements>0)reasons.push('long_structured_request');
@@ -189,6 +196,7 @@ export function explainExecutionMode(decision = {}) {
 export function explainExecutionLevel(decision={}){
   if(decision.mode==='OLYMPUS'&&decision.level==='COMPLEX_TURBO')return 'Olympus · Complex Turbo selected by the zero-token router.';
   if(decision.mode==='OLYMPUS')return 'Olympus · Compound Plus selected by the zero-token router.';
+  if(decision.level==='ZEUS_DIRECTED')return 'Zeus · Level 3 · Specialist → Director → CEO.';
   if(decision.level==='COMPOUND')return 'Zeus · Compound selected by the zero-token router.';
   return 'Zeus · Simple selected by the zero-token router.';
 }

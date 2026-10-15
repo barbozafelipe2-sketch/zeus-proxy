@@ -1079,3 +1079,30 @@ html.is-busy body::before{content:"";position:fixed;left:0;top:0;height:2px;widt
 .mode-select-wrap .mode-card.olympus.selected .mode-icon{color:#c99cff}
 .mode-select-wrap .mode-blurb{text-align:center;margin:5px auto 0;padding:0 14px;color:#7f8894;font-size:9px;letter-spacing:.025em}
 @media(max-width:520px){.mode-select-wrap .mode-card{padding:9px 9px}.mode-select-wrap .mode-card strong{font-size:12px}.mode-select-wrap .mode-blurb{font-size:8px}}
+
+/* Part 3: fixed-diameter voice presence; no viewport-expanding effects. */
+.zeus-live-stage{display:flex;align-items:center;flex-direction:column;gap:8px;padding:8px 12px;color:#acb3bd;font-size:12px}
+.zeus-voice-presence{position:relative;display:grid;place-items:center;width:108px;height:108px;flex:0 0 108px;border-radius:50%;isolation:isolate;background:radial-gradient(circle at 50% 50%,#142e50,#070f21 48%,#030710 72%);box-shadow:inset 0 0 21px #4b85c05a,0 0 18px #4b85c021;overflow:hidden}
+.zeus-voice-core{width:86px;height:86px;position:relative;border-radius:50%;display:grid;place-items:center;border:1px solid #85bcf66e;background:radial-gradient(circle at 40% 32%,#6bc3f35c,#0d224b63 45%,#030918 76%);overflow:hidden}
+.zeus-voice-symbol{color:#d5eeff;font-size:42px;text-shadow:0 0 10px #8eeaff,0 0 24px #4c9bff;z-index:2}
+.zeus-voice-filament{position:absolute;width:60%;height:2px;top:40%;left:18%;border-radius:80%;transform-origin:60% 50%;background:linear-gradient(90deg,transparent,#91e7ff,#f6fdff,#6d9aff,transparent);box-shadow:0 0 8px #75bfff;opacity:.75;animation:zeus-filament 2.6s ease-in-out infinite alternate}
+.zeus-voice-filament.f2{top:60%;transform:rotate(-42deg);animation-delay:-.8s}.zeus-voice-filament.f3{top:23%;transform:rotate(35deg);animation-delay:-1.6s}.zeus-voice-filament.f4{top:72%;transform:rotate(75deg);animation-delay:-2.2s}
+.zeus-voice-presence.classic{background:radial-gradient(circle at 32% 30%,#7b9ca8,#182c43 48%,#040812 75%)}
+.zeus-voice-presence.classic .zeus-voice-filament,.zeus-voice-presence.olympus .zeus-voice-filament,.zeus-voice-presence.liquid .zeus-voice-filament{display:none}
+.zeus-voice-presence.olympus{background:radial-gradient(circle at 35% 30%,#d9bd7d,#6a4e23 50%,#130f08 76%)}
+.zeus-voice-presence.liquid{background:radial-gradient(circle at 25% 23%,#f6f7f9,#7e939f 27%,#1d3039 58%,#c4d0d9 74%,#172229 85%)}
+.zeus-voice-presence.active .zeus-voice-filament{animation-duration:1.3s}
+@keyframes zeus-filament{0%{opacity:.25;filter:brightness(.75)}55%{opacity:.95;filter:brightness(1.7)}100%{opacity:.5;filter:brightness(1.15)}}
+@media(prefers-reduced-motion:reduce){.zeus-voice-filament{animation:none!important}}
+
+/* A restrained star field behind the fixed-size Live Talk sphere. */
+.zeus-live-stage{border-radius:18px;background:radial-gradient(circle at 12% 24%,#b8d8fc65 0 1px,transparent 2px),radial-gradient(circle at 82% 35%,#dfd8c650 0 1px,transparent 2px),radial-gradient(circle at 65% 85%,#a5b9d850 0 1px,transparent 2px),linear-gradient(180deg,#080c1710,#05081635);background-size:100% 100%}
+
+/* Lightning: plasma-globe reference, not a lightning logo. */
+.zeus-voice-presence.lightning{background:#010611;box-shadow:0 0 22px #007aff49,inset 0 0 8px #00baff33}
+.zeus-plasma-canvas{display:block;width:100%;height:100%;aspect-ratio:1;max-width:100%;max-height:100%}
+.zeus-voice-presence.lightning .zeus-voice-core{display:none}
+@media(prefers-reduced-motion:reduce){.zeus-plasma-canvas{animation:none}}
+
+/* Plasma reference uses a large but strictly capped diameter only in Live Talk. */
+.zeus-live-stage .zeus-voice-presence.lightning{width:min(68vw,296px);height:min(68vw,296px);flex:0 0 auto;max-width:296px;max-height:296px;aspect-ratio:1}

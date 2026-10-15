@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { createExecutionBudget } from '../netlify/functions/_shared/runtime.mjs';
-import { GEAR_CALL_CAPS } from '../netlify/functions/_shared/intent.mjs';
+import { GEAR_CALL_CAPS, decideExecutionLevel } from '../netlify/functions/_shared/intent.mjs';
 import { snapshotProviderTelemetry, summarizeRequestUsage } from '../netlify/functions/_shared/provider-observability.mjs';
 
 const envVars={OPENAI_API_KEY:'openai-test',OPENAI_BASE_URL:'https://openai.test/v1',OPENAI_STRONG_MODEL:'gpt-5.6-sol',OPENAI_MODEL:'gpt-5.6-luna',ANTHROPIC_API_KEY:'anthropic-test',ANTHROPIC_BASE_URL:'https://anthropic.test'};
@@ -20,7 +20,22 @@ const budget=(level)=>createExecutionBudget({timeoutMs:60000,maxCalls:GEAR_CALL_
 const req={items:[{id:'R1',text:'Write a business plan PDF.',evidence:'PDF',central:true}],ambiguous:false};
 const reset=(m)=>{calls=[];m.__resetProviderHealthForTests();};
 try{
-  assert.deepEqual({...GEAR_CALL_CAPS},{SIMPLE:1,COMPOUND:2,COMPOUND_PLUS:3,COMPLEX_TURBO:4});
+  assert.deepEqual({...GEAR_CALL_CAPS},{SIMPLE:1,COMPOUND:2,ZEUS_DIRECTED:3,COMPOUND_PLUS:3,COMPLEX_TURBO:4});
+  // Router decisions are deterministic: no classifier call, token charge or network request.
+  const beforeRouting=calls.length;
+  for(const request of ['Write chapter 7 of my book, about 2500 characters.',
+    'Escreva o capítulo 7 do livro com 2500 caracteres.',
+    'Draft another chapter in the novel.',
+    'Escribe el capitulo 4 de mi libro.']){
+    const route=decideExecutionLevel(request,{mode:'ZEUS',action:'CHAT',route:'fast'});
+    assert.equal(route.level,'COMPOUND',request);
+    assert.equal(route.maxCalls,2);
+    assert.equal(route.router,'deterministic_zero_token');
+  }
+  assert.equal(decideExecutionLevel('Hello, how are you?',{mode:'ZEUS'}).level,'SIMPLE');
+  assert.equal(decideExecutionLevel('Read chapter 7 and explain its meaning.',{mode:'ZEUS'}).level,'SIMPLE');
+  assert.equal(calls.length,beforeRouting,'zero cost router must never make outbound calls');
+
   const models=await import(`../netlify/functions/_shared/models.mjs?gears=${Date.now()}`);
   assert.equal(models.TURBO_LIMITS.maxCalls,4);assert.equal(models.TURBO_LIMITS.maxCreators,2);
 

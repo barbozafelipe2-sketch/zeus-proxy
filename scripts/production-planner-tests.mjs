@@ -1,0 +1,25 @@
+import assert from 'node:assert/strict';
+import {planProduction,evaluateOlympusAuthorization,OLYMPUS_JOB_BUDGET} from '../netlify/functions/_shared/production-plan.mjs';
+
+assert.equal(OLYMPUS_JOB_BUDGET.optimizationTargetCents,650);
+assert.equal(OLYMPUS_JOB_BUDGET.initialAuthorizedCents,800);
+assert.equal(OLYMPUS_JOB_BUDGET.extensionCents,500);
+assert.equal(OLYMPUS_JOB_BUDGET.monthlyAdvisoryCents,6000);
+assert.equal(planProduction({operation:'discuss',requirementCount:8}).phaseCount,0);
+assert.equal(planProduction({operation:'discuss',domains:['text']}).level,'L1');
+assert.equal(planProduction({operation:'preview',domains:['visual'],estimatedSeconds:90}).phaseCount,1);
+const backend=planProduction({mode:'ZEUS',operation:'create',domains:['backend'],estimatedSeconds:110,existingArtifacts:1});
+assert.equal(backend.level,'L3');
+assert.equal(backend.phaseCount,3);
+assert.equal(backend.canReuseArtifacts,true);
+assert.equal(backend.preserveConversation,true);
+assert.equal(backend.modelCallsForRouting,0);
+assert.equal(backend.roles.length,3);
+assert.equal(planProduction({mode:'ZEUS',operation:'assemble',domains:['visual','coding']}).selectedMode,'ZEUS');
+assert.equal(planProduction({mode:'OLYMPUS',operation:'assemble',domains:['visual','coding']}).roles.length,4);
+assert.equal(planProduction({mode:'ZEUS',operation:'create',userLevelPreference:'L2'}).level,'L2');
+assert.equal(planProduction({mode:'ZEUS',operation:'create',estimatedSeconds:250,userPhasePreference:2}).phaseCount,2);
+assert.equal(evaluateOlympusAuthorization({spentCents:770,nextUpperBoundCents:60}).requiresExplicitAdditionalApproval,true);
+assert.equal(evaluateOlympusAuthorization({spentCents:600,reservedCents:120,uncertainUsageCents:40,nextUpperBoundCents:50}).allowed,false);
+assert.equal(evaluateOlympusAuthorization({authorizedCents:800}).potentialNextCeilingCents,1300);
+console.log('Adaptive production planner policy: PASS');

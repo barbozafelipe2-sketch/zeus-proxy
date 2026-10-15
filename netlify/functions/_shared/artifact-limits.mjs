@@ -5,6 +5,7 @@ export const ARTIFACT_INPUT_LIMITS=Object.freeze({
   xlsx:{maxChars:80000,maxLines:5000},
   csv:{maxChars:120000,maxLines:10000},
   md:{maxChars:120000,maxLines:10000},
+  html:{maxChars:120000,maxLines:12000},
   zip:{maxChars:120000,maxLines:12000},
 });
 export const MAX_ARTIFACT_BYTES=12*1024*1024;
