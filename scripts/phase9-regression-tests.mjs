@@ -10,8 +10,12 @@ const chat=readFileSync('netlify/functions/chat.mjs','utf8');
 const policy=readFileSync('netlify/functions/_shared/execution-policy.mjs','utf8');
 const ui=readFileSync('public/app.js','utf8');
 
-assert.ok(source.includes('excludeProviders:[modelFamily(director.model)]'),
-  'The CEO must exclude Director MODEL FAMILY, not its API adapter, including OpenRouter');
+assert.ok(
+  source.includes('const previousFamilies=[...new Set([...creatorProviders,modelFamily(director.model)])]') &&
+  source.includes('let ceoCandidates=ceoOrder(previousFamilies)') &&
+  source.includes('excludedProviders.has(modelFamily(m))'),
+  'The CEO must exclude director MODEL FAMILY using the shared family-aware candidate filter, including OpenRouter'
+);
 assert.ok(source.includes("gptFinished:modelFamily(final.model)==='openai'"),
   'Do not claim a non-GPT fallback was finished by GPT');
 assert.ok(source.includes("pipelineLabel:webResearchUsed?'Compound Plus · live web research")&&source.includes("modelFamily(final.model)==='openai'"),

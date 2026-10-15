@@ -1,5 +1,5 @@
 [build]
-  command = "npm run build"
+  command = "npm run release:check && npm run build"
   publish = "public"
 
 [functions]
