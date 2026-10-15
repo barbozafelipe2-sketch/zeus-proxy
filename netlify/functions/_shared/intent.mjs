@@ -165,7 +165,8 @@ export function decideExecutionLevel(text='', {
   const candidate=STRONG_TURBO.test(value)||LAUNCH_PACKAGE.test(value)||(areas.length>=2&&(executionVerb||zip));
   const substantiveScope=areas.length>=2 && (executionVerb||zip||LAUNCH_PACKAGE.test(value));
   const documentedScope=requirements>=3 || (hasFiles && requirements>=2);
-  const turboEligible=candidate && substantiveScope && documentedScope
+  const explicitAuditRepair=STRONG_TURBO.test(value)&&hasFiles&&/\b(audit|auditoria|findings|achados|relatorio de auditoria)\b/i.test(value);
+  const turboEligible=candidate && ((substantiveScope && documentedScope)||explicitAuditRepair)
     && action!=='IMAGE_CREATE' && action!=='IMAGE_EDIT';
   if(turboEligible){
     const reasons=[];
