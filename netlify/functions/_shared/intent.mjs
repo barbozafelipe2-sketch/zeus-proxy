@@ -88,14 +88,17 @@ export function normalizeRequestedMode(value='ZEUS'){
   return mode==='ZEUS'||mode==='OLYMPUS'?mode:null;
 }
 
-// Top-level mode is an owner choice. The router never spends tokens deciding
-// whether Zeus or Olympus should be used.
-export function decideExecutionMode(text = '', { requestedMode = 'ZEUS' } = {}) {
+// Manual mode remains an owner choice. Automatic mode can promote a qualifying
+// complex request; neither decision spends classification tokens.
+export function decideExecutionMode(text = '', { requestedMode = 'ZEUS', olympusAuto = false, ...context } = {}) {
   const value=normalize(String(text||''));
-  const mode=normalizeRequestedMode(requestedMode)||'ZEUS';
+  const requested=normalizeRequestedMode(requestedMode)||'ZEUS';
+  const candidate=olympusAuto===true&&requested==='ZEUS'?decideExecutionLevel(text,{...context,mode:'OLYMPUS'}):null;
+  const automatic=candidate?.mode==='OLYMPUS'&&!candidate.reasons.includes('default_economical_olympus');
+  const mode=automatic?'OLYMPUS':requested;
   return {
     mode,
-    reason:mode==='OLYMPUS'?'manual_olympus':'manual_zeus',
+    reason:automatic?'automatic_complexity':mode==='OLYMPUS'?'manual_olympus':'manual_zeus',
     workstreams:workstreamsIn(value),
     router:'deterministic_zero_token',
   };
@@ -139,7 +142,7 @@ export function decideExecutionLevel(text='', {
   const out=(m,level,reasons)=>({mode:m,requestedMode:selectedMode,level,reason:reasons[0],reasons:[...new Set(reasons)],workstreams,maxCalls:GEAR_CALL_CAPS[level],router:'deterministic_zero_token'});
 
   const zeusGear=()=>{
-    if(action==='IMAGE_CREATE'||action==='IMAGE_EDIT')return out('ZEUS','SIMPLE',['single_model_media_operation']);
+    if(action==='IMAGE_CREATE'||action==='IMAGE_EDIT')return {...out('ZEUS','COMPOUND',['single_model_media_operation']),maxCalls:1};
     const reasons=[];
     if(PROFESSIONAL_DOMAIN.test(value)&&CREATE.test(value)&&['ARTIFACT_CREATE','CHAT'].includes(action))return out('ZEUS','ZEUS_DIRECTED',['professional_domain_artifact']);
     if(action==='ARTIFACT_CREATE')reasons.push('deliverable');
@@ -152,7 +155,7 @@ export function decideExecutionLevel(text='', {
     if(FORCE_SIMPLE.test(value)&&action==='CHAT'&&!requiresVerification)return out('ZEUS','SIMPLE',['explicitly_brief']);
     return reasons.length?out('ZEUS','COMPOUND',reasons):out('ZEUS','SIMPLE',['ordinary_turn']);
   };
-  if(selectedMode==='ZEUS')return zeusGear();
+  if(selectedMode==='ZEUS'||action==='IMAGE_CREATE'||action==='IMAGE_EDIT')return zeusGear();
 
   // Olympus (manual) escalates only when the work actually needs a team.
   if(action==='CHAT'&&requirements===0&&!requiresVerification&&workstreams.length===0&&!TURBO_EXECUTION.test(value)&&!COMPOUND_PLUS_SIGNAL.test(value)&&!DEEP_ANALYSIS.test(value))return out('ZEUS','SIMPLE',['simple_turn_no_team_needed']);

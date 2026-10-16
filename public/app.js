@@ -4,7 +4,7 @@ const app = $('#app');
 
 const state = {
   user:null, token:null, refreshToken:null, authReady:false, accessKey:'', attachMenu:false,
-  tab:'Home', mode:'ZEUS', activeMode:null, activeLevel:null, drawer:false,
+  tab:'Home', mode:'ZEUS', olympusAuto:false, activeMode:null, activeLevel:null, drawer:false,
   conversations:[], currentConversation:null, messages:[], chatArtifacts:[], sending:false, execStatus:'', error:'',
   attachedFiles:[], projects:[], projectFilter:'ALL', currentProject:null, tasks:[],
   files:[], artifacts:[], health:null, recording:false,
@@ -179,7 +179,7 @@ function announce(text){
 function dismissError(){state.error='';state.lastFailedText='';state.lastFailedMessageId=null;state.lastFailedAttachments=[];state.lastFailedRequestId=null;state.lastFailedMode=null;state.lastFailedTurboApproval=null;render();}
 function errorBanner(extraClass=''){
   if(!state.error)return '';
-  return `<div class="chat-error ${extraClass}"><span>${esc(state.error)}</span><div class="error-actions">${state.lastFailedBudgetExecutionId?`<button type="button" id="approve-olympus-five">Approve +$5</button>`:''}${state.lastFailedText?`<button type="button" id="retry-last">Retry</button>`:''}<button type="button" class="error-dismiss" data-dismiss-error aria-label="Dismiss message">${icon('close')}</button></div></div>`;
+  return `<div class="chat-error ${extraClass}"><span>${esc(state.error)}</span><div class="error-actions">${state.lastFailedBudgetExecutionId?`<button type="button" id="approve-olympus-five">Approve +$5</button>`:''}${state.lastFailedText?`<button type="button" id="retry-last">Try again</button>`:''}<button type="button" class="error-dismiss" data-dismiss-error aria-label="Dismiss message">${icon('close')}</button></div></div>`;
 }
 async function bootstrapApp(){
   state.authReady=true; render();
@@ -306,12 +306,14 @@ function lastReply(messages=state.messages){return [...(messages||[])].reverse()
 function lastReplyMode(messages=state.messages){return lastReply(messages)?.mode||null;}
 function syncActiveModeFromMessages(){const last=lastReply();state.activeMode=last?.mode||null;state.activeLevel=last?.metadata?.executionLevel||null;}
 function liveMode(){return state.mode==='OLYMPUS'?'OLYMPUS':'ZEUS';}
+function autoModeKey(){return 'zeus.olympusAuto.v1.'+(state.user?.id||'anonymous');}
+function automaticOlympus(){try{return localStorage.getItem(autoModeKey())==='true';}catch{return state.olympusAuto===true;}}
 function modeStrip(){
   const selected=liveMode(),lastLevel=state.activeLevel?String(state.activeLevel).replaceAll('_',' '):'';
   return `<div class="mode-select-wrap"><div class="mode-strip" role="group" aria-label="Intelligence mode">
     <button type="button" class="mode-card zeus ${selected==='ZEUS'?'selected':''}" data-mode="ZEUS" aria-pressed="${selected==='ZEUS'}" ${state.sending?'disabled':''}><div class="mode-icon">${icon('auto')}</div><div><strong>Zeus <em>STANDARD</em></strong><small>Automatic level: Simple or Compound</small></div></button>
     <button type="button" class="mode-card olympus ${selected==='OLYMPUS'?'selected':''}" data-mode="OLYMPUS" aria-pressed="${selected==='OLYMPUS'}" ${state.sending?'disabled':''}><div class="mode-icon">${icon('globe')}</div><div><strong>Olympus <em>ADVANCED</em></strong><small>Automatic level: Compound Plus or Complex Turbo</small></div></button>
-  </div><div class="mode-blurb">You choose the mode. The zero-token router chooses the level.${lastLevel?` Last execution: ${esc(lastLevel)}.`:''}</div></div>`;
+  </div><div class="mode-blurb"><label><input type="checkbox" id="olympus-auto" ${automaticOlympus()?'checked':''} ${state.sending?'disabled':''}> Olympus automatic: ${automaticOlympus()?'On':'Off'}</label> · The zero-token router routes by complexity within usage limits. Manual Olympus remains available.${lastLevel?` Last execution: ${esc(lastLevel)}.`:''}</div></div>`;
 }
 
 function homeView(){
@@ -938,6 +940,7 @@ function bind(){
   $('#voice')?.addEventListener('click',startVoice);
   $('#live-talk')?.addEventListener('click',toggleLiveTalk);
   $('#retry-last')?.addEventListener('click',retryLastMessage);
+  $('#olympus-auto')?.addEventListener('change',e=>{state.olympusAuto=e.target.checked;try{localStorage.setItem(autoModeKey(),String(state.olympusAuto));}catch{}render();});
   $('#approve-olympus-five')?.addEventListener('click',approveNextOlympusFive);
   $('#load-older-messages')?.addEventListener('click',loadOlderMessages);
   $('#load-older-outputs')?.addEventListener('click',loadOlderOutputs);
@@ -1097,6 +1100,7 @@ async function sendText(text,pendingAttachments=[],requestId=crypto.randomUUID()
       projectId:state.currentProject?.id||null,
       content:text,
       fileIds:pending.map(f=>f.id),
+      olympusAuto:automaticOlympus(),
       mode,
       requestId,
       ...(turboApproval?{turboApproval}:{}),
@@ -1174,6 +1178,7 @@ async function approveNextOlympusFive(){
 }
 async function retryLastMessage(){
   if(!state.lastFailedText||state.sending)return;
+  if(!window.confirm('Try again? This may start another paid attempt. Saved completed stages will be reused when available.'))return;
   const text=state.lastFailedText;
   const pending=[...state.lastFailedAttachments];
   let requestId=state.lastFailedRequestId||crypto.randomUUID();

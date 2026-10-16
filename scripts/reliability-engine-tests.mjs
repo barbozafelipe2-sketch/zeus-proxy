@@ -7,7 +7,7 @@ const cases=[
   ['hello','ZEUS','CHAT','fast','SIMPLE',false,{}],
   ['Translate this to Portuguese: good morning','ZEUS','CHAT','fast','SIMPLE',false,{}],
   ['Write a birthday message','ZEUS','CHAT','writing','SIMPLE',false,{}],
-  ['Create a logo for Zeus','ZEUS','IMAGE_CREATE','fast','SIMPLE',false,{}],
+  ['Create a logo for Zeus','ZEUS','IMAGE_CREATE','fast','COMPOUND',false,{}],
   ['Explain this screenshot','ZEUS','ANALYZE','vision','SIMPLE',false,{hasImage:true,hasFiles:true}],
   ['Fix this JavaScript bug','ZEUS','CHAT','coding','COMPOUND',true,{}],
   ['Implement this API endpoint','ZEUS','CHAT','coding','COMPOUND',true,{}],

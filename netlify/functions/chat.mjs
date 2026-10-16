@@ -389,7 +389,8 @@ async function chatHandler(req, context, startedAt){
   const verificationSignal=shouldVerifyDelivery(modelText,{action:intent.action,route,hasFiles:attachmentRows.length>0,hasImage});
   const requestedMode=normalizeRequestedMode(body.mode||'ZEUS');
   if(!requestedMode)return errorJson('Mode must be ZEUS or OLYMPUS.',400,'INVALID_INTELLIGENCE_MODE',requestId);
-  const decision=decideExecutionMode(modelText,{requestedMode});
+  if(body.olympusAuto!==undefined&&typeof body.olympusAuto!=='boolean')return errorJson('olympusAuto must be a boolean.',400,'INVALID_AUTO_MODE',requestId);
+  const decision=decideExecutionMode(modelText,{requestedMode,olympusAuto:body.olympusAuto===true,action:intent.action,route,hasFiles:attachmentRows.length>0,hasImage,requirementCount:requirementSpec.items.length,artifactType:intent.artifactType,requiresVerification:verificationSignal});
   const levelDecision=decideExecutionLevel(modelText,{mode:decision.mode,action:intent.action,route,hasFiles:attachmentRows.length>0,hasImage,requirementCount:requirementSpec.items.length,artifactType:intent.artifactType,requiresVerification:verificationSignal});
   const mode=levelDecision.mode||decision.mode,level=levelDecision.level; // router may downgrade Olympus to a Zeus gear
   const zeusCompound=mode==='ZEUS'&&level==='COMPOUND';
