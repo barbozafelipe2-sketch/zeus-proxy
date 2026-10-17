@@ -209,8 +209,9 @@ function orderForRoute(route, exclude = new Set(), options = {}) {
   return picked;
 }
 
+function AI_ROUTES_OVERRIDE(route){return ['fast','writing','coding','research','hard','vision'].includes(route)?route:null;}
 export function rankModels(text, exclude = new Set(), options = {}) {
-  return orderForRoute(routeFor(text, options), exclude, options);
+  return orderForRoute(AI_ROUTES_OVERRIDE(options.routeHint) || routeFor(text, options), exclude, options);
 }
 
 function clip(text) {
@@ -493,10 +494,10 @@ export function buildFallbackOrder(ranked,maxAttempts=4){
   return out;
 }
 
-export async function executeWithFallback(text, system, prompt, { exclude = new Set(), maxAttempts = 4, budget, images = [], history = [], reserveAfterMs = 0, callTimeoutMs = null, maxOutputTokens = 5000, blockedProviders = [] } = {}) {
+export async function executeWithFallback(text, system, prompt, { exclude = new Set(), maxAttempts = 4, budget, images = [], history = [], reserveAfterMs = 0, callTimeoutMs = null, maxOutputTokens = 5000, blockedProviders = [], routeHint = null } = {}) {
   const localBudget = budget || createExecutionBudget({ maxCalls: Math.max(4, maxAttempts) });
   const providerBlocks=new Set(Array.isArray(blockedProviders)?blockedProviders:[]);
-  const ranked = rankModels(text, exclude, { vision: images.length > 0 });
+  const ranked = rankModels(text, exclude, { vision: images.length > 0, routeHint });
   const first = ranked[0];
   if (!first) { const error = new Error('No configured AI provider is currently available.'); error.code='AI_NOT_CONFIGURED'; throw error; }
   const native=providerStatus();
@@ -546,8 +547,8 @@ function routeEligibleWhenGatewayBlocked(model,blocked){
   return !blocked.has(model.provider)||(Boolean(env('OPENROUTER_DIRECT_API_KEY'))&&!blocked.has('openrouter_direct'))||(modelFamily(model)==='openai'&&Boolean(env('OPENAI_DIRECT_API_KEY'))&&!blocked.has('openai_direct'));
 }
 
-export function zeusBaseCandidates(text='', {vision=false,blockedProviders=[]}={}){
-  const blocked=new Set(blockedProviders||[]),route=routeFor(text,{vision});
+export function zeusBaseCandidates(text='', {vision=false,blockedProviders=[],routeHint=null}={}){
+  const blocked=new Set(blockedProviders||[]),route=AI_ROUTES_OVERRIDE(routeHint)||routeFor(text,{vision});
   const ranked=orderForRoute(route,new Set(),{vision}).filter(m=>routeEligibleWhenGatewayBlocked(m,blocked));
   const strongGpt=env('OPENAI_STRONG_MODEL')||'gpt-5.6-sol';
   const cheap=ranked.map((m,index)=>({m,index})).filter(x=>Number(x.m.cost||99)<=3&&!(x.m.provider==='openai'&&x.m.id===strongGpt)).sort((a,b)=>Number(a.m.cost||99)-Number(b.m.cost||99)||Number(a.m.provider==='openai')-Number(b.m.provider==='openai')||a.index-b.index).map(x=>x.m);
@@ -692,7 +693,7 @@ function patchPrompt(text,answer,checklist,findings,deliveryContract=''){return 
 function verificationLabel(text,reviewed=true){if(codeLikeRequest(text))return reviewed?'Static review only · not executed':'Static review unavailable · not executed';return reviewed?'Adversarial review completed':'Independent review unavailable';}
 function repairFailureLabel(text){return codeLikeRequest(text)?'Static review found a defect · repair failed · original draft returned · not executed':'Adversarial review found a defect · repair failed · original draft returned';}
 
-export async function runZeus({ text, context = '', images = [], history = [], requirements = { items: [], ambiguous: false }, level = 'SIMPLE', verify = false, deliveryContract = '', blockedProviders = [], budget = null, onStage = null, resumeStages = [] }) {
+export async function runZeus({ text, context = '', images = [], history = [], requirements = { items: [], ambiguous: false }, level = 'SIMPLE', verify = false, deliveryContract = '', blockedProviders = [], budget = null, onStage = null, resumeStages = [], routeHint = null }) {
   if(String(level||'').toUpperCase()==='ZEUS_DIRECTED'){
     const localBudget=budget||createExecutionBudget({timeoutMs:120000,maxCalls:3,reserveMs:6500});
     return runDirectedPipeline({text,context,images,history,requirements,deliveryContract,blockedProviders,budget:localBudget,onStage,resumeStages},{candidates:roleCandidates,call:callModel,family:modelFamily});
@@ -703,11 +704,11 @@ export async function runZeus({ text, context = '', images = [], history = [], r
   // is deterministic before this function; model clarification remains Olympus-only.
   const checklist=Array.isArray(requirements?.items)?requirements.items.map(x=>({...x})):[];
   const prompt=`${text}${checklist.length?`\n\nRequirement list for this execution:\n${formatChecklist(checklist)}`:''}${context?`\n\nRelevant OlyHub evidence/context:\n${context}`:''}`;
-  const leadRoute=routeFor(text,{vision:images.length>0}),answerTokens=deliveryContract?12000:(leadRoute==='coding'||leadRoute==='hard'?8000:5000);
+  const leadRoute=AI_ROUTES_OVERRIDE(routeHint)||routeFor(text,{vision:images.length>0}),answerTokens=deliveryContract?12000:(leadRoute==='coding'||leadRoute==='hard'?8000:5000);
 
   if(requestedLevel==='SIMPLE'){
     const single=await executeWithFallback(text,zeusCoreSystem(deliveryContract),prompt,{
-      maxAttempts:leadRoute==='fast'?3:4,budget:localBudget,images,history,maxOutputTokens:answerTokens,blockedProviders,
+      maxAttempts:leadRoute==='fast'?3:4,budget:localBudget,images,history,maxOutputTokens:answerTokens,blockedProviders,routeHint,
       callTimeoutMs:(b,attempt)=>leadRoute==='fast'
         ?Math.min(6500+attempt*750,Math.max(2200,b.remaining()-b.reserveMs-1200))
         :answerCallTimeout(b,0,attempt===0?0.72:0.86)
@@ -720,7 +721,7 @@ export async function runZeus({ text, context = '', images = [], history = [], r
     };
   }
 
-  const baseCandidates=zeusBaseCandidates(text,{vision:images.length>0,blockedProviders});
+  const baseCandidates=zeusBaseCandidates(text,{vision:images.length>0,blockedProviders,routeHint});
   let base=null,baseError=null;
   if(baseCandidates.length&&localBudget.canCall(2500,17000)){
     try{
@@ -818,13 +819,13 @@ function olympusCompoundPlusFinalizerSystem(deliveryContract=''){
 }
 
 export async function runOlympusCompoundPlus({
-  text,context='',images=[],history=[],requirements={items:[],ambiguous:false},deliveryContract='',blockedProviders=[],budget=null,webResearchUsed=false
+  text,context='',images=[],history=[],requirements={items:[],ambiguous:false},deliveryContract='',blockedProviders=[],budget=null,webResearchUsed=false,routeHint=null
 }){
   const localBudget=budget||createExecutionBudget({timeoutMs:150000,maxCalls:3});
   const checklist=Array.isArray(requirements?.items)&&requirements.items.length
     ?requirements.items.map(x=>({...x}))
     :[{id:'R1',text:'Answer the owner request directly and completely.',evidence:String(text||'').slice(0,240),kind:'request',central:true}];
-  const authorCandidates=zeusBaseCandidates(text,{vision:images.length>0,blockedProviders});
+  const authorCandidates=zeusBaseCandidates(text,{vision:images.length>0,blockedProviders,routeHint});
   if(!authorCandidates.length){
     const zeus=await runZeus({text,context,images,history,requirements:{items:checklist,ambiguous:false},level:'COMPOUND',deliveryContract,blockedProviders,budget:localBudget});
     return {...zeus,effectiveMode:'ZEUS',trace:{...(zeus.trace||{}),olympusDescended:'compound_plus_author_unavailable'}};
@@ -1063,7 +1064,7 @@ function creatorCandidates(task,text,{vision=false,blockedProviders=[],usedProvi
 }
 
 export async function runOlympusComplexTurbo({
-  text,context='',images=[],history=[],requirements={items:[],ambiguous:false},deliveryContract='',blockedProviders=[],budget=null,creatorCount=null
+  text,context='',images=[],history=[],requirements={items:[],ambiguous:false},deliveryContract='',blockedProviders=[],budget=null,creatorCount=null,routeHint=null
 }){
   const localBudget=budget||createExecutionBudget({timeoutMs:TURBO_LIMITS.timeoutMs,maxCalls:TURBO_LIMITS.maxCalls});
   const checklist=Array.isArray(requirements?.items)&&requirements.items.length
@@ -1074,6 +1075,11 @@ export async function runOlympusComplexTurbo({
   const planner=null,plannerError=null;
   const teamSize=Number(creatorCount)>0?creatorCount:TURBO_LIMITS.maxCreators;
   const plan=deterministicTurboPlan(checklist,text,teamSize);
+  if(plan.tasks.length===1&&routeHint){
+    const mapping={coding:'implementation',research:'research',writing:'writing',vision:'interface',hard:'architecture'};
+    const specialty=mapping[routeHint];
+    if(specialty)plan.tasks[0].specialty=normalizeTurboSpecialty(specialty);
+  }
 
   const creatorOrders=[],usedProviders=[];
   for(const task of plan.tasks.slice(0,TURBO_LIMITS.maxCreators)){

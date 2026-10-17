@@ -1,4 +1,5 @@
 import {authorizeOlympusModelCall} from './_shared/olympus-budget.mjs';
+import {aiRouteFor} from './_shared/ai-router.mjs';
 import { requireUser } from './_shared/auth.mjs';
 import { json, readJson, cleanText, isUuid, getRequestId, errorJson } from './_shared/http.mjs';
 import { runZeus, runOlympus, runOlympusCompoundPlus, TURBO_LIMITS, generateImage, editImage, routeFor } from './_shared/models.mjs';
@@ -508,12 +509,13 @@ ${aiContext}`);
     if(actualMode==='OLYMPUS'&&(isImageOp||webIntent))throw codedError('This Olympus media/research route requires a verified price reservation before it can run. Use Zeus for now.',409,'OLYMPUS_UNPRICED_ROUTE');
     const zeusLevel=actualMode==='ZEUS'?(webIntent?'SIMPLE':gearLevel):null;
     const turboCreatorCount=turboHardCap?(webIntent?1:Number(turboQuote?.creatorCount||TURBO_LIMITS.maxCreators)):null;
-    const maxCalls=isImageOp?GEAR_CALL_CAPS.SIMPLE:(actualMode==='ZEUS'&&webIntent?GEAR_CALL_CAPS.COMPOUND:GEAR_CALL_CAPS[gearLevel]||GEAR_CALL_CAPS.SIMPLE);
+    const maxCalls=isImageOp?GEAR_CALL_CAPS.SIMPLE:(actualMode==='ZEUS'&&webIntent?GEAR_CALL_CAPS.COMPOUND:GEAR_CALL_CAPS[gearLevel]||GEAR_CALL_CAPS.SIMPLE)+1; // counted low-cost router
     const timeoutMs=worker?150000:((webIntent||githubIntent||zeusLevel==='ZEUS_DIRECTED')?CHAT_WEB_TIMEOUT_MS:(route==='fast'&&zeusLevel==='SIMPLE'?FAST_CHAT_TIMEOUT_MS:CHAT_TIMEOUT_MS));
     executionBudget=createExecutionBudget({startedAt,timeoutMs,maxCalls,reserveMs:6500});
     if(actualMode==='OLYMPUS')executionBudget.authorizeProviderCall=info=>authorizeOlympusModelCall(db,{ownerId:user.id,executionId:execution.id,...info});
     const vision=hasImage?await loadVisionInputs(attachmentRows):{images:[],skipped:[]};
     const sharedBlockedProviders=await loadSharedProviderBlocks(db,user.id);
+    const aiRouting=isImageOp?{route,source:'rules_fallback',model:null}:await aiRouteFor(modelText,{budget:executionBudget,vision:hasImage,blockedProviders:sharedBlockedProviders});
     const web=webIntent?await runWebSearch(modelText,{budget:executionBudget,reserveAfterMs:actualMode==='OLYMPUS'?17000:12000}):{requested:false,context:'',sources:[],trace:null};
     webUsageTrace=web.trace||null;
     const compoundPlusWithWeb=actualMode==='OLYMPUS'&&level==='COMPOUND_PLUS'&&webIntent;
@@ -550,17 +552,17 @@ ${aiContext}`);
       await db.sql`UPDATE executions SET state='RUNNING' WHERE id=${execution.id} AND owner_id=${user.id}`;
       if(actualMode==='OLYMPUS'){
         try{result=level==='COMPOUND_PLUS'
-          ?await runOlympusCompoundPlus({text:modelText,context:enrichedContext,images:vision.images,history,requirements:requirementSpec,deliveryContract,blockedProviders:sharedBlockedProviders,budget:executionBudget,webResearchUsed:compoundPlusWithWeb})
-          :await runOlympus({text:modelText,context:enrichedContext,images:vision.images,history,requirements:requirementSpec,deliveryContract,blockedProviders:sharedBlockedProviders,budget:executionBudget,creatorCount:turboCreatorCount});}
+          ?await runOlympusCompoundPlus({text:modelText,context:enrichedContext,images:vision.images,history,requirements:requirementSpec,deliveryContract,blockedProviders:sharedBlockedProviders,budget:executionBudget,webResearchUsed:compoundPlusWithWeb,routeHint:aiRouting.route})
+          :await runOlympus({text:modelText,context:enrichedContext,images:vision.images,history,requirements:requirementSpec,deliveryContract,blockedProviders:sharedBlockedProviders,budget:executionBudget,creatorCount:turboCreatorCount,routeHint:aiRouting.route});}
         catch(olympusError){
           if(String(olympusError?.code||'').startsWith('OLYMPUS_'))throw olympusError;
           if(olympusError?.code==='AI_REQUEST_REJECTED')throw olympusError;
           if(!executionBudget.canCall())throw olympusError;
-          const fallback=await runZeus({text:modelText,context:enrichedContext,images:vision.images,history,requirements:requirementSpec,level:'COMPOUND',deliveryContract,blockedProviders:sharedBlockedProviders,budget:executionBudget});
+          const fallback=await runZeus({text:modelText,context:enrichedContext,images:vision.images,history,requirements:requirementSpec,level:'COMPOUND',deliveryContract,blockedProviders:sharedBlockedProviders,budget:executionBudget,routeHint:aiRouting.route});
           fallback.trace={...(fallback.trace||{}),olympusFallback:String(olympusError?.message||olympusError).slice(0,220)};
           result=fallback;
         }
-      }else result=await runZeus({text:modelText,context:enrichedContext,images:vision.images,history,requirements:requirementSpec,level:zeusLevel||'COMPOUND',deliveryContract,blockedProviders:sharedBlockedProviders,budget:executionBudget,onStage:zeusLevel==='ZEUS_DIRECTED'?data=>savePhaseCheckpoint(db,{ownerId:user.id,executionId:execution.id,conversationId,projectId,...data}):null,resumeStages});
+      }else result=await runZeus({text:modelText,context:enrichedContext,images:vision.images,history,requirements:requirementSpec,level:zeusLevel||'COMPOUND',deliveryContract,blockedProviders:sharedBlockedProviders,budget:executionBudget,routeHint:aiRouting.route,onStage:zeusLevel==='ZEUS_DIRECTED'?data=>savePhaseCheckpoint(db,{ownerId:user.id,executionId:execution.id,conversationId,projectId,...data}):null,resumeStages});
       if(intent.action==='ARTIFACT_CREATE'&&intent.artifactType){
         if(intent.artifactType==='zip'){
           // Preserve the existing structured ZIP package contract, with bounded structural validation.
@@ -590,7 +592,7 @@ ${aiContext}`);
     result.sources=[...(web.sources||[]),...(github.sources||[])].slice(0,12);
     result.capabilities=[web.trace,github.trace].filter(Boolean);
     const visionSummary={attached:attachmentRows.filter(r=>(r.mime_type||'').startsWith('image/')).length,analyzed:vision.images.length,skipped:vision.skipped.length};
-    result.trace={...(result.trace||{}),intent,modeDecision:decision,levelDecision,executionLevel:level,route,verificationSignal,zeusCompoundRequested:zeusCompound||olympusDispatchFallback,olympusDispatchFallback,turboQuote:turboQuote||null,turboApproved:Boolean(turboQuote?.approvalRequired&&approvedTurboFingerprint),externalActionPolicy:externalActions,secretsRedacted,visionSkipped:vision.skipped,visionSummary,sharedBlockedProviders,webSearch:web.trace||null,githubRepository:github.trace||null};
+    result.trace={...(result.trace||{}),intent,modeDecision:decision,levelDecision,executionLevel:level,route,aiRouting:{route:aiRouting.route,source:aiRouting.source,model:aiRouting.model},verificationSignal,zeusCompoundRequested:zeusCompound||olympusDispatchFallback,olympusDispatchFallback,turboQuote:turboQuote||null,turboApproved:Boolean(turboQuote?.approvalRequired&&approvedTurboFingerprint),externalActionPolicy:externalActions,secretsRedacted,visionSkipped:vision.skipped,visionSummary,sharedBlockedProviders,webSearch:web.trace||null,githubRepository:github.trace||null};
     result.visionSummary=visionSummary;
     const finalMode=result.effectiveMode||(olympusDispatchFallback?'ZEUS':mode);
     if(finalMode==='ZEUS'&&mode==='OLYMPUS'&&result.trace?.olympusDescended){
