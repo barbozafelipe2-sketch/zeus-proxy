@@ -20,9 +20,17 @@ export function cheapestPricedRouter(models, prices) {
       return {model:m, cost:p.in*1.5+p.out*0.12};
     }).filter(Boolean).sort((a,b)=>a.cost-b.cost||a.model.id.localeCompare(b.model.id))[0]?.model||null;
 }
+export function obviousFreeRoute(text = '') {
+  const t = String(text || '').trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  if (/^(?:hi|hello|hey|oi|ola|hola|bom dia|boa tarde|boa noite|obrigado|obrigada|thanks|thank you|gracias|ok|okay|sim|yes|no|nao|tchau|bye)[!.?\s]*$/u.test(t)) return 'fast';
+  return null;
+}
+
 export async function aiRouteFor(text,{budget,vision=false,blockedProviders=[]}={}) {
   const fallback={route:routeFor(text,{vision}),source:"rules_fallback",model:null};
   if(vision)return fallback; // Image capability and cost admission remain deterministic.
+  const obvious = obviousFreeRoute(text);
+  if(obvious) return {route:obvious,source:'obvious_free',model:null};
   if(!budget?.canCall(1200,3500))return fallback;
   const blocked=new Set(blockedProviders);
   const candidate=cheapestPricedRouter(availableModels().filter(m=>!blocked.has(m.provider)),priceFor);
