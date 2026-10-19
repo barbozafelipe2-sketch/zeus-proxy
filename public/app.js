@@ -1,3 +1,6 @@
+import { renderMarkdown } from './markdown.js';
+import { localizeInterface, translateInterfaceText } from './locale-pt.js';
+
 const $ = (s, root=document) => root.querySelector(s);
 const $$ = (s, root=document) => [...root.querySelectorAll(s)];
 const app = $('#app');
@@ -23,8 +26,8 @@ function rememberPrivateBlob(key,url){if(privateBlobUrls.has(key)){const old=pri
 
 const esc = (v='') => String(v).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const fmtSize = n => { n=Number(n||0); if(n<1024)return `${n} B`; if(n<1048576)return `${(n/1024).toFixed(1)} KB`; return `${(n/1048576).toFixed(1)} MB`; };
-const fmtDate = v => { if(!v)return ''; const d=new Date(v); return Number.isNaN(d.getTime())?'':d.toLocaleDateString(undefined,{month:'short',day:'numeric',year:d.getFullYear()!==new Date().getFullYear()?'numeric':undefined}); };
-const fmtDateTime = v => { if(!v)return ''; const d=new Date(v); return Number.isNaN(d.getTime())?'':d.toLocaleString(undefined,{dateStyle:'medium',timeStyle:'short'}); };
+const fmtDate = v => { if(!v)return ''; const d=new Date(v); return Number.isNaN(d.getTime())?'':d.toLocaleDateString('pt-BR',{month:'short',day:'numeric',year:d.getFullYear()!==new Date().getFullYear()?'numeric':undefined}); };
+const fmtDateTime = v => { if(!v)return ''; const d=new Date(v); return Number.isNaN(d.getTime())?'':d.toLocaleString('pt-BR',{dateStyle:'medium',timeStyle:'short'}); };
 const resetViewport = () => requestAnimationFrame(() => window.scrollTo({ top: 0, left: 0, behavior: 'auto' }));
 const initials = () => (state.user?.user_metadata?.full_name || state.user?.email || 'O').trim().split(/\s+/).map(x=>x[0]).join('').slice(0,2).toUpperCase();
 const accessStoreKey='olyhub.zeusproxy.access.v3';
@@ -172,7 +175,7 @@ function setBusy(delta){
 }
 let lastAnnouncement='';
 function announce(text){
-  const region=document.getElementById('a11y-status');const value=String(text||'').trim();
+  const region=document.getElementById('a11y-status');const value=translateInterfaceText(String(text||'').trim());
   if(!region||!value||value===lastAnnouncement)return;
   lastAnnouncement=value;region.textContent=value;
 }
@@ -273,6 +276,7 @@ function authView(){
 function sidebar(){
   const recents=homeChats().slice(0,18).map(c=>`<button class="recent-item ${c.id===state.currentConversation?'active':''}" data-conv="${esc(c.id)}" title="${esc(c.title)}" ${c.id===state.currentConversation?'aria-current="true"':''}>${esc(c.title||'Conversation')}</button>`).join('') || `<div class="muted tiny" style="padding:8px 10px">Home chats appear here. Project chats stay inside each project.</div>`;
   return `<aside class="sidebar ${state.drawer?'open':''}" id="app-sidebar" aria-label="Workspace navigation">
+    <button type="button" class="close-navigation" id="close-navigation" aria-label="Fechar navegação">${icon('close')}</button>
     <div class="logo-row"><div class="personal-bolt small">ϟ</div><div><div class="logo-word">OLYMPUS HUB</div><div class="logo-sub">PERSONAL · ZEUS</div></div></div>
     <button class="new-chat" id="new-chat">${icon('chat')} <span><strong>New chat</strong><small class="muted" style="display:block;margin-top:2px">Start a clean execution</small></span></button>
     <div class="search-box" role="search">${icon('search')}<input id="chat-search" type="search" placeholder="Search chats" aria-label="Search chats" autocomplete="off"></div>
@@ -296,7 +300,7 @@ function topbar(){
   const title=state.offline?'You are offline. Changes will fail until the connection returns.':state.healthError&&!hasHealth?'Runtime diagnostics did not load. Refresh to retry.':chatReady?'AI runtime and workspace services are available.':hasHealth?'Workspace loaded, but AI runtime is not fully available.':'Checking workspace runtime…';
   return `<header class="topbar">
     <button class="hamburger personal-more" aria-controls="app-sidebar" aria-expanded="${state.drawer}" id="hamburger" aria-label="Open navigation" title="Navigation">${icon('menu')}</button>
-    <div class="topbar-context" aria-label="Current workspace"><span>${esc(state.currentProject?'PROJECT':'WORKSPACE')}</span><strong>${esc(context)}</strong></div>
+    <div class="topbar-context" aria-label="Current workspace"><span>${esc(state.currentProject?'PROJECT':'WORKSPACE')}</span><strong ${!state.currentProject&&!(state.tab==='Home'&&state.currentConversation)?'data-ui-label':''}>${esc(context)}</strong></div>
     <div class="brand-center"><div class="personal-bolt small">ϟ</div><div class="brand-copy"><span class="logo-word">OLYMPUS HUB</span><span class="logo-sub">PERSONAL · ZEUS</span></div></div>
     <div class="topbar-actions"><span class="system-indicator ${tone}" title="${esc(title)}" role="status" aria-label="${esc(`${status}: ${title}`)}"><i aria-hidden="true"></i>${status}</span><button class="avatar ghost" id="profile-avatar" aria-label="Open account settings">${esc(initials())}</button></div>
   </header>`;
@@ -362,7 +366,7 @@ function messageHtml(m){
       :'Cost unknown (missing price, token usage or tool charges)';
   const usageNote=u?[`Calls ${fmt(u.callsUsed)}${u.maxCalls!=null?`/${fmt(u.maxCalls)}`:''}`,`Tokens in ${fmt(u.inputTokens)} · out ${fmt(u.outputTokens)} · total ${fmt(u.totalTokens)}`,...(Array.isArray(u.byRole)?u.byRole.slice(0,8).map(r=>`${String(r.role||'').replaceAll('_',' ')}: ${fmt(r.inputTokens)}/${fmt(r.outputTokens)}${r.outcome==='failure'?' (failed)':''}`):[]),costNote].join(' · '):'';
   const note=[level,m.metadata?.modeExplanation,m.metadata?.pipelineLabel,lead,m.metadata?.fallback?'fallback':'',m.metadata?.verificationLabel,visionNote,...capabilityNotes,usageNote].filter(Boolean).join(' · ');
-  return `<article class="message ${m.role==='user'?'user':'assistant'}"><div class="message-label">${m.role==='user'?'YOU':esc(m.mode||'ZEUS')}</div><div class="message-body">${esc(m.content||'')}</div>${note?`<details class="message-debug"><summary>Execution details</summary><div class="message-model">${esc(note)}</div></details>`:''}${sourceHtml}${attached?`<div class="attachments in-message">${attached}</div>`:''}${artifacts?`<div class="artifact-row">${artifacts}</div>`:''}</article>`;
+  return `<article class="message ${m.role==='user'?'user':'assistant'}"><div class="message-label">${m.role==='user'?'YOU':esc(m.mode||'ZEUS')}</div><div class="message-body ${m.role==='assistant'?'markdown-body':''}">${m.role==='assistant'?renderMarkdown(m.content||''):esc(m.content||'')}</div>${note?`<details class="message-debug"><summary>Execution details</summary><div class="message-model">${esc(note)}</div></details>`:''}${sourceHtml}${attached?`<div class="attachments in-message">${attached}</div>`:''}${artifacts?`<div class="artifact-row">${artifacts}</div>`:''}</article>`;
 }
 function artifactCard(a){const tag=esc((a.type||'FILE').toUpperCase().slice(0,4)),url=esc(a.downloadUrl||''),name=esc(a.filename||'Zeus Proxy output'),mime=esc(a.mime_type||a.type||'application/octet-stream'),isImage=String(a.mime_type||'').startsWith('image/'),isZip=a.type==='zip'||/zip/i.test(a.mime_type||'')||String(a.filename||'').toLowerCase().endsWith('.zip'),git=Boolean(state.health?.capabilities?.githubCommit);return `<div class="artifact-card">${isImage?`<button type="button" class="artifact-thumb-wrap" data-open-output="${url}" data-output-name="${name}" data-output-mime="${mime}" aria-label="Open ${name}"><img class="artifact-thumb" data-private-image="${url}" alt=""></button>`:`<div class="out-badge">${tag}</div>`}<div><strong>${name}</strong><small>${fmtSize(a.size)} · ${mime}</small></div><div class="artifact-actions"><button type="button" data-open-output="${url}" data-output-name="${name}" data-output-mime="${mime}">Open</button><button type="button" class="ghost-a" data-download-output="${url}" data-output-name="${name}">Download</button>${isZip&&git?`<button type="button" class="ghost-a" data-github-commit="artifact" data-source-id="${esc(a.id)}" data-source-name="${name}">Commit</button>`:''}</div></div>`}
 const LIVE_LOCALES={auto:'auto',pt:'pt-BR',en:'en-US',es:'es-ES'};
@@ -502,7 +506,7 @@ function openCompareArtifacts(){
   e.preventDefault();const a=items.find(v=>v.id===$('#compare-a').value),b=items.find(v=>v.id===$('#compare-b').value);
   if(!a||!b||a.id===b.id){setModalError('Choose two different artifacts.');return;}
   $('#compare-results').innerHTML=`<div class="diag-list"><div class="diag-row">A: ${esc(a.filename)} <strong>${fmtSize(a.size)}</strong></div><div class="diag-row">B: ${esc(b.filename)} <strong>${fmtSize(b.size)}</strong></div></div><p class="muted tiny">Metadata comparison only; binary contents are not examined here.</p><div class="modal-actions"><button type="button" class="secondary" data-approve="${esc(a.id)}">Approve A</button><button type="button" class="secondary" data-approve="${esc(b.id)}">Approve B</button><button type="button" class="primary" id="compare-combine">Prepare C</button></div>`;
-  $('[data-approve]').forEach(el=>el.addEventListener('click',async()=>{
+  $$('[data-approve]').forEach(el=>el.addEventListener('click',async()=>{
    const raw=prompt('Alias for approved artifact (example: approved_logo)');
    if(!raw)return;const alias=raw.trim().toLowerCase();
    if(!/^[a-z][a-z0-9_-]{1,63}$/.test(alias)){setModalError('Invalid alias. Use lowercase letters, numbers, _ or -.');return;}
@@ -791,6 +795,7 @@ function showModal(markup,{initialFocus,onClose}={}){
   clearModalLifecycle();modalReturnFocus=document.activeElement;modalPreviousOverflow=document.documentElement.style.overflow||'visible';modalCleanup=typeof onClose==='function'?onClose:null;document.documentElement.style.overflow='hidden';root.innerHTML=markup;
   const backdrop=$('.modal-backdrop',root),dialog=$('.modal',root);if(!dialog)return null;
   dialog.setAttribute('role','dialog');dialog.setAttribute('aria-modal','true');dialog.setAttribute('tabindex','-1');
+  localizeInterface(root);
   backdrop?.addEventListener('click',e=>{if(e.target===backdrop)closeModal()});
   modalKeydownHandler=e=>{
     if(e.key==='Escape'){e.preventDefault();closeModal();return;}
@@ -805,7 +810,7 @@ function showModal(markup,{initialFocus,onClose}={}){
   requestAnimationFrame(()=>{const target=initialFocus?$(initialFocus,dialog):null;(target||$$('input,textarea,select,button',dialog).find(el=>!el.disabled)||dialog).focus();});
   return dialog;
 }
-function setModalError(message){const el=$('#modal-notice');if(!el)return;el.textContent=message||'';el.classList.toggle('hidden',!message);}
+function setModalError(message){const el=$('#modal-notice');if(!el)return;el.textContent=translateInterfaceText(message||'');el.classList.toggle('hidden',!message);}
 function turboApprovalModal(quote={}){
   return new Promise(resolve=>{
     let settled=false;
@@ -821,13 +826,13 @@ function githubCommitModal(sourceKind,sourceId,sourceName='project.zip'){
   showModal(`<div class="modal-backdrop"><div class="modal" aria-labelledby="github-commit-title"><div class="modal-head"><h2 id="github-commit-title">Commit ZIP to GitHub</h2><button class="ghost" id="modal-close" aria-label="Close dialog">${icon('close')}</button></div><div id="modal-notice" class="notice error-notice hidden" role="alert" aria-live="assertive"></div><form id="github-commit-form" class="form-grid"><div class="field"><label for="github-repo">Repository URL</label><input id="github-repo" required inputmode="url" placeholder="https://github.com/owner/repository"></div><div class="field"><label for="github-branch">Branch</label><input id="github-branch" maxlength="120" placeholder="Default branch"></div><div class="field"><label for="github-message">Commit message</label><input id="github-message" maxlength="180" value="${esc(defaultMessage)}"></div><p class="muted tiny">One explicit, atomic, non-force commit. OlyHub blocks .env/private-key files and credential-like values before writing. If GITHUB_REPO_ALLOWLIST is configured, only listed repositories are accepted.</p><div class="modal-actions"><button type="button" class="secondary" id="modal-cancel">Cancel</button><button class="primary" id="github-commit-submit">Commit</button></div></form></div></div>`,{initialFocus:'#github-repo'});
   $('#modal-close').onclick=$('#modal-cancel').onclick=()=>closeModal();
   $('#github-commit-form').addEventListener('submit',async e=>{
-    e.preventDefault();setModalError('');const submit=$('#github-commit-submit');submit.disabled=true;submit.textContent='Committing…';
+    e.preventDefault();setModalError('');const submit=$('#github-commit-submit');submit.disabled=true;submit.textContent=translateInterfaceText('Committing…');
     try{
       const d=await api('/api/github-commit',{method:'POST',body:JSON.stringify({sourceKind,sourceId,repoUrl:$('#github-repo').value,branch:$('#github-branch').value,message:$('#github-message').value,confirm:true})});
       const commit=d.commit||{};const label=commit.noChange?'Repository already matches this ZIP.':commit.replayed?'This commit was already completed.':'Commit completed.';
       showModal(`<div class="modal-backdrop"><div class="modal" aria-labelledby="github-result-title"><div class="modal-head"><h2 id="github-result-title">GitHub</h2><button class="ghost" id="modal-close" aria-label="Close dialog">${icon('close')}</button></div><div class="card" style="padding:18px"><strong>${esc(label)}</strong><p class="muted" style="margin-top:8px">${esc(commit.repository||'')} · ${esc(commit.branch||'')} · ${Number(commit.filesCommitted||0)} files</p><p class="muted tiny" style="margin-top:8px">${esc(String(commit.sha||'').slice(0,12))}</p></div><div class="modal-actions"><button type="button" class="secondary" id="modal-done">Done</button>${commit.url?`<a class="primary" href="${esc(commit.url)}" target="_blank" rel="noreferrer noopener">Open commit</a>`:''}</div></div></div>`);
       $('#modal-close').onclick=$('#modal-done').onclick=()=>closeModal();
-    }catch(err){setModalError(err.message||'Could not commit to GitHub.');submit.disabled=false;submit.textContent='Commit';}
+    }catch(err){setModalError(err.message||'Could not commit to GitHub.');submit.disabled=false;submit.textContent=translateInterfaceText('Commit');}
   });
 }
 
@@ -845,7 +850,8 @@ function render(){
   const selection=active?.id==='composer-text'?{start:active.selectionStart,end:active.selectionEnd}:null;
   const scopeSidebar=Boolean(active?.closest?.('.sidebar'));
   clearModalLifecycle();modalReturnFocus=null;if(!state.authReady){app.innerHTML='<div class="boot-screen" role="status">INITIALIZING ZEUS</div>';return;} app.innerHTML=state.user?appView():authView();bind();
-  const offCanvasSidebar=scopeSidebar&&!state.drawer&&window.matchMedia('(max-width:900px)').matches;
+  localizeInterface(app);syncDrawerAccessibility();
+  const offCanvasSidebar=scopeSidebar&&!state.drawer&&window.matchMedia('(max-width:959px)').matches;
   if(key&&offCanvasSidebar){$('#main-content')?.focus({preventScroll:true});}
   else if(key){const candidates=$$(key,app);const next=candidates.find(el=>Boolean(el.closest('.sidebar'))===scopeSidebar)||candidates[0];if(next&&!next.disabled){next.focus({preventScroll:true});if(selection&&next.setSelectionRange){try{next.setSelectionRange(selection.start,selection.end)}catch{}}}}
   announce(state.error||state.execStatus);
@@ -853,7 +859,12 @@ function render(){
 
 function bind(){
   if(!state.user){ bindAuth(); return; }
-  $('#hamburger')?.addEventListener('click',()=>{state.drawer=true;render();requestAnimationFrame(()=>$('.sidebar .side-nav button.active,.sidebar .side-nav button')?.focus())}); $('#scrim')?.addEventListener('click',()=>{state.drawer=false;render()});
+  $('#hamburger')?.addEventListener('click',()=>{state.drawer=!state.drawer;render();if(state.drawer)requestAnimationFrame(()=>$('.sidebar .side-nav button.active,.sidebar .side-nav button')?.focus())}); $('#scrim')?.addEventListener('click',()=>{state.drawer=false;render();$('#hamburger')?.focus()});
+  $('#close-navigation')?.addEventListener('click',()=>{state.drawer=false;render();$('#hamburger')?.focus()});
+  $$('.copy-code').forEach(button=>button.addEventListener('click',async()=>{
+    try { await navigator.clipboard.writeText(button.parentElement.querySelector('code')?.textContent||'');button.textContent='Copiado';announce('Código copiado.'); }
+    catch { button.textContent='Não foi possível copiar';announce('Não foi possível copiar. Selecione o código e copie manualmente.'); }
+  }));
   $('#profile-avatar')?.addEventListener('click',()=>{state.tab='Settings';render()});
   $$('[data-google-service]').forEach(b=>b.addEventListener('click',()=>googleConnectionAction(b.dataset.googleService,b.dataset.googleAction)));
   $$('#logout,#settings-logout').forEach(b=>b.addEventListener('click',logout));
@@ -911,21 +922,21 @@ function bind(){
     try{await api('/api/project-sources',{method:'POST',body:JSON.stringify({projectId:state.currentProject.id,title:$('#project-source-title').value,content:$('#project-source-content').value})});await loadProjectSources();state.error='';}
     catch(err){state.error=err.message||'Could not save source.';}render();
   });
-  $('[data-source-remove]').forEach(b=>b.addEventListener('click',async()=>{
+  $$('[data-source-remove]').forEach(b=>b.addEventListener('click',async()=>{
     if(!confirm('Remove this Source of Truth?'))return;
     try{await api('/api/project-sources',{method:'DELETE',body:JSON.stringify({projectId:state.currentProject.id,id:b.dataset.sourceRemove})});await loadProjectSources();state.error='';}
     catch(err){state.error=err.message||'Could not remove source.';}render();
   }));
-  $('[data-move-current]').forEach(b=>b.addEventListener('click',()=>moveConversationModal(b.dataset.moveCurrent)));
+  $$('[data-move-current]').forEach(b=>b.addEventListener('click',()=>moveConversationModal(b.dataset.moveCurrent)));
   $('#chat-search')?.addEventListener('input',e=>{const q=e.target.value.toLowerCase();let shown=0;$$('.recent-item').forEach(x=>{const match=x.textContent.toLowerCase().includes(q);x.style.display=match?'block':'none';if(match)shown++;});$('#recent-empty')?.classList.toggle('hidden',!q||shown>0||!$$('.recent-item').length);});
   $$('[data-dismiss-error]').forEach(b=>b.addEventListener('click',dismissError));
   $$('[data-mode]').forEach(b=>b.addEventListener('click',()=>{if(state.sending)return;state.mode=b.dataset.mode==='OLYMPUS'?'OLYMPUS':'ZEUS';state.activeLevel=null;render();}));
   $$('[data-open-output]').forEach(b=>b.addEventListener('click',()=>openPrivateOutput(b.dataset.openOutput,b.dataset.outputName,b.dataset.outputMime).catch(e=>{state.error=e.message;render();})));
   $$('[data-download-output]').forEach(b=>b.addEventListener('click',()=>downloadPrivateOutput(b.dataset.downloadOutput,b.dataset.outputName).catch(e=>{state.error=e.message;render();})));
-  $('[data-use-artifact]').forEach(b=>b.addEventListener('click',async()=>{await attachSavedArtifact(b.dataset.useArtifact);if(!state.error){state.tab=state.currentProject?'Projects':'Home';if(state.currentProject)state.projectSection='CHAT';render();$('#composer-text')?.focus();}}));
-  $('[data-edit-html]').forEach(b=>b.addEventListener('click',()=>openHtmlEditor(b.dataset.editHtml)));
-  $('[data-compare-artifact]').forEach(b=>b.addEventListener('click',openCompareArtifacts));
-  $('[data-github-commit]').forEach(b=>b.addEventListener('click',()=>githubCommitModal(b.dataset.githubCommit,b.dataset.sourceId,b.dataset.sourceName)));
+  $$('[data-use-artifact]').forEach(b=>b.addEventListener('click',async()=>{await attachSavedArtifact(b.dataset.useArtifact);if(!state.error){state.tab=state.currentProject?'Projects':'Home';if(state.currentProject)state.projectSection='CHAT';render();$('#composer-text')?.focus();}}));
+  $$('[data-edit-html]').forEach(b=>b.addEventListener('click',()=>openHtmlEditor(b.dataset.editHtml)));
+  $$('[data-compare-artifact]').forEach(b=>b.addEventListener('click',openCompareArtifacts));
+  $$('[data-github-commit]').forEach(b=>b.addEventListener('click',()=>githubCommitModal(b.dataset.githubCommit,b.dataset.sourceId,b.dataset.sourceName)));
   hydratePrivateImages();startPlasmaOrb();
   $$('[data-conv]').forEach(b=>b.addEventListener('click',()=>openConversation(b.dataset.conv)));
   $$('.quick-prompts button').forEach(b=>b.addEventListener('click',()=>{const t=$('#composer-text');if(!t)return;t.value=b.dataset.prompt;t.dispatchEvent(new Event('input',{bubbles:true}));t.focus()}));
@@ -955,14 +966,30 @@ function bind(){
   $$('[data-delete-output]').forEach(b=>b.addEventListener('click',()=>deleteOutput(b.dataset.deleteOutput,b.dataset.outputId)));
   $('#delete-project')?.addEventListener('click',deleteCurrentProject);
   $('#upload-project-file')?.addEventListener('click',()=>$('#global-file-input').click());
-  $('[data-compare-start]').forEach(b=>b.addEventListener('click',()=>startCompareFormat(b.dataset.compareStart)));
-  $('[data-tool-prompt]').forEach(b=>b.addEventListener('click',()=>{state.currentProject=null;state.currentConversation=null;state.messages=[];state.chatArtifacts=[];state.attachedFiles=[];state.activeMode=null;state.messagePage={hasMore:false,nextCursor:null};state.error='';state.tab='Home';history.replaceState({},'',location.pathname);state.draft=b.dataset.toolPrompt;render();setTimeout(()=>{const t=$('#composer-text');if(t){t.focus();t.setSelectionRange(t.value.length,t.value.length)}},0)}));
+  $$('[data-compare-start]').forEach(b=>b.addEventListener('click',()=>startCompareFormat(b.dataset.compareStart)));
+  $$('[data-tool-prompt]').forEach(b=>b.addEventListener('click',()=>{state.currentProject=null;state.currentConversation=null;state.messages=[];state.chatArtifacts=[];state.attachedFiles=[];state.activeMode=null;state.messagePage={hasMore:false,nextCursor:null};state.error='';state.tab='Home';history.replaceState({},'',location.pathname);state.draft=b.dataset.toolPrompt;render();setTimeout(()=>{const t=$('#composer-text');if(t){t.focus();t.setSelectionRange(t.value.length,t.value.length)}},0)}));
 }
 document.addEventListener('keydown',e=>{
+  if(state.drawer&&window.matchMedia('(max-width:959px)').matches&&e.key==='Tab'){
+    const targets=$$('button:not([disabled]),input:not([disabled]),a[href]', $('#app-sidebar')).filter(el=>el.offsetParent!==null);
+    const first=targets[0],last=targets[targets.length-1];
+    if(first&&(!$('#app-sidebar').contains(document.activeElement)||(e.shiftKey&&document.activeElement===first)||(!e.shiftKey&&document.activeElement===last))){e.preventDefault();(e.shiftKey?last:first).focus();}
+  }
   if(e.key!=='Escape'||$('#modal-root')?.childElementCount)return;
   if(state.attachMenu){state.attachMenu=false;render();$('#attach')?.focus();return;}
   if(state.drawer){state.drawer=false;render();$('#hamburger')?.focus();}
 });
+function syncDrawerAccessibility(){
+  const sidebar=$('#app-sidebar'),main=$('#main-content');if(!sidebar)return;
+  const mobile=window.matchMedia('(max-width:959px)').matches;
+  sidebar.inert=mobile&&!state.drawer;
+  sidebar.setAttribute('aria-hidden',String(mobile&&!state.drawer));
+  if(main)main.inert=mobile&&state.drawer;
+  document.documentElement.classList.toggle('drawer-open',mobile&&state.drawer);
+  if(mobile&&state.drawer){sidebar.setAttribute('role','dialog');sidebar.setAttribute('aria-modal','true');}
+  else {sidebar.removeAttribute('role');sidebar.removeAttribute('aria-modal');}
+}
+window.matchMedia('(max-width:959px)').addEventListener('change',()=>{state.drawer=false;syncDrawerAccessibility();if(document.activeElement?.closest('.sidebar')&&$('#app-sidebar')?.inert)$('#hamburger')?.focus();});
 window.addEventListener('online',()=>{state.offline=false;if(state.user)render();});
 window.addEventListener('offline',()=>{state.offline=true;if(state.user)render();});
 window.addEventListener('unhandledrejection',e=>{console.error('Unhandled Zeus error',e.reason);if(state.user&&!state.error){state.error=e.reason?.message||'Something went wrong. Try again.';render();}});
@@ -971,7 +998,7 @@ function bindAuth(){
   form?.addEventListener('submit',async e=>{
     e.preventDefault();const notice=$('#auth-notice');notice.classList.add('hidden');$('#auth-submit').disabled=true;
     try{await unlock($('#auth-key').value);render();}
-    catch(err){clearAuth();render();const n=$('#auth-notice');if(n){n.textContent=err.message||'Could not unlock Zeus.';n.className='notice error-notice';}$('#auth-key')?.focus();}
+    catch(err){clearAuth();render();const n=$('#auth-notice');if(n){n.textContent=translateInterfaceText(err.message||'Could not unlock Zeus.');n.className='notice error-notice';}$('#auth-key')?.focus();}
     finally{if($('#auth-submit'))$('#auth-submit').disabled=false;}
   });
 }
@@ -1496,7 +1523,7 @@ async function createMemory(e){
   try{await api('/api/memories',{method:'POST',body:JSON.stringify({projectId:state.currentProject.id,content})});await Promise.all([loadMemories(state.currentProject.id),loadProjects()]);state.currentProject=state.projects.find(p=>p.id===state.currentProject.id)||state.currentProject;render();}catch(err){state.error=err.message;render();}
 }
 async function deleteMemory(id){
-  if(!id||!state.currentProject)return;if(!confirm('Delete this project memory?'))return;
+  if(!id||!state.currentProject)return;if(!confirm('Excluir esta memória do projeto?'))return;
   try{await api('/api/memories',{method:'DELETE',body:JSON.stringify({id})});await Promise.all([loadMemories(state.currentProject.id),loadProjects()]);state.currentProject=state.projects.find(p=>p.id===state.currentProject.id)||state.currentProject;render();}catch(err){state.error=err.message;render();}
 }
 async function hydrateProjectWorkspace(projectId,{loadConversation=true}={}){
@@ -1510,7 +1537,7 @@ async function hydrateProjectWorkspace(projectId,{loadConversation=true}={}){
 async function deleteOutput(kind,id){
   if(!id||!['file','artifact'].includes(kind))return;
   const noun=kind==='artifact'?'artifact':'file';
-  if(!confirm(`Delete this ${noun}? This cannot be undone.`))return;
+  if(!confirm('Excluir este arquivo? Esta ação não pode ser desfeita.'))return;
   try{
     await api(kind==='artifact'?'/api/artifacts':'/api/files',{method:'DELETE',body:JSON.stringify({id})});
     if(kind==='artifact'){
@@ -1530,7 +1557,7 @@ async function deleteOutput(kind,id){
 
 async function deleteCurrentProject(){
   const p=state.currentProject;if(!p)return;
-  if(!confirm(`Delete “${p.name}” and its permanent chat, tasks, memory, files and artifacts? This cannot be undone.`))return;
+  if(!confirm(`Excluir “${p.name}” e suas conversas, tarefas, memória e arquivos? Esta ação não pode ser desfeita.`))return;
   try{
     await api('/api/projects',{method:'DELETE',body:JSON.stringify({id:p.id})});
     state.currentProject=null;state.currentConversation=null;state.messages=[];state.chatArtifacts=[];state.attachedFiles=[];state.activeMode=null;state.projectMemories=[];state.memoryPolicy=null;state.tasks=[];state.files=[];state.artifacts=[];state.projectSection='CHAT';state.messagePage={hasMore:false,nextCursor:null};state.error='';

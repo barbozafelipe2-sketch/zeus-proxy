@@ -449,7 +449,7 @@ if(!chat.includes('webTrace:webUsageTrace')||
 const auditSecurity=read('netlify/functions/_shared/security.mjs');
 const auditHttp=read('netlify/functions/_shared/http.mjs');
 const auditGitHub=read('netlify/functions/_shared/github-write.mjs');
-if(!auditSecurity.includes('sensitiveJsonField')||
+if(!auditSecurity.includes('redactJsonFields')||
   !auditSecurity.includes('api[_-]?key|access[_-]?token')||
   !auditHttp.includes("safeHeaders.set('Cache-Control', 'no-store')")||
   !auditGitHub.includes("githubRepoAllowlist().some(entry=>")){

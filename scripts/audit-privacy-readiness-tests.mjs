@@ -5,6 +5,9 @@ import {readFileSync} from 'node:fs';
 import {redactSecrets,safeExtractedText} from '../netlify/functions/_shared/security.mjs';
 import {json,errorJson} from '../netlify/functions/_shared/http.mjs';
 import {githubWriteConfigured,githubRepoAllowlist} from '../netlify/functions/_shared/github-write.mjs';
+import {extractCommitFilesFromZip} from '../netlify/functions/_shared/github-write.mjs';
+import {createExecutionBudget} from '../netlify/functions/_shared/runtime.mjs';
+import JSZip from 'jszip';
 
 const secrets=['ZEUS_PROXY_ACCESS_TOKEN','OPENAI_API_KEY','access_token','refresh_token','client_secret','api_key','api_key_extra','database_url','password','apiKey','accessToken','openaiApiKey','refreshToken','clientSecret'];
 for(const key of secrets){
@@ -20,6 +23,53 @@ const preserved='{"token_usage":142,"token_count":20,"tokenUsage":18,"tokenCount
 assert.equal(redactSecrets(preserved),preserved,'safe trace metrics must not be redacted');
 assert.ok(redactSecrets('{"OPENAI_API_KEY":"redact this","note":"keep this"}').includes('"note":"keep this"'));
 assert.ok(!redactSecrets('{"OPENAI_API_KEY":"redact this","note":"keep this"}').includes('redact this'));
+
+const fixtureSecret='FICTIONAL_SECRET_TAIL_123456';
+const jsonFixtures=[
+  JSON.stringify({password:'first"'+fixtureSecret,note:'keep me'}),
+  JSON.stringify({password:'first\\"'+fixtureSecret,note:'keep me'},null,2),
+  '{"access_\\u0074oken":"'+fixtureSecret+'","note":"keep me"}',
+  JSON.stringify({credentials:{username:'owner',pass:fixtureSecret},note:'keep me'}),
+  JSON.stringify({credentials:[{pass:fixtureSecret},[fixtureSecret]],note:'keep me'}),
+  JSON.stringify({items:[{apiKey:fixtureSecret}],note:'keep me'}),
+  JSON.stringify({password:123456,authorization:false,note:'keep me'}),
+];
+for(const raw of jsonFixtures){
+  const clean=redactSecrets(raw);
+  assert.ok(!clean.includes(fixtureSecret),'complete JSON credential values must be removed');
+  assert.equal(JSON.parse(clean).note,'keep me','redaction must preserve valid JSON and ordinary values');
+  assert.equal(redactSecrets(clean),clean,'repeated sanitization must be stable');
+  assert.equal(safeExtractedText(raw,'config.json'),clean);
+  const wrapped='Retrieved configuration:\n```json\n'+raw+'\n```\nEnd';
+  assert.ok(!redactSecrets(wrapped).includes(fixtureSecret),'embedded JSON must be sanitized');
+  const zip=new JSZip();zip.file('config.json',raw);
+  await assert.rejects(
+    ()=>zip.generateAsync({type:'uint8array'}).then(bytes=>extractCommitFilesFromZip(bytes)),
+    error=>error.code==='GITHUB_SECRET_DETECTED',
+    'GitHub ZIP preflight must block these credentials before any external write'
+  );
+}
+const innocent=' { "items": [{"token_count": 3}], "description": "ordinary \\"quoted\\" text" } ';
+assert.equal(redactSecrets(innocent),innocent,'harmless JSON formatting must remain unchanged');
+assert.ok(!redactSecrets('{"credentials":{"pass":"'+fixtureSecret+'"').includes(fixtureSecret),'truncated containers must fail closed');
+
+const savedFetch=globalThis.fetch,savedNetlify=globalThis.Netlify;
+try{
+  globalThis.Netlify={env:{get:key=>({OPENAI_API_KEY:'fixture',OPENAI_BASE_URL:'https://fixture.invalid/v1'}[key]||'')}};
+  const {callModel}=await import('../netlify/functions/_shared/models.mjs');
+  for(const raw of jsonFixtures){
+    let outgoing=null;
+    globalThis.fetch=async(url,options)=>{
+      outgoing=JSON.parse(options.body);
+      return new Response(JSON.stringify({choices:[{message:{content:'safe output'}}],usage:{prompt_tokens:1,completion_tokens:1}}),{headers:{'content-type':'application/json'}});
+    };
+    await callModel({provider:'openai',id:'fixture-model'},'Review configuration',raw,{
+      history:[{role:'user',content:raw}],budget:createExecutionBudget({timeoutMs:20000,maxCalls:1})
+    });
+    assert.ok(outgoing,'provider mock must receive a request');
+    assert.ok(!JSON.stringify(outgoing).includes(fixtureSecret),'provider-bound current and historical messages must be sanitized');
+  }
+}finally{globalThis.fetch=savedFetch;globalThis.Netlify=savedNetlify;}
 
 for(const headerOverride of [undefined,{'Cache-Control':'public,max-age=3600'},{'cache-control':'public, max-age=3600'}]){
   const response=json({private:'value'},200,headerOverride);

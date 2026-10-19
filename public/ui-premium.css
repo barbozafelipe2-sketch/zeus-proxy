@@ -1106,3 +1106,57 @@ html.is-busy body::before{content:"";position:fixed;left:0;top:0;height:2px;widt
 
 /* Plasma reference uses a large but strictly capped diameter only in Live Talk. */
 .zeus-live-stage .zeus-voice-presence.lightning{width:min(68vw,296px);height:min(68vw,296px);flex:0 0 auto;max-width:296px;max-height:296px;aspect-ratio:1}
+/* Reading, navigation and mobile clarity. */
+.markdown-body{white-space:normal!important;min-width:0}
+.markdown-body>:first-child{margin-top:0}
+.markdown-body>:last-child{margin-bottom:0}
+.markdown-body p,.markdown-body ul,.markdown-body ol,.markdown-body blockquote{margin:0 0 1em}
+.markdown-body h1,.markdown-body h2,.markdown-body h3,.markdown-body h4,.markdown-body h5,.markdown-body h6{line-height:1.35;margin:1.3em 0 .6em;font-size:1.25em;letter-spacing:normal}
+.markdown-body h1{font-size:1.55em}.markdown-body h2{font-size:1.4em}
+.markdown-body ul,.markdown-body ol{padding-left:1.5em}.markdown-body li+li{margin-top:.35em}
+.markdown-body a{color:#f1ce78;text-decoration:underline;text-underline-offset:3px}
+.markdown-body blockquote{border-left:3px solid #8d753e;padding-left:1em;color:#b9c3cf}
+.markdown-body pre{position:relative;max-width:100%;overflow:auto;border:1px solid #354151;border-radius:12px;background:#0c1118;padding:50px 16px 16px;margin:1em 0;white-space:pre}
+.markdown-body code{font:13px/1.6 ui-monospace,SFMono-Regular,Consolas,monospace;background:#171e28;border-radius:4px;padding:2px 4px;overflow-wrap:anywhere}
+.markdown-body pre code{padding:0;background:none;overflow-wrap:normal}
+.copy-code{position:absolute;top:8px;right:8px;min-height:34px;border:1px solid #4c596b;border-radius:8px;padding:6px 10px;background:#18212d;color:#e8edf5;cursor:pointer;font-size:12px}
+.markdown-table{max-width:100%;overflow-x:auto;margin:1em 0;border:1px solid #354151;border-radius:10px}
+.markdown-table table{border-collapse:collapse;width:100%;font-size:14px}
+.markdown-table th,.markdown-table td{padding:10px 12px;border-bottom:1px solid #354151;text-align:left;min-width:100px}
+.markdown-table th{background:#151e29;color:#edf0f5}.markdown-table tr:last-child td{border-bottom:0}
+.mode-strip .mode-card small{display:block!important;font-size:12px!important;color:#b5bfcc!important;line-height:1.4!important;letter-spacing:normal}
+.mode-select-wrap .mode-blurb{display:block!important;font-size:12px!important;color:#acb6c4;letter-spacing:normal;padding:4px 14px 8px}
+.mode-card strong em{font-size:10px!important;letter-spacing:.03em!important}
+.tiny,.composer-meta,.tool-copy span,.out-row small,.proj-body span,.library-card p,.project-title-row p{font-size:12px!important;line-height:1.5!important}
+.tool-state,.system-indicator,.side-title,.eyebrow{font-size:11px!important;letter-spacing:.06em!important}
+.tool-copy span,.out-row small,.library-card p,.composer-meta{color:#b1bac8!important;opacity:1!important}
+.quick-prompts button{min-height:44px;font-size:13px!important}
+.task-check{min-width:28px;min-height:28px}.task-check,.icon-danger{touch-action:manipulation}
+.close-navigation{display:none;align-self:flex-end;border:1px solid #384454;border-radius:9px;width:44px;height:44px;background:#10161e;color:#dfe7f0;place-items:center;cursor:pointer}
+.sidebar{overflow-y:auto;overscroll-behavior:contain}
+html.drawer-open{overflow:hidden}
+@media(min-width:960px){.hamburger{display:none!important}}
+@media(max-width:959px){
+  .close-navigation{display:grid}
+  .sidebar .logo-row{padding-top:4px}
+  .mode-strip .mode-card{align-items:flex-start!important;padding:10px!important}
+  .mode-card strong{font-size:14px!important}
+  .mode-card strong em{display:none}
+  .welcome{margin-top:5vh!important}.welcome h1{font-size:clamp(30px,7vw,40px)!important}
+  .chat-page{height:calc(100dvh - 60px - env(safe-area-inset-top))!important}
+  .output-list{min-width:0}
+  .out-row{display:grid;width:100%;min-width:0;grid-template-columns:38px minmax(0,1fr)!important}
+  .out-row>div:nth-child(2){min-width:0}
+  .out-row small{overflow-wrap:anywhere}
+  .out-row .out-actions{grid-column:1/-1;margin-left:0;width:100%;min-width:0;display:flex;flex-wrap:wrap;justify-content:flex-end}
+  .out-actions .chev-link{font-size:12px!important;width:auto!important;min-width:44px;height:auto;min-height:40px;padding:8px}
+  .out-actions .chev-link:after{content:none}
+  .out-actions .icon-danger{min-width:40px;min-height:40px}
+  .project-chat-panel{min-height:0;height:calc(100dvh - 180px)}
+}
+@media(max-width:959px) and (max-height:650px){
+  .welcome{margin-top:0!important}.welcome .eyebrow{display:none}
+  .welcome h1{font-size:28px!important;margin-bottom:10px}.welcome p{font-size:12px;line-height:1.4}
+  .quick-prompts{margin-top:14px;gap:6px}
+  .chat-scroll{padding-top:10px!important}
+}

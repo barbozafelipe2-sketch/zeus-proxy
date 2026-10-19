@@ -11,6 +11,65 @@ const SENSITIVE_BASENAMES = [
 
 const SENSITIVE_EXTENSIONS = /\.(?:pem|key|p12|pfx|jks|keystore)$/i;
 
+function sensitiveJsonKey(key) {
+  const normalizedKey = key.replace(/([a-z0-9])([A-Z])/g, '$1_$2');
+  if (/^(?:token_usage|token_count|token_budget|token_total)$/i.test(normalizedKey)) return false;
+  return /(?:^|[_.-])(?:api[_-]?key|access[_-]?token|auth[_-]?token|refresh[_-]?token|token|secret|password|passwd|private[_-]?key|database[_-]?url|connection[_-]?string|credentials?|authorization)(?:$|[_.-])/i.test(normalizedKey);
+}
+
+function jsonStringEnd(text, start) {
+  for (let i = start + 1; i < text.length; i++) {
+    if (text[i] === '\\') i++;
+    else if (text[i] === '"') return i + 1;
+  }
+  return text.length;
+}
+
+function jsonValueEnd(text, start) {
+  if (text[start] === '"') return jsonStringEnd(text, start);
+  if (text[start] === '{' || text[start] === '[') {
+    let depth = 0;
+    for (let i = start; i < text.length; i++) {
+      if (text[i] === '"') { i = jsonStringEnd(text, i) - 1; continue; }
+      if (text[i] === '{' || text[i] === '[') depth++;
+      else if (text[i] === '}' || text[i] === ']') {
+        if (--depth === 0) return i + 1;
+      }
+    }
+    // An incomplete credential container must not leave its contents visible.
+    return text.length;
+  }
+  let end = start;
+  while (end < text.length && !/[\s,}\]]/.test(text[end])) end++;
+  return end;
+}
+
+function redactJsonFields(text) {
+  // Read JSON string tokens and balanced values rather than matching value text
+  // with a regexp. This also works for JSON embedded in chat/log context, keeps
+  // harmless formatting intact, and uses no recursion for nested containers.
+  const chunks = [];
+  let copied = 0;
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] !== '"') continue;
+    const end = jsonStringEnd(text, i);
+    let colon = end;
+    while (/\s/.test(text[colon] || '') && colon < text.length) colon++;
+    if (text[colon] !== ':') { i = end - 1; continue; }
+    let key;
+    try { key = JSON.parse(text.slice(i, end)); } catch { i = end - 1; continue; }
+    if (!sensitiveJsonKey(key)) { i = end - 1; continue; }
+    let start = colon + 1;
+    while (start < text.length && /\s/.test(text[start])) start++;
+    const valueEnd = jsonValueEnd(text, start);
+    if (valueEnd === start) { i = end - 1; continue; }
+    chunks.push(text.slice(copied, start), '"[REDACTED]"');
+    copied = valueEnd;
+    i = valueEnd - 1;
+  }
+  return chunks.length ? chunks.join('') + text.slice(copied) : text;
+}
+
 export function isSensitiveFilename(name = '') {
   const normalized = String(name || '').replace(/\\/g, '/');
   const base = normalized.split('/').pop() || '';
@@ -20,6 +79,10 @@ export function isSensitiveFilename(name = '') {
 export function redactSecrets(value = '') {
   let text = String(value || '');
   if (!text) return text;
+
+  // Decode credential property names and remove complete values before other
+  // filters can alter escape sequences or quoted strings.
+  text = redactJsonFields(text);
 
   // Private key / certificate-like secret blocks.
   text = text.replace(/-----BEGIN (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----[\s\S]*?-----END (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----/gi, '[REDACTED PRIVATE KEY]');
@@ -41,29 +104,6 @@ export function redactSecrets(value = '') {
     /(^|\n)(\s*(?:export\s+)?[A-Z0-9_.-]*(?:API[_-]?KEY|TOKEN|SECRET|PASSWORD|PASSWD|PRIVATE[_-]?KEY|DATABASE[_-]?URL|CONNECTION[_-]?STRING|CLIENT[_-]?SECRET)[A-Z0-9_.-]*\s*[:=]\s*)([^\n]+)/gi,
     (_, prefix, key) => `${prefix}${key}[REDACTED]`,
   );
-
-  // JSON-style secret fields.
-  text = text.replace(
-    /("(?:api[_-]?key|token|secret|password|private[_-]?key|client[_-]?secret|database[_-]?url|connection[_-]?string)"\s*:\s*")([^"]+)(")/gi,
-    '$1[REDACTED]$3',
-  );
-
-  // Arbitrarily prefixed JSON credentials need key-aware redaction.
-  // The older JSON regexp only matched a handful of exact names and missed
-  // ZEUS_PROXY_ACCESS_TOKEN, OPENAI_API_KEY and access_token fields.
-  // Preserve innocuous fields (for example token_usage and token_count).
-  const sensitiveJsonField = /"(?:[^"\\]|\\.){1,160}"\s*:\s*(?:"(?:\\.|[^"\\])*"|[A-Za-z0-9._/+:-]+)/g;
-  text = text.replace(sensitiveJsonField, (entry) => {
-    const match = /^"([^"\\]+)"\s*:/.exec(entry);
-    if (!match) return entry;
-    const key = match[1];
-    // Normalize camelCase (apiKey, accessToken) as well as snake_case.
-    const normalizedKey = key.replace(/([a-z0-9])([A-Z])/g, '$1_$2');
-    // These are metrics, not credentials. Preserve them in traces.
-    if (/^(?:token_usage|token_count|token_budget|token_total)$/i.test(normalizedKey)) return entry;
-    const hasSecretName = /(?:^|[_.-])(?:api[_-]?key|access[_-]?token|auth[_-]?token|refresh[_-]?token|token|secret|password|passwd|private[_-]?key|database[_-]?url|connection[_-]?string|credentials?|authorization)(?:$|[_.-])/i.test(normalizedKey);
-    return hasSecretName ? `"${key}":"[REDACTED]"` : entry;
-  });
 
   // URLs containing embedded credentials.
   text = text.replace(/([a-z][a-z0-9+.-]*:\/\/[^\s:@/]+:)([^\s@/]+)(@)/gi, '$1[REDACTED]$3');
