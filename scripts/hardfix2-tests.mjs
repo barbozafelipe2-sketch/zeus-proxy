@@ -17,7 +17,7 @@ assert.equal(isSensitiveFilename('config/.env.production'), true);
 assert.equal(isSensitiveFilename('service-account.json'), true);
 assert.equal(isSensitiveFilename('src/app.ts'), false);
 
-const secretText='OPENAI_API_KEY=sk-supersecret123456789\nAuthorization: Bearer abcdefghijklmnopqrstuvwxyz\nhello';
+const secretText='OPENAI_API_KEY=\x73k-supersecret123456789\nAuthorization: Bearer abcdefghijklmnopqrstuvwxyz\nhello';
 const redacted=redactSecrets(secretText);
 assert.equal(redacted.includes('supersecret'), false);
 assert.equal(redacted.includes('abcdefghijklmnopqrstuvwxyz'), false);

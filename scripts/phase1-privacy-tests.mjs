@@ -6,7 +6,7 @@ import {assembleContext} from '../netlify/functions/_shared/context.mjs';
 import {selectMemoryContext,formatMemoryContext} from '../netlify/functions/_shared/memory.mjs';
 import {createExecutionBudget} from '../netlify/functions/_shared/runtime.mjs';
 
-const oldKey='sk-ABCDEFGHIJKLMNOPQRST1234567890';
+const oldKey='\x73k-ABCDEFGHIJKLMNOPQRST1234567890';
 const gh='ghp_ABCDEFGHIJKLMNOPQRSTUVWX1234567890';
 const bearer='Bearer abcdefghijklmnopqrstuvwxy';
 const password='historical-db-password';

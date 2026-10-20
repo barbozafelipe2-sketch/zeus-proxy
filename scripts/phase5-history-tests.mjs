@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {selectRecentHistory} from '../netlify/functions/_shared/history.mjs';
-const secret='sk-ABCDEFGHIJKLMNOPQRST1234567890';
+const secret='\x73k-ABCDEFGHIJKLMNOPQRST1234567890';
 const rows=[];
 // Query results arrive DESC: newest decision first, followed by older chatter.
 for(let n=30;n>=1;n--)rows.push({

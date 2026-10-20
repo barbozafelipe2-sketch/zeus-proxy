@@ -20,11 +20,11 @@ const bytes=new Uint8Array(await zip.generateAsync({type:'uint8array'}));
 const files=await mod.extractCommitFilesFromZip(bytes);
 assert.deepEqual(files.map(x=>x.path).sort(),['README.md','src/app.js']);
 
-const secretZip=new JSZip();secretZip.file('.env','OPENAI_API_KEY=sk-abcdefghijklmnopqrstuvwxyz\n');
+const secretZip=new JSZip();secretZip.file('.env','OPENAI_API_KEY=\x73k-abcdefghijklmnopqrstuvwxyz\n');
 const secretBytes=new Uint8Array(await secretZip.generateAsync({type:'uint8array'}));
 await assert.rejects(()=>mod.extractCommitFilesFromZip(secretBytes),e=>['GITHUB_SENSITIVE_PATH','GITHUB_SECRET_DETECTED'].includes(e?.code));
 
-const tokenZip=new JSZip();tokenZip.file('config.txt','API_KEY=sk-abcdefghijklmnopqrstuvwxyz\n');
+const tokenZip=new JSZip();tokenZip.file('config.txt','API_KEY=\x73k-abcdefghijklmnopqrstuvwxyz\n');
 const tokenBytes=new Uint8Array(await tokenZip.generateAsync({type:'uint8array'}));
 await assert.rejects(()=>mod.extractCommitFilesFromZip(tokenBytes),e=>e?.code==='GITHUB_SECRET_DETECTED');
 

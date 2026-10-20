@@ -105,7 +105,7 @@ Redeploy OH-004.2.7 if a code regression appears. The 4.2.8 migration is additiv
 - Confirm the answer uses that current attachment rather than ignoring it in favor of older Project context.
 
 ## 18. Hard Fix 2 — secret scrubber
-- Upload a test ZIP containing a fake `.env` with a fake token such as `OPENAI_API_KEY=sk-test-not-real-123456789` plus a normal README.
+- Upload a test ZIP containing a fake `.env` with a fake token such as `OPENAI_API_KEY=<synthetic-test-token>` plus a normal README.
 - Ask OlyHub to analyze the ZIP.
 - Confirm it can discuss the README but does not echo the fake credential value. The `.env` should be reported/treated as omitted sensitive context.
 
