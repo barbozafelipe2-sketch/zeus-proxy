@@ -772,7 +772,7 @@ ${[['auto','Auto (device locale in browser)'],['pt','Português (Brasil)'],['en'
 ${[['lightning','Lightning plasma'],['classic','Classic orb'],['olympus','Olympus'],['liquid','Liquid metal']].map(([v,label])=>`<option value="${v}" ${state.voiceAvatar===v?'selected':''}>${label}</option>`).join('')}</select></div>
 <p class="muted tiny">Browser speech recognition handles one locale at a time. Voice Message uses server language detection if available.</p>
 <button type="button" class="secondary compact" id="save-voice-id">Save voice</button>
-</article><article class="card settings-card"><h3>Go-live checklist</h3><div class="diag-list">${[['Private access token',state.health?.goLive?.privateAccess],['Database',state.health?.goLive?.database],['Blob maintenance',state.health?.goLive?.blobMaintenance],['Provider configured',Number(state.health?.goLive?.configuredProviders||0)>0],['Chat callable',['observed_healthy','configured_unverified'].includes(state.health?.goLive?.chatState)]].map(([label,ok])=>`<div class="diag-row"><span>${esc(label)}</span><strong class="${ok?'status-good':'status-warn'}">${ok?'READY':'BLOCKED'}</strong></div>`).join('')}</div><p class="muted tiny" style="line-height:1.55;margin-top:14px">${state.health?.goLive?.ready?'Go-live gate is ready for this owner.':'Go-live gate is blocked until token, a configured provider and a callable chat state are all present.'}</p></article><article class="card settings-card"><h3>AI provider diagnostics</h3><div class="diag-list">${['openai','anthropic','gemini','openrouter'].map(p=>{const v=providers[p]?.status||'not_configured';return `<div class="diag-row"><span>${p}</span><strong class="${statusGood(v)?'status-good':'status-warn'}">${esc(statusLabel(v))}</strong></div>`}).join('')}</div><p class="muted tiny" style="line-height:1.55;margin-top:14px">Diagnostics are runtime-local evidence. CONFIGURED UNVERIFIED means credentials/models were detected but this warm Function runtime has not observed a successful call yet. DEGRADED means the temporary circuit breaker is open.</p></article><article class="card settings-card"><h3>Capabilities</h3><div class="diag-list">${Object.keys(state.health?.capabilityReadiness||{}).length?'':`<div class="muted tiny">${state.health?'No capability diagnostics reported.':'Diagnostics load when the workspace runtime responds.'}</div>`}${Object.entries(state.health?.capabilityReadiness||{}).map(([k,v])=>`<div class="diag-row"><span>${esc(k)}</span><strong class="${v==='observed_healthy'?'status-good':'status-warn'}">${esc(statusLabel(v))}</strong></div>`).join('')}</div></article></div></section>`}
+</article><article class="card settings-card"><h3>Go-live checklist</h3>${(state.health?.warnings||[]).length?`<div class="diag-list health-warnings" role="status">${state.health.warnings.map(w=>`<p class="diag-warning"><strong>${esc(w.section)}</strong>: ${esc(w.message)}</p>`).join('')}</div>`:''}<div class="diag-list">${[['Private access token',state.health?.goLive?.privateAccess],['Database',state.health?.goLive?.database],['Blob maintenance',state.health?.goLive?.blobMaintenance],['Provider configured',Number(state.health?.goLive?.configuredProviders||0)>0],['Chat callable',['observed_healthy','configured_unverified'].includes(state.health?.goLive?.chatState)]].map(([label,ok])=>`<div class="diag-row"><span>${esc(label)}</span><strong class="${ok?'status-good':'status-warn'}">${ok?'READY':'BLOCKED'}</strong></div>`).join('')}</div><p class="muted tiny" style="line-height:1.55;margin-top:14px">${state.health?.goLive?.ready?'Go-live gate is ready for this owner.':'Go-live gate is blocked until token, a configured provider and a callable chat state are all present.'}</p></article><article class="card settings-card"><h3>AI provider diagnostics</h3><div class="diag-list">${['openai','anthropic','gemini','openrouter'].map(p=>{const v=providers[p]?.status||'not_configured';return `<div class="diag-row"><span>${p}</span><strong class="${statusGood(v)?'status-good':'status-warn'}">${esc(statusLabel(v))}</strong></div>`}).join('')}</div><p class="muted tiny" style="line-height:1.55;margin-top:14px">Diagnostics are runtime-local evidence. CONFIGURED UNVERIFIED means credentials/models were detected but this warm Function runtime has not observed a successful call yet. DEGRADED means the temporary circuit breaker is open.</p></article><article class="card settings-card"><h3>Capabilities</h3><div class="diag-list">${Object.keys(state.health?.capabilityReadiness||{}).length?'':`<div class="muted tiny">${state.health?'No capability diagnostics reported.':'Diagnostics load when the workspace runtime responds.'}</div>`}${Object.entries(state.health?.capabilityReadiness||{}).map(([k,v])=>`<div class="diag-row"><span>${esc(k)}</span><strong class="${v==='observed_healthy'?'status-good':'status-warn'}">${esc(statusLabel(v))}</strong></div>`).join('')}</div></article></div></section>`}
 
 
 let modalKeydownHandler=null;
@@ -1079,6 +1079,7 @@ async function loadOlderOutputs(){
 
 async function sendMessage(e){
   e.preventDefault();
+  if(voiceCaptureActive()){if(state.voiceRecognition)stopVoiceRecognition();else stopVoiceRecording();return;}
   const text=$('#composer-text')?.value.trim()||'';
   if(!text||state.sending)return;
   await sendText(text,[...state.attachedFiles]);
@@ -1360,12 +1361,18 @@ async function listenServerLiveTalk(){
     state.liveTalk=false;state.error=error?.name==='NotAllowedError'?'Allow microphone access for Live Talk.':'Live Talk audio capture failed. Voice Message remains available.';render();
   }
 }
+const LIVE_TALK_SERVER_MISSING='Live Talk on this device needs server transcription, which is not configured. Enable OpenRouter in Netlify AI Gateway (OPENROUTER_API_KEY + OPENROUTER_BASE_URL) or set OPENROUTER_DIRECT_API_KEY; ElevenLabs Scribe (OPENROUTER_TRANSCRIPTION_MODEL, default elevenlabs/scribe-v2) is then used. Voice Message remains available.';
+function isAppleMobile(){const ua=navigator.userAgent||'';return /iPhone|iPad|iPod/.test(ua)||(/Macintosh/.test(ua)&&navigator.maxTouchPoints>1);}
 function listenLiveTalk(){
   state.liveStage='listening';render();
   if(state.health?.capabilities?.serverTranscription&&navigator.mediaDevices?.getUserMedia&&window.MediaRecorder){void listenServerLiveTalk();return;}
   if(!state.liveTalk)return;
   const Engine=window.SpeechRecognition||window.webkitSpeechRecognition;
-  if(!Engine)return;
+  if((!Engine||isAppleMobile())&&state.healthError&&navigator.mediaDevices?.getUserMedia&&window.MediaRecorder){void listenServerLiveTalk();return;}
+  if(!Engine||isAppleMobile()){
+    state.liveRecognizer=null;state.liveTalk=false;state.liveStage='idle';
+    state.error=LIVE_TALK_SERVER_MISSING;render();return;
+  }
   const recognition=new Engine();state.liveRecognizer=recognition;
   recognition.lang=browserInputLocale();recognition.continuous=false;recognition.interimResults=false;
   recognition.onresult=async e=>{
@@ -1377,7 +1384,7 @@ function listenLiveTalk(){
     const latest=[...state.messages].reverse().find(m=>m.role==='assistant');
     if(latest)await sayZeusReply(latest.content);else listenLiveTalk();
   };
-  recognition.onerror=()=>{state.liveRecognizer=null;state.liveTalk=false;state.error='Live Talk microphone is unavailable. Voice Message remains available.';render();};
+  recognition.onerror=e=>{state.liveRecognizer=null;state.liveTalk=false;const code=String(e?.error||'');state.error=code==='aborted'?'':`Live Talk: ${speechErrorMessage(code)}`;render();};
   recognition.onend=()=>{if(state.liveRecognizer===recognition){state.liveRecognizer=null;}};
   try{recognition.start()}catch{state.liveTalk=false;render()}
 }
@@ -1398,8 +1405,9 @@ function toggleLiveTalk(){
 }
 
 async function startVoice(){
-  if(state.voiceBusy&&state.voiceRecognition){try{state.voiceRecognition.stop()}catch{}return;}
-  if(state.recording&&state.voiceRecorder){try{state.voiceRecorder.stop()}catch{}return;}
+  if(state.voiceRecognition){stopVoiceRecognition();return;}
+  if(state.recording&&state.voiceRecorder){stopVoiceRecording();return;}
+  if(state.voiceBusy)return;
 
   // Prefer server transcription when available. It receives raw audio and
   // automatically detects the spoken language, including code-switching.
@@ -1412,9 +1420,10 @@ async function startVoice(){
       const recorder=new MediaRecorder(stream,mime?{mimeType:mime}:undefined);
       state.voiceStream=stream;state.voiceRecorder=recorder;state.voiceChunks=[];state.voiceBytes=0;state.voiceHitSizeLimit=false;
       recorder.ondataavailable=e=>{if(e.data?.size){state.voiceChunks.push(e.data);state.voiceBytes+=e.data.size;if(state.voiceBytes>3600*1024&&recorder.state==='recording'){state.voiceHitSizeLimit=true;recorder.stop();}}};
-      recorder.onerror=()=>{state.error='Voice recording failed. Check microphone permission.';cleanupVoice();render();};
+      recorder.onerror=e=>{state.error=`Voice recording failed${e?.error?.name?` (${e.error.name})`:''}. Check microphone permission.`;cleanupVoice();render();};
       recorder.onstop=async()=>{
-        clearTimeout(state.voiceStopTimer);
+        if(recorder._zeusFinalized)return;recorder._zeusFinalized=true;
+        clearTimeout(state.voiceStopTimer);clearTimeout(recorder._zeusWatchdog);
         const chunks=state.voiceChunks.slice();
         const type=recorder.mimeType||'audio/webm';const hitSizeLimit=state.voiceHitSizeLimit;
         cleanupVoice();
@@ -1435,9 +1444,10 @@ async function startVoice(){
       };
       recorder.start(250);
       state.recording=true;state.error='';state.execStatus='Listening… tap the mic when finished';
-      state.voiceStopTimer=setTimeout(()=>{if(state.recording&&state.voiceRecorder?.state==='recording')state.voiceRecorder.stop()},60000);
+      state.voiceStopTimer=setTimeout(()=>{if(state.recording&&state.voiceRecorder===recorder)stopVoiceRecording();},60000);
       render();return;
     }catch(error){
+      cleanupVoice();
       if(error?.name==='NotAllowedError'){state.error='Microphone permission was denied. Enable it for this site and try again.';render();return;}
       console.warn('Server voice capture unavailable; falling back to browser recognition.',error);
     }
@@ -1449,30 +1459,59 @@ async function startVoice(){
   if(SR){
     try{
       const r=new SR();
-      state.voiceRecognition=r;state.voiceBusy=true;state.error='';state.execStatus='Listening…';
+      state.voiceRecognition=r;state.recording=true;state.error='';state.execStatus='Listening… tap the mic when finished';
+      state.voiceStopTimer=setTimeout(()=>{if(state.voiceRecognition===r)stopVoiceRecognition();},60000);
       r.lang=browserInputLocale();r.interimResults=false;r.continuous=false;r.maxAlternatives=3;
       r.onresult=async e=>{
         const alternatives=[...(e.results?.[0]||[])];
         const best=alternatives.sort((a,b)=>(Number(b.confidence)||0)-(Number(a.confidence)||0))[0];
         const text=best?.transcript?.trim();
-        state.voiceBusy=false;state.voiceRecognition=null;state.execStatus='';render();
+        finishVoiceRecognition(r);render();
         if(text) await sendText(text,[]); else {state.error='No speech was detected.';render();}
       };
       r.onerror=e=>{
-        state.voiceBusy=false;state.voiceRecognition=null;state.execStatus='';
+        finishVoiceRecognition(r);
         const code=String(e?.error||'');
-        state.error=code==='not-allowed'||code==='service-not-allowed'
-          ?'Microphone / speech recognition permission was denied for this site.'
-          :'Voice recognition could not complete. Tap the mic and try again.';
+        if(code==='aborted')return;
+        state.error=speechErrorMessage(code);
         render();
       };
-      r.onend=()=>{if(state.voiceRecognition===r){state.voiceBusy=false;state.voiceRecognition=null;state.execStatus='';render();}};
+      r.onend=()=>{if(state.voiceRecognition===r){finishVoiceRecognition(r);render();}};
       r.start();render();return;
     }catch{}
   }
 
   state.error='Voice input is not supported by this browser.';render();
 }
+function speechErrorMessage(code){
+  if(code==='not-allowed'||code==='service-not-allowed')return 'Microphone / speech recognition permission was denied for this site. On iPhone, also enable Siri & Dictation.';
+  if(code==='no-speech')return 'No speech was detected. Tap the mic and try again.';
+  if(code==='network')return 'Speech recognition needs a network connection (browser speech service unreachable).';
+  if(code==='audio-capture')return 'No microphone was found or it is in use by another app.';
+  return `Voice recognition could not complete${code?` (${code})`:''}. Tap the mic and try again.`;
+}
+function finishVoiceRecognition(r){
+  if(state.voiceRecognition!==r)return;
+  clearTimeout(state.voiceStopTimer);state.voiceStopTimer=null;clearTimeout(r?._zeusWatchdog);
+  state.voiceRecognition=null;state.recording=false;state.voiceBusy=false;state.execStatus='';
+}
+function stopVoiceRecognition(){
+  const r=state.voiceRecognition;if(!r)return;
+  try{r.stop()}catch{}
+  // iOS WebKit sometimes never fires onresult/onend after stop(); force-release.
+  r._zeusWatchdog=setTimeout(()=>{if(state.voiceRecognition===r){try{r.abort?.()}catch{}finishVoiceRecognition(r);render();}},2500);
+}
+function stopVoiceRecording(){
+  const recorder=state.voiceRecorder;if(!recorder)return;
+  try{recorder.requestData?.()}catch{}
+  try{if(recorder.state!=='inactive')recorder.stop()}catch{}
+  // Release the microphone right away; iOS keeps the indicator on otherwise.
+  state.voiceStream?.getTracks?.().forEach(t=>t.stop());
+  // If onstop never fires (seen on iOS), finalize with what was captured.
+  recorder._zeusWatchdog=setTimeout(()=>{if(!recorder._zeusFinalized)recorder.onstop?.();},3000);
+  state.execStatus='Finishing recording…';render();
+}
+function voiceCaptureActive(){return Boolean(state.voiceRecognition||(state.recording&&state.voiceRecorder));}
 function cleanupVoice(){
   state.voiceStream?.getTracks?.().forEach(t=>t.stop());
   state.recording=false;state.voiceRecorder=null;state.voiceStream=null;state.voiceChunks=[];state.voiceBytes=0;state.voiceHitSizeLimit=false;

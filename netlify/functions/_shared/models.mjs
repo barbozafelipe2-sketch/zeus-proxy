@@ -66,8 +66,20 @@ function explicitAudioConfigured() {
   return String(env('OLYHUB_SERVER_TRANSCRIPTION')).toLowerCase() === 'true' && Boolean(audioBase() && audioKey());
 }
 
+// ElevenLabs Scribe via OpenRouter's POST /audio/transcriptions (OpenAI-style multipart).
+// Same routing as speech.mjs: Netlify AI Gateway OpenRouter first, direct key as fallback.
+// Gateway credentials are never forwarded to the public openrouter.ai URL.
+export function openrouterTranscriptionRoutes() {
+  if (String(env('OPENROUTER_TRANSCRIPTION')).toLowerCase() === 'false') return [];
+  const items = [];
+  const gatewayKey = env('OPENROUTER_API_KEY'), gatewayBase = env('OPENROUTER_BASE_URL');
+  if (gatewayKey && gatewayBase) items.push({ name: 'gateway', key: gatewayKey, base: gatewayBase });
+  const directKey = env('OPENROUTER_DIRECT_API_KEY');
+  if (directKey) items.push({ name: 'openrouter_direct', key: directKey, base: env('OPENROUTER_DIRECT_BASE_URL') || 'https://openrouter.ai/api/v1' });
+  return items;
+}
 export function serverTranscriptionConfigured() {
-  return explicitAudioConfigured() || providerStatus().gemini;
+  return openrouterTranscriptionRoutes().length > 0 || explicitAudioConfigured() || providerStatus().gemini;
 }
 
 export function providerStatus() {
@@ -1205,6 +1217,25 @@ export async function runOlympus(args){return runOlympusComplexTurbo(args);}
 export async function transcribeAudio(audioBytes, filename = 'voice.webm', mimeType = 'audio/webm', { budget = null } = {}) {
   const localBudget = budget || createExecutionBudget({ timeoutMs: 42000, maxCalls: 3 });
   let last;
+
+  const sttModel = env('OPENROUTER_TRANSCRIPTION_MODEL').trim() || 'elevenlabs/scribe-v2';
+  for (const route of openrouterTranscriptionRoutes()) {
+    if (!localBudget.canCall()) break;
+    try {
+      const url = new URL(String(route.base).replace(/\/$/, '') + '/audio/transcriptions');
+      if (url.protocol !== 'https:') throw providerError('Invalid OpenRouter transcription URL.');
+      localBudget.reserveCall(`transcription:openrouter:${sttModel}`);
+      const form = new FormData();
+      form.append('model', sttModel);
+      form.append('file', new Blob([audioBytes], { type: mimeType || 'audio/webm' }), filename || 'voice.webm');
+      const res = await fetch(url.toString(), { method: 'POST', signal: localBudget.signal(20000), headers: { Authorization: `Bearer ${route.key}`, 'X-Title': 'Zeus Proxy' }, body: form });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw providerError(data.error?.message || `OpenRouter transcription ${res.status} (${route.name})`, res.status);
+      const text = String(data.text || '').trim();
+      if (!text) throw providerError('Transcription provider returned no text.');
+      return { text, model: `openrouter:${sttModel}`, route: route.name, language: data.language || null };
+    } catch (error) { last = error; }
+  }
 
   if (explicitAudioConfigured()) {
     const base = apiRoot(audioBase());
