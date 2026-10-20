@@ -45,6 +45,8 @@ const translations = new Map(Object.entries({
   'Upload a source for analysis, or ask Zeus/Olympus to create a document, image, spreadsheet, presentation or ZIP.':'Envie um arquivo para análise ou peça um documento, imagem, planilha, apresentação ou ZIP.',
   'Workspace settings':'Configurações', 'Account and advanced runtime diagnostics.':'Sua conta e o estado dos serviços.', 'Account':'Conta',
   'The private key stays in localStorage on this device until Lock or 14 days without use.':'A chave fica salva neste dispositivo até o bloqueio ou 14 dias sem uso.',
+  'Finishing recording…':'Finalizando a gravação…', 'Listening… tap the mic when finished':'Ouvindo… toque no microfone para terminar',
+  'Live Talk on this device needs server transcription, which is not configured. Set OLYHUB_SERVER_TRANSCRIPTION=true, OLYHUB_AUDIO_BASE_URL, OLYHUB_AUDIO_API_KEY and OLYHUB_AUDIO_MODEL in Netlify. Voice Message remains available.':'O Live Talk neste aparelho precisa da transcrição no servidor, que não está configurada. Defina OLYHUB_SERVER_TRANSCRIPTION=true, OLYHUB_AUDIO_BASE_URL, OLYHUB_AUDIO_API_KEY e OLYHUB_AUDIO_MODEL no Netlify. A mensagem de voz continua disponível.',
   'Go-live checklist':'Disponibilidade dos serviços', 'Private access token':'Acesso privado', 'Database':'Banco de dados', 'Blob maintenance':'Armazenamento', 'Provider configured':'IA configurada', 'Chat callable':'Conversa disponível',
   'Go-live gate is ready for this owner.':'Seu espaço está configurado para uso.', 'Go-live gate is blocked until token, a configured provider and a callable chat state are all present.':'Alguns serviços precisam de configuração. Confira os itens acima.',
   'AI provider diagnostics':'Diagnóstico da IA', 'Capabilities':'Recursos',
@@ -164,7 +166,7 @@ export function translateInterfaceText(value) {
     .replace(/^Sampling (.+) for visual analysis…$/,'Selecionando imagens de $1 para análise…')
     .replace(/^Video prepared: (\d+) sampled frames\. Audio and motion between samples are not analyzed\.$/,'Vídeo preparado: $1 imagens selecionadas. O áudio e os movimentos entre as imagens não são analisados.')
     .replace(/^Could not prepare (.+)\.$/,'Não foi possível preparar $1.')
-    .replace(/^Some workspace services did not load: [\s\S]+\. Refresh to retry\.$/,'Alguns serviços não carregaram. Atualize a página para tentar novamente.')
+    .replace(/^Some workspace services did not load: ([\s\S]+)\. Refresh to retry\.$/,(_,list)=>`Alguns serviços não carregaram: ${list.split(', ').map(n=>translations.get(n)||n).join(', ')}. Atualize a página para tentar novamente.`)
     .replace(/^Request failed \(HTTP (\d+)\)\.$/,'Não foi possível concluir o pedido (HTTP $1).')
     .replace(/^Zeus's server timed out or stopped before replying \(HTTP (\d+)\)\. Tap Retry: a reply that finished will be recovered\.$/,'O servidor demorou demais ou foi interrompido (HTTP $1). Toque em Tentar novamente para recuperar uma resposta já concluída.')
     .replace(/^The connection closed after (\d+)s while Zeus was still working[\s\S]+$/,'A conexão terminou após $1 segundos enquanto Zeus trabalhava. Toque em Tentar novamente para recuperar uma resposta já concluída.')

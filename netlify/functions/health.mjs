@@ -7,6 +7,18 @@ import { githubWriteConfigured } from './_shared/github-write.mjs';
 
 const PROVIDERS=['openai','anthropic','gemini','openrouter'];
 
+const SECRETISH=/(postgres(?:ql)?:\/\/\S+|password=\S+|(?:sk|rk|xai)-[A-Za-z0-9_-]{8,}|gh[pousr]_[A-Za-z0-9]{8,}|Bearer\s+\S+)/gi;
+export function safeDbError(error){
+  const code=typeof error?.code==='string'&&/^[0-9A-Z]{5}$/.test(error.code)?error.code+' ':'';
+  const msg=String(error?.message||error||'unknown error').split('\n')[0].replace(SECRETISH,'[redacted]').slice(0,200);
+  return (code+msg).trim();
+}
+function fallbackReadiness(providers,transports){
+  const providerResults=Object.fromEntries(PROVIDERS.map(p=>[p,{status:providers[p]?'configured_unverified':'not_configured',configured:Boolean(providers[p]),lastSuccessAt:null,lastFailureAt:null,circuitOpen:false,retryAfterMs:0}]));
+  const transportResults=Object.fromEntries(Object.keys(transports||{}).map(t=>[t,{status:transports[t]?'configured_unverified':'not_configured',configured:Boolean(transports[t]),lastSuccessAt:null,lastFailureAt:null}]));
+  return {providerResults,transportResults};
+}
+
 function addProvider(set,value){const p=String(value||'').toLowerCase();if(PROVIDERS.includes(p))set.add(p);}
 function successfulProviders(row){
   const out=new Set();
@@ -88,65 +100,28 @@ async function handler(req,context){
   const configuredRoutes=Object.values(providers).filter(Boolean).length+Number(transports.openrouter_direct)+Number(transports.openai_direct);
   const configuredModels=availableModels({ignoreCircuit:true});
   const activeModels=availableModels();
-  const {providerResults:readiness,transportResults:transportReadiness}=await persistedProviderReadiness(db,user.id,providers,runtime,transports);
+  const warnings0=[];
+  let readinessSection;
+  try{readinessSection=await persistedProviderReadiness(db,user.id,providers,runtime,transports);}
+  catch(error){const message=safeDbError(error);console.error('Health section failure',requestId,'providerReadiness',error?.stack||message);warnings0.push({section:'providerReadiness',message});readinessSection=fallbackReadiness(providers,transports);}
+  const {providerResults:readiness,transportResults:transportReadiness}=readinessSection;
   const chatState=chatReadiness(readiness,configuredModels,activeModels);
   const storageMaintenance=await opportunisticDrainBlobGc(db,user.id,{limit:5}).catch(()=>({attempted:0,deleted:0,failed:0,pending:null,skipped:true}));
   const githubWrite=githubWriteConfigured();
+  const warnings=warnings0;
+  const degrade=(section,error,fallback)=>{const message=safeDbError(error);console.error('Health section failure',requestId,section,error?.stack||message);warnings.push({section,message});return fallback;};
   const spendRows=await db.sql`
-    SELECT COALESCE(SUM(CASE WHEN (trace->'usage'->>'estimatedUsd') ~ '^[0-9]+([.][0-9]+)?
-    providers,
-    transports,
-    providerHealth:runtime,
-    providerReadiness:readiness,
-    transportReadiness,
-    models:configuredModels.map(m=>({provider:m.provider,id:m.id,roles:m.roles})),
-    capabilityReadiness:{
-      chat:chatState,
-      documents:chatState,
-      imageGeneration:providers.openai?(runtime.openai?.circuitOpen?'degraded':'configured_unverified'):'unavailable',
-      imageEditing:providers.openai?(runtime.openai?.circuitOpen?'degraded':'configured_unverified'):'unavailable',
-      imageUnderstanding:availableModels({vision:true,ignoreCircuit:true}).length?(availableModels({vision:true}).length?'configured_unverified':'degraded'):'unavailable',
-      serverTranscription:serverTranscriptionConfigured()?'configured_unverified':'unavailable',
-      webSearch:providers.openai?(runtime.openai?.circuitOpen?'degraded':'configured_unverified'):'unavailable',
-      githubCommit:githubWrite?'configured_unverified':'unavailable',
-    },
-    capabilities:{
-      chat:['observed_healthy','configured_unverified'].includes(chatState),
-      projects:true,
-      files:true,
-      artifacts:true,
-      imageGeneration:Boolean(providers.openai&&!runtime.openai?.circuitOpen),
-      imageEditing:Boolean(providers.openai&&!runtime.openai?.circuitOpen),
-      imageUnderstanding:availableModels({vision:true}).length>0,
-      webSearch:Boolean(providers.openai&&!runtime.openai?.circuitOpen),
-      voiceInput:serverTranscriptionConfigured()?'automatic_multilingual':'browser_native',
-      serverTranscription:serverTranscriptionConfigured(),
-      paginatedHistory:true,
-      archiveSafety:true,
-      storageMaintenance:true,
-      githubRepositoryPublic:true,
-      githubPrivateRepository:Boolean(globalThis.Netlify?.env?.get?.('GITHUB_TOKEN')||process.env?.GITHUB_TOKEN),
-      githubCommit:githubWrite,
-    },
-    goLive:{privateAccess:Boolean(globalThis.Netlify?.env?.get?.('ZEUS_PROXY_ACCESS_TOKEN')||process.env?.ZEUS_PROXY_ACCESS_TOKEN),database:true,blobMaintenance:!storageMaintenance?.failed,configuredProviders:configuredRoutes,chatState,ready:Boolean((globalThis.Netlify?.env?.get?.('ZEUS_PROXY_ACCESS_TOKEN')||process.env?.ZEUS_PROXY_ACCESS_TOKEN)&&configuredRoutes>0&&['observed_healthy','configured_unverified'].includes(chatState))},
-    storageMaintenance,
-    note:'Provider readiness uses recent execution evidence stored in OlyHub plus the current Function runtime circuit state. Transport readiness uses sanitized per-model attempts from the past 24 hours; the circuit breaker shown here applies only to the current Function instance. CONFIGURED UNVERIFIED means credentials/models are present but no recent successful execution is recorded. OBSERVED HEALTHY means OlyHub recorded a successful use in the last 24 hours. RECENT FAILURE means the latest stored evidence is a failure. Image/audio endpoint readiness remains configuration-based unless that capability is actually exercised. GitHub public repository retrieval is built in; private repository retrieval and GitHub commits require a server-side GITHUB_TOKEN with access to the target repositories. GitHub writes are atomic, non-force branch updates from validated ZIP project packages. Web search uses the OpenAI Responses web_search capability through the configured OpenAI gateway and is invoked only for explicit/current-information intent.'
-  });
-}
-
-export default async(req,context)=>{
-  const requestId=getRequestId(req,context,null);
-  try{return await handler(req,context);}catch(error){console.error('Health API failure',requestId,error?.stack||error?.message||error);return errorJson('Runtime diagnostics could not be loaded.',500,'HEALTH_RUNTIME_FAILURE',requestId);}
-};
-export const config={path:'/api/health'};
-
+    SELECT COALESCE(SUM(CASE WHEN (trace->'usage'->>'estimatedUsd') ~ '^[0-9]{1,12}([.][0-9]{1,12})?$'
       THEN (trace->'usage'->>'estimatedUsd')::numeric ELSE 0 END),0)::float8 AS known_usd,
       count(*) FILTER (WHERE trace->'usage'->>'estimateCoverage' IN ('partial','none') OR trace->'usage' IS NULL)::int AS incomplete_count
     FROM executions WHERE owner_id=${user.id}
       AND started_at >= date_trunc('month',now())
-      AND started_at < date_trunc('month',now()) + interval '1 month'`;
+      AND started_at < date_trunc('month',now()) + interval '1 month'
+  `.catch(error=>degrade('monthlyBudget',error,[{known_usd:0,incomplete_count:0}]));
   const usd=Number(spendRows?.[0]?.known_usd||0),monthlyTarget=Math.max(1,Number(globalThis.Netlify?.env?.get?.('ZEUS_MONTHLY_TOTAL_USD')||process.env?.ZEUS_MONTHLY_TOTAL_USD)||60);
   return json({
+    degraded:warnings.length>0,
+    warnings,
     monthlyBudget:{targetUsd:monthlyTarget,knownTextUsd:Number(usd.toFixed(4)),unpricedExecutionCount:Number(spendRows?.[0]?.incomplete_count||0),targetReached:usd>=monthlyTarget,policy:'advisory_only',coverage:'partial_text_only',mediaIncluded:false},
     requestId,
     providers,

@@ -1,0 +1,15 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+const app=fs.readFileSync(new URL('../public/app.js',import.meta.url),'utf8');
+const start=app.slice(app.indexOf('async function startVoice(){'),app.indexOf('async function startVoice(){')+400);
+assert.ok(start.includes('stopVoiceRecognition()')&&start.includes('stopVoiceRecording()'),'second mic tap must stop both capture paths');
+assert.ok(!/state\.voiceRecognition=r;state\.voiceBusy=true/.test(app),'browser recognition must not disable the mic button while listening');
+const send=app.slice(app.indexOf('async function sendMessage(e){'),app.indexOf('async function sendMessage(e){')+300);
+assert.ok(send.includes('voiceCaptureActive()'),'Send while recording must stop and send the audio');
+const stopRec=app.slice(app.indexOf('function stopVoiceRecording(){'),app.indexOf('function voiceCaptureActive'));
+assert.ok(stopRec.includes('getTracks')&&stopRec.includes('t.stop()'),'stopping must release microphone tracks');
+assert.ok(stopRec.includes('_zeusWatchdog')&&stopRec.includes('onstop'),'stop needs a watchdog when onstop never fires');
+assert.ok(app.includes('if(recorder._zeusFinalized)return;'),'onstop must not finalize twice');
+assert.ok(app.includes("isAppleMobile()")&&app.includes('OLYHUB_AUDIO_API_KEY'),'iOS Live Talk must explain missing server transcription');
+assert.ok(!app.includes("'Live Talk microphone is unavailable. Voice Message remains available.'"),'generic Live Talk error replaced by real error');
+console.log('voice capture tests: PASS');
