@@ -290,8 +290,16 @@ function walk(dir, out=[]) {
 for (const file of walk('.')) {
   const rel=relative('.',file).replaceAll('\\','/');
   if(rel==='scripts/verify.mjs') continue;
-  if(!/\.(m?js|html|css|toml|json|md|sql)$/i.test(rel)) continue;
+  if(!/\.(c?m?js|html|css|toml|json|md|sql|ya?ml)$/i.test(rel)) continue;
   const text=read(file);
+  // Keep synthetic provider-key fixtures out of the deploy scanner's input.
+  // Tests should construct these values at runtime; do not disable scanning.
+  // Report the location only, never print a potentially genuine credential.
+  const providerKey=/(?:^|[^A-Za-z0-9])sk-[A-Za-z0-9_-]{12,}/m.exec(text);
+  if(providerKey){
+    const line=text.slice(0,providerKey.index).split('\n').length;
+    throw new Error(`Literal provider-key-shaped value found at ${rel}:${line}. Remove real credentials or construct synthetic test fixtures at runtime.`);
+  }
   if(/NEXT_PUBLIC_SUPABASE|@supabase|supabase\.co|createClient\s*\(/i.test(text)) throw new Error(`Functional Supabase reference found: ${rel}`);
   if(/\bSOON\b/.test(text) && !rel.endsWith('README.md')) throw new Error(`Dead SOON placeholder found: ${rel}`);
 }
