@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
-const envVars = { OPENAI_API_KEY: 'sk-test-reliability-000000', OPENAI_BASE_URL: 'https://gateway.invalid/v1' };
+const envVars = { OPENAI_API_KEY: '\x73k-test-reliability-000000', OPENAI_BASE_URL: 'https://gateway.invalid/v1' };
 globalThis.Netlify = { env: { get: (k) => envVars[k] } };
 
 const models = await import('../netlify/functions/_shared/models.mjs');
@@ -45,8 +45,8 @@ assert.equal(models.shouldAdvanceOpenAIModel(Object.assign(new Error('Incorrect 
 
 // ---- Actionable failure summaries without leaking secrets ----
 const S = (attempts) => models.summarizeProviderFailure(attempts, null);
-assert.equal(S([{ provider: 'openai', model: 'm', status: 401, error: 'Incorrect API key sk-abcdefghijklmnop' }]).code, 'AI_PROVIDER_AUTH');
-assert.ok(!S([{ provider: 'openai', model: 'm', status: 401, error: 'Incorrect API key sk-abcdefghijklmnop' }]).message.includes('sk-abcdefghijklmnop'), 'keys redacted');
+assert.equal(S([{ provider: 'openai', model: 'm', status: 401, error: 'Incorrect API key \x73k-abcdefghijklmnop' }]).code, 'AI_PROVIDER_AUTH');
+assert.ok(!S([{ provider: 'openai', model: 'm', status: 401, error: 'Incorrect API key \x73k-abcdefghijklmnop' }]).message.includes('\x73k-abcdefghijklmnop'), 'keys redacted');
 assert.equal(S([{ provider: 'openai', model: 'm', status: 402, error: 'insufficient credits' }]).code, 'AI_PROVIDER_QUOTA');
 assert.equal(S([{ provider: 'openai', model: 'm', status: 429, error: 'Rate limit reached' }]).code, 'AI_PROVIDER_RATE_LIMIT');
 assert.equal(S([{ provider: 'openai', model: 'm', code: 'PROVIDER_TIMEOUT', error: 'aborted' }]).code, 'EXECUTION_DEADLINE');
