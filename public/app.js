@@ -312,12 +312,13 @@ function syncActiveModeFromMessages(){const last=lastReply();state.activeMode=la
 function liveMode(){return state.mode==='OLYMPUS'?'OLYMPUS':'ZEUS';}
 function autoModeKey(){return 'zeus.olympusAuto.v1.'+(state.user?.id||'anonymous');}
 function automaticOlympus(){try{return localStorage.getItem(autoModeKey())==='true';}catch{return state.olympusAuto===true;}}
+function selectedZeusLevelCap(){try{const n=Number(localStorage.getItem('zeus.maxLevel.v1')||3);return [1,2,3].includes(n)?n:3;}catch{return 3;}}
 function modeStrip(){
   const selected=liveMode(),lastLevel=state.activeLevel?String(state.activeLevel).replaceAll('_',' '):'';
   return `<div class="mode-select-wrap"><div class="mode-strip" role="group" aria-label="Intelligence mode">
-    <button type="button" class="mode-card zeus ${selected==='ZEUS'?'selected':''}" data-mode="ZEUS" aria-pressed="${selected==='ZEUS'}" ${state.sending?'disabled':''}><div class="mode-icon">${icon('auto')}</div><div><strong>Zeus <em>STANDARD</em></strong><small>Automatic level: Simple or Compound</small></div></button>
+    <button type="button" class="mode-card zeus ${selected==='ZEUS'?'selected':''}" data-mode="ZEUS" aria-pressed="${selected==='ZEUS'}" ${state.sending?'disabled':''}><div class="mode-icon">${icon('auto')}</div><div><strong>Zeus <em>STANDARD</em></strong><small>Automatic Levels 1, 2 or 3</small></div></button>
     <button type="button" class="mode-card olympus ${selected==='OLYMPUS'?'selected':''}" data-mode="OLYMPUS" aria-pressed="${selected==='OLYMPUS'}" ${state.sending?'disabled':''}><div class="mode-icon">${icon('globe')}</div><div><strong>Olympus <em>ADVANCED</em></strong><small>Automatic level: Compound Plus or Complex Turbo</small></div></button>
-  </div><div class="mode-blurb"><label><input type="checkbox" id="olympus-auto" ${automaticOlympus()?'checked':''} ${state.sending?'disabled':''}> Olympus automatic: ${automaticOlympus()?'On':'Off'}</label> · The zero-token router routes by complexity within usage limits. Manual Olympus remains available.${lastLevel?` Last execution: ${esc(lastLevel)}.`:''}</div></div>`;
+  </div><div class="mode-blurb"><label for="zeus-level-cap">Zeus maximum level</label><select id="zeus-level-cap" aria-label="Maximum Zeus level" ${state.sending?'disabled':''}>${[1,2,3].map(n=>'<option value="'+n+'" '+(selectedZeusLevelCap()===n?'selected':'')+'>Level '+n+'</option>').join('')}</select> · <label><input type="checkbox" id="olympus-auto" ${automaticOlympus()?'checked':''} ${state.sending?'disabled':''}> Olympus automatic: ${automaticOlympus()?'On':'Off'}</label> · The zero-token router routes by complexity within usage limits. Manual Olympus remains available.${lastLevel?` Last execution: ${esc(lastLevel)}.`:''}</div></div>`;
 }
 
 function homeView(){
@@ -951,6 +952,7 @@ function bind(){
   $('#voice')?.addEventListener('click',startVoice);
   $('#live-talk')?.addEventListener('click',toggleLiveTalk);
   $('#retry-last')?.addEventListener('click',retryLastMessage);
+  $('#zeus-level-cap')?.addEventListener('change',e=>{const n=Number(e.target.value);if([1,2,3].includes(n)){localStorage.setItem('zeus.maxLevel.v1',String(n));render();}});
   $('#olympus-auto')?.addEventListener('change',e=>{state.olympusAuto=e.target.checked;try{localStorage.setItem(autoModeKey(),String(state.olympusAuto));}catch{}render();});
   $('#approve-olympus-five')?.addEventListener('click',approveNextOlympusFive);
   $('#load-older-messages')?.addEventListener('click',loadOlderMessages);
@@ -1129,6 +1131,7 @@ async function sendText(text,pendingAttachments=[],requestId=crypto.randomUUID()
       content:text,
       fileIds:pending.map(f=>f.id),
       olympusAuto:automaticOlympus(),
+      maxZeusLevel:selectedZeusLevelCap(),
       mode,
       requestId,
       ...(turboApproval?{turboApproval}:{}),
@@ -1435,7 +1438,7 @@ async function startVoice(){
           const fd=new FormData();fd.append('audio',blob,`voice-${Date.now()}.${ext}`);
           const d=await api('/api/transcribe',{method:'POST',body:fd});
           state.voiceBusy=false;state.execStatus='';render();
-          if(d.text)await sendText(d.text,[]); else throw new Error('No speech was detected.');
+          if(d.text){state.draft=d.text;render();$('#composer-text')?.focus();} else throw new Error('No speech was detected.');
         }catch(error){
           state.voiceBusy=false;state.execStatus='';
           state.error=error.message||'Voice transcription failed.';
@@ -1467,7 +1470,7 @@ async function startVoice(){
         const best=alternatives.sort((a,b)=>(Number(b.confidence)||0)-(Number(a.confidence)||0))[0];
         const text=best?.transcript?.trim();
         finishVoiceRecognition(r);render();
-        if(text) await sendText(text,[]); else {state.error='No speech was detected.';render();}
+        if(text){state.draft=text;render();$('#composer-text')?.focus();} else {state.error='No speech was detected.';render();}
       };
       r.onerror=e=>{
         finishVoiceRecognition(r);
