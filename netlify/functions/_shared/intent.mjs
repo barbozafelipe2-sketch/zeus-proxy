@@ -1,7 +1,7 @@
 const normalize = (value = '') => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 
 const ANALYZE = /\b(analy[sz]e|analysis|review|inspect|explain|summari[sz]e|read|check|audit|what(?:'s| is)|tell me what|analise|analisar|analisa|analisa-lo|revise|revisar|inspecione|inspecionar|explique|explicar|resuma|resumir|leia|ler|verifique|verificar|audite|auditar|o que tem|o que ha|analiza|analizar|revisa|revisar|inspecciona|inspeccionar|explica|explicar|resume|resumir|lee|leer|verifica|verificar|audita|auditar|que contiene|que hay)\b/i;
-const CREATE = /\b(create|generate|make|build|produce|prepare|export|save|draw|design|crie|criar|cria|gere|gerar|gera|faca|fazer|faça|produza|produzir|prepare|preparar|exporte|exportar|salve|salvar|desenhe|desenhar|monte|montar|crea|crear|genera|generar|haz|hacer|construye|construir|produce|producir|prepara|preparar|exporta|exportar|guarda|guardar|dibuja|dibujar|diseña|diseñar)\b/i;
+const CREATE = /\b(create|generate|make|build|produce|prepare|export|save|draw|design|crie|criar|cria|gere|gerar|gera|faca|fazer|fa\u00e7a|produza|produzir|prepare|preparar|exporte|exportar|salve|salvar|desenhe|desenhar|monte|montar|crea|crear|genera|generar|haz|hacer|construye|construir|produce|producir|prepara|preparar|exporta|exportar|guarda|guardar|dibuja|dibujar|dise\u00f1a|dise\u00f1ar)\b/i;
 const EDIT = /\b(edit|change|remove|replace|improve|enhance|transform|restyle|erase|add|crop|retouch|edite|editar|mude|mudar|remova|remover|substitua|substituir|melhore|melhorar|aprimore|aprimorar|transforme|transformar|adicione|adicionar|recorte|retocar|edita|cambia|cambiar|elimina|eliminar|reemplaza|reemplazar|mejora|mejorar|transforma|transformar|agrega|agregar|recorta|recortar|retoca)\b/i;
 const IMAGE = /\b(image|picture|photo|logo|illustration|poster|graphic|artwork|screenshot|imagem|foto|logotipo|ilustracao|poster|grafico|arte|captura de tela|imagen|foto|logotipo|ilustracion|grafico|captura de pantalla)\b/i;
 
@@ -32,12 +32,10 @@ export function classifyIntent(text = '', { hasImage = false, hasFiles = false }
   const artifactTypes = artifactTypesFromText(t);
   const artifactType = artifactTypes[0]||null;
 
-  // Explicit image modification requires both an attached image and an actual edit verb.
   if (hasImage && edit && (imageMention || /\b(this|that|attached|essa|esta|imagem|foto)\b/i.test(t))) {
     return { action: 'IMAGE_EDIT', artifactType: null, reason: 'explicit_image_edit' };
   }
 
-  // Analysis wins over a mere file-type noun. "Analyze this ZIP" must never create a ZIP.
   if (analysis && !create) {
     return { action: 'ANALYZE', artifactType: null, reason: hasFiles ? 'analyze_attached_material' : 'analysis_request' };
   }
@@ -46,12 +44,10 @@ export function classifyIntent(text = '', { hasImage = false, hasFiles = false }
     return { action: 'IMAGE_CREATE', artifactType: null, reason: 'explicit_image_create' };
   }
 
-  // Artifact creation requires a creation/export verb and an explicit output type.
   if (create && artifactType) {
     return { action: 'ARTIFACT_CREATE', artifactType, artifactTypes, reason: `explicit_${artifactType}_create` };
   }
 
-  // Mixed request such as "analyze this ZIP and create a PDF report" should analyze, then produce the requested artifact.
   if (analysis && create && artifactType) {
     return { action: 'ARTIFACT_CREATE', artifactType, artifactTypes, reason: `analysis_plus_${artifactType}_output` };
   }
@@ -88,8 +84,6 @@ export function normalizeRequestedMode(value='ZEUS'){
   return mode==='ZEUS'||mode==='OLYMPUS'?mode:null;
 }
 
-// Manual mode remains an owner choice. Automatic mode can promote a qualifying
-// complex request; neither decision spends classification tokens.
 export function decideExecutionMode(text = '', { requestedMode = 'ZEUS', olympusAuto = false, ...context } = {}) {
   const value=normalize(String(text||''));
   const requested=normalizeRequestedMode(requestedMode)||'ZEUS';
@@ -104,10 +98,8 @@ export function decideExecutionMode(text = '', { requestedMode = 'ZEUS', olympus
   };
 }
 
-// Sublevel routing is deliberately synchronous and rule based: no model call,
-// no provider call, no hidden classification tokens.
-// 4-gear router (deterministic, zero tokens). Hard call caps live in GEAR_CALL_CAPS.
-//  Zeus Simple 1 · Zeus Compound 2 (create+review) · Olympus Compound Plus 3 · Olympus Turbo 4.
+// Levels: L1 = SIMPLE (1 call), L2 = COMPOUND (2 calls), L3 = ZEUS_DIRECTED (3 calls).
+// Olympus remains a single multi-specialist mode.
 export const GEAR_CALL_CAPS=Object.freeze({SIMPLE:1,COMPOUND:2,ZEUS_DIRECTED:3,COMPOUND_PLUS:3,COMPLEX_TURBO:4});
 const TURBO_AREAS=[
   ['frontend',/\b(frontend|front-end|ui|ux|interface|tela|telas|pantalla|layout|css|react)\b/i],
@@ -117,9 +109,7 @@ const TURBO_AREAS=[
 ];
 const LAUNCH_PACKAGE=/\b(full app|complete app|app completo|aplicativo completo|sistema completo|launch package|pacote de lancamento|kit de lancamento|paquete de lanzamiento)\b/i;
 const COMPOUND_PLUS_SIGNAL=/\b(investor report|relatorio (?:para|de) investidores|investidores|due diligence|legal analysis|analise juridica|juridic[oa]|financial analysis|analise financeira|modelo financeiro|valuation|system design|desenho de sistema|arquitetura do sistema|multi-section|varias secoes|capitulos|chapters|relatorio completo|full report|multi-file|varios arquivos|multiplos arquivos)\b/i;
-// A full book chapter is substantive writing: draft + independent editor.
-// Pure regex routing uses zero provider calls and incurs zero router tokens.
-const BOOK_CHAPTER_WORK=/\b(?:write|draft|rewrite|compose|create|generate|escreva?|escrever|redija?|redigir|reescreva?|crie|criar|redacta?|escribe|escribir|crear|crea|generar|genera)\b[\s\S]{0,100}\b(?:chapter|chapters|capitulo|capitulos|capitula|capitulas|cap[ií]tulo|cap[ií]tulos)\b|\b(?:chapter|capitulo|capitulos|cap[ií]tulo|cap[ií]tulos)\s*\d{0,3}\b[\s\S]{0,80}\b(?:write|draft|rewrite|escrever|escreva|redija|escribe|escribir)\b/i;
+const BOOK_CHAPTER_WORK=/\b(?:write|draft|rewrite|compose|create|generate|escreva?|escrever|redija?|redigir|reescreva?|crie|criar|redacta?|escribe|escribir|crear|crea|generar|genera)\b[\s\S]{0,100}\b(?:chapter|chapters|capitulo|capitulos|capitula|capitulas|cap[i\u00ed]tulo|cap[i\u00ed]tulos)\b|\b(?:chapter|capitulo|capitulos|cap[i\u00ed]tulo|cap[i\u00ed]tulos)\s*\d{0,3}\b[\s\S]{0,80}\b(?:write|draft|rewrite|escrever|escreva|redija|escribe|escribir)\b/i;
 const PROFESSIONAL_DOMAIN=/\b(frontend|front.end|ui design|design system|backend|back.end|api service|presentation|powerpoint|pitch deck|apresentacao|projeto de codigo|aplicativo web)\b/i;
 const ZEUS_COMPOUND_WORK=/\b(fix|bug|debug|corrigir|corrija|corrige|conserta|consertar|arreglar|implement|implementar|refactor|refatorar|script|business plan|plano de negocios?|contrato|contract|planilha|spreadsheet|deck|apresentacao|video|imagem|image)\b/i;
 
@@ -142,7 +132,8 @@ export function decideExecutionLevel(text='', {
   const out=(m,level,reasons)=>({mode:m,requestedMode:selectedMode,level,reason:reasons[0],reasons:[...new Set(reasons)],workstreams,maxCalls:GEAR_CALL_CAPS[level],router:'deterministic_zero_token'});
 
   const zeusGear=()=>{
-    if(action==='IMAGE_CREATE'||action==='IMAGE_EDIT')return {...out('ZEUS','COMPOUND',['single_model_media_operation']),maxCalls:1};
+    // Image generation/editing always Level 2
+    if(action==='IMAGE_CREATE'||action==='IMAGE_EDIT')return out('ZEUS','COMPOUND',['image_level_2']);
     const reasons=[];
     if(PROFESSIONAL_DOMAIN.test(value)&&CREATE.test(value)&&['ARTIFACT_CREATE','CHAT'].includes(action))return out('ZEUS','ZEUS_DIRECTED',['professional_domain_artifact']);
     if(action==='ARTIFACT_CREATE')reasons.push('deliverable');
@@ -157,18 +148,12 @@ export function decideExecutionLevel(text='', {
   };
   if(selectedMode==='ZEUS'||action==='IMAGE_CREATE'||action==='IMAGE_EDIT')return zeusGear();
 
-  // Olympus (manual) escalates only when the work actually needs a team.
   if(action==='CHAT'&&requirements===0&&!requiresVerification&&workstreams.length===0&&!TURBO_EXECUTION.test(value)&&!COMPOUND_PLUS_SIGNAL.test(value)&&!DEEP_ANALYSIS.test(value))return out('ZEUS','SIMPLE',['simple_turn_no_team_needed']);
-  // A single ordinary PDF is cheaper and adequately reviewed by Zeus L2.
   if(action==='ARTIFACT_CREATE'&&artifactType==='pdf'&&!DEEP_ANALYSIS.test(value)&&!COMPOUND_PLUS_SIGNAL.test(value)&&turboAreasIn(value).length===0)
     return out('ZEUS','COMPOUND',['single_document_review']);
   const areas=turboAreasIn(value);
   const executionVerb=TURBO_EXECUTION.test(value);
   const zip=String(artifactType||'').toLowerCase()==='zip';
-  // Turbo is an exceptional, evidence-gated execution tier, never a keyword-only upgrade.
-  // An explicit full-project request or a multi-area execution is only a candidate.
-  // Require independently verifiable work scope and sufficient requirements before
-  // spending the four-call Turbo budget. Single artifacts stay in Compound Plus.
   const candidate=STRONG_TURBO.test(value)||LAUNCH_PACKAGE.test(value)||(areas.length>=2&&(executionVerb||zip));
   const substantiveScope=areas.length>=2 && (executionVerb||zip||LAUNCH_PACKAGE.test(value));
   const documentedScope=requirements>=3 || (hasFiles && requirements>=2);
@@ -191,21 +176,18 @@ export function decideExecutionLevel(text='', {
   if(value.length>2500&&requirements>=3)plusReasons.push('long_structured_request');
   if(candidate&&!turboEligible)plusReasons.push('turbo_eligibility_not_met');
   if(plusReasons.length)return out('OLYMPUS','COMPOUND_PLUS',plusReasons);
-  // Olympus defaults to its economical Compound Plus gear; do not silently
-  // activate Turbo or switch the owner's selected mode for ordinary requests.
   return out('OLYMPUS','COMPOUND_PLUS',['default_economical_olympus']);
 }
 
 export function explainExecutionMode(decision = {}) {
   return decision.mode==='OLYMPUS'
-    ?'Olympus selected manually. The deterministic router chooses Compound Plus or Complex Turbo.'
-    :'Zeus selected. The deterministic router chooses Simple or Compound.';
+    ?'Olympus selected. Multi-specialist mode.'
+    :'Zeus selected. Levels 1/2/3 available.';
 }
 
 export function explainExecutionLevel(decision={}){
-  if(decision.mode==='OLYMPUS'&&decision.level==='COMPLEX_TURBO')return 'Olympus · Complex Turbo selected by the zero-token router.';
-  if(decision.mode==='OLYMPUS')return 'Olympus · Compound Plus selected by the zero-token router.';
+  if(decision.mode==='OLYMPUS')return 'Olympus · multi-specialist team.';
   if(decision.level==='ZEUS_DIRECTED')return 'Zeus · Level 3 · Specialist → Director → CEO.';
-  if(decision.level==='COMPOUND')return 'Zeus · Compound selected by the zero-token router.';
-  return 'Zeus · Simple selected by the zero-token router.';
+  if(decision.level==='COMPOUND')return 'Zeus · Level 2 · Specialist + Director.';
+  return 'Zeus · Level 1 · economical specialist.';
 }
