@@ -54,7 +54,6 @@ async function persistedProviderReadiness(db,userId,configured,runtime,transport
     const at=row.observed_at?new Date(row.observed_at).toISOString():null;
     const events=row?.trace?.providerTelemetry?.attempts;
     if(Array.isArray(events)&&events.length){
-      // Even a COMPLETED execution may have failed Gateway attempts before a successful direct recovery.
       for(const item of events){
         const p=String(item?.provider||'').toLowerCase();
         if(item?.transport!=='gateway'||!evidence[p])continue;
@@ -162,9 +161,9 @@ async function handler(req,context){
       githubPrivateRepository:Boolean(globalThis.Netlify?.env?.get?.('GITHUB_TOKEN')||process.env?.GITHUB_TOKEN),
       githubCommit:githubWrite,
     },
-    goLive:{privateAccess:Boolean(globalThis.Netlify?.env?.get?.('ZEUS_PROXY_ACCESS_TOKEN')||process.env?.ZEUS_PROXY_ACCESS_TOKEN),database:true,blobMaintenance:!storageMaintenance?.failed,configuredProviders:configuredRoutes,chatState,ready:Boolean((globalThis.Netlify?.env?.get?.('ZEUS_PROXY_ACCESS_TOKEN')||process.env?.ZEUS_PROXY_ACCESS_TOKEN)&&configuredRoutes>0&&['observed_healthy','configured_unverified'].includes(chatState))},
+    goLive:{privateAccess:true,database:true,blobMaintenance:!storageMaintenance?.failed,configuredProviders:configuredRoutes,chatState,ready:Boolean(configuredRoutes>0&&['observed_healthy','configured_unverified'].includes(chatState))},
     storageMaintenance,
-    note:'Provider readiness uses recent execution evidence stored in OlyHub plus the current Function runtime circuit state. Transport readiness uses sanitized per-model attempts from the past 24 hours; the circuit breaker shown here applies only to the current Function instance. CONFIGURED UNVERIFIED means credentials/models are present but no recent successful execution is recorded. OBSERVED HEALTHY means OlyHub recorded a successful use in the last 24 hours. RECENT FAILURE means the latest stored evidence is a failure. Image/audio endpoint readiness remains configuration-based unless that capability is actually exercised. GitHub public repository retrieval is built in; private repository retrieval and GitHub commits require a server-side GITHUB_TOKEN with access to the target repositories. GitHub writes are atomic, non-force branch updates from validated ZIP project packages. Web search uses the OpenAI Responses web_search capability through the configured OpenAI gateway and is invoked only for explicit/current-information intent.'
+    note:'Provider readiness uses recent execution evidence stored in OlyHub plus the current Function runtime circuit state. Transport readiness uses sanitized per-model attempts from the past 24 hours; the circuit breaker shown here applies only to the current Function instance. CONFIGURED UNVERIFIED means credentials/models are present but no recent successful execution is recorded. OBSERVED HEALTHY means OlyHub recorded a successful use in the last 24 hours. RECENT FAILURE means the latest stored evidence is a failure. Image/audio endpoint readiness remains configuration-based unless that capability is actually exercised. GitHub public repository retrieval is built in; private repository retrieval and GitHub commits require a server-side GITHUB_TOKEN with access to the target repositories. GitHub writes are atomic, non-force branch updates from validated ZIP project packages. Web search uses the OpenAI Responses web_search capability through the configured OpenAI gateway and is invoked only for explicit/current-information intent. Access is open; configure Netlify site password separately if desired.'
   });
 }
 
