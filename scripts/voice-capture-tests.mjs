@@ -10,6 +10,15 @@ const stopRec=app.slice(app.indexOf('function stopVoiceRecording(){'),app.indexO
 assert.ok(stopRec.includes('getTracks')&&stopRec.includes('t.stop()'),'stopping must release microphone tracks');
 assert.ok(stopRec.includes('_zeusWatchdog')&&stopRec.includes('onstop'),'stop needs a watchdog when onstop never fires');
 assert.ok(app.includes('if(recorder._zeusFinalized)return;'),'onstop must not finalize twice');
-assert.ok(app.includes("isAppleMobile()")&&app.includes('OLYHUB_AUDIO_API_KEY'),'iOS Live Talk must explain missing server transcription');
+assert.ok(app.includes("isAppleMobile()")&&app.includes('OPENROUTER_DIRECT_API_KEY'),'iOS Live Talk must explain missing server transcription');
 assert.ok(!app.includes("'Live Talk microphone is unavailable. Voice Message remains available.'"),'generic Live Talk error replaced by real error');
 console.log('voice capture tests: PASS');
+const models=fs.readFileSync(new URL('../netlify/functions/_shared/models.mjs',import.meta.url),'utf8');
+assert.ok(models.includes("'/audio/transcriptions'")&&models.includes('elevenlabs/scribe-v2'),'ElevenLabs Scribe via OpenRouter transcription route');
+const m=await import('../netlify/functions/_shared/models.mjs');
+process.env.OPENROUTER_DIRECT_API_KEY='test-direct-value';
+assert.equal(m.openrouterTranscriptionRoutes()[0].name,'openrouter_direct');assert.ok(m.serverTranscriptionConfigured());
+process.env.OPENROUTER_API_KEY='gw';process.env.OPENROUTER_BASE_URL='https://gw.example/or';
+assert.equal(m.openrouterTranscriptionRoutes()[0].name,'gateway');
+delete process.env.OPENROUTER_DIRECT_API_KEY;delete process.env.OPENROUTER_API_KEY;delete process.env.OPENROUTER_BASE_URL;
+console.log('openrouter transcription routing: PASS');

@@ -1361,13 +1361,14 @@ async function listenServerLiveTalk(){
     state.liveTalk=false;state.error=error?.name==='NotAllowedError'?'Allow microphone access for Live Talk.':'Live Talk audio capture failed. Voice Message remains available.';render();
   }
 }
-const LIVE_TALK_SERVER_MISSING='Live Talk on this device needs server transcription, which is not configured. Set OLYHUB_SERVER_TRANSCRIPTION=true, OLYHUB_AUDIO_BASE_URL, OLYHUB_AUDIO_API_KEY and OLYHUB_AUDIO_MODEL in Netlify. Voice Message remains available.';
+const LIVE_TALK_SERVER_MISSING='Live Talk on this device needs server transcription, which is not configured. Enable OpenRouter in Netlify AI Gateway (OPENROUTER_API_KEY + OPENROUTER_BASE_URL) or set OPENROUTER_DIRECT_API_KEY; ElevenLabs Scribe (OPENROUTER_TRANSCRIPTION_MODEL, default elevenlabs/scribe-v2) is then used. Voice Message remains available.';
 function isAppleMobile(){const ua=navigator.userAgent||'';return /iPhone|iPad|iPod/.test(ua)||(/Macintosh/.test(ua)&&navigator.maxTouchPoints>1);}
 function listenLiveTalk(){
   state.liveStage='listening';render();
   if(state.health?.capabilities?.serverTranscription&&navigator.mediaDevices?.getUserMedia&&window.MediaRecorder){void listenServerLiveTalk();return;}
   if(!state.liveTalk)return;
   const Engine=window.SpeechRecognition||window.webkitSpeechRecognition;
+  if((!Engine||isAppleMobile())&&state.healthError&&navigator.mediaDevices?.getUserMedia&&window.MediaRecorder){void listenServerLiveTalk();return;}
   if(!Engine||isAppleMobile()){
     state.liveRecognizer=null;state.liveTalk=false;state.liveStage='idle';
     state.error=LIVE_TALK_SERVER_MISSING;render();return;
