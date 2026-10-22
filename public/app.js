@@ -863,8 +863,30 @@ function bind(){
   $('#hamburger')?.addEventListener('click',()=>{state.drawer=!state.drawer;render();if(state.drawer)requestAnimationFrame(()=>$('.sidebar .side-nav button.active,.sidebar .side-nav button')?.focus())}); $('#scrim')?.addEventListener('click',()=>{state.drawer=false;render();$('#hamburger')?.focus()});
   $('#close-navigation')?.addEventListener('click',()=>{state.drawer=false;render();$('#hamburger')?.focus()});
   $$('.copy-code').forEach(button=>button.addEventListener('click',async()=>{
-    try { await navigator.clipboard.writeText(button.parentElement.querySelector('code')?.textContent||'');button.textContent='Copiado';announce('Código copiado.'); }
-    catch { button.textContent='Não foi possível copiar';announce('Não foi possível copiar. Selecione o código e copie manualmente.'); }
+    const code=button.parentElement.querySelector('code')?.textContent||'';
+    if(!code)return;
+    try{
+      let copied=false;
+      try{if(navigator.clipboard?.writeText){await navigator.clipboard.writeText(code);copied=true;}}catch{}
+      if(!copied){
+        // Older/in-app browsers may lack the asynchronous Clipboard API.
+        const input=document.createElement('textarea');
+        input.value=code;
+        input.setAttribute('readonly','');
+        input.style.cssText='position:fixed;top:-9999px;left:0;opacity:0';
+        document.body.appendChild(input);
+        try{
+          input.select();
+          copied=typeof document.execCommand==='function'&&document.execCommand('copy');
+        }finally{input.remove();}
+      }
+      if(!copied)throw new Error('Clipboard access unavailable');
+      button.textContent='Copiado';
+      announce('Código copiado.');
+    }catch{
+      button.textContent='Não foi possível copiar';
+      announce('Não foi possível copiar. Selecione o código e copie manualmente.');
+    }
   }));
   $('#profile-avatar')?.addEventListener('click',()=>{state.tab='Settings';render()});
   $$('[data-google-service]').forEach(b=>b.addEventListener('click',()=>googleConnectionAction(b.dataset.googleService,b.dataset.googleAction)));

@@ -83,3 +83,9 @@ console.log('OH-004.4 accessibility/resilience/security polish tests: PASS');
 
 assert.ok(app.includes('function syncActiveModeFromMessages()'),'loaded conversations must restore the mode shown in the header');
 assert.ok(app.includes("document.visibilityState==='hidden'"),'background Olympus polling must slow down while the app is hidden');
+
+// Mobile/embedded browsers must be able to copy code without the async Clipboard API.
+assert.ok(app.includes("$$('.copy-code').forEach"),'all rendered code blocks need copy handlers');
+assert.ok(app.includes("navigator.clipboard?.writeText(code)"),'modern clipboard copy path missing');
+assert.ok(app.includes("document.execCommand('copy')"),'legacy in-app browser clipboard fallback missing');
+assert.ok(app.includes("finally{input.remove();}"),'temporary clipboard element must be removed');
