@@ -2,140 +2,25 @@
 
 **Version:** OH-004.3.4 Personal Recovery
 
-Zeus Proxy is Felipe's private Netlify edition of Olympus Hub. It keeps the complete OlyHub workspace foundation while preserving the personal black/gold Zeus identity. The difference from commercial OlyHub is distribution and account scope, not a reduced feature set: **OlyHub = commercial/App Store; Zeus Proxy = private/Netlify/single-owner.**
-
-## Product contract
-
-Only **Zeus** and **Olympus** are user-facing AI modes. OpenAI, Anthropic, Gemini and other configured engines are internal implementation details.
-
-The recovered workspace includes:
-- Home conversation history without Project memory leakage.
-- Projects with one canonical permanent conversation per Project.
-- Dedicated approved Project memory, tasks, goal/progress state and long-history context.
-- Private files, artifacts and output downloads.
-- Image generation/editing and image/vision inputs where the configured capability supports them.
-- Voice input with browser speech recognition and optional server transcription.
-- Durable execution traces, rate/concurrency guards, Blob cleanup and Netlify Database persistence.
-- Full Zeus and Olympus orchestration from the audited 4.3.4 foundation.
-- Live web research through the OpenAI Responses `web_search` capability, with persistent clickable source citations.
+Zeus Proxy is Felipe's private Netlify edition of Olympus Hub.
 
 ## Personal access
 
-Commercial Netlify Identity is not required by Zeus Proxy. Production access is protected server-side by `ZEUS_PROXY_ACCESS_TOKEN` (32+ characters), compared in constant time.
+**Access-token auth is removed.** The app is open; protect the site with **Netlify site password** if desired.
 
-The browser persists the entered key in `localStorage` under `olyhub.zeusproxy.access.v3`, so the installed home-screen app and new tabs stay unlocked on the owner's device. It is sent as `x-zeus-access-token` on every private API call. Keys saved by older builds (`olyhub.zeusproxy.access.v2` in `localStorage` or `sessionStorage`) are migrated to the v3 key on first load and the legacy entries are removed. **Lock** (sidebar or Settings) and any `401` from the API clear every stored copy.
+## Zeus Levels
 
-Because the key is persisted, treat a device that has unlocked Zeus as trusted; use **Lock** on shared devices. `scripts/verify.mjs` and `scripts/finalfix3-tests.mjs` enforce this contract (v3 key, written with `localStorage.setItem`, never with `sessionStorage.setItem`).
+| Level | Internal | Typical tasks |
+|------|----------|----------------|
+| **1** | SIMPLE | Basic chat, translation, short answers |
+| **2** | COMPOUND | Simple PDF/docs, logos, moderate code, **image generation** |
+| **3** | ZEUS_DIRECTED | Advanced UI/frontend, isolated backend, complex reports, books |
+| **Olympus** | multi-specialist | Full assemble: UI + code + integration, audits |
 
-Do not expose the access token through client-visible environment variables.
+**Compare & Evolve** (Tools) and the **Like** button on replies record preferred model families per task type (`familyPreferences`).
 
-## Netlify AI Gateway
+## Agents + Manager
 
-Provider API keys/base URLs are expected to be supplied by Netlify AI Gateway. Do not add manual provider keys unless intentionally overriding the gateway. Explicit/current-information requests can use the same Gateway-backed OpenAI Responses endpoint for live web research.
+UI renames **Projects → Agents**. Each agent keeps an isolated permanent chat, memory, sources and artifacts. **Home** is the Manager with an agent chip strip. API routes remain `/api/projects` for compatibility.
 
-**Zeus or Olympus may be selected manually; an optional Olympus Automatic toggle can elevate complex requests.** Mode/level decisions use deterministic rules without a paid classifier; separate specialty selection may use one metered low-cost AI call (skipped for trivial text and image requests). A deterministic zero-token router chooses only the internal level: Zeus → Simple or Compound; Olympus → Compound Plus or Complex Turbo. Phase 1 locked this contract. Phase 2 installed Zeus Simple and Compound. Phase 3 installed Olympus Compound Plus. **Phase 4 replaces Complex Turbo with role-based orchestration:** Planner → up to 3 bounded Creators → an independently selected Director/Assembler from a different provider family → CEO/Final Authority. Roles are stable while providers are preferences with fallbacks. Turbo is hard-capped at 10 model calls and 3 creator workstreams; when independent Director separation cannot be preserved, it downgrades safely to Compound Plus instead of pretending Turbo succeeded.
-
-Simple uses the normal cheapest/fastest route for the task. Compound reserves premium GPT for the final voice: the base stage follows the route but prefers models with cost score ≤3, then the Finisher role prefers strong GPT with fallbacks. Fatal provider errors skip that provider; transient/model-availability failures can advance the fallback chain. **Phase 5 adds deterministic budget/action gates:** Turbo estimates creator count, expected calls, token ceiling and runtime before execution; only higher-budget quotes require owner approval, bound to the exact request. External mutations are never implied by Turbo: GitHub commit requires its explicit action flow and confirmation, optional `GITHUB_REPO_ALLOWLIST` can restrict writable repositories, and deploy/merge/destructive production changes remain outside normal chat execution.
-
-## UX invariants
-
-- Navigation lives behind the top-bar **☰** menu button (the sidebar is always visible on desktop); it exposes Home, Projects, Tools, Files and Settings plus recent chats.
-- The composer `+` opens **Photo / Video · Camera · File**.
-- `Enter` adds a new line; the arrow (or `Ctrl/⌘ + Enter`) sends. An unsent draft survives re-renders.
-- Project chat is permanent and receives its own memory/tasks/files context.
-- Home chats remain outside Project memory and never inherit a Project's dedicated memory.
-
-## Accessibility & resilience
-
-- Landmarks, labelled controls, `aria-current` / `aria-pressed` / `aria-expanded` state, a skip link and a single polite live region for status and errors.
-- Keyboard: visible focus ring, focus is preserved across re-renders, `Escape` closes the `+` menu, drawer and dialogs.
-- Text colours meet WCAG AA contrast on app surfaces; `prefers-reduced-motion` is respected.
-- Network failures, offline state and unreadable responses produce clear, dismissible messages; a thin progress bar shows in-flight requests.
-- Safe-area insets are honoured for the iOS home-screen app and landscape notches.
-
-## Security headers
-
-`netlify.toml` sets a strict CSP (`script-src 'self'`, no third-party origins), HSTS, `X-Frame-Options`, `Referrer-Policy`, `Permissions-Policy`, `Cross-Origin-Opener-Policy` and `X-Content-Type-Options`. API responses are `no-store`. `index.html` is `noindex`.
-
-## Validation
-
-Requires Node 22.x / npm 10.9.x (`engine-strict` is on). Run before production deployment:
-
-```sh
-npm ci
-npm test
-npm run build
-```
-
-The recovery keeps the OH-004.3.4 hard/final-fix suites and adds `scripts/zeus-personal-tests.mjs` for the personal access, two-mode UI, Project continuity, attachment chooser and OpenAI fallback invariants, plus `scripts/a11y-polish-tests.mjs` for the accessibility, resilience, head-metadata and security-header invariants.
-
-## Live smoke
-
-Read-only private runtime smoke:
-
-```sh
-ZEUS_PROXY_SMOKE_BASE_URL=https://zeus-olyhub.netlify.app \
-ZEUS_PROXY_SMOKE_ACCESS_TOKEN='your-32+-character-private-key' \
-npm run smoke:live
-```
-
-Set `ZEUS_PROXY_SMOKE_WRITE=1` to test Project + Blob write/delete lifecycle. Add `ZEUS_PROXY_SMOKE_AI=1` only when you intentionally want to spend one real Zeus inference for provider + attachment-grounding verification.
-
-## Database safety
-
-The original foundation migration remains unchanged.
-
-SHA-256: `90dece71adbd153d42168585fab6988e000fec715c33a6bef3595c2096a52d70`
-
-The source line is the audited OlyHub OH-004.3.4 foundation with a personal Zeus overlay; it is no longer based on the reduced OH-001.2.x chat shell.
-
-
-## GitHub commit integration
-
-OlyHub can publish a validated ZIP project package to an existing GitHub repository with one atomic, non-force commit. GitHub writes run only on the server and require `GITHUB_TOKEN` with Contents read/write access to the target repository. The browser never receives the token. ZIP preflight blocks unsafe paths, private-key/.env-style files and credential-like text before creating Git blobs. Protected branches remain protected: OlyHub does not force-push.
-
-## Stage 6/10 — Independent AI transport fallbacks (staged, not committed)
-
-The primary path uses Netlify AI Gateway's injected provider credentials. Separate optional server-only `OPENROUTER_DIRECT_API_KEY` and `OPENAI_DIRECT_API_KEY` enable independent transport fallbacks, in that order, without adding new UI modes. The Router channel supports model families through OpenRouter; Director/Critic independence is evaluated by underlying model family rather than the word `openrouter`. Each outbound retry consumes an existing execution-budget call. An unavailable direct key is skipped, not counted as an available fallback. Source-only staging does not configure keys or verify a live endpoint; it does not change `main` or deploy.
-
-## Stage 7/10 — AI transport observability and recovery (staged, not committed)
-
-Model attempts are recorded within the existing call budget, including stage, adapter, model family, transport, outcome, elapsed milliseconds and safe failure category. No prompt, completion text, attachments, credentials, or raw provider errors are included in this provider telemetry. Success and failure traces are stored in the existing executions JSONB trace. Health now reports 24-hour per-transport evidence and counts when a direct backup recovered a Gateway failure; configured does not mean verified. Circuit breakers isolate Gateway from direct credentials, and their in-memory states are instance-local. The stage adds mocked failure/cooldown/redaction tests and does not trigger a model call, commit or deployment.
-
-## Stage 8/10 — Extreme-failure safety and integration audit (staged, not committed)
-
-Fixes a wasted-credit path: HTTP 413/422 or clear malformed-input HTTP 400 stop retries across providers, returning a sanitized AI_REQUEST_REJECTED error. Missing models (404), rate limits (429), transient failures and provider outages retain bounded fallback. Olympus and Turbo honor that terminal-input decision without spending further calls on a Zeus downgrade. The existing hard caps, family separation, approval gates and explicit external-mutation policy remain unchanged. Failed provider-chain execution traces store a categorized code instead of raw upstream error details. A nine-scenario synthetic suite covers success, invalid inputs, unavailable models, throttling, direct recovery and total outage. No production deploy, new credentials or real AI requests were performed for this stage.
-
-## Stage 9/10 — Cross-mode regression audit (staged, not committed)
-
-Audited baseline required-path inventory (62 required files present), production package-lock dependencies, module syntax, and model routing constraints. Fixed the Complex Turbo CEO candidate filter to exclude the Director's underlying model **family** even if the Director uses a different adapter (e.g. OpenRouter). Fixed Zeus Compound and Olympus Compound Plus labels and gptFinished indicators to reflect the actual finisher family instead of claiming GPT for non-OpenAI fallbacks. Added a regression suite covering deterministic role-family isolation, 40 routing combinations with hard caps and unique network paths, budget-bound four-stage transport recovery, existing Turbo budget/approval and request-idempotency invariants. The 9/10 staging tree has no commit and no deploy. Full npm test, npm build, and live Netlify/Supabase credential checks remain REQUIRED before release; synthetic V8 checks are not a substitute for executing the npm suite under Node.
-
-## Queue state schema repair (2026-10-13)
-
-Olympus background work writes `executions.state='QUEUED'`. The initial deployed PostgreSQL enum did not include this value, causing a database query error before any AI model was contacted. A new **additive and idempotent** Netlify Database migration `20261013180000_add_queued_execution_state` adds that enum value without changing previous migration files. On the next production Netlify deployment, database migrations are applied before publish. The chat API now returns a generic database error instead of revealing raw SQL, parameter values, owner IDs, or provider error text. A regression test covers the exact mismatch and output redaction. Do not modify or rerun older migration SQL manually.
-
-## Artifact delivery and safety integration (October 2026)
-
-Zeus and Olympus use a server-side artifact contract for PDF, DOCX, PPTX, CSV and structured XLSX workbooks. Multiple explicitly requested formats (up to four, excluding ZIP) are created, validated and saved together in one execution. Excel uses numeric values and formulas; XLSX readback and PDF structural verification run before persistence. Incomplete promises or confirmation questions fail as ARTIFACT_INCOMPLETE rather than creating an incomplete downloadable file. Explicit continuation in the same conversation can reuse the original deliverable request and authorized uploads. Execution details are collapsed by default.
-
-Credit controls: the paid scheduled smoke was removed. The defaults count 15 Zeus / 3 Olympus executions per hour, separate from real monetary spend limits. Shared Netlify Gateway credential/billing failures no longer cascade across Gateway providers; separately configured direct backups retain bounded fallback. Known-invalid models are cached within each Function instance. GitHub writes require a nonempty repo allowlist and sensitive files are gitignored. Access token rotation is optional; HttpOnly cookie authentication is not yet implemented. Enable GitHub secret scanning and configure provider spending limits manually. Build and tests do not make live model calls.
-
-
-### Pending 1/7–3/7 safety corrections (prepared; not deployed)
-Phase 1 sanitizes stored history, memory, files, GitHub/web retrieval and the provider-bound payload without modifying the owner's stored messages. Phase 2 adds an append-only PostgreSQL execution-attempt ledger so failed/restarted AI executions consume another hourly slot, while completed replays and the original Olympus queue handoff do not. Phase 3 ensures endpoint requests (upload, transcription, artifacts, storage maintenance) are always charged as new operations even when a client reuses `requestId`: a server-generated unique event ID is stored under the existing transaction/advisory lock. **These endpoints do not provide automatic result replay:** resending the same request may duplicate work, but it never bypasses the hourly safety limit. A separate future step must address exact-once processing if required.
-
-### Phase 4/7: exclusive Olympus worker leases (staged, not deployed)
-
-Each queued Olympus attempt stores a unique `dispatch_token` and 240-second queue reservation. The background handler is strictly a claim operation: it cannot create executions, claim a superseded dispatch, or start after its queue deadline. The winning worker receives an independent `worker_token` and a 210-second lease, longer than its 150-second AI budget. Recovery only proceeds after lease expiry; unleased legacy Olympus rows use a conservative 16-minute window, never the 90-second synchronous threshold. An unacknowledged dispatch can only fall back to Zeus by atomically claiming the still-unclaimed queue. Final artifact/assistant writes are fenced under a row lock; failures and user-message failure markers are atomically tied to the owning token. Retries produce new dispatch generations and still count toward the Phase 2 hourly ledger. No heartbeat is needed for the bounded 150-second worker; the lease deliberately exceeds that entire budget.
-
-### Phase 5/7: newest-first conversation history selection (staged, not published)
-The chat fetches the latest 30 non-failed messages in deterministic newest-first order (`created_at DESC,id DESC`). It sanitizes every selected message before truncation, allocates the 18,000-character history budget to the newest messages first (up to 4,000 characters each), skips older entries that do not fit instead of discarding later context, and reverses only the selected subset to return a chronological chat history to all model providers. Original stored messages and memory are unchanged. Regression tests ensure recent corrections survive oversized old conversations and secrets do not reach model prompts.
-
-### Phase 6/7 — explicit web research with Compound Plus (staged, not deployed)
-An explicit live-web request is no longer silently disabled for Compound Plus. The budget routes 1 web search plus 1 economical author plus 1 finalizer, replacing independent critique; the UI metadata states the substitution. If the search does not complete with citations the app returns WEB_RESEARCH_UNAVAILABLE rather than fabricating up-to-date research. Total calls remain capped at three. The normal no-web Compound Plus independent-critic pipeline is unchanged.
-
-### Phase 7/7 — honest cost and usage coverage (staged, not deployed)
-The observability summary preserves missing provider and web tokens as null, distinguishes full estimated coverage, known-priced subtotal (partial) and unknown costs, and records unpriced/failing/untracked calls without fabricating $0 values. Live web search inference and search-tool fees are not represented as fully priced; every web attempt marks cost coverage partial or unknown until authoritative web pricing is supplied. Failed web calls preserve attempted=true without exposing upstream error text. The UI shows 'unknown' for missing token values and labels priced subsets as a known subtotal. Provider invoices and Gateway statements remain authoritative; no customer billing claim is derived from these estimates.
-
-### Post-audit hardening (7/7 validation gate)
-JSON credentials with prefixed field names (including `ZEUS_PROXY_ACCESS_TOKEN`, `OPENAI_API_KEY`, and `access_token`) are redacted before model input; benign token metrics remain readable. Shared private JSON Function responses enforce `Cache-Control: no-store` regardless of caller overrides. GitHub write readiness requires both a configured token and a valid allowlisted repository, and remains `configured_unverified` until access is exercised. Cost coverage tests distinguish unpriced unknown from priced partial subsets. These changes have regression coverage and should be validated via the complete CI suite before deploy.
+A deterministic zero-token router chooses Zeus Level 1 / 2 / 3; Olympus is a single multi-specialist mode. Provider keys stay on Netlify AI Gateway.
