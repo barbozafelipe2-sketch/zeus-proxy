@@ -8,10 +8,10 @@ const OPENAI_VOICES=new Set(['alloy','ash','ballad','coral','echo','fable','nova
 const MAX_AUDIO_BYTES=8*1024*1024;
 const PROVIDER_TIMEOUT_MS=12000;
 
-function speechRoutes(){
+function speechRoutes({elevenLabsVoiceId=''}={}){
   const routes=[];
   const elevenKey=env('ELEVENLABS_API_KEY')||env('ELEVEN_LABS_API_KEY');
-  const elevenVoice=env('ELEVENLABS_VOICE_ID')||env('ELEVEN_LABS_VOICE_ID');
+  const elevenVoice=elevenLabsVoiceId||env('ELEVENLABS_VOICE_ID')||env('ELEVEN_LABS_VOICE_ID');
   if(elevenKey&&validId(elevenVoice))routes.push({name:'elevenlabs',kind:'elevenlabs',key:elevenKey,voiceId:elevenVoice});
 
   const openaiKey=env('OPENAI_API_KEY');
@@ -90,10 +90,31 @@ async function callGemini(route,text,signal,fetchImpl){
   return {bytes,contentType:'audio/wav'};
 }
 
-export function configuredSpeechProviders(){return speechRoutes().map(({name})=>name);}
+export function configuredSpeechProviders({elevenLabsVoiceId=''}={}){return speechRoutes({elevenLabsVoiceId}).map(({name})=>name);}
 
-export async function generateSpeech(text,{voice='marin',fetchImpl=globalThis.fetch,onProviderError=()=>{}}={}){
-  const routes=speechRoutes();
+export async function listElevenLabsVoices({search='',nextPageToken='',fetchImpl=globalThis.fetch}={}){
+  const key=env('ELEVENLABS_API_KEY')||env('ELEVEN_LABS_API_KEY');
+  if(!key){const error=new Error('ElevenLabs API key is not configured.');error.status=501;error.code='ELEVENLABS_NOT_CONFIGURED';throw error;}
+  const pageToken=String(nextPageToken||'').trim();
+  if(pageToken.length>512){const error=new Error('Invalid ElevenLabs page token.');error.status=400;error.code='INVALID_VOICE_PAGE_TOKEN';throw error;}
+  const url=new URL('https://api.elevenlabs.io/v2/voices');
+  url.searchParams.set('page_size','100');url.searchParams.set('include_total_count','false');url.searchParams.set('sort','name');url.searchParams.set('sort_direction','asc');
+  const query=String(search||'').trim().slice(0,100);if(query)url.searchParams.set('search',query);
+  if(pageToken)url.searchParams.set('next_page_token',pageToken);
+  const response=await fetchImpl(url,{method:'GET',headers:{'xi-api-key':key,'Accept':'application/json'}});
+  if(!response.ok)throw providerError(response.status);
+  const payload=await response.json().catch(()=>({}));
+  const voices=(Array.isArray(payload?.voices)?payload.voices:[]).filter(v=>validId(v?.voice_id)&&typeof v?.name==='string').map(v=>({
+    voice_id:String(v.voice_id),name:String(v.name).slice(0,120),category:String(v.category||'').slice(0,40),
+    labels:Object.fromEntries(Object.entries(v.labels||{}).filter(([key,value])=>['language','accent','gender','age','use_case'].includes(key)&&typeof value==='string').map(([key,value])=>[key,value.slice(0,60)])),
+    preview_url:/^https:\/\//i.test(String(v.preview_url||''))?String(v.preview_url).slice(0,1000):''
+  }));
+  return {voices,hasMore:Boolean(payload?.has_more),nextPageToken:String(payload?.next_page_token||'').slice(0,512)};
+}
+
+export async function generateSpeech(text,{voice='marin',elevenLabsVoiceId='',fetchImpl=globalThis.fetch,onProviderError=()=>{}}={}){
+  if(elevenLabsVoiceId&&!validId(elevenLabsVoiceId)){const error=new Error('Invalid ElevenLabs Voice ID.');error.status=400;error.code='INVALID_ELEVENLABS_VOICE_ID';throw error;}
+  const routes=speechRoutes({elevenLabsVoiceId});
   let lastStatus=0;
   for(const route of routes){
     const controller=new AbortController();
@@ -122,19 +143,34 @@ export default async function(req,context){
   try{
     const auth=await requireUser(req,requestId);
     if(auth.error)return auth.error;
+    const url=new URL(req.url);
+    if(url.pathname==='/api/speech/voices'){
+      if(req.method!=='GET')return errorJson('Method not allowed.',405,'METHOD_NOT_ALLOWED',requestId);
+      try{
+        await consumeEndpointRate(auth.db,auth.user.id,'speech-voices',requestId,20);
+        const voices=await listElevenLabsVoices({search:url.searchParams.get('search')||'',nextPageToken:url.searchParams.get('nextPageToken')||''});
+        return Response.json(voices,{headers:{'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
+      }catch(error){
+        const status=error?.code==='AI_RATE_LIMIT'?429:Number(error?.status)||502;
+        console.warn('ElevenLabs voice list failed',requestId,status);
+        const message=status===501?'Configure ELEVENLABS_API_KEY in Netlify to list voices.':status===429?'ElevenLabs rate limited voice listing. Try again shortly.':status===401||status===403?'ElevenLabs rejected the API key or it lacks permission to list voices.':'Could not load ElevenLabs voices. Check the API key and try again.';
+        return errorJson(message,status===429?429:status===501?501:status===400?400:502,'ELEVENLABS_VOICE_LIST_FAILED',requestId);
+      }
+    }
     if(req.method!=='POST')return errorJson('Method not allowed.',405,'METHOD_NOT_ALLOWED',requestId);
     let body;try{body=await req.json()}catch{return errorJson('Invalid JSON.',400,'INVALID_JSON',requestId);}
     const text=String(body?.text||'').trim();
     if(!text||text.length>2500)return errorJson('Speech text must be 1 to 2500 characters.',400,'INVALID_SPEECH_TEXT',requestId);
-    if(!speechRoutes().length)return errorJson('Configure ElevenLabs or enable OpenAI/Gemini speech through Netlify AI Gateway.',501,'SPEECH_NOT_CONFIGURED',requestId);
+    const elevenLabsVoiceId=String(body?.elevenLabsVoiceId||'').trim();
+    if(!speechRoutes({elevenLabsVoiceId}).length)return errorJson('Configure the ElevenLabs API key or enable OpenAI/Gemini speech through Netlify AI Gateway.',501,'SPEECH_NOT_CONFIGURED',requestId);
     await consumeEndpointRate(auth.db,auth.user.id,'speech',requestId,30);
-    const audio=await generateSpeech(text,{voice:body?.voiceId,onProviderError:(provider,status)=>console.warn('Speech provider failed',requestId,provider,status)});
+    const audio=await generateSpeech(text,{voice:body?.voiceId,elevenLabsVoiceId,onProviderError:(provider,status)=>console.warn('Speech provider failed',requestId,provider,status)});
     return new Response(audio.bytes,{status:200,headers:{'Content-Type':audio.contentType,'Cache-Control':'no-store','X-Content-Type-Options':'nosniff','X-Zeus-Voice-Route':audio.route}});
   }catch(error){
     const status=error?.code==='AI_RATE_LIMIT'?429:error?.status||503;
     const code=error?.code||'SPEECH_FAILED';
-    const message=error?.code==='AI_RATE_LIMIT'?'Speech rate limit reached.':'Zeus replied in chat, but speech audio is unavailable. Check the server voice configuration and try again.';
+    const message=error?.code==='AI_RATE_LIMIT'?'Speech rate limit reached.':error?.code==='INVALID_ELEVENLABS_VOICE_ID'?'The ElevenLabs Voice ID is invalid. Check it in Voice settings and try again.':'Zeus replied in chat, but speech audio is unavailable. Check the server voice configuration and try again.';
     return errorJson(message,status,code,requestId);
   }
 }
-export const config={path:'/api/speech'};
+export const config={path:['/api/speech','/api/speech/voices']};
