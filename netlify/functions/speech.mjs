@@ -115,6 +115,7 @@ export async function listElevenLabsVoices({search='',nextPageToken='',fetchImpl
 export async function generateSpeech(text,{voice='marin',elevenLabsVoiceId='',fetchImpl=globalThis.fetch,onProviderError=()=>{}}={}){
   if(elevenLabsVoiceId&&!validId(elevenLabsVoiceId)){const error=new Error('Invalid ElevenLabs Voice ID.');error.status=400;error.code='INVALID_ELEVENLABS_VOICE_ID';throw error;}
   const routes=speechRoutes({elevenLabsVoiceId});
+  const providerFailures=[];
   let lastStatus=0;
   for(const route of routes){
     const controller=new AbortController();
@@ -128,6 +129,7 @@ export async function generateSpeech(text,{voice='marin',elevenLabsVoiceId='',fe
       return {...result,route:route.name};
     }catch(error){
       lastStatus=error?.name==='AbortError'?504:Number(error?.status)||503;
+      providerFailures.push({provider:route.name,status:lastStatus});
       onProviderError(route.name,lastStatus);
       if(lastStatus===413)throw error;
     }finally{clearTimeout(timeout);}
@@ -135,6 +137,7 @@ export async function generateSpeech(text,{voice='marin',elevenLabsVoiceId='',fe
   const error=new Error(routes.length?'Speech generation failed on all configured voice providers.':'No server speech provider is configured.');
   error.status=routes.length?(lastStatus===429?429:502):501;
   error.code=routes.length?'SPEECH_PROVIDER_FAILED':'SPEECH_NOT_CONFIGURED';
+  error.providerFailures=providerFailures;
   throw error;
 }
 
@@ -162,7 +165,14 @@ export default async function(req,context){
     const text=String(body?.text||'').trim();
     if(!text||text.length>2500)return errorJson('Speech text must be 1 to 2500 characters.',400,'INVALID_SPEECH_TEXT',requestId);
     const elevenLabsVoiceId=String(body?.elevenLabsVoiceId||'').trim();
-    if(!speechRoutes({elevenLabsVoiceId}).length)return errorJson('Configure the ElevenLabs API key or enable OpenAI/Gemini speech through Netlify AI Gateway.',501,'SPEECH_NOT_CONFIGURED',requestId);
+    if(!speechRoutes({elevenLabsVoiceId}).length){
+      const hasElevenLabsKey=Boolean(env('ELEVENLABS_API_KEY')||env('ELEVEN_LABS_API_KEY'));
+      const hasElevenLabsVoice=Boolean(elevenLabsVoiceId||env('ELEVENLABS_VOICE_ID')||env('ELEVEN_LABS_VOICE_ID'));
+      const message=hasElevenLabsKey&&!hasElevenLabsVoice
+        ?'ElevenLabs is connected, but no Voice ID is selected. Choose a voice in Settings, paste its Voice ID, and save it.'
+        :'No speech provider is available. Configure an ElevenLabs API key and Voice ID, or enable OpenAI/Gemini speech in Netlify.';
+      return errorJson(message,501,'SPEECH_NOT_CONFIGURED',requestId);
+    }
     await consumeEndpointRate(auth.db,auth.user.id,'speech',requestId,30);
     const audio=await generateSpeech(text,{voice:body?.voiceId,elevenLabsVoiceId,onProviderError:(provider,status)=>console.warn('Speech provider failed',requestId,provider,status)});
     return new Response(audio.bytes,{status:200,headers:{'Content-Type':audio.contentType,'Cache-Control':'no-store','X-Content-Type-Options':'nosniff','X-Zeus-Voice-Route':audio.route}});
@@ -170,7 +180,7 @@ export default async function(req,context){
     const status=error?.code==='AI_RATE_LIMIT'?429:error?.status||503;
     const code=error?.code||'SPEECH_FAILED';
     const message=error?.code==='AI_RATE_LIMIT'?'Speech rate limit reached.':error?.code==='INVALID_ELEVENLABS_VOICE_ID'?'The ElevenLabs Voice ID is invalid. Check it in Voice settings and try again.':'Zeus replied in chat, but speech audio is unavailable. Check the server voice configuration and try again.';
-    return errorJson(message,status,code,requestId);
+    return errorJson(message,status,code,requestId,{providerFailures:Array.isArray(error?.providerFailures)?error.providerFailures:[]});
   }
 }
 export const config={path:['/api/speech','/api/speech/voices']};

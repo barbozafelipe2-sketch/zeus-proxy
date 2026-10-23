@@ -27,6 +27,14 @@ try{
   assert.match(selectedVoiceUrl,/text-to-speech\/myVoice_456\?/,'the selected ElevenLabs Voice ID overrides the server default');
   await assert.rejects(()=>generateSpeech('Voz inválida.',{elevenLabsVoiceId:'bad voice'}),error=>error.status===400&&error.code==='INVALID_ELEVENLABS_VOICE_ID');
 
+  globalThis.Netlify={env:{get:key=>key==='ELEVEN_LABS_API_KEY'?'eleven-test-key':''}};
+  await assert.rejects(()=>generateSpeech('Erro de voz.',{elevenLabsVoiceId:'myVoice_456',fetchImpl:async()=>new Response('denied',{status:401})}),error=>{
+    assert.equal(error.code,'SPEECH_PROVIDER_FAILED');
+    assert.deepEqual(error.providerFailures,[{provider:'elevenlabs',status:401}]);
+    return true;
+  });
+  globalThis.Netlify={env:{get:key=>env[key]||''}};
+
   let voiceListRequest=null;
   const voiceList=await listElevenLabsVoices({fetchImpl:async(url,options)=>{
     voiceListRequest={url:String(url),options};
@@ -80,8 +88,10 @@ try{
   const app=readFileSync(new URL('../public/app.js',import.meta.url),'utf8');
   assert.ok(!app.includes('fallbackLiveSpeech'),'browser speech synthesis cannot silently mask TTS failures');
   const play=app.slice(app.indexOf('async function sayZeusReply('),app.indexOf('function stopLiveCapture('));
-  assert.match(play,/if\(!res\.ok\)throw/);
-  assert.match(play,/natural voice audio is unavailable/);
+  assert.match(play,/if\(!res\.ok\)\{\s*const failure=await res\.json\(\)/);
+  assert.match(play,/failure\?\.error/,'Live Talk shows the safe server error instead of replacing it with a generic message');
+  assert.match(play,/failure\?\.providerFailures/,'Live Talk includes safe provider status diagnostics');
+  assert.match(play,/Natural voice audio is unavailable/);
   assert.match(app,/id="elevenlabs-voice-id"/,'settings expose a custom ElevenLabs Voice ID field');
   assert.match(app,/id="elevenlabs-voice-preset"/,'settings expose an account voice picker');
   assert.match(play,/elevenLabsVoiceId/,'Live Talk sends the selected ElevenLabs Voice ID to the server');

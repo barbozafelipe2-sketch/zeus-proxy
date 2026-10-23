@@ -1401,7 +1401,15 @@ async function sayZeusReply(text){
   const speechTimeout=setTimeout(()=>speechController.abort(),40000);
   try{
     const res=await fetch('/api/speech',{method:'POST',headers:new Headers({'Content-Type':'application/json'}),signal:speechController.signal,body:JSON.stringify({text:line,voiceId:selected,elevenLabsVoiceId})});
-    if(!res.ok)throw new Error('Voice providers are unavailable.');
+    if(!res.ok){
+      const failure=await res.json().catch(()=>({}));
+      const providerNames={elevenlabs:'ElevenLabs',openai_gateway:'OpenAI TTS',gemini_gateway:'Gemini TTS'};
+      const attempts=(Array.isArray(failure?.providerFailures)?failure.providerFailures:[])
+        .filter(item=>providerNames[item?.provider]&&Number.isInteger(Number(item?.status)))
+        .map(item=>`${providerNames[item.provider]} ${Number(item.status)}`);
+      const detail=attempts.length?` (${attempts.join(' → ')})`:'';
+      throw new Error(`${String(failure?.error||'Voice providers are unavailable.').slice(0,240)}${detail}`);
+    }
     const blob=await res.blob();
     if(!blob.size)throw new Error('Voice provider returned empty audio.');
     if(!state.liveTalk||speechController.signal.aborted){clearTimeout(speechTimeout);return;}
@@ -1413,7 +1421,8 @@ async function sayZeusReply(text){
   }catch(error){
     clearTimeout(speechTimeout);discardLiveAudio();
     if(!state.liveTalk||state.liveStage==='error')return;
-    pauseLiveTalkOnError('Zeus replied in chat, but natural voice audio is unavailable. Check the ElevenLabs voice and Netlify AI Gateway settings, then try again.','speech');
+    const reason=error?.name==='AbortError'?'Natural voice audio timed out. Check the voice provider and retry.':String(error?.message||'Natural voice audio is unavailable. Check the ElevenLabs voice and Netlify AI Gateway settings, then try again.').slice(0,320);
+    pauseLiveTalkOnError(reason,'speech');
   }
 }
 function stopLiveCapture(){
