@@ -28,7 +28,7 @@ assert.ok(manifest.id==='/'&&manifest.display==='standalone'&&manifest.icons?.le
 assert.ok(app.includes('<main class="main" id="main-content" tabindex="-1">'),'main landmark missing');
 assert.ok(app.includes('<nav class="side-nav" aria-label="Primary">'),'primary nav landmark missing');
 assert.ok(app.includes('aria-controls="app-sidebar" aria-expanded="${state.drawer}"'),'menu button must expose expanded state');
-assert.ok(app.includes(`\${state.tab===label?'aria-current="page"':''}`),'active nav must expose aria-current');
+assert.ok(app.includes(`\${state.tab===tab?'aria-current="page"':''}`),'active nav must expose aria-current');
 assert.ok(app.includes('aria-haspopup="menu" aria-expanded="${state.attachMenu}"'),'+ menu must expose expanded state');
 assert.ok(app.includes('role="menuitem" id="attach-media"')&&app.includes('role="menuitem" id="attach-camera"'),'attachment menu items need menuitem role');
 assert.ok(app.includes('<label for="auth-key">'),'auth key label must be associated');
@@ -86,6 +86,6 @@ assert.ok(app.includes("document.visibilityState==='hidden'"),'background Olympu
 
 // Mobile/embedded browsers must be able to copy code without the async Clipboard API.
 assert.ok(app.includes("$$('.copy-code').forEach"),'all rendered code blocks need copy handlers');
-assert.ok(app.includes("navigator.clipboard?.writeText(code)"),'modern clipboard copy path missing');
+assert.ok(app.includes("await navigator.clipboard.writeText(code)"),'modern clipboard copy path missing');
 assert.ok(app.includes("document.execCommand('copy')"),'legacy in-app browser clipboard fallback missing');
 assert.ok(app.includes("finally{input.remove();}"),'temporary clipboard element must be removed');

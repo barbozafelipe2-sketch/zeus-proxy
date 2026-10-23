@@ -67,7 +67,7 @@ const markdown='# Análise\n\n**Prioridade alta**\n\n| Item | Estado |\n| --- | 
   if(process.env.ZEUS_UI_SCREENSHOTS)await page.screenshot({path:path.join(process.env.ZEUS_UI_SCREENSHOTS,'chat-390.png'),fullPage:true});
   for(const tab of ['Tools','Files','Settings','Projects']){
    await page.locator('#hamburger').click();await page.locator(`.side-nav [data-tab="${tab}"]`).click();
-   await page.waitForFunction(heading=>document.querySelector('.page h1')?.textContent===heading,({Tools:'Ferramentas',Files:'Arquivos e resultados',Settings:'Configurações',Projects:'Projetos'})[tab]);
+   await page.waitForFunction(heading=>document.querySelector('.page h1')?.textContent===heading,({Tools:'Ferramentas',Files:'Arquivos e resultados',Settings:'Configurações',Projects:'Agentes'})[tab]);
    assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),`${tab} must fit mobile`);
   }
   assert.equal(await page.locator('.proj-body strong').innerText(),'Home','user-defined project names must not be translated');

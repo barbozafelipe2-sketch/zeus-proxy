@@ -11,7 +11,8 @@ const health=readFileSync('netlify/functions/health.mjs','utf8');
 
 assert.ok(app.includes('data-mode="ZEUS"')&&app.includes('data-mode="OLYMPUS"')&&app.includes('zero-token router'),'manual Zeus/Olympus selector missing');
 assert.ok(!/data-mode=["'](?:OPENAI|CLAUDE|GEMINI|GOOGLE)/i.test(app),'direct provider mode leaked into UI');
-assert.ok(app.includes('id="hamburger" aria-label="Open navigation" title="Navigation">${icon(\'menu\')}</button>')&&app.includes("['Home','home'],['Projects','projects']"),'simplified menu navigation with Projects missing');
+assert.ok(app.includes('id="hamburger" aria-label="Open navigation" title="Navigation">${icon(\'menu\')}</button>')&&app.includes("['Projects','projects','Agents']"),'simplified menu navigation with Agents missing');
+assert.ok(app.includes('function managerAgentStrip()')&&app.includes('id="manager-title">Manager</h1>')&&app.includes('class="manager-agent-chip"'),'Home Manager must expose clickable agent shortcuts');
 assert.ok(app.includes('PERMANENT PROJECT CHAT'),'permanent Project chat missing');
 assert.ok(app.includes('Permanent project memory')&&app.includes('memory-form'),'Project memory missing');
 assert.ok(app.includes('task-form')&&app.includes('upload-project-file'),'Project tasks/files missing');

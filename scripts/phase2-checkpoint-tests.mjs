@@ -15,9 +15,12 @@ await assert.rejects(()=>runDirectedPipeline({text:'Build backend',budget:b,onSt
 assert.equal(attempts,2,'failed provider must not trigger paid loop');
 assert.deepEqual(partial.map(s=>s.phaseNumber),[1],'first completed phase must be checkpointed');
 const chat=readFileSync('netlify/functions/chat.mjs','utf8');
+const ui=readFileSync('public/app.js','utf8');
 const sql=readFileSync('netlify/database/migrations/20261015003000_project_sources_checkpoints/migration.sql','utf8');
 const checkpoint=readFileSync('netlify/functions/_shared/phase-checkpoint.mjs','utf8');
 assert.match(chat,/savePhaseCheckpoint/);
 assert.match(sql,/production_checkpoints_per_execution_phase_idx/);
 assert.match(checkpoint,/ON CONFLICT/);
+assert.match(chat,/phases:Array\.isArray\(result\.trace\?\.roles\)/);
+assert.match(ui,/const phaseNote=phases\.length\?`Stages:/);
 console.log('Zeus Level 3 checkpoints and failure containment: PASS');

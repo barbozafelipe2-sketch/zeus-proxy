@@ -5,10 +5,16 @@ assert.match(ui,/voiceId:'sarah'/);assert.match(ui,/voiceAvatar:'lightning'/);as
 assert.match(ui,/discardLiveAudio/);assert.match(ui,/zeus-live-stage/);assert.match(ui,/id="voice-avatar"/);assert.match(ui,/id="live-language"/);
 assert.match(ui,/recognition.lang=browserInputLocale/);assert.match(css,/prefers-reduced-motion/);assert.match(css,/width:108px;height:108px/);
 assert.match(ui,/function listenServerLiveTalk/);
+assert.match(ui,/if\(context\.state==='suspended'\)await context\.resume\(\)/,'mobile VAD must resume a browser-suspended AudioContext before recording');
+assert.match(ui,/if\(context\.state!=='running'\)throw Error\('Audio capture is paused by the browser\./,'do not silently run VAD against a paused audio clock');
 assert.match(ui,/if\(!session.detected\|\|!chunks.length\)/);
 assert.match(ui,/session.cancelled=true/);
 assert.match(ui,/state.liveGeneration\+\+/);
 assert.match(ui,/state.liveStage='processing'/);
 assert.match(ui,/signal:speechController.signal/);
 assert.match(ui,/await sendText\(words,\[\]\)/);
+assert.match(ui,/state\.liveRecognizer\.stop\(\)/,'finishing a spoken turn must flush browser speech recognition instead of aborting it');
+assert.match(ui,/__zeusHandledResult/,'recognizer completion must not discard an in-flight final transcript');
+assert.match(ui,/Finish this turn and stop Live Talk/,'stop control must finish and answer a captured turn');
+assert.match(ui,/continueLiveTalkAfterTurn/,'stop-after-turn must end only after the reply is delivered');
 console.log('Phase 3 voice, VAD, cancellation and avatar regressions PASS');

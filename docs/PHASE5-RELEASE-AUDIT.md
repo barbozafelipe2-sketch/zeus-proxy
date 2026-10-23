@@ -1,32 +1,25 @@
-# Zeus Proxy — Part 5/5 pre-release audit (2026-10-15)
+# Zeus Proxy — Part 5/5 pre-release audit (2026-10-22)
 
-**Decision: HOLD — do not deploy the staged commit yet.**
+**Decision: code checks pass; production release remains unverified.** No deployment was made during this audit. The source was reconciled to `main` at `38309ea` before changes; all requested code changes are being held for one final commit.
 
-Source lineage currently staged under a detached Git commit, not the main branch; no Netlify deploy caused by this audit.
+## Verified in the current source
 
-## Verified through inspection and isolated simulated tests
+- Level 3, Olympus Compound Plus/Turbo, adaptive routing, phase checkpoints, resumable execution, and transactional per-job Olympus budget authorization/extension are implemented and covered by structural or mocked tests.
+- Manager/Agents navigation is now present while `/api/projects` and internal project state remain compatible.
+- API access is gated by `ZEUS_PROXY_ACCESS_TOKEN`; token comparison is constant-time, missing configuration fails closed, and the optional previous key works only inside a bounded rotation window.
+- Live Talk now gracefully finalizes the in-progress utterance when stopped so the final browser transcript or captured audio can be sent before the spoken reply completes. Silence remains unbilled.
+- `npm test`, `npm run release:check`, `npm run build`, the voice capture checks, and the access-gate checks pass in this workspace.
 
-- Zeus L3 deterministic routing and three-role orchestration (test with mocks).
-- Step-level callback invoked in sequence, preserving earlier stage on simulated failure (not real DB restart).
-- Project conversation move corrected to merge into canonical chat and move linked executions, files, artifacts, and phase checkpoints.
-- Artifact picker, A/B metadata comparison, approval aliases, HTML sandbox/editor and independent revisions (syntax and structural tests).
-- Voice language preferences and server-assisted capture (syntax/structural tests, not iPhone field tested).
+## Still requires production evidence
 
-## P0 release blockers — not implemented end to end
+1. The complete suite ran on the available Node 24 / npm 11 runtime; the repository requires Node 22 / npm 10.9. The supported-runtime run is still needed.
+2. Migrations and transaction behavior still need a disposable PostgreSQL/Netlify Database integration run.
+3. Netlify function packaging, configured AI Gateway credentials, transcription/TTS providers, and the production access configuration were not exercised here.
+4. Live Talk needs a physical iPhone/iPad microphone test, including permission denial, stop-to-submit, transcription, and spoken reply. Automated tests are structural/mocked.
+5. Real artifact integrations and billed media usage still need provider-backed validation; displayed costs must remain explicitly partial/unknown when providers do not report complete usage.
 
-1. **Budget enforcement:** Olympus initial $8 and individually approved $5 increments currently exist only as planning calculations. Actual provider calls lack server-side reservation, authenticated per-execution extension handling, unknown-priced-model safeguards and billing reconciliation. The $60 monthly amount is advisory.
-2. **Resume:** checkpoints are written, but there is no transaction-safe resume operation that reuses saved stages after a failure or function timeout.
-3. **CI and database:** full npm suite, migrations on an isolated real PostgreSQL instance, Netlify function packaging and iPhone Live Talk have not been executed/verified for this staged tree.
-4. **Artifact integrity:** A/B is metadata comparison; Combine C prepares a new prompt, not a tested automatic binary merge. Large and nonextractable binaries still require a specialized engine.
-5. **General integrations:** OAuth and model/provider fallback must be tested under real connected configuration before READY claims. Unknown charges remain unknown.
+## Before enabling production access
 
-## Required release procedure
-
-- Implement budget admission/reservation/approval/reconciliation and resume worker.
-- Run `npm run release:check` and `npm test` with Node 22 / npm 10.9, then `npm run build`.
-- Apply migrations to test PostgreSQL; test project merge, retries, scope checks, attachment binary reuse, alias owner scope and HTML revision lineage.
-- Browser/iPhone tests for Live Talk, file picker, project chats and HTML iframe sandbox.
-- Verify environment variables, Netlify AI Gateway/OpenRouter/direct fallbacks and production secrets without exposing them.
-- **Only after passing:** one lease-checked update of `main`, observe GitHub Actions and one Netlify deploy, then run post-deploy smoke tests.
-
-This document explicitly does not certify release readiness.
+- Configure a random `ZEUS_PROXY_ACCESS_TOKEN` of at least 32 characters in Netlify and enter the same value on the unlock screen. Keep it server-only.
+- In the Netlify dashboard, set **Project configuration → General → Visitor access → Project visibility → Private**. Netlify does not expose this setting through the available API/CLI path.
+- After the one final commit, run the supported-runtime and integration checks, then deploy only after confirming the production environment and mobile voice behavior.

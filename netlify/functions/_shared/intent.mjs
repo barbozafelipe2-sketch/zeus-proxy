@@ -129,11 +129,11 @@ export function decideExecutionLevel(text='', {
   const selectedMode=normalizeRequestedMode(mode)||'ZEUS';
   const workstreams=workstreamsIn(value);
   const requirements=Math.max(0,Number(requirementCount)||0);
-  const out=(m,level,reasons)=>({mode:m,requestedMode:selectedMode,level,reason:reasons[0],reasons:[...new Set(reasons)],workstreams,maxCalls:GEAR_CALL_CAPS[level],router:'deterministic_zero_token'});
+  const out=(m,level,reasons,maxCalls=GEAR_CALL_CAPS[level])=>({mode:m,requestedMode:selectedMode,level,reason:reasons[0],reasons:[...new Set(reasons)],workstreams,maxCalls,router:'deterministic_zero_token'});
 
   const zeusGear=()=>{
     // Image generation/editing always Level 2
-    if(action==='IMAGE_CREATE'||action==='IMAGE_EDIT')return out('ZEUS','COMPOUND',['image_level_2']);
+    if(action==='IMAGE_CREATE'||action==='IMAGE_EDIT')return out('ZEUS','COMPOUND',['image_level_2'],1);
     const reasons=[];
     if(PROFESSIONAL_DOMAIN.test(value)&&CREATE.test(value)&&['ARTIFACT_CREATE','CHAT'].includes(action))return out('ZEUS','ZEUS_DIRECTED',['professional_domain_artifact']);
     if(action==='ARTIFACT_CREATE')reasons.push('deliverable');

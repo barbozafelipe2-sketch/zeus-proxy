@@ -1,7 +1,14 @@
 // Presentation-only localization. API enums, selectors and stored user content
 // retain their original values; only interface text and labels are translated.
 const translations = new Map(Object.entries({
-  'Home':'Início', 'Projects':'Projetos', 'Tools':'Ferramentas', 'Files':'Arquivos', 'Settings':'Configurações',
+  'Home':'Início', 'Projects':'Agentes', 'Agents':'Agentes', 'Manager':'Gestor', 'Tools':'Ferramentas', 'Files':'Arquivos', 'Settings':'Configurações',
+  'New agent':'Novo agente', '＋ New agent':'＋ Novo agente', 'All agents':'Todos os agentes', 'All Agents':'Todos os agentes', 'WORKSPACE MANAGER':'GESTÃO DO ESPAÇO', 'AGENT WORKSPACES':'ESPAÇOS DOS AGENTES',
+  'Choose an agent to continue its dedicated work.':'Escolha um agente para continuar o trabalho dedicado.',
+  'No agents yet. Create one to give a workstream its own chat, memory and files.':'Ainda não há agentes. Crie um para ter conversa, memória e arquivos próprios.',
+  'No agents yet':'Ainda não há agentes', 'Create your first dedicated workspace.':'Crie seu primeiro espaço de trabalho dedicado.',
+  'Each agent has a dedicated conversation, tasks, files, artifacts and memory.':'Cada agente tem conversa, tarefas, arquivos, resultados e memória próprios.',
+  'Each agent keeps its own permanent chat, tasks, files, artifacts and memory.':'Cada agente mantém sua conversa, tarefas, arquivos, resultados e memória permanentes.',
+  'Your agents':'Seus agentes', 'All agents ›':'Todos os agentes ›', 'Workspace Manager':'Gestor do espaço',
   'New chat':'Nova conversa', 'Start a clean execution':'Comece uma nova conversa', 'Search chats':'Buscar conversas',
   'Recent chats':'Conversas recentes', 'Conversation':'Conversa', 'WORKSPACE':'ESPAÇO DE TRABALHO', 'PROJECT':'PROJETO',
   'Workspace navigation':'Navegação', 'Primary':'Principal', 'Current workspace':'Espaço atual', 'Open navigation':'Abrir navegação',
@@ -10,6 +17,7 @@ const translations = new Map(Object.entries({
   'Home chats appear here. Project chats stay inside each project.':'As conversas aparecem aqui. As conversas de projetos ficam em cada projeto.',
   'No chats match your search.':'Nenhuma conversa encontrada.', 'Conversation history available · no Project memory':'Histórico desta conversa · sem memória de projeto',
   'PERSONAL · ZEUS':'PESSOAL · ZEUS', 'OLYMPUS HUB · PERSONAL':'OLYMPUS HUB · PESSOAL',
+  'Start Live Talk':'Iniciar conversa por voz', 'Finish this turn and stop Live Talk':'Finalizar esta fala e parar a conversa por voz',
   'Zeus is your private AI workspace.':'Seu espaço privado de inteligência artificial.',
   'Projects, permanent memory, files, artifacts and Olympus orchestration stay together. Provider keys stay behind Netlify.':'Converse, organize projetos e crie arquivos em um só lugar. Suas credenciais ficam protegidas no servidor.',
   'Projects + dedicated memory':'Projetos com memória própria', 'Files, images and outputs':'Arquivos, imagens e resultados',
@@ -162,6 +170,8 @@ export function translateInterfaceText(value) {
   if (translations.has(trimmed)) return value.replace(trimmed,translations.get(trimmed));
   return value
     .replace(/^Uploading (.+)…$/,'Enviando $1…')
+    .replace(/^Open agent (.+)$/,'Abrir agente $1')
+    .replace(/^(\d+)% · (\d+) open tasks$/,'$1% · $2 tarefas abertas')
     .replace(/^Preparing (.+) for vision…$/,'Preparando $1 para análise…')
     .replace(/^Sampling (.+) for visual analysis…$/,'Selecionando imagens de $1 para análise…')
     .replace(/^Video prepared: (\d+) sampled frames\. Audio and motion between samples are not analyzed\.$/,'Vídeo preparado: $1 imagens selecionadas. O áudio e os movimentos entre as imagens não são analisados.')

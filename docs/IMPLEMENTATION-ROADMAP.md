@@ -21,6 +21,12 @@ All modes and Zeus levels can discuss requirements and update approved project d
 Store per-phase files, accepted requirements, approved previews, dependencies, provenance, version manifest, model usage, current phase, pending work, generated artifacts, tested status, and resumability tokens. Use content-addressed references and avoid refeeding complete files unnecessarily. Keep owner/project isolation. Multi-phase can be 1, 2, 3, 4+ depending on scope, context, available time and size; always checkpoint between lengthy steps. Never claim background progress without a functioning worker/job.
 Compare & Evolve: real independent A/B outputs, Try Again, Choose A/B, Combine C, originals preserved; domain-aware merging and versioned user feedback across supported artifacts.
 
+## Current 3-part completion pass
+
+**Part 1/3 — Compare & Evolve (implemented locally):** PDF, XLSX, PPTX and HTML requests can generate two separately stored outputs from different model families; calls are isolated, output validation must pass for both, artifacts retain provenance, and the owner can save a preferred alias, request another pair, or attach both originals to prepare a new C. If two families are not configured, the request fails before generation. Live research is explicitly excluded from this two-call flow. Other formats (including image, audio, video and 3D) are upload-and-compare only; metadata comparison does not claim to inspect binary contents. Tests cover family separation and the UI/library flow. No production database, provider, mobile or deployment verification is implied.
+
+**Part 2/3 — Google read-only integrations (implemented locally):** each service has its own OAuth consent, Gmail and Calendar return bounded results, and Drive lists metadata only under the narrower metadata-read scope. Access and refresh tokens are encrypted at rest; access tokens refresh server-side; disconnect attempts Google revocation before deleting local credentials. Settings can search connected services, and explicit chat requests add returned records as untrusted context. Mocked service tests cover token encryption/refresh, API shapes, bounded requests, query failures and auth boundaries. Real Google credentials, API enablement and OAuth consent still need live validation; setup and current Google test-user behavior are documented in README. Part 3/3 remains: full release gates, review the combined changes, and make the single final commit.
+
 ## Costs and safe retry
 
 - Zero-token route/planner. Economical specialist, stronger domain Director, premium generalist CEO only when benefit justifies it.
@@ -38,13 +44,13 @@ Shared personality and custom instructions across chat and Live Talk, project me
 
 ## Integrations / later Trace Lab
 
-Google read-only OAuth Gmail/Calendar/Drive must become operational and validated; current scaffolding alone is insufficient. Execution traces/provider outcomes/latency exist but dedicated Trace Lab interface can wait. Track metered speech/media/tool costs in unified ledger without falsely presenting partial totals as complete.
+Google read-only OAuth now has local search and chat-context paths for Gmail snippets, Calendar events and Drive metadata; production OAuth/provider validation remains pending. Execution traces/provider outcomes/latency exist but dedicated Trace Lab interface can wait. Track metered speech/media/tool costs in unified ledger without falsely presenting partial totals as complete.
 
 ## Five implementation batches (no intermediate deployment)
 
-1. **Foundation and staging (IN PROGRESS):** baseline CI assertion repair, zero-token chapter detection, pure adaptive planning and budget policy, regression tests, gap inventory, safe preservation of current main.
-2. **Runtime execution + workspace:** implement and wire actual Level 3 three-role orchestration and personalized auto/manual policy; persistent project manifests, resumable phases, preview/approve/produce transitions; job-level budget reservation and $5 server-authenticated approval.
-3. **Speech and mobile presence:** ElevenLabs and transcription reliability, multilingual Live Talk continuity, high-quality fixed-size animated Lightning orb plus avatar/voice settings, transcript and cost telemetry.
+1. **Foundation and staging (COMPLETE LOCALLY):** baseline CI assertion repair, zero-token chapter detection, pure adaptive planning and budget policy, regression tests, gap inventory, safe preservation of current main. Local tests and release gates pass; production publication is separate.
+2. **Runtime execution + workspace (IN PROGRESS):** actual Level 3 three-role orchestration and personalized auto/manual policy; persistent project manifests, resumable phases, preview/approve/produce transitions; job-level budget reservation and $5 server-authenticated approval. Source file linking, revision history and completed-stage labels now have local implementation and tests; binary retrieval and live database validation remain.
+3. **Speech and mobile presence (IN PROGRESS):** ElevenLabs and transcription reliability, multilingual Live Talk continuity, high-quality fixed-size animated Lightning orb plus avatar/voice settings, transcript and cost telemetry. Live Talk now resumes suspended mobile audio contexts and stop-to-submit is covered by regressions; physical-device and provider tests remain.
 4. **Artifact production + Compare:** real interactive previews, actual generated documents, spreadsheets, presentations, images, UI and backend archives, A/B/Choose/Combine/Retry, cross-phase dependencies and testing.
 5. **Integration and release:** Olympus visual/coding/assembly, provider resilience, Google read-only integrations, unified cost telemetry, full builds/tests/security/mobile checks, remove obsolete Vercel workflows if safely allowed, **single tested main update** and verify Netlify deployed behavior. Trace Lab UI is deferable.
 

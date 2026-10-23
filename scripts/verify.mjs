@@ -4,10 +4,10 @@ import { join, relative } from 'node:path';
 
 const required = [
   'public/index.html','public/app.js','public/styles.css','public/ui-premium.css',
-  'netlify/functions/chat.mjs','netlify/functions/projects.mjs','netlify/functions/tasks.mjs','netlify/functions/memories.mjs',
+  'netlify/functions/chat.mjs','netlify/functions/google-integration.mjs','netlify/functions/projects.mjs','netlify/functions/tasks.mjs','netlify/functions/memories.mjs',
   'netlify/functions/files.mjs','netlify/functions/file-download.mjs','netlify/functions/file-preview.mjs','netlify/functions/github-commit.mjs',
   'netlify/functions/artifacts.mjs','netlify/functions/artifact-download.mjs','netlify/functions/health.mjs','netlify/functions/transcribe.mjs',
-  'netlify/functions/_shared/models.mjs','netlify/functions/_shared/provider-routing.mjs','netlify/functions/_shared/provider-observability.mjs','netlify/functions/_shared/execution-error.mjs','netlify/functions/_shared/reliability.mjs','netlify/functions/_shared/web-search.mjs','netlify/functions/_shared/github-context.mjs','netlify/functions/_shared/execution-policy.mjs','netlify/functions/_shared/memory.mjs','netlify/functions/_shared/artifact.mjs','netlify/functions/_shared/artifact-delivery.mjs','netlify/functions/_shared/artifact-limits.mjs','netlify/functions/_shared/pdf-layout.mjs','netlify/functions/_shared/extract.mjs','netlify/functions/_shared/auth.mjs','netlify/functions/_shared/db.mjs','netlify/functions/_shared/relations.mjs','netlify/functions/_shared/intent.mjs','netlify/functions/_shared/security.mjs','netlify/functions/_shared/context.mjs','netlify/functions/_shared/runtime.mjs','netlify/functions/_shared/worker-lease.mjs','netlify/functions/_shared/history.mjs','netlify/functions/_shared/archive-safety.mjs','netlify/functions/_shared/zip-output.mjs','netlify/functions/_shared/pagination.mjs','netlify/functions/_shared/limits.mjs','netlify/functions/_shared/storage.mjs',
+  'netlify/functions/_shared/models.mjs','netlify/functions/_shared/provider-routing.mjs','netlify/functions/_shared/provider-observability.mjs','netlify/functions/_shared/execution-error.mjs','netlify/functions/_shared/reliability.mjs','netlify/functions/_shared/web-search.mjs','netlify/functions/_shared/github-context.mjs','netlify/functions/_shared/execution-policy.mjs','netlify/functions/_shared/memory.mjs','netlify/functions/_shared/artifact.mjs','netlify/functions/_shared/artifact-delivery.mjs','netlify/functions/_shared/compare-pair.mjs','netlify/functions/_shared/google-service.mjs','netlify/functions/_shared/artifact-limits.mjs','netlify/functions/_shared/pdf-layout.mjs','netlify/functions/_shared/extract.mjs','netlify/functions/_shared/auth.mjs','netlify/functions/_shared/db.mjs','netlify/functions/_shared/relations.mjs','netlify/functions/_shared/intent.mjs','netlify/functions/_shared/security.mjs','netlify/functions/_shared/context.mjs','netlify/functions/_shared/runtime.mjs','netlify/functions/_shared/worker-lease.mjs','netlify/functions/_shared/history.mjs','netlify/functions/_shared/archive-safety.mjs','netlify/functions/_shared/zip-output.mjs','netlify/functions/_shared/pagination.mjs','netlify/functions/_shared/limits.mjs','netlify/functions/_shared/storage.mjs',
   'netlify/database/migrations/20260930044607_create_olyhub_foundation/migration.sql',
   'netlify/database/migrations/20260930080000_add_files/migration.sql',
   'netlify/database/migrations/20261001030000_hard-fix-1-integrity/migration.sql',
@@ -15,7 +15,8 @@ const required = [
   'netlify/database/migrations/20261013180000_add_queued_execution_state/migration.sql',
   'netlify/database/migrations/20261014043000_ai_execution_attempt_ledger/migration.sql',
   'netlify/database/migrations/20261014050000_olympus_worker_leases/migration.sql',
-  'scripts/hardfix1-tests.mjs','scripts/hardfix2-tests.mjs','scripts/hardfix3-tests.mjs','scripts/reliability-engine-tests.mjs','scripts/phase10-queued-db-tests.mjs','scripts/artifact-engine-tests.mjs','scripts/security-cost-tests.mjs','scripts/phase1-privacy-tests.mjs','scripts/phase2-attempt-ledger-tests.mjs','scripts/phase3-endpoint-rate-tests.mjs','scripts/phase4-worker-lease-tests.mjs','scripts/phase5-history-tests.mjs','scripts/phase6-compound-web-tests.mjs','scripts/phase7-cost-coverage-tests.mjs','scripts/audit-privacy-readiness-tests.mjs','scripts/finalfix1-tests.mjs','scripts/finalfix2-tests.mjs','scripts/finalfix3-tests.mjs','scripts/polish-tests.mjs','scripts/smoke-live.mjs','.npmrc','netlify/functions/storage-maintenance.mjs','.github/workflows/verify.yml','.github/workflows/smoke-live.yml',
+  'netlify/database/migrations/20261022220000_project_source_versions/migration.sql',
+  'scripts/hardfix1-tests.mjs','scripts/hardfix2-tests.mjs','scripts/hardfix3-tests.mjs','scripts/reliability-engine-tests.mjs','scripts/phase10-queued-db-tests.mjs','scripts/artifact-engine-tests.mjs','scripts/compare-pair-tests.mjs','scripts/google-service-tests.mjs','scripts/security-cost-tests.mjs','scripts/phase1-privacy-tests.mjs','scripts/phase2-attempt-ledger-tests.mjs','scripts/phase3-endpoint-rate-tests.mjs','scripts/phase4-worker-lease-tests.mjs','scripts/phase5-history-tests.mjs','scripts/phase6-compound-web-tests.mjs','scripts/phase7-cost-coverage-tests.mjs','scripts/audit-privacy-readiness-tests.mjs','scripts/finalfix1-tests.mjs','scripts/finalfix2-tests.mjs','scripts/finalfix3-tests.mjs','scripts/polish-tests.mjs','scripts/smoke-live.mjs','.npmrc','netlify/functions/storage-maintenance.mjs','.github/workflows/verify.yml','.github/workflows/smoke-live.yml',
   'netlify.toml','package-lock.json','README.md','CHANGELOG.md','SMOKE-TEST.md'
 ];
 for (const file of required) if (!existsSync(file)) throw new Error(`Missing required file: ${file}`);
@@ -25,6 +26,8 @@ const app = read('public/app.js');
 const css = read('public/ui-premium.css');
 const chat = read('netlify/functions/chat.mjs');
 const models = read('netlify/functions/_shared/models.mjs');
+const projectSources = read('netlify/functions/project-sources.mjs');
+const projectSourceVersions = read('netlify/database/migrations/20261022220000_project_source_versions/migration.sql');
 const githubContext = read('netlify/functions/_shared/github-context.mjs');
 const reliability = read('netlify/functions/_shared/reliability.mjs');
 const webSearch = read('netlify/functions/_shared/web-search.mjs');
@@ -110,6 +113,15 @@ const mustContain = [
   [chat,'initializeTurn','idempotent turn initialization'],
   [chat,'REQUEST_IN_PROGRESS','idempotency in-progress guard'],
   [chat,'REQUEST_ID_REUSED','request id reuse protection'],
+  [chat,'runIndependentArtifactPair','independent A/B artifact generation'],
+  [chat,'comparePair:Boolean(result.trace?.comparePair)','durable A/B result metadata'],
+  [app,'data-compare-combine','combine alternatives into a new C artifact'],
+  [app,'data-compare-retry','retry Compare & Evolve pair action'],
+  [app,'preferred-${b.dataset.compareType||\'file\'}','durable preferred artifact alias'],
+  [chat,'detectGoogleServiceRequests','owner-requested Google context retrieval'],
+  [chat,'OWNER-REQUESTED GOOGLE READ-ONLY CONTEXT','untrusted Google content boundary'],
+  [app,'data-google-search','Google service search controls'],
+  [app,'requiresReconnect','Google token renewal recovery UI'],
   [chat,"intent.action==='ARTIFACT_CREATE'",'explicit artifact creation intent'],
   [artifact,"import JSZip from 'jszip'",'zip artifact implementation'],
   [artifact,'new JSZip()','zip artifact builder'],
@@ -191,6 +203,10 @@ const mustContain = [
   [limits,'request_rate_events','endpoint rate-event guard'],
   [storage,'blob_gc_queue','durable blob cleanup queue'],
   [storage,'queueProjectBlobs','project Blob cleanup queueing'],
+  [projectSources,'INSERT INTO project_source_versions','source revisions are preserved on every edit'],
+  [projectSources,'source_file_id','source of truth can retain a project file link'],
+  [projectSourceVersions,'UNIQUE (source_id, revision)','source version history is append-only per revision'],
+  [projectSourceVersions,'ON CONFLICT (source_id,revision) DO NOTHING','existing source history is backfilled idempotently'],
   [storageMaintenance,"path:'/api/storage-maintenance'",'storage reconciliation endpoint'],
   [hardFix3Migration,'CREATE TABLE IF NOT EXISTS request_rate_events','rate event migration'],
   [hardFix3Migration,'CREATE TABLE IF NOT EXISTS blob_gc_queue','blob GC migration'],
