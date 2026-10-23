@@ -14,7 +14,7 @@ const state = {
   projectSection:'CHAT', projectMemories:[], projectSources:[], memoryPolicy:null,
   messagePage:{hasMore:false,nextCursor:null}, filesPage:{scope:'global',hasMore:false,nextCursor:null}, artifactsPage:{scope:'global',hasMore:false,nextCursor:null}, chatRestore:null,
   voiceBusy:false, voiceRecorder:null, voiceStream:null, voiceChunks:[], voiceStopTimer:null, voiceRecognition:null, voiceBytes:0, voiceHitSizeLimit:false,
-  liveTalk:false, liveTalkStopRequested:false, liveMuted:false, liveStageBeforeMute:'idle', liveFailureKind:null, liveRecognizer:null, liveRecognitionTimer:null, liveCapture:null, liveGeneration:0, liveRetryTimer:null, liveRetryCount:0, liveStage:'idle', voiceId:'sarah', voiceReplyAudio:null, liveAudioUrl:null, liveSpeechController:null, liveAudioUnlocked:false, liveSpeechUnlocked:false,
+  liveTalk:false, liveTalkStopRequested:false, liveMuted:false, liveStageBeforeMute:'idle', liveFailureKind:null, liveRecognizer:null, liveRecognitionTimer:null, liveCapture:null, liveGeneration:0, liveRetryTimer:null, liveRetryCount:0, liveStage:'idle', voiceId:'marin', voiceReplyAudio:null, liveAudioUrl:null, liveSpeechController:null, liveAudioUnlocked:false, liveSpeechUnlocked:false,
   liveLocale:'auto', voiceAvatar:'lightning',
   preferences:{personality:'balanced',instructions:''}, preferencesLoaded:false,
   googleSearchResults:{}, googleSearchQueries:{}, googleSearchBusy:null,
@@ -337,7 +337,8 @@ const VOICE_AVATARS=new Set(['lightning','classic','olympus','liquid']);
 function initVoicePrefs(){
  try{const l=localStorage.getItem('zeus-live-locale');state.liveLocale=Object.prototype.hasOwnProperty.call(LIVE_LOCALES,l)?l:'auto';
  const a=localStorage.getItem('zeus-voice-avatar');state.voiceAvatar=VOICE_AVATARS.has(a)?a:'lightning';
- state.voiceId=localStorage.getItem('zeus-voice-id')||'sarah';}catch{}
+ const savedVoice=String(localStorage.getItem('zeus-voice-id')||'marin').toLowerCase();
+ state.voiceId=['alloy','ash','ballad','coral','echo','fable','nova','onyx','sage','shimmer','verse','marin','cedar'].includes(savedVoice)?savedVoice:'marin';}catch{}
 }
 function browserInputLocale(){const v=LIVE_LOCALES[state.liveLocale]||'auto';return v==='auto'?(navigator.language||'en-US'):v;}
 function speechLocale(text=''){
@@ -765,15 +766,12 @@ function settingsView(){const providers=state.health?.providerReadiness||{};cons
   <p class="muted tiny">Actual spending may be higher than shown. Reconcile Netlify and external provider billing before treating this as an accurate total.</p>
   ${state.health?.monthlyBudget?.targetReached?'<p class="status-warn">Target reached in known estimates. Services remain available.</p>':''}
 </article>${preferencesSettings()}${googleIntegrationSettings()}<article class="card settings-card"><h3>Voice settings</h3>
-<p class="muted tiny">Voice Message records and sends once. Live Talk listens and replies aloud. OpenRouter powers optional ElevenLabs voices; the browser voice remains a fallback.</p>
-<label for="zeus-voice-preset">OpenRouter / ElevenLabs voice</label>
+<p class="muted tiny">Live Talk uses your server-configured ElevenLabs voice first, then OpenAI and Gemini through Netlify. The browser’s system voice is not used as a silent fallback.</p>
+<label for="zeus-voice-preset">OpenAI fallback voice</label>
 <select id="zeus-voice-preset">
-${['sarah','george','adam','alice','bella','brian','charlie','daniel','jessica','roger','will'].map(v=>`<option value="${v}" ${(localStorage.getItem('zeus-voice-id')||'sarah')===v?'selected':''}>${v[0].toUpperCase()+v.slice(1)}</option>`).join('')}
-<option value="custom" ${!['sarah','george','adam','alice','bella','brian','charlie','daniel','jessica','roger','will'].includes(localStorage.getItem('zeus-voice-id')||'sarah')?'selected':''}>Custom voice ID</option>
+${['marin','cedar','coral','alloy','ash','ballad','echo','fable','nova','onyx','sage','shimmer','verse'].map(v=>`<option value="${v}" ${(state.voiceId||'marin')===v?'selected':''}>${v[0].toUpperCase()+v.slice(1)}</option>`).join('')}
 </select>
-<label for="zeus-voice-id">Custom Voice ID (optional)</label>
-<input id="zeus-voice-id" maxlength="80" autocomplete="off" placeholder="Voice ID for supported custom voices" value="${esc(localStorage.getItem('zeus-voice-id')||'')}">
-<p class="muted tiny">Preset voices use the OpenRouter key. Voices private to an ElevenLabs account can require that account's BYOK configuration.</p>
+<p class="muted tiny">Your ElevenLabs API key and custom Voice ID stay in Netlify Function environment variables.</p>
 <div class="field"><label for="live-language">Speech recognition language</label><select id="live-language">
 ${[['auto','Auto (device locale in browser)'],['pt','Português (Brasil)'],['en','English (US)'],['es','Español']].map(([v,label])=>`<option value="${v}" ${state.liveLocale===v?'selected':''}>${label}</option>`).join('')}
 </select></div><div class="field"><label for="voice-avatar">Live Talk avatar</label><select id="voice-avatar">
@@ -947,9 +945,8 @@ function bind(){
   $('#voice-avatar')?.addEventListener('change',e=>{const v=e.target.value;if(VOICE_AVATARS.has(v)){state.voiceAvatar=v;localStorage.setItem('zeus-voice-avatar',v);render();}});
   $('#live-language')?.addEventListener('change',e=>{const v=e.target.value;if(Object.prototype.hasOwnProperty.call(LIVE_LOCALES,v)){state.liveLocale=v;localStorage.setItem('zeus-live-locale',v);render();}});
   $('#save-voice-id')?.addEventListener('click',()=>{
-    const preset=String($('#zeus-voice-preset')?.value||'sarah');
-    const value=preset==='custom'?String($('#zeus-voice-id')?.value||'').trim():preset;
-    if(!/^[A-Za-z0-9_-]{2,80}$/.test(value)){state.error='Choose a preset or enter a valid Voice ID.';render();return;}
+    const value=String($('#zeus-voice-preset')?.value||'marin').toLowerCase();
+    if(!['alloy','ash','ballad','coral','echo','fable','nova','onyx','sage','shimmer','verse','marin','cedar'].includes(value)){state.error='Choose a supported OpenAI fallback voice.';render();return;}
     localStorage.setItem('zeus-voice-id',value);state.voiceId=value;state.error='';render();
   });
   $$('[data-tab]').forEach(b=>b.addEventListener('click',async()=>{
@@ -1184,15 +1181,15 @@ async function pollForReply(conversationId, executionId){
   }
   throw apiError('Olympus is still working. Wait a moment, then tap Retry to collect the reply.',503,'REQUEST_IN_PROGRESS');
 }
-async function sendText(text,pendingAttachments=[],requestId=crypto.randomUUID(),requestedMode=state.mode,turboApproval=null,resumeExecutionId=null){
+async function sendText(text,pendingAttachments=[],requestId=crypto.randomUUID(),requestedMode=state.mode,turboApproval=null,resumeExecutionId=null,options={}){
   if(!text||state.sending)return;
-  const pending=[...(pendingAttachments||[])],mode=requestedMode==='OLYMPUS'?'OLYMPUS':'ZEUS',compareType=state.compareType;
+  const pending=[...(pendingAttachments||[])],liveTalkTurn=options?.liveTalk===true,mode=liveTalkTurn?'ZEUS':requestedMode==='OLYMPUS'?'OLYMPUS':'ZEUS',compareType=liveTalkTurn?null:state.compareType;
   const optimistic={id:crypto.randomUUID(),role:'user',mode,content:text,artifacts:[],attachments:pending};
   state.messages.push(optimistic);
   state.attachedFiles=[];state.draft='';
   state.sending=true;state.activeMode=mode;state.activeLevel=null;state.error='';state.lastFailedText='';state.lastFailedMessageId=null;state.lastFailedAttachments=[];state.lastFailedRequestId=null;state.lastFailedMode=null;state.lastFailedTurboApproval=null;state.lastFailedCompareType=null;
   state.execTitle=mode==='OLYMPUS'?'Olympus is working':'Zeus is working';
-  state.execStatus='Choosing the model for this request…';render();
+  state.execStatus=liveTalkTurn?'Preparing a quick spoken reply…':'Choosing the model for this request…';render();
   const timer=setTimeout(()=>{
     if(!state.sending)return;
     state.execStatus=state.activeMode==='OLYMPUS'?'Olympus is drafting, then writing one answer…':'Running the selected model…';render();
@@ -1203,8 +1200,9 @@ async function sendText(text,pendingAttachments=[],requestId=crypto.randomUUID()
       projectId:state.currentProject?.id||null,
       content:text,
       fileIds:pending.map(f=>f.id),
-      olympusAuto:automaticOlympus(),
-      maxZeusLevel:selectedZeusLevelCap(),
+      olympusAuto:liveTalkTurn?false:automaticOlympus(),
+      maxZeusLevel:liveTalkTurn?1:selectedZeusLevelCap(),
+      ...(liveTalkTurn?{liveTalk:true}:{}),
       mode,
       requestId,
       ...(compareType?{comparePair:true,compareType}:{}),
@@ -1283,7 +1281,7 @@ async function approveNextOlympusFive(){
   await retryLastMessage();
  }catch(error){state.error=error.message||'Budget authorization failed.';render();}
 }
-async function retryLastMessage(){
+async function retryLastMessage({liveTalk=false}={}){
   if(!state.lastFailedText||state.sending)return;
   if(!window.confirm('Try again? This may start another paid attempt. Saved completed stages will be reused when available.'))return;
   const text=state.lastFailedText;
@@ -1303,7 +1301,8 @@ async function retryLastMessage(){
   }
   if(state.lastFailedMessageId)state.messages=state.messages.filter(m=>m.id!==state.lastFailedMessageId);
   state.error='';state.lastFailedText='';state.lastFailedMessageId=null;state.lastFailedAttachments=[];state.lastFailedRequestId=null;state.lastFailedMode=null;state.lastFailedTurboApproval=null;state.lastFailedCompareType=null;state.compareType=compareType;render();
-  await sendText(text,pending,requestId,mode,turboApproval,resumeExecutionId);
+  if(liveTalk)await sendText(text,pending,requestId,mode,turboApproval,resumeExecutionId,{liveTalk:true});
+  else await sendText(text,pending,requestId,mode,turboApproval,resumeExecutionId);
 }
 function mediaBaseName(name='media'){return String(name||'media').replace(/\.[^.]+$/,'').replace(/[^a-z0-9._-]+/gi,'-').slice(0,100)||'media';}
 function canvasJpeg(canvas,quality=.82){return new Promise((resolve,reject)=>canvas.toBlob(blob=>blob?resolve(blob):reject(new Error('Could not encode image.')),'image/jpeg',quality));}
@@ -1365,40 +1364,26 @@ async function sayZeusReply(text){
   if(!state.liveTalk||!text)return;
   state.liveStage='speaking';render();
   const line=String(text).slice(0,1800);
-  const selected=state.voiceId||localStorage.getItem('zeus-voice-id')||'sarah';
+  const selected=state.voiceId||localStorage.getItem('zeus-voice-id')||'marin';
   try{state.liveSpeechController?.abort()}catch{}
   const speechController=new AbortController();state.liveSpeechController=speechController;
-  const speechTimeout=setTimeout(()=>speechController.abort(),25000);
-  if(selected){
-    try{
-      const headers=new Headers({'Content-Type':'application/json'});
-      const res=await fetch('/api/speech',{method:'POST',headers,signal:speechController.signal,body:JSON.stringify({text:line,voiceId:selected})});
-      if(res.ok&&state.liveTalk&&!speechController.signal.aborted){
-        const blob=await res.blob();
-        if(!state.liveTalk||speechController.signal.aborted){clearTimeout(speechTimeout);return;}
-        const url=URL.createObjectURL(blob),audio=state.voiceReplyAudio||new Audio();
-        discardLiveAudio({keepElement:true});audio.src=url;audio.muted=false;audio.volume=1;audio.playsInline=true;state.voiceReplyAudio=audio;state.liveAudioUrl=url;
-        audio.onended=()=>{clearTimeout(speechTimeout);discardLiveAudio();continueLiveTalkAfterTurn();};
-        audio.onerror=()=>{clearTimeout(speechTimeout);discardLiveAudio();pauseLiveTalkOnError('The spoken reply audio could not be decoded by this browser. Try again or check your audio output.','speech');};
-        await audio.play();return;
-      }
-    }catch{discardLiveAudio();if(!state.liveTalk||speechController.signal.aborted&&state.liveSpeechController!==speechController){clearTimeout(speechTimeout);return;}}
+  const speechTimeout=setTimeout(()=>speechController.abort(),40000);
+  try{
+    const res=await fetch('/api/speech',{method:'POST',headers:new Headers({'Content-Type':'application/json'}),signal:speechController.signal,body:JSON.stringify({text:line,voiceId:selected})});
+    if(!res.ok)throw new Error('Voice providers are unavailable.');
+    const blob=await res.blob();
+    if(!blob.size)throw new Error('Voice provider returned empty audio.');
+    if(!state.liveTalk||speechController.signal.aborted){clearTimeout(speechTimeout);return;}
+    const url=URL.createObjectURL(blob),audio=state.voiceReplyAudio||new Audio();
+    discardLiveAudio({keepElement:true});audio.src=url;audio.muted=false;audio.volume=1;audio.playsInline=true;state.voiceReplyAudio=audio;state.liveAudioUrl=url;
+    audio.onended=()=>{clearTimeout(speechTimeout);discardLiveAudio();continueLiveTalkAfterTurn();};
+    audio.onerror=()=>{clearTimeout(speechTimeout);discardLiveAudio();pauseLiveTalkOnError('Zeus replied in chat, but the generated voice audio could not be played.','speech');};
+    await audio.play();
+  }catch(error){
+    clearTimeout(speechTimeout);discardLiveAudio();
+    if(!state.liveTalk||state.liveStage==='error')return;
+    pauseLiveTalkOnError('Zeus replied in chat, but natural voice audio is unavailable. Check the ElevenLabs voice and Netlify AI Gateway settings, then try again.','speech');
   }
-  clearTimeout(speechTimeout);
-  if(!state.liveTalk)return;
-  fallbackLiveSpeech(line);
-}
-function fallbackLiveSpeech(line){
-  if(!state.liveTalk)return;
-  try{speechSynthesis.cancel()}catch{}
-  const msg=new SpeechSynthesisUtterance(line);
-  msg.lang=speechLocale(line);
-  let completed=false;
-  const finish=()=>{if(completed)return;completed=true;clearTimeout(timer);continueLiveTalkAfterTurn();};
-  const timer=setTimeout(()=>{if(!state.liveTalk)return;pauseLiveTalkOnError('Zeus prepared a reply, but audio playback did not finish. Check the iPhone audio output and try again.','speech');},45000);
-  msg.onend=finish;
-  msg.onerror=event=>{if(event?.error==='interrupted'||event?.error==='canceled'){completed=true;clearTimeout(timer);if(state.liveTalk&&state.liveStage!=='error')continueLiveTalkAfterTurn();return;}clearTimeout(timer);pauseLiveTalkOnError('Zeus prepared a reply, but the browser could not play it. Check audio output and try again.','speech');};
-  try{speechSynthesis.speak(msg)}catch{clearTimeout(timer);pauseLiveTalkOnError('The browser could not start spoken playback. Check audio output and try again.','speech');}
 }
 function stopLiveCapture(){
   const session=state.liveCapture;
@@ -1451,7 +1436,7 @@ async function listenServerLiveTalk(){
         if(!state.liveTalk||generation!==state.liveGeneration)return;
         const words=String(answer.text||'').trim();
         if(!words){continueLiveTalkAfterTurn();return;}
-        await sendText(words,[]);
+        await sendText(words,[],crypto.randomUUID(),'ZEUS',null,null,{liveTalk:true});
         if(!state.liveTalk||generation!==state.liveGeneration)return;
         if(state.lastFailedText){pauseLiveTalkOnError(state.error||'Zeus could not complete that voice request. Try again.','chat');return;}
         const latest=[...state.messages].reverse().find(m=>m.role==='assistant');
@@ -1470,9 +1455,9 @@ async function listenServerLiveTalk(){
       if(rms>0.014){
         if(!session.voiceStarted)session.voiceStarted=now;
         session.lastActive=now;
-        if(now-session.voiceStarted>220)session.detected=true;
+        if(now-session.voiceStarted>150)session.detected=true;
       }
-      if(session.detected&&now-session.lastActive>1050 || now-session.startedAt>18000){
+      if(session.detected&&now-session.lastActive>850 || now-session.startedAt>18000){
         if(recorder.state==='recording')recorder.stop();
         return;
       }
@@ -1501,21 +1486,38 @@ function listenLiveTalk(){
   }
   const recognition=new Engine();state.liveRecognizer=recognition;
   recognition.__zeusHandledResult=false;
-  recognition.lang=browserInputLocale();recognition.continuous=false;recognition.interimResults=false;
-  recognition.onresult=async e=>{
-    clearTimeout(state.liveRecognitionTimer);state.liveRecognitionTimer=null;
-    const words=e.results?.[0]?.[0]?.transcript?.trim();
-    recognition.__zeusHandledResult=true;
+  let finalTranscript='',interimTranscript='';
+  recognition.lang=browserInputLocale();recognition.continuous=false;recognition.interimResults=true;
+  const submitRecognizedTurn=async()=>{
+    if(recognition.__zeusHandledResult)return;
+    const words=`${finalTranscript} ${interimTranscript}`.trim();
+    recognition.__zeusHandledResult=true;clearTimeout(state.liveRecognitionTimer);state.liveRecognitionTimer=null;
     state.liveRecognizer=null;
+    try{recognition.stop()}catch{}
     if(state.liveMuted)return;
     state.liveRetryCount=0;
     if(!words||!state.liveTalk){if(state.liveTalkStopRequested)finishLiveTalkSession();return;}
     state.liveStage='processing';render();
-    await sendText(words,[]);
+    await sendText(words,[],crypto.randomUUID(),'ZEUS',null,null,{liveTalk:true});
     if(!state.liveTalk)return;
     if(state.lastFailedText){pauseLiveTalkOnError(state.error||'Zeus could not complete that voice request. Try again.','chat');return;}
     const latest=[...state.messages].reverse().find(m=>m.role==='assistant');
     if(latest)await sayZeusReply(latest.content);else continueLiveTalkAfterTurn();
+  };
+  recognition.__zeusSubmit=submitRecognizedTurn;
+  recognition.onresult=e=>{
+    finalTranscript='';interimTranscript='';
+    for(let i=0;i<e.results.length;i++){
+      const item=e.results[i],text=String(item?.[0]?.transcript||'').trim();
+      if(!text)continue;
+      if(item.isFinal)finalTranscript+=`${finalTranscript?' ':''}${text}`;
+      else interimTranscript=`${interimTranscript?' ':''}${text}`;
+    }
+    if(recognition.__zeusHandledResult||(!finalTranscript&&!interimTranscript))return;
+    clearTimeout(state.liveRecognitionTimer);
+    // Browser recognition often waits for a long silence before finalizing.
+    // Use interim text after a short quiet period, while allowing final text a brief settle window.
+    state.liveRecognitionTimer=setTimeout(()=>{void submitRecognizedTurn();},finalTranscript?220:650);
   };
   recognition.onerror=e=>{
     const code=String(e?.error||'');recognition.__zeusError=code;
@@ -1527,7 +1529,7 @@ function listenLiveTalk(){
     clearTimeout(state.liveRecognitionTimer);state.liveRecognitionTimer=null;
     if(state.liveRecognizer===recognition)state.liveRecognizer=null;
     if(!state.liveTalk||state.liveMuted||state.liveStage==='error')return;
-    if(state.liveTalkStopRequested){finishLiveTalkSession();return;}
+    if(state.liveTalkStopRequested){if(typeof recognition.__zeusSubmit==='function')void recognition.__zeusSubmit();else finishLiveTalkSession();return;}
     if(!recognition.__zeusHandledResult)scheduleLiveRecognitionRetry({network:recognition.__zeusError==='network'});
   };
   try{
@@ -1560,7 +1562,7 @@ function toggleLiveTalk(){
   }
   if(state.sending){state.error='Wait for Zeus to finish the current reply before starting Live Talk.';render();return;}
   if(!liveTalkSupported()){state.error='Live Talk requires browser speech recognition and speech output.';render();return;}
-  state.voiceId=localStorage.getItem('zeus-voice-id')||'sarah';
+  state.voiceId=localStorage.getItem('zeus-voice-id')||'marin';
   unlockLiveAudioFromGesture();
   state.error='';state.liveMuted=false;state.liveFailureKind=null;state.liveRetryCount=0;state.liveTalkStopRequested=false;
   state.liveTalk=true;state.liveStage='listening';state.liveGeneration++;render();listenLiveTalk();
@@ -1590,7 +1592,7 @@ async function retryLiveTalk(){
   const failureKind=state.liveFailureKind;state.liveFailureKind=null;
   if(failureKind==='chat'&&state.lastFailedText){
     state.liveStage='processing';render();
-    await retryLastMessage();
+    await retryLastMessage({liveTalk:true});
     if(!state.liveTalk)return;
     if(state.lastFailedText){pauseLiveTalkOnError(state.error||'Zeus could not complete that voice request.');return;}
     const latest=[...state.messages].reverse().find(m=>m.role==='assistant');

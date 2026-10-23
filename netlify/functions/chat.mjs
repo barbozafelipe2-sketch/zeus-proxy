@@ -396,13 +396,20 @@ async function chatHandler(req, context, startedAt){
     return errorJson('Request up to four files at once. ZIP packages must be requested separately.',422,'ARTIFACT_FORMAT_UNSUPPORTED',requestId);
   }
   const requirementSpec=extractRequirementChecklist(modelText,{action:intent.action,artifactType:intent.artifactType,hasImage,hasFiles:attachmentRows.length>0});
-  const route=routeFor(modelText,{vision:hasImage});
+  if(body.liveTalk!==undefined&&typeof body.liveTalk!=='boolean')return errorJson('liveTalk must be a boolean.',400,'INVALID_LIVE_TALK',requestId);
+  const liveTalkTurn=body.liveTalk===true;
+  const route=liveTalkTurn?'fast':routeFor(modelText,{vision:hasImage});
   const verificationSignal=shouldVerifyDelivery(modelText,{action:intent.action,route,hasFiles:attachmentRows.length>0,hasImage});
   const requestedMode=normalizeRequestedMode(body.mode||'ZEUS');
   if(!requestedMode)return errorJson('Mode must be ZEUS or OLYMPUS.',400,'INVALID_INTELLIGENCE_MODE',requestId);
+  const effectiveRequestedMode=liveTalkTurn?'ZEUS':requestedMode;
   if(body.olympusAuto!==undefined&&typeof body.olympusAuto!=='boolean')return errorJson('olympusAuto must be a boolean.',400,'INVALID_AUTO_MODE',requestId);
-  const decision=decideExecutionMode(modelText,{requestedMode,olympusAuto:body.olympusAuto===true,action:intent.action,route,hasFiles:attachmentRows.length>0,hasImage,requirementCount:requirementSpec.items.length,artifactType:intent.artifactType,requiresVerification:verificationSignal});
-  const levelDecision=decideExecutionLevel(modelText,{mode:decision.mode,action:intent.action,route,hasFiles:attachmentRows.length>0,hasImage,requirementCount:requirementSpec.items.length,artifactType:intent.artifactType,requiresVerification:verificationSignal});
+  const decision=liveTalkTurn
+    ?{mode:'ZEUS',reason:'live_talk_fast_path',workstreams:[],router:'bypassed'}
+    :decideExecutionMode(modelText,{requestedMode:effectiveRequestedMode,olympusAuto:body.olympusAuto===true,action:intent.action,route,hasFiles:attachmentRows.length>0,hasImage,requirementCount:requirementSpec.items.length,artifactType:intent.artifactType,requiresVerification:verificationSignal});
+  const levelDecision=liveTalkTurn
+    ?{mode:'ZEUS',level:'SIMPLE',maxCalls:GEAR_CALL_CAPS.SIMPLE,workstreams:[],reason:'live_talk_fast_path'}
+    :decideExecutionLevel(modelText,{mode:decision.mode,action:intent.action,route,hasFiles:attachmentRows.length>0,hasImage,requirementCount:requirementSpec.items.length,artifactType:intent.artifactType,requiresVerification:verificationSignal});
   if(levelDecision.mode==='ZEUS'&&Number.isInteger(body.maxZeusLevel)&&body.maxZeusLevel>=1&&body.maxZeusLevel<=3){
     const allowed=['SIMPLE','COMPOUND','ZEUS_DIRECTED'];
     const requestedMaximum=body.maxZeusLevel-1;
@@ -556,7 +563,7 @@ ${aiContext}`);
     if(actualMode==='OLYMPUS')executionBudget.authorizeProviderCall=info=>authorizeOlympusModelCall(db,{ownerId:user.id,executionId:execution.id,...info});
     const vision=hasImage?await loadVisionInputs(attachmentRows):{images:[],skipped:[]};
     const sharedBlockedProviders=await loadSharedProviderBlocks(db,user.id);
-    const aiRouting=comparePair?{route,source:'owner_requested_compare',model:null}:isImageOp?{route,source:'rules_fallback',model:null}:await aiRouteFor(modelText,{budget:executionBudget,vision:hasImage,blockedProviders:sharedBlockedProviders});
+    const aiRouting=liveTalkTurn?{route:'fast',source:'live_talk_fast_path',model:null}:comparePair?{route,source:'owner_requested_compare',model:null}:isImageOp?{route,source:'rules_fallback',model:null}:await aiRouteFor(modelText,{budget:executionBudget,vision:hasImage,blockedProviders:sharedBlockedProviders});
     const web=webIntent?await runWebSearch(modelText,{budget:executionBudget,reserveAfterMs:actualMode==='OLYMPUS'?17000:12000}):{requested:false,context:'',sources:[],trace:null};
     webUsageTrace=web.trace||null;
     const compoundPlusWithWeb=actualMode==='OLYMPUS'&&level==='COMPOUND_PLUS'&&webIntent;

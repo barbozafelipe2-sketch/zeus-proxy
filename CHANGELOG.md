@@ -37,6 +37,14 @@
 
 # Changelog
 
+## 2026-10-23 — Live Talk natural voice routing
+
+- Added server-side ElevenLabs TTS using `ELEVENLABS_API_KEY` and `ELEVENLABS_VOICE_ID`, with the compatible `ELEVEN_LABS_API_KEY` alias.
+- Added OpenAI `gpt-4o-mini-tts` and Gemini TTS through Netlify AI Gateway as ordered voice fallbacks.
+- Removed silent iPhone speech-synthesis fallback; failed audio generation now leaves the text reply in chat and displays a recoverable Live Talk error.
+- Updated Voice Settings to select an OpenAI fallback voice and documented the server-only ElevenLabs secrets.
+- Fixed Live Talk to bypass both automatic mode and AI-model routing, use Zeus Level 1 with the fast route, and shorten voice-activity/interim-recognition silence windows.
+
 ## 4.3.4 — Polish Candidate
 
 - Repositioned Zeus as the default execution mode and Olympus as a bounded specialist synthesis mode; removed misleading deep-research copy while web retrieval is disabled.
