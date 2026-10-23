@@ -26,19 +26,17 @@ jobs:
         shell: bash
         env:
           BASE: ${{ secrets.ZEUS_PROXY_SMOKE_BASE_URL }}
-          ACCESS: ${{ secrets.ZEUS_PROXY_SMOKE_ACCESS_TOKEN }}
         run: |
-          if [ -n "$BASE" ] && [ ${#ACCESS} -ge 32 ]; then
+          if [ -n "$BASE" ]; then
             echo "ready=true" >> "$GITHUB_OUTPUT"
           else
             echo "ready=false" >> "$GITHUB_OUTPUT"
-            echo "Smoke secrets are not configured; skipping live production probe."
+            echo "Smoke base URL is not configured; skipping live production probe."
           fi
       - name: Live production smoke
         if: steps.gate.outputs.ready == 'true'
         run: npm run smoke:live
         env:
           ZEUS_PROXY_SMOKE_BASE_URL: ${{ secrets.ZEUS_PROXY_SMOKE_BASE_URL }}
-          ZEUS_PROXY_SMOKE_ACCESS_TOKEN: ${{ secrets.ZEUS_PROXY_SMOKE_ACCESS_TOKEN }}
           ZEUS_PROXY_SMOKE_WRITE: ${{ inputs.write_probe && '1' || '0' }}
           ZEUS_PROXY_SMOKE_AI: ${{ (github.event_name == 'workflow_dispatch' && inputs.confirm_paid_ai == 'yes-spend-credits') && '1' || '0' }}

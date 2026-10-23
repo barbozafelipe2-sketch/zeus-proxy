@@ -12,7 +12,7 @@ const route=readFileSync('netlify/functions/google-integration.mjs','utf8');
 const serviceModule=readFileSync('netlify/functions/_shared/google-service.mjs','utf8');
 const chat=readFileSync('netlify/functions/chat.mjs','utf8');
 const ui=readFileSync('public/app.js','utf8');
-assert.match(route,/const auth=await requireUser\(req,requestId\)/,'Google data routes must be behind the private app token');
+assert.match(route,/const auth=await requireUser\(req,requestId\)/,'Google data routes must use the persistent single-owner workspace');
 assert.match(serviceModule,/WHERE owner_id=\$\{ownerId\} AND service=\$\{service\}/,'Google tokens must be read within the authenticated owner/service scope');
 assert.match(route,/resolveGoogleAccessToken/);assert.match(route,/searchGoogleService/);assert.match(route,/encryptGoogleToken/);
 assert.match(route,/consumeEndpointRate\(db,user\.id,'google_read',requestId\)/,'direct Google searches must reserve an owner-scoped rate slot before accessing Google');

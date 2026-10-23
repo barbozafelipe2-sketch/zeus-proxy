@@ -13,7 +13,7 @@ const out=safeDbError({code:'42703',message:'column "x" does not exist at '+fake
 assert.ok(out.startsWith('42703 column "x" does not exist'));
 assert.ok(!out.includes('u:p@h'),'connection string must be redacted');
 const pt=fs.readFileSync(new URL('../public/locale-pt.js',import.meta.url),'utf8');
-assert.ok(pt.includes('Alguns serviços não carregaram: ${'),'PT banner must keep failed services list');
+assert.ok(pt.includes('Alguns serviços não carregaram. Toque em Tentar novamente para reconectar.'),'PT bootstrap error must offer a clear retry without expanding the banner');
 console.log('health degraded tests: PASS');
 assert.ok(src.includes("withTimeout(opportunisticDrainBlobGc"),'blob maintenance must be time-bounded');
 assert.ok(src.includes('Runtime diagnostics could not be loaded: ${safeDbError(error)}'),'outer catch must surface safe reason');

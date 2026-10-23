@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import {readFileSync,readdirSync} from 'node:fs';
 import {aiLimits,guardAiExecution} from '../netlify/functions/_shared/limits.mjs';
-import {accessTokenMatches,previousTokenActive} from '../netlify/functions/_shared/auth.mjs';
 import * as ai from '../netlify/functions/_shared/models.mjs';
 import {snapshotProviderTelemetry} from '../netlify/functions/_shared/provider-observability.mjs';
 import {dangerousPath,githubRepoAllowlist,assertGithubRepoAllowed} from '../netlify/functions/_shared/github-write.mjs';
@@ -30,14 +29,6 @@ try{
  assert.equal(assertGithubRepoAllowed('https://github.com/acme/demo').repo,'demo');
  assert.throws(()=>assertGithubRepoAllowed('https://github.com/acme/evil'),e=>e.code==='GITHUB_REPO_NOT_ALLOWED');
  for(const item of ['.env','.env.local','.npmrc','service_account.json','.aws/credentials','key.pem','terraform.tfstate'])assert.ok(dangerousPath(item));
- variables.ZEUS_PROXY_ACCESS_TOKEN='a'.repeat(40);
- variables.ZEUS_PROXY_ACCESS_TOKEN_PREVIOUS='b'.repeat(40);
- assert.ok(accessTokenMatches('a'.repeat(40)));
- assert.ok(!accessTokenMatches('b'.repeat(40)));
- variables.ZEUS_PROXY_ACCESS_TOKEN_PREVIOUS_UNTIL=new Date(Date.now()+86400000).toISOString();
- assert.ok(accessTokenMatches('b'.repeat(40)));
- variables.ZEUS_PROXY_ACCESS_TOKEN_PREVIOUS_UNTIL=new Date(Date.now()-3600000).toISOString();
- assert.ok(!accessTokenMatches('b'.repeat(40)));
  const workflow=readFileSync('.github/workflows/smoke-live.yml','utf8');
  assert.ok(!/^\s*schedule\s*:/m.test(workflow));
  assert.ok(workflow.includes('confirm_paid_ai')&&workflow.includes('yes-spend-credits'));

@@ -126,7 +126,7 @@ assert.ok(app.includes('You are offline. Reconnect and try again.') && app.inclu
 console.log('Chat reliability tests: PASS');
 
 const appSource=read('public/app.js');
-assert.ok(appSource.includes('fetchPrivateBlob')&&appSource.includes("headers.set('x-zeus-access-token',state.accessKey)"),'private output fetch must carry access token');
+assert.ok(appSource.includes('fetchPrivateBlob')&&!appSource.includes('x-zeus-access-token'),'private output fetch must work without a shared access token');
 assert.ok(!appSource.includes('href="${esc(a.downloadUrl)}" target="_blank"'),'artifact Open must not navigate to a protected API URL');
 assert.ok(appSource.includes('private-preview-close')&&appSource.includes('← Back'),'standalone PWA private preview needs an in-app back control');
 assert.ok(appSource.includes("state.sending=true;state.activeMode=mode"),'manual mode selection must be preserved into each request');

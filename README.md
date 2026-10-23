@@ -6,7 +6,7 @@ Zeus Proxy is Felipe's private Netlify edition of Olympus Hub.
 
 ## Personal access
 
-The backend requires `ZEUS_PROXY_ACCESS_TOKEN` (32+ characters) for every API route. Keep it in Netlify environment variables and enter the same key at the Zeus unlock screen. The token is checked server-side with a constant-time comparison. The fixed owner is safe only while this gate is configured and the Netlify site is private.
+The app is a single-owner personal workspace and does not use a shared API access token or unlock screen. Every API route resolves to the same persistent owner. Protect the Netlify site itself with Netlify visitor access controls if its contents must not be publicly reachable; provider credentials remain server-side.
 
 ## Zeus Levels
 

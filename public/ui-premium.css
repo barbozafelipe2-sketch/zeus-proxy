@@ -96,6 +96,11 @@
 
 /* OH-004.2.1 hybrid reliability affordances */
 .chat-error{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.chat-error .error-copy{min-width:0;flex:1;line-height:1.45}
+.service-failure-details{margin-top:8px;color:#d0b0ad;font-size:12px}
+.service-failure-details summary{width:max-content;cursor:pointer;color:#e4c8c5}
+.service-failure-details ul{margin:7px 0 0;padding-left:20px}
+.service-failure-details li+li{margin-top:4px}
 .chat-error button{flex:0 0 auto;border:1px solid rgba(239,124,118,.35);background:rgba(239,124,118,.08);color:#ffd0cc;border-radius:10px;padding:8px 12px;font-weight:700;cursor:pointer}
 .chat-error button:hover{background:rgba(239,124,118,.14)}
 .icon-btn.recording{color:#ff8b83;border-color:rgba(239,124,118,.5);box-shadow:0 0 0 3px rgba(239,124,118,.08),0 0 22px rgba(239,124,118,.12)}
@@ -322,7 +327,6 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,
 .sidebar-foot .avatar{width:31px;height:31px;font-size:10px}
 .sidebar-foot strong{font-weight:650!important}
 .sidebar-foot .tiny{font-size:8.5px;color:#7f8894}
-.sidebar-foot #logout{font-size:10px;color:#7f8894}
 
 /* header */
 .topbar{
@@ -1195,8 +1199,12 @@ html.drawer-open{overflow:hidden}
 .live-talk-mode{display:flex;align-items:center;gap:8px;margin-top:14px;color:#d5c9ae;font-size:9px;letter-spacing:.17em}.live-mode-dot,.live-mic-dot{width:7px;height:7px;border-radius:50%;background:#d8b96f;box-shadow:0 0 10px #d8b96f}
 .live-talk-controls{min-height:128px;display:grid;grid-template-columns:1fr auto 1fr;align-items:center;position:relative;z-index:1}
 .live-control-hint{justify-self:start;display:flex;align-items:center;gap:9px;color:#e5ddcf;font-size:11px;border:1px solid #ffffff26;background:#11111165;border-radius:999px;padding:12px 16px;backdrop-filter:blur(18px)}
+.live-call-actions{display:flex;align-items:center;justify-content:center;gap:16px}
+.live-mute-button{width:58px;height:58px;border-radius:50%;display:grid;place-items:center;border:1px solid #f3e5c25c;color:#fff5dc;background:linear-gradient(145deg,#ffffff26,#151515b8);box-shadow:inset 0 1px 3px #fff6,0 10px 26px #0009;backdrop-filter:blur(18px);cursor:pointer;transition:transform .18s ease,filter .18s ease}
+.live-mute-button:hover{transform:scale(1.05);filter:brightness(1.15)}.live-mute-button.is-muted{border-color:#ffaaa17a;color:#ffd6d3;background:linear-gradient(145deg,#9d25245c,#151010d9)}.live-mute-button .ico{width:22px;height:22px}
 .live-end-call{width:66px;height:66px;border-radius:50%;display:grid;place-items:center;border:1px solid #ffaaa17a;color:#fff;background:radial-gradient(circle at 36% 28%,#f06b61,#9d2524 70%,#5b1516);box-shadow:inset 0 1px 4px #fff7,0 0 0 8px #a82b2924,0 12px 34px #000a;cursor:pointer;transition:transform .18s ease,filter .18s ease}
 .live-end-call:hover{transform:scale(1.06);filter:brightness(1.1)}.live-end-call .ico{width:26px;height:26px;stroke-width:2.2}
+.live-talk-error{width:min(680px,94vw);margin:0 auto 6px;padding:12px 16px;border:1px solid #e68b8270;border-radius:16px;background:#1d0e0edb;color:#f2c3bd;text-align:center;font-size:13px;line-height:1.5;z-index:2;backdrop-filter:blur(16px)}.live-talk-error button{display:block;margin:10px auto 0;padding:8px 16px;border:1px solid #e5c57b88;border-radius:999px;background:#d3ad6233;color:#ffe5ad;font:inherit;cursor:pointer}
 .live-control-caption{justify-self:end;max-width:200px;color:#c5bcaa;font-size:10px;line-height:1.5;text-align:right}
 @keyframes live-dot-pulse{50%{opacity:.55;box-shadow:0 0 4px #ff544b}}
 @keyframes live-wave{from{transform:scaleY(.35);opacity:.55}to{transform:scaleY(1.18);opacity:1}}
@@ -1208,9 +1216,9 @@ html.drawer-open{overflow:hidden}
   .live-talk-orb-wrap{width:min(68vw,330px);height:min(68vw,330px);min-width:230px;min-height:230px;margin:8px 0 0}
   .live-talk-waveform{width:min(88vw,470px);height:54px;gap:3px;padding:8px 15px}.live-talk-waveform i{width:2px;max-height:25px}
   .live-talk-latest{width:88vw;font-size:12px;margin-top:8px}.live-talk-mode{margin-top:10px;font-size:8px}
-  .live-talk-controls{min-height:110px;grid-template-columns:1fr auto 1fr;padding-bottom:2px}.live-control-hint{font-size:10px;padding:10px 12px}.live-end-call{width:62px;height:62px}.live-control-caption{font-size:9px;max-width:112px}
+  .live-talk-controls{min-height:110px;grid-template-columns:1fr auto 1fr;padding-bottom:2px}.live-control-hint{font-size:10px;padding:10px 12px}.live-call-actions{gap:10px}.live-mute-button{width:54px;height:54px}.live-end-call{width:62px;height:62px}.live-control-caption{font-size:9px;max-width:112px}
 }
-@media(max-width:380px){.live-talk-brand .logo-sub{display:none}.live-talk-orb-wrap{min-width:205px;min-height:205px}.live-talk-controls{min-height:94px}.live-end-call{width:56px;height:56px}}
+@media(max-width:380px){.live-talk-brand .logo-sub{display:none}.live-talk-orb-wrap{min-width:205px;min-height:205px}.live-talk-controls{min-height:94px}.live-call-actions{gap:7px}.live-mute-button{width:48px;height:48px}.live-end-call{width:54px;height:54px}.live-control-hint{padding:8px 9px;font-size:9px}.live-control-caption{max-width:90px}}
 @media(prefers-reduced-motion:reduce){.live-pill i,.live-talk-waveform.is-speaking i,.live-end-call{animation:none;transition:none}}
 
 /* Home workspace: the chat stays central while real agent and artifact context
@@ -1295,6 +1303,7 @@ html.drawer-open{overflow:hidden}
   .live-talk-mode{margin-top:7px}
   .live-talk-controls{min-height:78px}
   .live-control-hint{padding:8px 10px}
+  .live-mute-button{width:48px;height:48px}
   .live-end-call{width:54px;height:54px}
 }
 

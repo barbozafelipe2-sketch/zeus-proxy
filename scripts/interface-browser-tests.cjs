@@ -30,7 +30,6 @@ const markdown='# Análise\n\n**Prioridade alta**\n\n| Item | Estado |\n| --- | 
    return route.fulfill({body:fs.readFileSync(assetPath),contentType:/\.m?js$/.test(assetPath)?'text/javascript':assetPath.endsWith('.css')?'text/css':assetPath.endsWith('.html')?'text/html':'application/octet-stream'});
   });
   await page.addInitScript(()=>{
-   localStorage.setItem('olyhub.zeusproxy.access.v3','fictional-private-access-1234567890123456789');
    Object.defineProperty(navigator,'clipboard',{value:{writeText:async text=>{window.__copied=text}}});
   });
   const go=async()=>{await page.goto('https://zeus.test');await page.getByRole('heading',{name:'O que vamos fazer hoje?'}).waitFor();await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));};
@@ -81,6 +80,7 @@ const markdown='# Análise\n\n**Prioridade alta**\n\n| Item | Estado |\n| --- | 
    await page.waitForFunction(section=>document.querySelector('.workspace-tabs [aria-current="page"]')?.dataset.projectSection===section,section);
    assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),`project ${section} must fit mobile`);
   }
+  assert.equal(await page.evaluate(()=>localStorage.getItem('olyhub.zeusproxy.access.v3')),null,'legacy access key must not be required or retained');
   for(const width of [320,390]){
    await page.setViewportSize({width,height:width===320?568:844});
    for(const section of ['TASKS','FILES','MEMORY']){
@@ -107,8 +107,8 @@ const markdown='# Análise\n\n**Prioridade alta**\n\n| Item | Estado |\n| --- | 
    if(process.env.ZEUS_UI_SCREENSHOTS)await page.screenshot({path:path.join(process.env.ZEUS_UI_SCREENSHOTS,`project-edit-${width}.png`),fullPage:true});
    await page.locator('#modal-cancel').click();
   }
-  await page.locator('#hamburger').click();await page.locator('#logout').click();await page.getByRole('button',{name:'Desbloquear Zeus'}).waitFor();
+  assert.equal(await page.locator('#logout,#settings-logout,#auth-form').count(),0,'obsolete access lock controls must be removed');
   assert.deepEqual(errors,[],'interface must have no uncaught browser errors');
-  console.log('Interface: responsive layout, Portuguese, protected user content, drawer focus, Markdown XSS filtering and code copy: PASS');
+  console.log('Interface: responsive layout, Portuguese, open personal workspace, drawer focus, Markdown XSS filtering and code copy: PASS');
  }finally{await browser.close();}
 })().catch(error=>{console.error(error);process.exitCode=1});

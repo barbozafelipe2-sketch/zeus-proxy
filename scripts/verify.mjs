@@ -175,8 +175,7 @@ const mustContain = [
   [executionPolicy,'turboApprovalFingerprint','request-bound Turbo approval'],
   [executionPolicy,'externalMutationPolicy','external mutation policy'],
   [health,'serverTranscriptionConfigured()','health reports actual transcription readiness'],
-  [auth,'ZEUS_PROXY_ACCESS_TOKEN','server-side private access verification'],
-  [auth,'timingSafeEqual','constant-time private access comparison'],
+  [auth,'single-owner personal workspace','single-owner personal workspace documentation'],
   [auth,'DATABASE_UNAVAILABLE','controlled database bootstrap failure'],
   [chat,'olympusFallback','Olympus to Zeus fallback'],
   [models,'Director','Olympus Director synthesis'],
@@ -222,15 +221,14 @@ const mustContain = [
   [css,'OH-004.3.0 — premium product UI refinement','4.3.0 premium UI refinement'],
   [css,'OH-004.3.4 — final product polish','4.3.4 final polish layer'],
   [chat,'COMPLEX_TURBO','truthful Olympus level routing'],
-  [app,'OLYMPUS HUB · PERSONAL','personal Zeus product identity'],
+  [app,'PERSONAL · ZEUS','personal Zeus product identity'],
   [app,'composer-meta','composer persistence guidance'],
   [chat,'queryAwareExcerpt','query-aware long attachment excerpts'],
   [models,'Never imply current-web research occurred unless retrieval results are explicitly present','retrieval honesty'],
   [models,'never claim tests were executed unless OlyHub actually executed them','test execution honesty'],
   [app,'system-indicator','premium runtime status affordance'],
   [app,'proj-status','premium project status treatment'],
-  [app,'auth-proof','premium auth capability proof'],
-  [app,'access-session-warning','shared-device access warning'],
+  [app,'Personal owner','personal workspace account label'],
   [app,'Go-live checklist','settings go-live checklist'],
   [app,'olyhub.zeusproxy.access.session.v1','access session expiry stamp'],
   [health,'goLive:','health go-live gate'],
@@ -284,9 +282,7 @@ if (!chat.includes('selectMemoryContext(memories)')) throw new Error('Project me
 if (!storage.includes("attempts < 8") || !storage.includes("interval '5 minutes' * LEAST(attempts,6)")) throw new Error('Blob GC retry bound/backoff missing.');
 if (!fileDownload.includes('X-OlyHub-Request-Id') || !artifactDownload.includes('X-OlyHub-Request-Id')) throw new Error('Download success responses are missing correlation ids.');
 
-if (!app.includes("const accessStoreKey='olyhub.zeusproxy.access.v3'")) throw new Error('Personal access store key (v3) missing.');
-if (!app.includes('localStorage.setItem(accessStoreKey')) throw new Error('Private access key must persist to localStorage.');
-if (app.includes('sessionStorage.setItem(accessStoreKey')) throw new Error('Private access key must not be written to sessionStorage.');
+if (app.includes('auth-form') || app.includes('x-zeus-access-token')) throw new Error('The personal workspace must not require a shared access token.');
 if (!app.includes("dialog.setAttribute('role','dialog')") || !app.includes("dialog.setAttribute('aria-modal','true')")) throw new Error('Accessible modal semantics missing.');
 if (!app.includes("if(e.key==='Escape')") || !app.includes("if(e.key!=='Tab')return")) throw new Error('Modal keyboard controls missing.');
 if (!app.includes("status==='TODO'?'IN_PROGRESS':status==='IN_PROGRESS'?'DONE':'TODO'")) throw new Error('Task three-state UI missing.');

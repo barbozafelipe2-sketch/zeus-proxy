@@ -1,8 +1,7 @@
 # Zeus Proxy Personal Recovery
 
-## Session gate — 2026-10-07
-- Private access key still persists in `localStorage` as `olyhub.zeusproxy.access.v3`. A separate session stamp expires it after 14 days without use. Lock and 401 still clear every copy.
-- Unlock and Settings now warn that an unlocked device is trusted. Settings shows the health go-live checklist (token, database, blob maintenance, provider, chat).
+## Session gate — 2026-10-07 (superseded 2026-10-23)
+- Historical note: this version used a shared access key and a local unlock screen. The 2026-10-23 personal-workspace update removes that gate.
 
 ## Final production hardening — 2026-10-06
 - Hardened Zeus/Olympus execution leases, background idempotency, workspace transactions, provider-failure sharing, multimodal/file honesty and iOS delivery behavior.
@@ -30,10 +29,10 @@
 - Restored the complete audited OH-004.3.4 workspace after the OH-001.2.x reduced chat-shell regression.
 - Preserved the personal black/gold Zeus identity while restoring Projects, one permanent chat per Project, dedicated memory, tasks, files, artifacts, image/vision, voice and durable execution state.
 - Limited user-facing modes to Zeus and Olympus.
-- Replaced commercial Netlify Identity with the existing server-side `ZEUS_PROXY_ACCESS_TOKEN` single-owner gate.
+- Removed the shared API token and unlock screen for this single-owner personal workspace; site-level visitor controls remain the deployment privacy boundary.
 - Changed the composer `+` into Photo/Image · Video · File choices and made Enter insert a newline.
 - Added bounded same-provider OpenAI model fallback and prevented blind retries on auth/quota/rate-limit/invalid-request failures.
-- Converted the production smoke harness to the private Zeus access contract.
+- Converted the production smoke harness to the no-token personal-workspace contract.
 - Ported current OlyHub live web research into Zeus Proxy through the Netlify Gateway-backed OpenAI Responses `web_search` tool, including persistent HTTP/HTTPS source citations.
 
 # Changelog

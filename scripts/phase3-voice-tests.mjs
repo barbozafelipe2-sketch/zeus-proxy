@@ -22,6 +22,12 @@ assert.match(unlock,/audio\.play\(\)/,'Live Talk must unlock HTML audio synchron
 assert.match(unlock,/speechSynthesis\.speak\(unlock\)/,'Live Talk must prime the browser speech engine from the start gesture');
 assert.match(ui,/const url=URL\.createObjectURL\(blob\),audio=state\.voiceReplyAudio\|\|new Audio\(\)/,'server voice playback must reuse the audio element unlocked by the gesture');
 const listen=ui.slice(ui.indexOf('function listenLiveTalk(){'),ui.indexOf('function listenLiveTalk(){')+1100);
-assert.ok(listen.indexOf('const Engine=window.SpeechRecognition')<listen.indexOf('if(!Engine)'), 'use native speech recognition before server transcription when available');
-assert.match(ui,/msg\.onerror=event=>\{if\(state\.liveTalk/,'speech playback failures must be surfaced to the user');
+assert.ok(listen.indexOf('state.health?.capabilities?.serverTranscription')<listen.indexOf('const Engine=window.SpeechRecognition'), 'prefer configured server transcription so iPhone voice uses the reliable server route');
+assert.match(ui,/msg\.onerror=event=>\{[\s\S]*pauseLiveTalkOnError/,'speech playback failures must be surfaced to the user');
+assert.match(ui,/id="live-talk-mute"/,'Live Talk must provide an explicit microphone mute control');
+assert.match(ui,/aria-label="Exit Live Talk immediately and return to chat"/,'Live Talk exit must be immediate and accessible');
+assert.match(ui,/function toggleLiveTalkMute\(\)/,'mute must stop live microphone capture and resume it when unmuted');
+assert.match(ui,/function pauseLiveTalkOnError\(message,kind=/,'capture, transcription and playback errors must leave a visible recoverable state');
+assert.match(ui,/recognition\.onend=\(\)=>\{[\s\S]*scheduleLiveRecognitionRetry/,'native recognition ending without a result must restart listening');
+assert.match(ui,/blob\.size>4\*1024\*1024\)\{pauseLiveTalkOnError/,'oversized voice turns must explain the failure instead of leaving processing stuck');
 console.log('Phase 3 voice, VAD, cancellation and avatar regressions PASS');

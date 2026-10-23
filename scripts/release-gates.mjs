@@ -23,7 +23,7 @@ const budgetApi=existsSync('netlify/functions/olympus-budget.mjs')
   ?src('netlify/functions/olympus-budget.mjs'):'';
 const modelCallGate=models.includes('await budget.authorizeProviderCall(');
 must(budgetApi.includes('withTransaction')&&budgetApi.includes('requireUser'),
- 'Olympus $5 approval needs authenticated transactional server action');
+ 'Olympus $5 approval needs an owner-scoped transactional server action');
 must(modelCallGate, 'every Olympus paid model call must check a durable budget reservation');
 must(chat.includes('body.resumeExecutionId')&&chat.includes('FROM production_checkpoints')&&code.includes('resumeStages'),
  'durable resumable phases must be integrated into server execution');

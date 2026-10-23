@@ -318,7 +318,6 @@ async function dispatchOlympus(req, payload){
       method:'POST',
       headers:{
         'content-type':'application/json',
-        'x-zeus-access-token':req.headers.get('x-zeus-access-token')||'',
         'x-olyhub-request-id':payload.requestId,
       },
       body:JSON.stringify(payload),

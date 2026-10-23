@@ -9,11 +9,10 @@ const toml=readFileSync('netlify.toml','utf8');
 const npmrc=readFileSync('.npmrc','utf8');
 const pkg=JSON.parse(readFileSync('package.json','utf8'));
 
-// Personal auth persistence: the private deployment uses a server-side token and
-// persists the user-entered access value in localStorage under the v3 key.
-assert.ok(app.includes("const accessStoreKey='olyhub.zeusproxy.access.v3'"),'personal access store key (v3) missing');
-assert.ok(app.includes('localStorage.setItem(accessStoreKey'),'private access key must persist to localStorage');
-assert.ok(!app.includes('sessionStorage.setItem(accessStoreKey'),'private access key must not be written to sessionStorage');
+// The personal workspace opens directly and no longer stores a shared token.
+assert.ok(app.includes('async function bootAuth()')&&app.includes('await bootstrapApp()'),'personal workspace must bootstrap directly');
+assert.ok(!app.includes('auth-form')&&!app.includes('auth-key')&&!app.includes('x-zeus-access-token'),'the app must not show or send a shared access key');
+assert.ok(app.includes("localStorage.removeItem(key);sessionStorage.removeItem(key)"),'legacy shared keys must be removed from this device');
 assert.ok(toml.includes('Cache-Control = "no-store"'),'API responses should remain no-store at the CDN layer');
 
 // PDF layout should use measured widths and degrade unsupported glyphs safely instead

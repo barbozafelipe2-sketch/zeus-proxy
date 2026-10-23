@@ -12,8 +12,7 @@ const transcribe=readFileSync('netlify/functions/transcribe.mjs','utf8');
 const files=readFileSync('netlify/functions/files.mjs','utf8');
 
 // Access contract stays v3 + localStorage (user decision).
-assert.ok(app.includes("const accessStoreKey='olyhub.zeusproxy.access.v3'"),'v3 access key missing');
-assert.ok(app.includes('localStorage.setItem(accessStoreKey'),'access key must persist to localStorage');
+assert.ok(!app.includes('auth-form')&&!app.includes('auth-key'),'legacy access-key form must be removed');
 
 // Document head + boot shell.
 for(const needle of ['name="description"','name="robots" content="noindex, nofollow"','name="color-scheme" content="dark"','property="og:title"','name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"','rel="apple-touch-icon"','rel="manifest"'])
@@ -31,7 +30,7 @@ assert.ok(app.includes('aria-controls="app-sidebar" aria-expanded="${state.drawe
 assert.ok(app.includes(`\${state.tab===tab?'aria-current="page"':''}`),'active nav must expose aria-current');
 assert.ok(app.includes('aria-haspopup="menu" aria-expanded="${state.attachMenu}"'),'+ menu must expose expanded state');
 assert.ok(app.includes('role="menuitem" id="attach-media"')&&app.includes('role="menuitem" id="attach-camera"'),'attachment menu items need menuitem role');
-assert.ok(app.includes('<label for="auth-key">'),'auth key label must be associated');
+assert.ok(!app.includes('auth-key')&&!app.includes('auth-form'),'obsolete access-key form must be removed');
 assert.ok(app.includes('aria-label="Search chats"'),'chat search needs a label');
 assert.ok(app.includes('aria-label="Task title"')&&app.includes('aria-label="New project memory"'),'task/memory inputs need labels');
 assert.ok(app.includes('aria-label="Remove ${esc(f.filename)}"'),'attachment remove button needs a label');

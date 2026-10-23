@@ -6,15 +6,15 @@ const $$ = (s, root=document) => [...root.querySelectorAll(s)];
 const app = $('#app');
 
 const state = {
-  user:null, token:null, refreshToken:null, authReady:false, accessKey:'', attachMenu:false,
+  user:null, authReady:false, attachMenu:false,
   tab:'Home', mode:'ZEUS', olympusAuto:false, activeMode:null, activeLevel:null, drawer:false,
-  conversations:[], currentConversation:null, messages:[], chatArtifacts:[], sending:false, execStatus:'', error:'',
+  conversations:[], currentConversation:null, messages:[], chatArtifacts:[], sending:false, execStatus:'', error:'', bootstrapFailures:[],
   attachedFiles:[], projects:[], projectFilter:'ALL', currentProject:null, tasks:[],
   files:[], artifacts:[], health:null, recording:false,
   projectSection:'CHAT', projectMemories:[], projectSources:[], memoryPolicy:null,
   messagePage:{hasMore:false,nextCursor:null}, filesPage:{scope:'global',hasMore:false,nextCursor:null}, artifactsPage:{scope:'global',hasMore:false,nextCursor:null}, chatRestore:null,
   voiceBusy:false, voiceRecorder:null, voiceStream:null, voiceChunks:[], voiceStopTimer:null, voiceRecognition:null, voiceBytes:0, voiceHitSizeLimit:false,
-  liveTalk:false, liveTalkStopRequested:false, liveRecognizer:null, liveCapture:null, liveGeneration:0, liveStage:'idle', voiceId:'sarah', voiceReplyAudio:null, liveAudioUrl:null, liveSpeechController:null, liveAudioUnlocked:false, liveSpeechUnlocked:false,
+  liveTalk:false, liveTalkStopRequested:false, liveMuted:false, liveStageBeforeMute:'idle', liveFailureKind:null, liveRecognizer:null, liveRecognitionTimer:null, liveCapture:null, liveGeneration:0, liveRetryTimer:null, liveRetryCount:0, liveStage:'idle', voiceId:'sarah', voiceReplyAudio:null, liveAudioUrl:null, liveSpeechController:null, liveAudioUnlocked:false, liveSpeechUnlocked:false,
   liveLocale:'auto', voiceAvatar:'lightning',
   preferences:{personality:'balanced',instructions:''}, preferencesLoaded:false,
   googleSearchResults:{}, googleSearchQueries:{}, googleSearchBusy:null,
@@ -31,63 +31,15 @@ const fmtDate = v => { if(!v)return ''; const d=new Date(v); return Number.isNaN
 const fmtDateTime = v => { if(!v)return ''; const d=new Date(v); return Number.isNaN(d.getTime())?'':d.toLocaleString('pt-BR',{dateStyle:'medium',timeStyle:'short'}); };
 const resetViewport = () => requestAnimationFrame(() => window.scrollTo({ top: 0, left: 0, behavior: 'auto' }));
 const initials = () => (state.user?.user_metadata?.full_name || state.user?.email || 'O').trim().split(/\s+/).map(x=>x[0]).join('').slice(0,2).toUpperCase();
-const accessStoreKey='olyhub.zeusproxy.access.v3';
-const legacyAccessStoreKey='olyhub.zeusproxy.access.v2';
-const accessSessionKey='olyhub.zeusproxy.access.session.v1';
-const ACCESS_SESSION_MS=14*24*60*60*1000;
-function stampAccessSession(){try{localStorage.setItem(accessSessionKey,String(Date.now()));}catch{}}
-function accessSessionFresh(){
-  try{
-    const raw=localStorage.getItem(accessSessionKey);
-    if(!raw){stampAccessSession();return true;}
-    const at=Number(raw);
-    return Number.isFinite(at)&&at>0&&Date.now()-at<ACCESS_SESSION_MS;
-  }catch{return true}
-}
-function writeAccessKey(value){
-  try{
-    if(value){localStorage.setItem(accessStoreKey,value);stampAccessSession();}
-    else localStorage.removeItem(accessStoreKey);
-    sessionStorage.removeItem(accessStoreKey);
-    sessionStorage.removeItem(legacyAccessStoreKey);
-  }catch{}
-}
-function readAccessKey(){
-  try{
-    const saved=localStorage.getItem(accessStoreKey)||localStorage.getItem(legacyAccessStoreKey)||sessionStorage.getItem(legacyAccessStoreKey)||'';
-    if(saved){
-      if(!accessSessionFresh()){clearAuth();return '';}
-      localStorage.setItem(accessStoreKey,saved);
-      localStorage.removeItem(legacyAccessStoreKey);
-      sessionStorage.removeItem(legacyAccessStoreKey);
-    }
-    return saved;
-  }catch{return ''}
-}
-function clearAuth(){
-  try{
-    localStorage.removeItem(accessStoreKey);
-    localStorage.removeItem(legacyAccessStoreKey);
-    localStorage.removeItem(accessSessionKey);
-    sessionStorage.removeItem(accessStoreKey);
-    sessionStorage.removeItem(legacyAccessStoreKey);
-  }catch{}
-  revokePrivateBlobUrls();state.user=null;state.accessKey='';state.token=null;state.refreshToken=null;state.currentConversation=null;state.messages=[];
-}
 async function bootAuth(){
   state.authReady=true;
-  state.accessKey=readAccessKey();
-  if(!state.accessKey){render();return;}
   state.user={id:'zeus-personal-owner',user_metadata:{full_name:'Felipe'}};
-  try{await bootstrapApp();}catch(err){clearAuth();state.error=err.message||'Unlock Zeus again.';render();}
+  for(const key of ['olyhub.zeusproxy.access.v3','olyhub.zeusproxy.access.v2','olyhub.zeusproxy.access.session.v1']){
+    try{localStorage.removeItem(key);sessionStorage.removeItem(key)}catch{}
+  }
+  render();
+  try{await bootstrapApp();}catch(err){state.error=err.message||'Zeus could not load the workspace.';render();}
 }
-async function unlock(key){
-  const value=String(key||'').trim();
-  if(value.length<32)throw new Error('Use the same 32+ character private key configured in Netlify.');
-  state.accessKey=value;writeAccessKey(value);state.user={id:'zeus-personal-owner',user_metadata:{full_name:'Felipe'}};
-  await bootstrapApp();
-}
-async function logout(){clearAuth();render();}
 
 const LONG_REQUEST_DROP_MS=20000;
 function apiError(message,status=0,code='',data=null){
@@ -96,7 +48,6 @@ function apiError(message,status=0,code='',data=null){
 async function api(path, options={}){
   const {requestId:optionRequestId,...fetchOptions}=options;
   const headers=new Headers(fetchOptions.headers||{});
-  if(state.accessKey)headers.set('x-zeus-access-token',state.accessKey);
   const apiRequestId=optionRequestId||crypto.randomUUID();
   headers.set('X-OlyHub-Request-ID',apiRequestId);
   if(fetchOptions.body && !(fetchOptions.body instanceof FormData) && !headers.has('Content-Type'))headers.set('Content-Type','application/json');
@@ -117,7 +68,6 @@ async function api(path, options={}){
   try{data=contentType.includes('application/json')?await r.json():await r.text();}
   catch{data=null;if(r.ok)throw new Error('The server sent an unreadable response. Try again.');}
   if(!r.ok){
-    if(r.status===401){clearAuth();render();}
     const isJson=data&&typeof data==='object';
     let msg=isJson?(data.error||data.message||''):'';
     if(!isJson){
@@ -127,18 +77,17 @@ async function api(path, options={}){
     }
     const ref=isJson&&data.requestId?` · ref ${String(data.requestId).slice(0,18)}`:'';
     const code=isJson?data.code:'HTTP_ERROR';
-    const friendly={AI_PROVIDER_AUTH:'AI Gateway/provider authentication failed for this runtime.',AI_PROVIDER_QUOTA:'AI Gateway credits or provider quota are exhausted.',AI_PROVIDER_RATE_LIMIT:'The selected AI provider is rate-limiting Zeus right now.',AI_MODEL_UNAVAILABLE:'A configured model is unavailable; Zeus could not complete fallback safely.',EXECUTION_DEADLINE:'The AI request exceeded Zeus’s execution budget before a provider completed it.',AI_PROVIDERS_FAILED:'No configured AI provider completed this request.',APP_ACCESS_REQUIRED:'Your private Zeus access is no longer valid on this screen. Unlock Zeus again.',GITHUB_WRITE_NOT_CONFIGURED:'GitHub commit is not configured on the server yet.',GITHUB_AUTH_FAILED:'GitHub rejected the server credential. Update the GitHub token and try again.',GITHUB_WRITE_DENIED:'GitHub denied this commit. Check repository permission or branch protection.',GITHUB_SECRET_DETECTED:'The commit was blocked because a credential-like value was detected in the ZIP.',GITHUB_BRANCH_CONFLICT:'The target branch changed or rejected the safe non-force update.',GITHUB_CONFIRMATION_REQUIRED:'GitHub commit needs an explicit confirmation from this screen.',GITHUB_REPO_NOT_ALLOWED:'This repository is outside the configured GitHub allowlist.',TURBO_APPROVAL_REQUIRED:'Complex Turbo needs your approval before this higher-budget run starts.',AI_RATE_LIMIT:'Hourly execution limit reached (Olympus 3/h, Zeus 15/h by default). Wait for the window to reset.'}[code];
+    const friendly={AI_PROVIDER_AUTH:'AI Gateway/provider authentication failed for this runtime.',AI_PROVIDER_QUOTA:'AI Gateway credits or provider quota are exhausted.',AI_PROVIDER_RATE_LIMIT:'The selected AI provider is rate-limiting Zeus right now.',AI_MODEL_UNAVAILABLE:'A configured model is unavailable; Zeus could not complete fallback safely.',EXECUTION_DEADLINE:'The AI request exceeded Zeus’s execution budget before a provider completed it.',AI_PROVIDERS_FAILED:'No configured AI provider completed this request.',GITHUB_WRITE_NOT_CONFIGURED:'GitHub commit is not configured on the server yet.',GITHUB_AUTH_FAILED:'GitHub rejected the server credential. Update the GitHub token and try again.',GITHUB_WRITE_DENIED:'GitHub denied this commit. Check repository permission or branch protection.',GITHUB_SECRET_DETECTED:'The commit was blocked because a credential-like value was detected in the ZIP.',GITHUB_BRANCH_CONFLICT:'The target branch changed or rejected the safe non-force update.',GITHUB_CONFIRMATION_REQUIRED:'GitHub commit needs an explicit confirmation from this screen.',GITHUB_REPO_NOT_ALLOWED:'This repository is outside the configured allowlist.',TURBO_APPROVAL_REQUIRED:'Complex Turbo needs your approval before this higher-budget run starts.',AI_RATE_LIMIT:'Hourly execution limit reached (Olympus 3/h, Zeus 15/h by default). Wait for the window to reset.'}[code];
     throw apiError(`${friendly||msg||`Request failed (HTTP ${r.status}).`}${ref}`,r.status,code,isJson?data:null);
   }
   return data;
 }
 
 async function fetchPrivateBlob(url){
-  const headers=new Headers();if(state.accessKey)headers.set('x-zeus-access-token',state.accessKey);headers.set('X-OlyHub-Request-ID',crypto.randomUUID());
+  const headers=new Headers();headers.set('X-OlyHub-Request-ID',crypto.randomUUID());
   const r=await fetch(url,{headers,cache:'no-store'});
   if(!r.ok){
     let data=null;try{data=await r.json()}catch{}
-    if(r.status===401){clearAuth();render();}
     throw apiError(data?.error||`Could not load private output (HTTP ${r.status}).`,r.status,data?.code||'PRIVATE_OUTPUT_FAILED',data);
   }
   return await r.blob();
@@ -180,13 +129,16 @@ function announce(text){
   if(!region||!value||value===lastAnnouncement)return;
   lastAnnouncement=value;region.textContent=value;
 }
-function dismissError(){state.error='';state.lastFailedText='';state.lastFailedMessageId=null;state.lastFailedAttachments=[];state.lastFailedRequestId=null;state.lastFailedMode=null;state.lastFailedTurboApproval=null;render();}
+function dismissError(){state.error='';state.bootstrapFailures=[];state.lastFailedText='';state.lastFailedMessageId=null;state.lastFailedAttachments=[];state.lastFailedRequestId=null;state.lastFailedMode=null;state.lastFailedTurboApproval=null;render();}
 function errorBanner(extraClass=''){
   if(!state.error)return '';
-  return `<div class="chat-error ${extraClass}"><span>${esc(state.error)}</span><div class="error-actions">${state.lastFailedBudgetExecutionId?`<button type="button" id="approve-olympus-five">Approve +$5</button>`:''}${state.lastFailedText?`<button type="button" id="retry-last">Try again</button>`:''}<button type="button" class="error-dismiss" data-dismiss-error aria-label="Dismiss message">${icon('close')}</button></div></div>`;
+  const bootstrapNotice=state.bootstrapFailures.length>0;
+  const message=bootstrapNotice?'Workspace services need to reconnect.':state.error;
+  const details=bootstrapNotice?`<details class="service-failure-details"><summary>Show affected services</summary><ul>${state.bootstrapFailures.map(item=>`<li><strong>${esc(item.name)}</strong>${item.message?`: ${esc(item.message)}`:''}</li>`).join('')}</ul></details>`:'';
+  return `<div class="chat-error ${extraClass}"><div class="error-copy"><span>${esc(message)}</span>${details}</div><div class="error-actions">${bootstrapNotice?`<button type="button" id="retry-services">Retry services</button>`:''}${state.lastFailedBudgetExecutionId?`<button type="button" id="approve-olympus-five">Approve +$5</button>`:''}${state.lastFailedText?`<button type="button" id="retry-last">Try again</button>`:''}<button type="button" class="error-dismiss" data-dismiss-error aria-label="Dismiss message">${icon('close')}</button></div></div>`;
 }
 async function bootstrapApp(){
-  state.authReady=true; render();
+  state.authReady=true;state.bootstrapFailures=[];state.error='';render();
   const jobs=[
     ['Conversations',loadConversations()],
     ['Projects',loadProjects()],
@@ -196,9 +148,8 @@ async function bootstrapApp(){
     ['Personalization',loadPreferences()],
   ];
   const settled=await Promise.allSettled(jobs.map(([,promise])=>promise));
-  const failed=[];
-  settled.forEach((result,index)=>{if(result.status==='rejected'){failed.push(jobs[index][0]);console.warn(`OlyHub bootstrap ${jobs[index][0]} failed`,result.reason);}});
-  if(failed.length)state.error=`Some workspace services did not load: ${failed.join(', ')}. Refresh to retry.`;
+  settled.forEach((result,index)=>{if(result.status==='rejected'){const name=jobs[index][0],message=String(result.reason?.message||'').slice(0,180);state.bootstrapFailures.push({name,message});console.warn(`OlyHub bootstrap ${name} failed`,result.reason);}});
+  if(state.bootstrapFailures.length)state.error='Some workspace services did not load. Retry services to try again.';
   const params=new URLSearchParams(location.search); const pid=params.get('project'); const cid=params.get('conversation');
   if(pid && state.projects.some(p=>p.id===pid)){ await openProjectWorkspace(pid); return; }
   if(cid) await openConversation(cid,false);
@@ -242,6 +193,7 @@ function icon(name){
     chat:svg('<path d="M5 6h14a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H9l-4 3V7a1 1 0 0 1 1-1z"/>'),
     attach:svg('<path d="M8.5 12.5 14 7a3.5 3.5 0 1 1 5 5l-8 8a4.5 4.5 0 0 1-6.4-6.4l7.5-7.5"/>'),
     mic:svg('<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M6 11a6 6 0 0 0 12 0M12 17v4M9 21h6"/>'),
+    'mic-off':svg('<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M6 11a6 6 0 0 0 12 0M12 17v4M9 21h6M3 3l18 18"/>'),
     send:svg('<path d="M5 12h14M13 6l6 6-6 6"/>'),
     image:svg('<rect x="4" y="5" width="16" height="14" rx="2"/><circle cx="9" cy="10" r="1.4"/><path d="m8 16 3-3 3 2 2-2 3 3"/>'),
     camera:svg('<path d="M7 7.5 8.5 5h7L17 7.5h2a2 2 0 0 1 2 2V18a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V9.5a2 2 0 0 1 2-2z"/><circle cx="12" cy="13.5" r="3.2"/>'),
@@ -259,22 +211,6 @@ function icon(name){
   return map[name]||svg('<circle cx="12" cy="12" r="2"/>');
 }
 
-function authView(){
-  return `<div class="auth-shell personal-auth-shell">
-    <section class="auth-visual">
-      <div class="personal-bolt">ϟ</div>
-      <div class="eyebrow auth-kicker">OLYMPUS HUB · PERSONAL</div>
-      <h1>Zeus is your private AI workspace.</h1>
-      <p>Projects, permanent memory, files, artifacts and Olympus orchestration stay together. Provider keys stay behind Netlify.</p>
-      <div class="auth-proof" aria-label="Zeus capabilities"><span>Projects + dedicated memory</span><span>Files, images and outputs</span><span>Zeus + Olympus</span></div>
-    </section>
-    <main class="auth-panel" id="main-content" tabindex="-1"><div class="auth-card">
-      <div class="personal-bolt small">ϟ</div><div class="eyebrow">PRIVATE ACCESS</div><h2>Unlock Zeus</h2><p>Use the same private access key configured in Netlify.</p><p class="muted tiny" id="access-session-warning">This key stays on this device until Lock or 14 days without use. On a shared device, Lock before you leave.</p>
-      <form id="auth-form" class="form-grid"><div class="field"><label for="auth-key">Private key</label><input id="auth-key" type="password" autocomplete="current-password" minlength="32" required spellcheck="false" autocapitalize="off"></div><div id="auth-notice" class="notice hidden" role="alert" aria-live="assertive"></div><button class="primary" type="submit" id="auth-submit">Unlock Zeus</button></form>
-    </div></main>
-  </div>`;
-}
-
 function sidebar(){
   const recents=homeChats().slice(0,18).map(c=>`<button class="recent-item ${c.id===state.currentConversation?'active':''}" data-conv="${esc(c.id)}" title="${esc(c.title)}" ${c.id===state.currentConversation?'aria-current="true"':''}>${esc(c.title||'Conversation')}</button>`).join('') || `<div class="muted tiny" style="padding:8px 10px">Home chats appear here. Project chats stay inside each project.</div>`;
   return `<aside class="sidebar ${state.drawer?'open':''}" id="app-sidebar" aria-label="Workspace navigation">
@@ -284,7 +220,7 @@ function sidebar(){
     <div class="search-box" role="search">${icon('search')}<input id="chat-search" type="search" placeholder="Search chats" aria-label="Search chats" autocomplete="off"></div>
     <nav class="side-nav" aria-label="Primary">${navButtons()}</nav>
     <div class="side-section"><div class="side-title">Recent chats</div><div class="recent-list" id="recent-list">${recents}<div class="muted tiny recent-empty hidden" id="recent-empty" style="padding:8px 10px">No chats match your search.</div></div></div>
-    <div class="sidebar-foot"><div class="user-chip"><div class="avatar">${esc(initials())}</div><div style="min-width:0"><strong style="font-size:12px">${esc(state.user?.user_metadata?.full_name||state.user?.email||'Felipe')}</strong><div class="muted tiny">Memory & persistence connected</div></div></div><button class="ghost" id="logout" style="text-align:left;padding:0" title="Lock Zeus on this device">Lock</button></div>
+    <div class="sidebar-foot"><div class="user-chip"><div class="avatar">${esc(initials())}</div><div style="min-width:0"><strong style="font-size:12px">${esc(state.user?.user_metadata?.full_name||state.user?.email||'Felipe')}</strong><div class="muted tiny">Personal workspace</div></div></div></div>
   </aside>${state.drawer?'<button class="scrim" id="scrim" aria-label="Close menu"></button>':''}`;
 }
 function navButtons(){
@@ -821,7 +757,7 @@ function preferencesSettings(){
   </article>`;
 }
 
-function settingsView(){const providers=state.health?.providerReadiness||{};const statusLabel=(v)=>String(v||'not_configured').toUpperCase().replaceAll('_',' ');const statusGood=(v)=>v==='observed_healthy';return `<section class="page"><div class="page-head"><div><div class="eyebrow">Settings</div><h1>Workspace settings</h1><p>Account and advanced runtime diagnostics.</p></div></div>${errorBanner('page-alert')}<div class="settings-grid"><article class="card settings-card"><h3>Account</h3><div class="user-chip"><div class="avatar">${esc(initials())}</div><div><strong>${esc(state.user?.user_metadata?.full_name||'Felipe')}</strong><div class="muted tiny">${esc(state.user?.email||'')}</div></div></div><button class="secondary" id="settings-logout" style="margin-top:18px">Lock</button><p class="muted tiny" style="margin-top:12px">The private key stays in localStorage on this device until Lock or 14 days without use.</p></article><article class="card settings-card"><h3>Monthly cost monitor</h3>
+function settingsView(){const providers=state.health?.providerReadiness||{};const statusLabel=(v)=>String(v||'not_configured').toUpperCase().replaceAll('_',' ');const statusGood=(v)=>v==='observed_healthy';return `<section class="page"><div class="page-head"><div><div class="eyebrow">Settings</div><h1>Workspace settings</h1><p>Account and advanced runtime diagnostics.</p></div></div>${errorBanner('page-alert')}<div class="settings-grid"><article class="card settings-card"><h3>Account</h3><div class="user-chip"><div class="avatar">${esc(initials())}</div><div><strong>${esc(state.user?.user_metadata?.full_name||'Felipe')}</strong><div class="muted tiny">${esc(state.user?.email||'Personal owner')}</div></div></div><p class="muted tiny" style="margin-top:12px">This app uses one personal workspace.</p></article><article class="card settings-card"><h3>Monthly cost monitor</h3>
   <p class="muted tiny">One shared $60 testing target for text, images, videos, audio and tools. This is an alert only; nothing is disabled when the target is reached.</p>
   <div class="diag-list"><div class="diag-row"><span>Known text estimate</span><strong>${Number(state.health?.monthlyBudget?.knownTextUsd||0).toFixed(2)}</strong></div>
   <div class="diag-row"><span>Combined monthly target</span><strong>${Number(state.health?.monthlyBudget?.targetUsd||60).toFixed(2)}</strong></div>
@@ -844,7 +780,7 @@ ${[['auto','Auto (device locale in browser)'],['pt','Português (Brasil)'],['en'
 ${[['lightning','Lightning plasma'],['classic','Classic orb'],['olympus','Olympus'],['liquid','Liquid metal']].map(([v,label])=>`<option value="${v}" ${state.voiceAvatar===v?'selected':''}>${label}</option>`).join('')}</select></div>
 <p class="muted tiny">Browser speech recognition handles one locale at a time. Voice Message uses server language detection if available.</p>
 <button type="button" class="secondary compact" id="save-voice-id">Save voice</button>
-</article><article class="card settings-card"><h3>Go-live checklist</h3>${(state.health?.warnings||[]).length?`<div class="diag-list health-warnings" role="status">${state.health.warnings.map(w=>`<p class="diag-warning"><strong>${esc(w.section)}</strong>: ${esc(w.message)}</p>`).join('')}</div>`:''}<div class="diag-list">${[['Private access token',state.health?.goLive?.privateAccess],['Database',state.health?.goLive?.database],['Blob maintenance',state.health?.goLive?.blobMaintenance],['Provider configured',Number(state.health?.goLive?.configuredProviders||0)>0],['Chat callable',['observed_healthy','configured_unverified'].includes(state.health?.goLive?.chatState)]].map(([label,ok])=>`<div class="diag-row"><span>${esc(label)}</span><strong class="${ok?'status-good':'status-warn'}">${ok?'READY':'BLOCKED'}</strong></div>`).join('')}</div><p class="muted tiny" style="line-height:1.55;margin-top:14px">${state.health?.goLive?.ready?'Go-live gate is ready for this owner.':'Go-live gate is blocked until token, a configured provider and a callable chat state are all present.'}</p></article><article class="card settings-card"><h3>AI provider diagnostics</h3><div class="diag-list">${['openai','anthropic','gemini','openrouter'].map(p=>{const v=providers[p]?.status||'not_configured';return `<div class="diag-row"><span>${p}</span><strong class="${statusGood(v)?'status-good':'status-warn'}">${esc(statusLabel(v))}</strong></div>`}).join('')}</div><p class="muted tiny" style="line-height:1.55;margin-top:14px">Diagnostics are runtime-local evidence. CONFIGURED UNVERIFIED means credentials/models were detected but this warm Function runtime has not observed a successful call yet. DEGRADED means the temporary circuit breaker is open.</p></article><article class="card settings-card"><h3>Capabilities</h3><div class="diag-list">${Object.keys(state.health?.capabilityReadiness||{}).length?'':`<div class="muted tiny">${state.health?'No capability diagnostics reported.':'Diagnostics load when the workspace runtime responds.'}</div>`}${Object.entries(state.health?.capabilityReadiness||{}).map(([k,v])=>`<div class="diag-row"><span>${esc(k)}</span><strong class="${v==='observed_healthy'?'status-good':'status-warn'}">${esc(statusLabel(v))}</strong></div>`).join('')}</div></article></div></section>`}
+</article><article class="card settings-card"><h3>Go-live checklist</h3>${(state.health?.warnings||[]).length?`<div class="diag-list health-warnings" role="status">${state.health.warnings.map(w=>`<p class="diag-warning"><strong>${esc(w.section)}</strong>: ${esc(w.message)}</p>`).join('')}</div>`:''}<div class="diag-list">${[['Workspace API open',state.health?.goLive?.workspaceAccess==='open'],['Database',state.health?.goLive?.database],['Blob maintenance',state.health?.goLive?.blobMaintenance],['Provider configured',Number(state.health?.goLive?.configuredProviders||0)>0],['Chat callable',['observed_healthy','configured_unverified'].includes(state.health?.goLive?.chatState)]].map(([label,ok])=>`<div class="diag-row"><span>${esc(label)}</span><strong class="${ok?'status-good':'status-warn'}">${ok?'READY':'BLOCKED'}</strong></div>`).join('')}</div><p class="muted tiny" style="line-height:1.55;margin-top:14px">${state.health?.goLive?.ready?'Core runtime checks passed for this workspace.':'The workspace is waiting for its database, an AI provider and a callable chat route.'}</p></article><article class="card settings-card"><h3>AI provider diagnostics</h3><div class="diag-list">${['openai','anthropic','gemini','openrouter'].map(p=>{const v=providers[p]?.status||'not_configured';return `<div class="diag-row"><span>${p}</span><strong class="${statusGood(v)?'status-good':'status-warn'}">${esc(statusLabel(v))}</strong></div>`}).join('')}</div><p class="muted tiny" style="line-height:1.55;margin-top:14px">Diagnostics are runtime-local evidence. CONFIGURED UNVERIFIED means credentials/models were detected but this warm Function runtime has not observed a successful call yet. DEGRADED means the temporary circuit breaker is open.</p></article><article class="card settings-card"><h3>Capabilities</h3><div class="diag-list">${Object.keys(state.health?.capabilityReadiness||{}).length?'':`<div class="muted tiny">${state.health?'No capability diagnostics reported.':'Diagnostics load when the workspace runtime responds.'}</div>`}${Object.entries(state.health?.capabilityReadiness||{}).map(([k,v])=>`<div class="diag-row"><span>${esc(k)}</span><strong class="${v==='observed_healthy'?'status-good':'status-warn'}">${esc(statusLabel(v))}</strong></div>`).join('')}</div></article></div></section>`}
 
 
 let modalKeydownHandler=null;
@@ -909,7 +845,7 @@ function githubCommitModal(sourceKind,sourceId,sourceName='project.zip'){
 }
 
 function liveTalkExperience(){
-  const stage=state.liveTalkStopRequested?'Finishing your turn':state.liveStage==='speaking'?'Zeus is speaking':state.liveStage==='processing'?'Preparing your reply':state.liveStage==='listening'?'Listening':'Live Talk connected';
+  const stage=state.liveTalkStopRequested?'Finishing your turn':state.liveMuted?'Microphone muted':state.liveStage==='error'?'Live Talk paused':state.liveStage==='speaking'?'Zeus is speaking':state.liveStage==='processing'?'Preparing your reply':state.liveStage==='listening'?'Listening':'Live Talk connected';
   const latest=[...(state.messages||[])].reverse().find(m=>['assistant','user'].includes(m.role));
   const excerpt=latest?String(latest.content||'').replace(/\s+/g,' ').trim().slice(0,220):'';
   const bars=Array.from({length:41},(_,i)=>`<i style="--wave:${12+((i*17)%39)}%;--delay:${(i%13)*-0.09}s"></i>`).join('');
@@ -928,7 +864,8 @@ function liveTalkExperience(){
       <p class="live-talk-latest">${excerpt?esc(excerpt):'Fale naturalmente. Sua conversa será salva no chat.'}</p>
       <div class="live-talk-mode"><span class="live-mode-dot"></span>${esc(liveMode()==='OLYMPUS'?'OLYMPUS':'ZEUS')} <span>·</span> ${esc(state.liveLocale==='auto'?'AUTO LANGUAGE':state.liveLocale.toUpperCase())}</div>
     </section>
-    <footer class="live-talk-controls"><div class="live-control-hint"><span class="live-mic-dot"></span>${state.liveStage==='listening'?'Microphone active':state.liveStage==='processing'?'Voice captured':state.liveStage==='speaking'?'Reply audio active':'Session ready'}</div><button type="button" class="live-end-call" id="live-talk-end" aria-label="Finish this turn and return to chat" title="Finish Live Talk">${icon('close')}</button><div class="live-control-caption">Finish and return to your saved conversation</div></footer>
+    ${state.error?`<div class="live-talk-error" role="alert">${esc(state.error)}${state.liveStage==='error'?'<button type="button" id="live-talk-retry">Try again</button>':''}</div>`:''}
+    <footer class="live-talk-controls"><div class="live-control-hint"><span class="live-mic-dot"></span>${state.liveMuted?'Microphone muted':state.liveStage==='listening'?'Microphone active':state.liveStage==='processing'?'Voice captured':state.liveStage==='speaking'?'Reply audio active':state.liveStage==='error'?'Live Talk paused':'Session ready'}</div><div class="live-call-actions"><button type="button" class="live-mute-button ${state.liveMuted?'is-muted':''}" id="live-talk-mute" aria-pressed="${state.liveMuted}" aria-label="${state.liveMuted?'Unmute microphone':'Mute microphone'}" title="${state.liveMuted?'Unmute microphone':'Mute microphone'}">${icon(state.liveMuted?'mic-off':'mic')}</button><button type="button" class="live-end-call" id="live-talk-end" aria-label="Exit Live Talk immediately and return to chat" title="Exit Live Talk">${icon('close')}</button></div><div class="live-control-caption">Mute the microphone or exit to your saved conversation</div></footer>
   </main>`;
 }
 function appView(){if(state.liveTalk)return liveTalkExperience();const page=state.tab==='Home'?homeView():state.tab==='Projects'?projectsView():state.tab==='Tools'?toolsView():state.tab==='Files'?filesView():settingsView();return `<div class="app-shell">${sidebar()}<main class="main" id="main-content" tabindex="-1">${topbar()}${page}</main><div id="modal-root"></div></div>`}
@@ -944,7 +881,7 @@ function render(){
   const active=document.activeElement;const key=focusKey(active);
   const selection=active?.id==='composer-text'?{start:active.selectionStart,end:active.selectionEnd}:null;
   const scopeSidebar=Boolean(active?.closest?.('.sidebar'));
-  clearModalLifecycle();modalReturnFocus=null;if(!state.authReady){app.innerHTML='<div class="boot-screen" role="status">INITIALIZING ZEUS</div>';return;} app.innerHTML=state.user?appView():authView();bind();
+  clearModalLifecycle();modalReturnFocus=null;if(!state.authReady){app.innerHTML='<div class="boot-screen" role="status">INITIALIZING ZEUS</div>';return;} app.innerHTML=appView();bind();
   localizeInterface(app);syncDrawerAccessibility();
   const offCanvasSidebar=scopeSidebar&&!state.drawer&&window.matchMedia('(max-width:959px)').matches;
   if(key&&offCanvasSidebar){$('#main-content')?.focus({preventScroll:true});}
@@ -953,7 +890,6 @@ function render(){
   requestAnimationFrame(()=>{const s=$('#chat-scroll');if(!s)return;if(state.chatRestore){const r=state.chatRestore;state.chatRestore=null;s.scrollTop=Math.max(0,s.scrollHeight-r.height+r.top);}else s.scrollTop=s.scrollHeight;}); }
 
 function bind(){
-  if(!state.user){ bindAuth(); return; }
   $('#hamburger')?.addEventListener('click',()=>{state.drawer=!state.drawer;render();if(state.drawer)requestAnimationFrame(()=>$('.sidebar .side-nav button.active,.sidebar .side-nav button')?.focus())}); $('#scrim')?.addEventListener('click',()=>{state.drawer=false;render();$('#hamburger')?.focus()});
   $('#close-navigation')?.addEventListener('click',()=>{state.drawer=false;render();$('#hamburger')?.focus()});
   $$('.copy-code').forEach(button=>button.addEventListener('click',async()=>{
@@ -986,7 +922,6 @@ function bind(){
   $$('[data-google-service]').forEach(b=>b.addEventListener('click',()=>googleConnectionAction(b.dataset.googleService,b.dataset.googleAction)));
   $$('[data-google-search]').forEach(form=>form.addEventListener('submit',event=>{event.preventDefault();const data=new FormData(form);searchGoogle(form.dataset.googleSearch,String(data.get('q')||''));}));
   $$('[data-google-next]').forEach(button=>button.addEventListener('click',()=>{const service=button.dataset.googleNext,result=state.googleSearchResults[service];if(result?.nextPageToken)searchGoogle(service,state.googleSearchQueries[service]||'',result.nextPageToken);}));
-  $$('#logout,#settings-logout').forEach(b=>b.addEventListener('click',logout));
 
   $('#preferences-form')?.addEventListener('submit',async event=>{
     event.preventDefault();
@@ -1055,6 +990,7 @@ function bind(){
   $$('[data-move-current]').forEach(b=>b.addEventListener('click',()=>moveConversationModal(b.dataset.moveCurrent)));
   $('#chat-search')?.addEventListener('input',e=>{const q=e.target.value.toLowerCase();let shown=0;$$('.recent-item').forEach(x=>{const match=x.textContent.toLowerCase().includes(q);x.style.display=match?'block':'none';if(match)shown++;});$('#recent-empty')?.classList.toggle('hidden',!q||shown>0||!$$('.recent-item').length);});
   $$('[data-dismiss-error]').forEach(b=>b.addEventListener('click',dismissError));
+  $('#retry-services')?.addEventListener('click',()=>bootstrapApp().catch(err=>{state.error=err.message||'Zeus could not load the workspace.';render();}));
   $$('[data-mode]').forEach(b=>b.addEventListener('click',()=>{if(state.sending)return;state.mode=b.dataset.mode==='OLYMPUS'?'OLYMPUS':'ZEUS';state.activeLevel=null;render();}));
   $$('[data-open-output]').forEach(b=>b.addEventListener('click',()=>openPrivateOutput(b.dataset.openOutput,b.dataset.outputName,b.dataset.outputMime).catch(e=>{state.error=e.message;render();})));
   $$('[data-download-output]').forEach(b=>b.addEventListener('click',()=>downloadPrivateOutput(b.dataset.downloadOutput,b.dataset.outputName).catch(e=>{state.error=e.message;render();})));
@@ -1094,7 +1030,10 @@ function bind(){
   $('#global-file-input').onchange=handleUpload; $('#global-media-input').onchange=handleMedia; $('#global-camera-input').onchange=handleMedia;
   $$('[data-remove-file]').forEach(b=>b.addEventListener('click',()=>{state.attachedFiles=state.attachedFiles.filter(f=>f.id!==b.dataset.removeFile);render()}));
   $('#voice')?.addEventListener('click',startVoice);
-  $$('#live-talk,#live-talk-return,#live-talk-end').forEach(button=>button.addEventListener('click',toggleLiveTalk));
+  $('#live-talk')?.addEventListener('click',toggleLiveTalk);
+  $$('#live-talk-return,#live-talk-end').forEach(button=>button.addEventListener('click',finishLiveTalkSession));
+  $('#live-talk-mute')?.addEventListener('click',toggleLiveTalkMute);
+  $('#live-talk-retry')?.addEventListener('click',retryLiveTalk);
   $('#retry-last')?.addEventListener('click',retryLastMessage);
   $('#zeus-level-cap')?.addEventListener('change',e=>{const n=Number(e.target.value);if([1,2,3].includes(n)){localStorage.setItem('zeus.maxLevel.v1',String(n));render();}});
   $('#olympus-auto')?.addEventListener('change',e=>{state.olympusAuto=e.target.checked;try{localStorage.setItem(autoModeKey(),String(state.olympusAuto));}catch{}render();});
@@ -1139,16 +1078,6 @@ window.matchMedia('(max-width:959px)').addEventListener('change',()=>{state.draw
 window.addEventListener('online',()=>{state.offline=false;if(state.user)render();});
 window.addEventListener('offline',()=>{state.offline=true;if(state.user)render();});
 window.addEventListener('unhandledrejection',e=>{console.error('Unhandled Zeus error',e.reason);if(state.user&&!state.error){state.error=e.reason?.message||'Something went wrong. Try again.';render();}});
-function bindAuth(){
-  const form=$('#auth-form');
-  form?.addEventListener('submit',async e=>{
-    e.preventDefault();const notice=$('#auth-notice');notice.classList.add('hidden');$('#auth-submit').disabled=true;
-    try{await unlock($('#auth-key').value);render();}
-    catch(err){clearAuth();render();const n=$('#auth-notice');if(n){n.textContent=translateInterfaceText(err.message||'Could not unlock Zeus.');n.className='notice error-notice';}$('#auth-key')?.focus();}
-    finally{if($('#auth-submit'))$('#auth-submit').disabled=false;}
-  });
-}
-
 async function newChat(){
   state.currentConversation=null;state.currentProject=null;state.messages=[];state.chatArtifacts=[];state.attachedFiles=[];state.draft='';state.activeMode=null;state.activeLevel=null;
   state.error='';state.lastFailedText='';state.lastFailedMessageId=null;state.lastFailedAttachments=[];state.lastFailedRequestId=null;state.lastFailedMode=null;state.messagePage={hasMore:false,nextCursor:null};
@@ -1397,15 +1326,40 @@ async function uploadFile(file,{analysisRole='',sourceName='',attach=true}={}){
   finally{render();const shown=state.execStatus;setTimeout(()=>{if(state.execStatus===shown&&!state.sending){state.execStatus='';render();}},1200)}
 }
 function finishLiveTalkSession(){
-  if(!state.liveTalk)return;
-  state.liveTalk=false;state.liveTalkStopRequested=false;state.liveStage='idle';state.liveGeneration++;
+  state.liveTalk=false;state.liveTalkStopRequested=false;state.liveMuted=false;state.liveStage='idle';state.liveGeneration++;
+  clearTimeout(state.liveRetryTimer);clearTimeout(state.liveRecognitionTimer);state.liveRetryTimer=null;state.liveRecognitionTimer=null;
+  const recognition=state.liveRecognizer;state.liveRecognizer=null;
+  try{recognition?.abort()}catch{}
+  stopLiveCapture();
   try{state.liveSpeechController?.abort()}catch{}
-  state.liveSpeechController=null;discardLiveAudio();speechSynthesis.cancel();render();
+  state.liveSpeechController=null;discardLiveAudio();try{window.speechSynthesis?.cancel()}catch{}render();
 }
 function continueLiveTalkAfterTurn(){
   if(!state.liveTalk)return;
   if(state.liveTalkStopRequested){finishLiveTalkSession();return;}
+  if(state.liveMuted){state.liveStage='muted';state.liveStageBeforeMute='muted';render();return;}
   listenLiveTalk();
+}
+function pauseLiveTalkOnError(message,kind='capture'){
+  if(!state.liveTalk)return;
+  state.error=message||state.error||'Live Talk could not complete this turn. Try again or exit.';
+  state.liveStage='error';clearTimeout(state.liveRetryTimer);state.liveRetryTimer=null;state.liveFailureKind=kind;
+  const recognition=state.liveRecognizer;state.liveRecognizer=null;
+  clearTimeout(state.liveRecognitionTimer);state.liveRecognitionTimer=null;
+  try{recognition?.abort()}catch{}
+  stopLiveCapture();
+  try{state.liveSpeechController?.abort()}catch{}
+  discardLiveAudio();try{window.speechSynthesis?.cancel()}catch{}render();
+}
+function scheduleLiveRecognitionRetry({network=false}={}){
+  if(!state.liveTalk||state.liveMuted||state.liveTalkStopRequested||state.liveRetryTimer)return;
+  if(network&&++state.liveRetryCount>3){pauseLiveTalkOnError('The browser speech service keeps disconnecting. Check your connection or allow microphone and speech access, then try again.');return;}
+  state.liveStage='listening';render();
+  const generation=state.liveGeneration;
+  state.liveRetryTimer=setTimeout(()=>{
+    state.liveRetryTimer=null;
+    if(state.liveTalk&&generation===state.liveGeneration&&!state.liveMuted&&!state.liveTalkStopRequested)listenLiveTalk();
+  },network?900:350);
 }
 async function sayZeusReply(text){
   if(!state.liveTalk||!text)return;
@@ -1414,28 +1368,37 @@ async function sayZeusReply(text){
   const selected=state.voiceId||localStorage.getItem('zeus-voice-id')||'sarah';
   try{state.liveSpeechController?.abort()}catch{}
   const speechController=new AbortController();state.liveSpeechController=speechController;
+  const speechTimeout=setTimeout(()=>speechController.abort(),25000);
   if(selected){
     try{
-      const headers=new Headers({'Content-Type':'application/json','x-zeus-access-token':state.accessKey});
+      const headers=new Headers({'Content-Type':'application/json'});
       const res=await fetch('/api/speech',{method:'POST',headers,signal:speechController.signal,body:JSON.stringify({text:line,voiceId:selected})});
       if(res.ok&&state.liveTalk&&!speechController.signal.aborted){
         const blob=await res.blob();
-        if(!state.liveTalk||speechController.signal.aborted)return;
+        if(!state.liveTalk||speechController.signal.aborted){clearTimeout(speechTimeout);return;}
         const url=URL.createObjectURL(blob),audio=state.voiceReplyAudio||new Audio();
         discardLiveAudio({keepElement:true});audio.src=url;audio.muted=false;audio.volume=1;audio.playsInline=true;state.voiceReplyAudio=audio;state.liveAudioUrl=url;
-        audio.onended=()=>{discardLiveAudio();continueLiveTalkAfterTurn();};
-        audio.onerror=()=>{discardLiveAudio();continueLiveTalkAfterTurn();};
+        audio.onended=()=>{clearTimeout(speechTimeout);discardLiveAudio();continueLiveTalkAfterTurn();};
+        audio.onerror=()=>{clearTimeout(speechTimeout);discardLiveAudio();pauseLiveTalkOnError('The spoken reply audio could not be decoded by this browser. Try again or check your audio output.','speech');};
         await audio.play();return;
       }
-    }catch{discardLiveAudio();if(!state.liveTalk)return;}
+    }catch{discardLiveAudio();if(!state.liveTalk||speechController.signal.aborted&&state.liveSpeechController!==speechController){clearTimeout(speechTimeout);return;}}
   }
+  clearTimeout(speechTimeout);
+  if(!state.liveTalk)return;
+  fallbackLiveSpeech(line);
+}
+function fallbackLiveSpeech(line){
   if(!state.liveTalk)return;
   try{speechSynthesis.cancel()}catch{}
   const msg=new SpeechSynthesisUtterance(line);
   msg.lang=speechLocale(line);
-  msg.onend=continueLiveTalkAfterTurn;
-  msg.onerror=event=>{if(state.liveTalk&&event?.error!=='interrupted'&&event?.error!=='canceled'){state.error='Zeus could not play the spoken reply. Check your audio output and try Live Talk again.';render();}continueLiveTalkAfterTurn();};
-  speechSynthesis.speak(msg);
+  let completed=false;
+  const finish=()=>{if(completed)return;completed=true;clearTimeout(timer);continueLiveTalkAfterTurn();};
+  const timer=setTimeout(()=>{if(!state.liveTalk)return;pauseLiveTalkOnError('Zeus prepared a reply, but audio playback did not finish. Check the iPhone audio output and try again.','speech');},45000);
+  msg.onend=finish;
+  msg.onerror=event=>{if(event?.error==='interrupted'||event?.error==='canceled'){completed=true;clearTimeout(timer);if(state.liveTalk&&state.liveStage!=='error')continueLiveTalkAfterTurn();return;}clearTimeout(timer);pauseLiveTalkOnError('Zeus prepared a reply, but the browser could not play it. Check audio output and try again.','speech');};
+  try{speechSynthesis.speak(msg)}catch{clearTimeout(timer);pauseLiveTalkOnError('The browser could not start spoken playback. Check audio output and try again.','speech');}
 }
 function stopLiveCapture(){
   const session=state.liveCapture;
@@ -1482,7 +1445,7 @@ async function listenServerLiveTalk(){
         state.liveStage='processing';render();
         const type=recorder.mimeType||'audio/webm';
         const blob=new Blob(chunks,{type});
-        if(blob.size>4*1024*1024)return;
+        if(blob.size>4*1024*1024){pauseLiveTalkOnError('This voice recording exceeded the 4 MB limit. Try a shorter phrase.');return;}
         const fd=new FormData();fd.append('audio',blob,type.includes('mp4')?'live.m4a':'live.webm');
         const answer=await api('/api/transcribe',{method:'POST',body:fd});
         if(!state.liveTalk||generation!==state.liveGeneration)return;
@@ -1490,13 +1453,12 @@ async function listenServerLiveTalk(){
         if(!words){continueLiveTalkAfterTurn();return;}
         await sendText(words,[]);
         if(!state.liveTalk||generation!==state.liveGeneration)return;
-        if(state.lastFailedText){state.error='Voice reply failed. Use Retry to continue.';render();return;}
+        if(state.lastFailedText){pauseLiveTalkOnError(state.error||'Zeus could not complete that voice request. Try again.','chat');return;}
         const latest=[...state.messages].reverse().find(m=>m.role==='assistant');
         if(latest)await sayZeusReply(latest.content);else continueLiveTalkAfterTurn();
       }catch(error){
         if(!state.liveTalk||generation!==state.liveGeneration)return;
-        state.error=error?.message||'Automatic speech transcription is unavailable.';
-        state.liveTalk=false;render();
+        pauseLiveTalkOnError(error?.message||'Automatic speech transcription is unavailable.');
       }
     };
     recorder.start(250);
@@ -1505,7 +1467,7 @@ async function listenServerLiveTalk(){
       analyzer.getByteTimeDomainData(samples);
       let sum=0;for(let i=0;i<samples.length;i++){const v=(samples[i]-128)/128;sum+=v*v;}
       const rms=Math.sqrt(sum/samples.length),now=performance.now();
-      if(rms>0.024){
+      if(rms>0.014){
         if(!session.voiceStarted)session.voiceStarted=now;
         session.lastActive=now;
         if(now-session.voiceStarted>220)session.detected=true;
@@ -1523,17 +1485,17 @@ async function listenServerLiveTalk(){
     try{context?.close()}catch{}
     state.liveCapture=null;
     if(!state.liveTalk||generation!==state.liveGeneration)return;
-    state.liveTalk=false;state.error=error?.name==='NotAllowedError'?'Allow microphone access for Live Talk.':'Live Talk audio capture failed. Voice Message remains available.';render();
+    pauseLiveTalkOnError(error?.name==='NotAllowedError'?'Allow microphone access for Live Talk.':'Live Talk audio capture failed. Voice Message remains available.');
   }
 }
 const LIVE_TALK_SERVER_MISSING='Live Talk is unavailable because this browser has no speech recognition and server transcription is not configured.';
 function listenLiveTalk(){
+  clearTimeout(state.liveRetryTimer);state.liveRetryTimer=null;
+  if(!state.liveTalk||state.liveMuted||state.liveTalkStopRequested)return;
   state.liveStage='listening';render();
-  if(!state.liveTalk)return;
+  if(state.health?.capabilities?.serverTranscription&&navigator.mediaDevices?.getUserMedia&&window.MediaRecorder){void listenServerLiveTalk();return;}
   const Engine=window.SpeechRecognition||window.webkitSpeechRecognition;
   if(!Engine){
-    if(state.health?.capabilities?.serverTranscription&&navigator.mediaDevices?.getUserMedia&&window.MediaRecorder){void listenServerLiveTalk();return;}
-
     state.liveRecognizer=null;state.liveTalk=false;state.liveStage='idle';
     state.error=LIVE_TALK_SERVER_MISSING;render();return;
   }
@@ -1541,20 +1503,43 @@ function listenLiveTalk(){
   recognition.__zeusHandledResult=false;
   recognition.lang=browserInputLocale();recognition.continuous=false;recognition.interimResults=false;
   recognition.onresult=async e=>{
+    clearTimeout(state.liveRecognitionTimer);state.liveRecognitionTimer=null;
     const words=e.results?.[0]?.[0]?.transcript?.trim();
     recognition.__zeusHandledResult=true;
     state.liveRecognizer=null;
+    if(state.liveMuted)return;
+    state.liveRetryCount=0;
     if(!words||!state.liveTalk){if(state.liveTalkStopRequested)finishLiveTalkSession();return;}
     state.liveStage='processing';render();
     await sendText(words,[]);
     if(!state.liveTalk)return;
-    if(state.lastFailedText){if(state.liveTalkStopRequested)finishLiveTalkSession();return;}
+    if(state.lastFailedText){pauseLiveTalkOnError(state.error||'Zeus could not complete that voice request. Try again.','chat');return;}
     const latest=[...state.messages].reverse().find(m=>m.role==='assistant');
     if(latest)await sayZeusReply(latest.content);else continueLiveTalkAfterTurn();
   };
-  recognition.onerror=e=>{state.liveRecognizer=null;state.liveTalk=false;const code=String(e?.error||'');state.error=code==='aborted'?'':`Live Talk: ${speechErrorMessage(code)}`;render();};
-  recognition.onend=()=>{if(state.liveRecognizer===recognition)state.liveRecognizer=null;if(state.liveTalkStopRequested&&!recognition.__zeusHandledResult)finishLiveTalkSession();};
-  try{recognition.start()}catch{state.liveTalk=false;render()}
+  recognition.onerror=e=>{
+    const code=String(e?.error||'');recognition.__zeusError=code;
+    if(code==='aborted'&&(state.liveMuted||!state.liveTalk||state.liveTalkStopRequested))return;
+    if(code==='not-allowed'||code==='service-not-allowed'){pauseLiveTalkOnError(`Live Talk: ${speechErrorMessage(code)}`);return;}
+    if(code!=='no-speech'&&code!=='network'&&code!=='aborted')pauseLiveTalkOnError(`Live Talk: ${speechErrorMessage(code)}`);
+  };
+  recognition.onend=()=>{
+    clearTimeout(state.liveRecognitionTimer);state.liveRecognitionTimer=null;
+    if(state.liveRecognizer===recognition)state.liveRecognizer=null;
+    if(!state.liveTalk||state.liveMuted||state.liveStage==='error')return;
+    if(state.liveTalkStopRequested){finishLiveTalkSession();return;}
+    if(!recognition.__zeusHandledResult)scheduleLiveRecognitionRetry({network:recognition.__zeusError==='network'});
+  };
+  try{
+    recognition.start();
+    const generation=state.liveGeneration;
+    state.liveRecognitionTimer=setTimeout(()=>{
+      if(state.liveRecognizer!==recognition||generation!==state.liveGeneration||!state.liveTalk)return;
+      recognition.__zeusError='timeout';try{recognition.abort()}catch{}
+      if(state.liveRecognizer===recognition)state.liveRecognizer=null;
+      scheduleLiveRecognitionRetry();
+    },30000);
+  }catch(error){pauseLiveTalkOnError(`Live Talk could not start speech recognition: ${error?.message||'check microphone permission and browser support.'}`)}
 }
 function toggleLiveTalk(){
   if(state.liveTalk){
@@ -1573,11 +1558,50 @@ function toggleLiveTalk(){
     if(state.liveStage==='processing'){render();return;}
     finishLiveTalkSession();return;
   }
+  if(state.sending){state.error='Wait for Zeus to finish the current reply before starting Live Talk.';render();return;}
   if(!liveTalkSupported()){state.error='Live Talk requires browser speech recognition and speech output.';render();return;}
   state.voiceId=localStorage.getItem('zeus-voice-id')||'sarah';
   unlockLiveAudioFromGesture();
-  state.liveTalkStopRequested=false;
+  state.error='';state.liveMuted=false;state.liveFailureKind=null;state.liveRetryCount=0;state.liveTalkStopRequested=false;
   state.liveTalk=true;state.liveStage='listening';state.liveGeneration++;render();listenLiveTalk();
+}
+function toggleLiveTalkMute(){
+  if(!state.liveTalk)return;
+  state.liveMuted=!state.liveMuted;
+  if(state.liveMuted){
+    state.liveStageBeforeMute=state.liveStage;
+    clearTimeout(state.liveRetryTimer);clearTimeout(state.liveRecognitionTimer);state.liveRetryTimer=null;state.liveRecognitionTimer=null;
+    if(state.liveStage==='listening'||state.liveStage==='muted'){
+      const recognition=state.liveRecognizer;state.liveRecognizer=null;
+      try{recognition?.abort()}catch{}
+      stopLiveCapture();state.liveStage='muted';
+    }
+  }else{
+    state.liveRetryCount=0;
+    if(state.liveStageBeforeMute==='listening'||state.liveStageBeforeMute==='muted'){
+      state.error='';state.liveStage='listening';listenLiveTalk();
+    }else state.liveStage=state.liveStageBeforeMute;
+  }
+  render();
+}
+async function retryLiveTalk(){
+  if(!state.liveTalk)return;
+  state.error='';state.liveRetryCount=0;
+  const failureKind=state.liveFailureKind;state.liveFailureKind=null;
+  if(failureKind==='chat'&&state.lastFailedText){
+    state.liveStage='processing';render();
+    await retryLastMessage();
+    if(!state.liveTalk)return;
+    if(state.lastFailedText){pauseLiveTalkOnError(state.error||'Zeus could not complete that voice request.');return;}
+    const latest=[...state.messages].reverse().find(m=>m.role==='assistant');
+    if(latest)await sayZeusReply(latest.content);else listenLiveTalk();
+    return;
+  }
+  if(failureKind==='speech'){
+    const latest=[...state.messages].reverse().find(m=>m.role==='assistant');
+    if(latest){await sayZeusReply(latest.content);return;}
+  }
+  listenLiveTalk();
 }
 
 async function startVoice(){

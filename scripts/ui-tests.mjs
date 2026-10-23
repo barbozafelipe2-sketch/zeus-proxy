@@ -10,7 +10,7 @@ const must=[
   [css,':focus-visible','keyboard focus visibility'],
   [css,'.project-grid{display:grid','project card grid'],
   [css,'.system-indicator','runtime status treatment'],
-  [app,'class="auth-proof"','auth capability proof'],
+  [app,'Personal owner','personal workspace account identity'],
   [app,'class="topbar-context"','workspace context header'],
   [app,'function managerAgentStrip()','Home Manager agent strip'],
   [app,'id="manager-title">Manager</h1>','Home Manager heading'],

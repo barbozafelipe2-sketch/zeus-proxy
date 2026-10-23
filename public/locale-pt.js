@@ -13,17 +13,26 @@ const translations = new Map(Object.entries({
   'Recent chats':'Conversas recentes', 'Conversation':'Conversa', 'WORKSPACE':'ESPAÇO DE TRABALHO', 'PROJECT':'PROJETO',
   'Workspace navigation':'Navegação', 'Primary':'Principal', 'Current workspace':'Espaço atual', 'Open navigation':'Abrir navegação',
   'Navigation':'Navegação', 'Close menu':'Fechar menu', 'Open account settings':'Abrir configurações da conta',
-  'Lock':'Bloquear', 'Lock Zeus on this device':'Bloquear Zeus neste dispositivo', 'Memory & persistence connected':'Seu trabalho salvo neste espaço',
+  'Memory & persistence connected':'Seu trabalho salvo neste espaço',
   'Home chats appear here. Project chats stay inside each project.':'As conversas aparecem aqui. As conversas de projetos ficam em cada projeto.',
   'No chats match your search.':'Nenhuma conversa encontrada.', 'Conversation history available · no Project memory':'Histórico desta conversa · sem memória de projeto',
   'PERSONAL · ZEUS':'PESSOAL · ZEUS', 'OLYMPUS HUB · PERSONAL':'OLYMPUS HUB · PESSOAL',
   'Start Live Talk':'Iniciar conversa por voz', 'Finish this turn and stop Live Talk':'Finalizar esta fala e parar a conversa por voz',
+  'Exit Live Talk immediately and return to chat':'Sair do Live Talk e voltar à conversa', 'Mute microphone':'Silenciar microfone', 'Unmute microphone':'Ativar microfone',
+  'Microphone muted':'Microfone silenciado', 'Microphone active':'Microfone ativo', 'Reply audio active':'Áudio da resposta ativo', 'Voice captured':'Áudio capturado', 'Live Talk paused':'Live Talk pausado',
+  'Mute the microphone or exit to your saved conversation':'Silencie o microfone ou saia para voltar à conversa salva', 'Try again':'Tentar novamente',
+  'Listening':'Ouvindo', 'Speaking':'Falando', 'Processing':'Processando', 'Preparing your reply':'Preparando sua resposta', 'Zeus is speaking':'Zeus está falando',
+  'Wait for Zeus to finish the current reply before starting Live Talk.':'Aguarde Zeus terminar a resposta atual antes de iniciar o Live Talk.',
+  'This voice recording exceeded the 4 MB limit. Try a shorter phrase.':'Esta gravação passou do limite de 4 MB. Tente falar por menos tempo.',
+  'Zeus could not complete that voice request. Try again.':'Zeus não conseguiu concluir esse pedido por voz. Tente novamente.',
+  'The spoken reply audio could not be decoded by this browser. Try again or check your audio output.':'Este navegador não conseguiu reproduzir o áudio da resposta. Tente novamente ou confira a saída de áudio.',
+  'Zeus prepared a reply, but audio playback did not finish. Check the iPhone audio output and try again.':'Zeus preparou uma resposta, mas o áudio não terminou de tocar. Confira o áudio do iPhone e tente novamente.',
+  'Zeus prepared a reply, but the browser could not play it. Check audio output and try again.':'Zeus preparou uma resposta, mas o navegador não conseguiu tocá-la. Confira a saída de áudio e tente novamente.',
+  'The browser could not start spoken playback. Check audio output and try again.':'O navegador não conseguiu iniciar a reprodução de voz. Confira a saída de áudio e tente novamente.',
+  'The browser speech service keeps disconnecting. Check your connection or allow microphone and speech access, then try again.':'O serviço de reconhecimento de voz continua desconectando. Confira a conexão e as permissões do microfone e tente novamente.',
   'Zeus is your private AI workspace.':'Seu espaço privado de inteligência artificial.',
   'Projects, permanent memory, files, artifacts and Olympus orchestration stay together. Provider keys stay behind Netlify.':'Converse, organize projetos e crie arquivos em um só lugar. Suas credenciais ficam protegidas no servidor.',
   'Projects + dedicated memory':'Projetos com memória própria', 'Files, images and outputs':'Arquivos, imagens e resultados',
-  'PRIVATE ACCESS':'ACESSO PRIVADO', 'Unlock Zeus':'Desbloquear Zeus', 'Private key':'Chave de acesso',
-  'Use the same private access key configured in Netlify.':'Entre com a chave de acesso do seu espaço Zeus.',
-  'This key stays on this device until Lock or 14 days without use. On a shared device, Lock before you leave.':'A chave fica salva neste dispositivo até você bloquear o acesso ou passar 14 dias sem usar. Em dispositivos compartilhados, bloqueie ao sair.',
   'Zeus capabilities':'Recursos do Zeus', 'Intelligence mode':'Modo de inteligência',
   'STANDARD':'COTIDIANO', 'ADVANCED':'AVANÇADO',
   'Automatic level: Simple or Compound':'Perguntas e tarefas do dia a dia',
@@ -115,8 +124,7 @@ const translations = new Map(Object.entries({
   'Open commit':'Abrir commit', 'Could not commit to GitHub.':'Não foi possível enviar ao GitHub.',
   'Olympus is working':'Olympus está trabalhando', 'Completed':'Concluído', 'INITIALIZING ZEUS':'INICIANDO ZEUS',
   'You are offline. Reconnect and try again.':'Você está sem conexão. Reconecte e tente novamente.',
-  'Could not unlock Zeus.':'Não foi possível desbloquear o Zeus.', 'Unlock Zeus again.':'Desbloqueie o Zeus novamente.',
-  'Use the same 32+ character private key configured in Netlify.':'Use a chave de acesso configurada, com pelo menos 32 caracteres.',
+  'Workspace services need to reconnect.':'Os serviços do espaço precisam se reconectar.', 'Show affected services':'Ver serviços afetados', 'Retry services':'Tentar novamente',
   'Checking workspace runtime…':'Verificando os serviços…', 'AI runtime and workspace services are available.':'Os serviços de IA e do espaço estão disponíveis.',
   'Workspace loaded, but AI runtime is not fully available.':'O espaço carregou, mas a IA não está totalmente disponível.',
   'Runtime diagnostics did not load. Refresh to retry.':'O diagnóstico não carregou. Atualize a página para tentar novamente.',
@@ -150,7 +158,6 @@ const translations = new Map(Object.entries({
   'A configured model is unavailable; Zeus could not complete fallback safely.':'O modelo de IA está indisponível e Zeus não conseguiu usar uma alternativa.',
   'The AI request exceeded Zeus’s execution budget before a provider completed it.':'O pedido atingiu o limite de execução antes de a IA concluir a resposta.',
   'No configured AI provider completed this request.':'Nenhum serviço de IA conseguiu concluir este pedido.',
-  'Your private Zeus access is no longer valid on this screen. Unlock Zeus again.':'Seu acesso ao Zeus expirou ou deixou de ser válido. Desbloqueie novamente.',
   'GitHub commit is not configured on the server yet.':'O envio ao GitHub ainda não está configurado.',
   'GitHub rejected the server credential. Update the GitHub token and try again.':'O GitHub recusou a credencial do servidor. Atualize o token e tente novamente.',
   'GitHub denied this commit. Check repository permission or branch protection.':'O GitHub recusou o commit. Confira as permissões do repositório e a proteção da branch.',
@@ -176,7 +183,7 @@ export function translateInterfaceText(value) {
     .replace(/^Sampling (.+) for visual analysis…$/,'Selecionando imagens de $1 para análise…')
     .replace(/^Video prepared: (\d+) sampled frames\. Audio and motion between samples are not analyzed\.$/,'Vídeo preparado: $1 imagens selecionadas. O áudio e os movimentos entre as imagens não são analisados.')
     .replace(/^Could not prepare (.+)\.$/,'Não foi possível preparar $1.')
-    .replace(/^Some workspace services did not load: ([\s\S]+)\. Refresh to retry\.$/,(_,list)=>`Alguns serviços não carregaram: ${list.split(', ').map(n=>translations.get(n)||n).join(', ')}. Atualize a página para tentar novamente.`)
+    .replace(/^Some workspace services did not load\. Retry services to try again\.$/,'Alguns serviços não carregaram. Toque em Tentar novamente para reconectar.')
     .replace(/^Request failed \(HTTP (\d+)\)\.$/,'Não foi possível concluir o pedido (HTTP $1).')
     .replace(/^Zeus's server timed out or stopped before replying \(HTTP (\d+)\)\. Tap Retry: a reply that finished will be recovered\.$/,'O servidor demorou demais ou foi interrompido (HTTP $1). Toque em Tentar novamente para recuperar uma resposta já concluída.')
     .replace(/^The connection closed after (\d+)s while Zeus was still working[\s\S]+$/,'A conexão terminou após $1 segundos enquanto Zeus trabalhava. Toque em Tentar novamente para recuperar uma resposta já concluída.')

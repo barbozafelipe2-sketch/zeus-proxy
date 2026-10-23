@@ -22,8 +22,8 @@ assert.ok(app.includes('attach-media')&&app.includes('attach-camera')&&app.inclu
 assert.ok(html.includes('global-media-input')&&html.includes('global-camera-input')&&html.includes('global-file-input'),'attachment inputs missing');
 assert.ok(app.includes('Enter adds a new line · use the arrow to send'),'multiline composer guidance missing');
 assert.ok(!app.includes("e.key==='Enter'&&!e.shiftKey"),'Enter still submits instead of newline');
-assert.ok(app.includes("headers.set('x-zeus-access-token',state.accessKey)"),'private access header missing');
-assert.ok(auth.includes('ZEUS_PROXY_ACCESS_TOKEN')&&auth.includes('timingSafeEqual'),'private server access gate missing');
+assert.ok(!app.includes('x-zeus-access-token')&&!app.includes('function authView('),'personal app must start without a shared access key');
+assert.ok(!auth.includes('ZEUS_PROXY_ACCESS_TOKEN')&&!auth.includes('timingSafeEqual'),'server must not gate personal APIs on a shared token');
 assert.ok(chat.includes('generateImage')&&chat.includes('editImage'),'image generation/edit capability missing');
 assert.ok(chat.includes('runWebSearch')&&chat.includes('sources:Array.isArray(result.sources)'),'web search/source persistence missing');
 assert.ok(app.includes('message-sources'),'web source UI missing');
