@@ -7,12 +7,17 @@ const validId=id=>/^[A-Za-z0-9_-]{2,120}$/.test(String(id||''));
 const OPENAI_VOICES=new Set(['alloy','ash','ballad','coral','echo','fable','nova','onyx','sage','shimmer','verse','marin','cedar']);
 const MAX_AUDIO_BYTES=8*1024*1024;
 const PROVIDER_TIMEOUT_MS=12000;
+const DEFAULT_ELEVENLABS_VOICE_ID='EXAVITQu4vr4xnSDxMaL'; // Sarah (premade)
+const RETRYABLE_VOICE_STATUSES=new Set([401,404,422]);
 
 function speechRoutes({elevenLabsVoiceId=''}={}){
   const routes=[];
   const elevenKey=env('ELEVENLABS_API_KEY')||env('ELEVEN_LABS_API_KEY');
-  const elevenVoice=elevenLabsVoiceId||env('ELEVENLABS_VOICE_ID')||env('ELEVEN_LABS_VOICE_ID');
-  if(elevenKey&&validId(elevenVoice))routes.push({name:'elevenlabs',kind:'elevenlabs',key:elevenKey,voiceId:elevenVoice});
+  const envVoice=[env('ELEVENLABS_VOICE_ID'),env('ELEVEN_LABS_VOICE_ID')].map(v=>String(v||'').trim()).find(validId)||'';
+  const fallbackVoice=envVoice||DEFAULT_ELEVENLABS_VOICE_ID;
+  const requested=String(elevenLabsVoiceId||'').trim();
+  const elevenVoice=validId(requested)?requested:fallbackVoice;
+  if(elevenKey)routes.push({name:'elevenlabs',kind:'elevenlabs',key:elevenKey,voiceId:elevenVoice,fallbackVoiceId:elevenVoice!==fallbackVoice?fallbackVoice:''});
 
   const openaiKey=env('OPENAI_API_KEY');
   const openaiBase=env('OPENAI_BASE_URL')||env('OPENAI_API_BASE')||(openaiKey?'https://api.openai.com/v1':'');
@@ -41,10 +46,27 @@ function openaiVoice(requested){
   const value=String(requested||'').trim().toLowerCase();
   return OPENAI_VOICES.has(value)?value:'marin';
 }
-function providerError(status){
+function providerError(status,detail=''){
   const error=new Error(`Speech provider returned ${status}.`);
   error.status=status;
+  if(detail)error.detail=detail;
   return error;
+}
+function safeDetail(value,secrets=[]){
+  let text=String(value||'').replace(/\s+/g,' ').trim();
+  for(const secret of secrets)if(secret&&secret.length>=6)text=text.split(secret).join('[redacted]');
+  return text.replace(/xi-api-key\S*/gi,'[redacted]').slice(0,200);
+}
+async function elevenLabsErrorDetail(response,key){
+  try{
+    const raw=await response.text();
+    let parsed=null;try{parsed=JSON.parse(raw)}catch{}
+    const d=parsed?.detail;
+    const text=d&&typeof d==='object'
+      ?[d.status,d.message].filter(Boolean).join(': ')
+      :typeof d==='string'?d:Array.isArray(d)?d.map(item=>item?.msg||'').filter(Boolean).join('; '):(parsed?.message||raw);
+    return safeDetail(text,[key]);
+  }catch{return '';}
 }
 async function readAudioResponse(response){
   if(!response.ok)throw providerError(response.status);
@@ -55,11 +77,12 @@ async function readAudioResponse(response){
   if(!bytes.byteLength){const error=new Error('Speech provider returned empty audio.');error.status=502;throw error;}
   return {bytes,contentType:response.headers.get('content-type')||'audio/mpeg'};
 }
-async function callElevenLabs(route,text,signal,fetchImpl){
+async function callElevenLabs(route,text,signal,fetchImpl,voiceId=route.voiceId){
   const model=env('ELEVENLABS_MODEL_ID')||env('ELEVEN_LABS_MODEL_ID')||'eleven_multilingual_v2';
-  const url=new URL(appendPath('https://api.elevenlabs.io',`/v1/text-to-speech/${encodeURIComponent(route.voiceId)}`));
+  const url=new URL(appendPath('https://api.elevenlabs.io',`/v1/text-to-speech/${encodeURIComponent(voiceId)}`));
   url.searchParams.set('output_format','mp3_44100_128');
   const response=await fetchImpl(url,{method:'POST',signal,headers:{'xi-api-key':route.key,'Content-Type':'application/json','Accept':'audio/mpeg'},body:JSON.stringify({text,model_id:model})});
+  if(!response.ok)throw providerError(response.status,await elevenLabsErrorDetail(response,route.key));
   return readAudioResponse(response);
 }
 async function callOpenAI(route,text,voice,signal,fetchImpl){
@@ -112,32 +135,53 @@ export async function listElevenLabsVoices({search='',nextPageToken='',fetchImpl
   return {voices,hasMore:Boolean(payload?.has_more),nextPageToken:String(payload?.next_page_token||'').slice(0,512)};
 }
 
+async function attempt(route,call){
+  const controller=new AbortController();
+  const timeout=setTimeout(()=>controller.abort(),PROVIDER_TIMEOUT_MS);
+  try{return await call(controller.signal);}finally{clearTimeout(timeout);}
+}
+const failureEntry=(provider,error,extra={})=>({provider,status:error?.name==='AbortError'?504:Number(error?.status)||503,...(error?.detail?{detail:String(error.detail).slice(0,200)}:{}),...extra});
+
 export async function generateSpeech(text,{voice='marin',elevenLabsVoiceId='',fetchImpl=globalThis.fetch,onProviderError=()=>{}}={}){
   if(elevenLabsVoiceId&&!validId(elevenLabsVoiceId)){const error=new Error('Invalid ElevenLabs Voice ID.');error.status=400;error.code='INVALID_ELEVENLABS_VOICE_ID';throw error;}
   const routes=speechRoutes({elevenLabsVoiceId});
   const providerFailures=[];
   let lastStatus=0;
+  const record=entry=>{lastStatus=entry.status;providerFailures.push(entry);onProviderError(entry.provider,entry.status,entry.detail||'');return entry;};
   for(const route of routes){
-    const controller=new AbortController();
-    const timeout=setTimeout(()=>controller.abort(),PROVIDER_TIMEOUT_MS);
+    if(route.kind==='elevenlabs'){
+      try{
+        const result=await attempt(route,signal=>callElevenLabs(route,text,signal,fetchImpl));
+        return {...result,route:route.name,voiceId:route.voiceId,voiceFallback:false};
+      }catch(error){
+        const entry=record(failureEntry(route.name,error,{voice:route.fallbackVoiceId?'selected':'default'}));
+        if(entry.status===413)throw error;
+        if(route.fallbackVoiceId&&RETRYABLE_VOICE_STATUSES.has(entry.status)){
+          // The browser-selected voice was rejected: retry once with the server default voice.
+          try{
+            const result=await attempt(route,signal=>callElevenLabs(route,text,signal,fetchImpl,route.fallbackVoiceId));
+            return {...result,route:route.name,voiceId:route.fallbackVoiceId,voiceFallback:true};
+          }catch(retryError){record(failureEntry(route.name,retryError,{voice:'default'}));}
+        }
+      }
+      continue;
+    }
     try{
-      const result=route.kind==='elevenlabs'
-        ?await callElevenLabs(route,text,controller.signal,fetchImpl)
-        :route.kind==='openai'
-          ?await callOpenAI(route,text,voice,controller.signal,fetchImpl)
-          :await callGemini(route,text,controller.signal,fetchImpl);
-      return {...result,route:route.name};
+      const result=await attempt(route,signal=>route.kind==='openai'
+        ?callOpenAI(route,text,voice,signal,fetchImpl)
+        :callGemini(route,text,signal,fetchImpl));
+      return {...result,route:route.name,voiceFallback:false};
     }catch(error){
-      lastStatus=error?.name==='AbortError'?504:Number(error?.status)||503;
-      providerFailures.push({provider:route.name,status:lastStatus});
-      onProviderError(route.name,lastStatus);
-      if(lastStatus===413)throw error;
-    }finally{clearTimeout(timeout);}
+      const entry=record(failureEntry(route.name,error));
+      if(entry.status===413)throw error;
+    }
   }
+  const primary=providerFailures.find(f=>f.provider==='elevenlabs');
   const error=new Error(routes.length?'Speech generation failed on all configured voice providers.':'No server speech provider is configured.');
   error.status=routes.length?(lastStatus===429?429:502):501;
   error.code=routes.length?'SPEECH_PROVIDER_FAILED':'SPEECH_NOT_CONFIGURED';
   error.providerFailures=providerFailures;
+  if(primary)error.elevenLabs={status:primary.status,detail:primary.detail||''};
   throw error;
 }
 
@@ -165,22 +209,15 @@ export default async function(req,context){
     const text=String(body?.text||'').trim();
     if(!text||text.length>2500)return errorJson('Speech text must be 1 to 2500 characters.',400,'INVALID_SPEECH_TEXT',requestId);
     const elevenLabsVoiceId=String(body?.elevenLabsVoiceId||'').trim();
-    if(!speechRoutes({elevenLabsVoiceId}).length){
-      const hasElevenLabsKey=Boolean(env('ELEVENLABS_API_KEY')||env('ELEVEN_LABS_API_KEY'));
-      const hasElevenLabsVoice=Boolean(elevenLabsVoiceId||env('ELEVENLABS_VOICE_ID')||env('ELEVEN_LABS_VOICE_ID'));
-      const message=hasElevenLabsKey&&!hasElevenLabsVoice
-        ?'ElevenLabs is connected, but no Voice ID is selected. Choose a voice in Settings, paste its Voice ID, and save it.'
-        :'No speech provider is available. Configure an ElevenLabs API key and Voice ID, or enable OpenAI/Gemini speech in Netlify.';
-      return errorJson(message,501,'SPEECH_NOT_CONFIGURED',requestId);
-    }
+    if(!speechRoutes({elevenLabsVoiceId}).length)return errorJson('No speech provider is available. Add ELEVENLABS_API_KEY (Functions scope) in Netlify and redeploy.',501,'SPEECH_NOT_CONFIGURED',requestId);
     await consumeEndpointRate(auth.db,auth.user.id,'speech',requestId,30);
-    const audio=await generateSpeech(text,{voice:body?.voiceId,elevenLabsVoiceId,onProviderError:(provider,status)=>console.warn('Speech provider failed',requestId,provider,status)});
-    return new Response(audio.bytes,{status:200,headers:{'Content-Type':audio.contentType,'Cache-Control':'no-store','X-Content-Type-Options':'nosniff','X-Zeus-Voice-Route':audio.route}});
+    const audio=await generateSpeech(text,{voice:body?.voiceId,elevenLabsVoiceId,onProviderError:(provider,status,detail)=>console.error('Speech provider failed',requestId,provider,status,detail||'')});
+    return new Response(audio.bytes,{status:200,headers:{'Content-Type':audio.contentType,'Cache-Control':'no-store','X-Content-Type-Options':'nosniff','X-Zeus-Voice-Route':audio.route,...(audio.voiceFallback?{'X-Zeus-Voice-Fallback':'1'}:{}),...(audio.voiceId?{'X-Zeus-Voice-Used':audio.voiceId}:{})}});
   }catch(error){
     const status=error?.code==='AI_RATE_LIMIT'?429:error?.status||503;
     const code=error?.code||'SPEECH_FAILED';
-    const message=error?.code==='AI_RATE_LIMIT'?'Speech rate limit reached.':error?.code==='INVALID_ELEVENLABS_VOICE_ID'?'The ElevenLabs Voice ID is invalid. Check it in Voice settings and try again.':'Zeus replied in chat, but speech audio is unavailable. Check the server voice configuration and try again.';
-    return errorJson(message,status,code,requestId,{providerFailures:Array.isArray(error?.providerFailures)?error.providerFailures:[]});
+    const message=error?.code==='AI_RATE_LIMIT'?'Speech rate limit reached.':error?.code==='INVALID_ELEVENLABS_VOICE_ID'?'The ElevenLabs Voice ID is invalid. Check it in Voice settings and try again.':(error?.elevenLabs?`ElevenLabs ${error.elevenLabs.status}${error.elevenLabs.detail?`: ${error.elevenLabs.detail}`:''}`:'Zeus replied in chat, but speech audio is unavailable. Check the server voice configuration and try again.');
+    return errorJson(message,status,code,requestId,{providerFailures:Array.isArray(error?.providerFailures)?error.providerFailures:[],...(error?.elevenLabs?{elevenLabs:error.elevenLabs}:{})});
   }
 }
 export const config={path:['/api/speech','/api/speech/voices']};

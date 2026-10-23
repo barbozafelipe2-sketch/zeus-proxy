@@ -146,6 +146,18 @@ const translations = new Map(Object.entries({
   'Detecting language and transcribing…':'Identificando o idioma e transcrevendo…',
   'Listening… tap the mic when finished':'Ouvindo… toque no microfone ao terminar', 'Listening…':'Ouvindo…',
   'No speech was detected.':'Nenhuma fala foi detectada.', 'Voice input is not supported by this browser.':'Este navegador não oferece entrada por voz.',
+  'Save voice':'Salvar voz', 'Test voice':'Testar voz', 'Testing voice…':'Testando voz…', 'Voice removed.':'Voz removida.', 'Voice test played.':'Teste de voz tocado.',
+  'No voice saved in this browser; the server default voice is used.':'Nenhuma voz salva neste navegador; a voz padrão do servidor será usada.',
+  'Live Talk speaks with ElevenLabs. If no voice is saved in this browser, the server default voice is used. The browser’s system voice is not used as a silent fallback.':'O Live Talk fala com a voz do ElevenLabs. Se nenhuma voz estiver salva neste navegador, a voz padrão do servidor é usada. A voz do sistema do navegador não é usada como reserva silenciosa.',
+  'Could not save the voice in this browser (storage is blocked). It only applies until you reload.':'Não foi possível salvar a voz neste navegador (armazenamento bloqueado). Ela só vale até recarregar a página.',
+  'Enter a valid ElevenLabs Voice ID (letters, numbers, hyphens, or underscores).':'Informe um ID de voz do ElevenLabs válido (letras, números, hífen ou sublinhado).',
+  'Choose a supported OpenAI fallback voice.':'Escolha uma voz reserva da OpenAI compatível.',
+  'The saved voice was rejected by ElevenLabs; the default voice was used.':'O ElevenLabs recusou a voz salva; usei a voz padrão.',
+  'The voice audio was generated, but the browser blocked playback. Tap Test voice again.':'O áudio foi gerado, mas o navegador bloqueou a reprodução. Toque em Testar voz novamente.',
+  'The voice audio is ready, but the browser blocked playback (iOS autoplay). Tap Try again to play it.':'O áudio da voz está pronto, mas o navegador bloqueou a reprodução (iOS). Toque em Tentar novamente para ouvir.',
+  'Voice test timed out. Check the voice provider and try again.':'O teste de voz demorou demais. Confira o provedor de voz e tente novamente.',
+  'Could not reach the voice service. Check your connection and try again.':'Não foi possível acessar o serviço de voz. Confira a conexão e tente novamente.',
+  'Voice provider returned empty audio.':'O provedor de voz devolveu áudio vazio.',
   'Could not encode image.':'Não foi possível preparar a imagem.',
   'This image format could not be decoded on this device.':'Este dispositivo não conseguiu abrir a imagem. Tente outro formato.',
   'This video could not be decoded on this device.':'Este dispositivo não conseguiu abrir o vídeo. Tente outro formato.',
@@ -178,6 +190,11 @@ export function translateInterfaceText(value) {
   return value
     .replace(/^Uploading (.+)…$/,'Enviando $1…')
     .replace(/^Open agent (.+)$/,'Abrir agente $1')
+    .replace(/^Voice saved in this browser: (.+)$/,'Voz salva neste navegador: $1')
+    .replace(/^Voice saved: (.+)$/,'Voz salva: $1')
+    .replace(/^Voice test failed: (.+)$/,'Falha no teste de voz: $1')
+    .replace(/^ElevenLabs voice failed — /,'A voz do ElevenLabs falhou — ')
+    .replace(/ Backup voices also failed \(/,' As vozes reserva também falharam (')
     .replace(/^(\d+)% · (\d+) open tasks$/,'$1% · $2 tarefas abertas')
     .replace(/^Preparing (.+) for vision…$/,'Preparando $1 para análise…')
     .replace(/^Sampling (.+) for visual analysis…$/,'Selecionando imagens de $1 para análise…')

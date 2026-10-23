@@ -28,11 +28,30 @@ try{
   await assert.rejects(()=>generateSpeech('Voz inválida.',{elevenLabsVoiceId:'bad voice'}),error=>error.status===400&&error.code==='INVALID_ELEVENLABS_VOICE_ID');
 
   globalThis.Netlify={env:{get:key=>key==='ELEVEN_LABS_API_KEY'?'eleven-test-key':''}};
-  await assert.rejects(()=>generateSpeech('Erro de voz.',{elevenLabsVoiceId:'myVoice_456',fetchImpl:async()=>new Response('denied',{status:401})}),error=>{
+  const failedUrls=[];
+  await assert.rejects(()=>generateSpeech('Erro de voz.',{elevenLabsVoiceId:'myVoice_456',fetchImpl:async(url)=>{failedUrls.push(String(url));return new Response(JSON.stringify({detail:{status:'invalid_api_key',message:'Invalid API key eleven-test-key'}}),{status:401});}}),error=>{
     assert.equal(error.code,'SPEECH_PROVIDER_FAILED');
-    assert.deepEqual(error.providerFailures,[{provider:'elevenlabs',status:401}]);
+    assert.deepEqual(error.providerFailures,[
+      {provider:'elevenlabs',status:401,detail:'invalid_api_key: Invalid API key [redacted]',voice:'selected'},
+      {provider:'elevenlabs',status:401,detail:'invalid_api_key: Invalid API key [redacted]',voice:'default'}]);
+    assert.deepEqual(error.elevenLabs,{status:401,detail:'invalid_api_key: Invalid API key [redacted]'},'the ElevenLabs reason is reported first and never leaks the key');
     return true;
   });
+  assert.equal(failedUrls.length,2,'a rejected client voice is retried once with the default voice');
+  assert.match(failedUrls[1],/text-to-speech\/EXAVITQu4vr4xnSDxMaL\?/,'default premade voice is used when no env voice exists');
+  // No env voice and no client voice: ElevenLabs is still attempted with the default premade voice.
+  let defaultUrl='';
+  const defaulted=await generateSpeech('Voz padrão.',{fetchImpl:async url=>{defaultUrl=String(url);return okAudio();}});
+  assert.equal(defaulted.route,'elevenlabs');assert.equal(defaulted.voiceFallback,false);
+  assert.match(defaultUrl,/text-to-speech\/EXAVITQu4vr4xnSDxMaL\?/);
+  // Client voice rejected (422) but the default voice works: fallback flag is reported.
+  const seenVoices=[];
+  const recovered=await generateSpeech('Clone sem acesso.',{elevenLabsVoiceId:'clonedVoice1',fetchImpl:async url=>{seenVoices.push(String(url));return seenVoices.length===1?new Response('{"detail":"voice not found"}',{status:404}):okAudio();}});
+  assert.equal(recovered.voiceFallback,true);assert.equal(recovered.voiceId,'EXAVITQu4vr4xnSDxMaL');assert.equal(seenVoices.length,2);
+  // A 5xx is not a voice problem: no same-provider retry.
+  const fiveXx=[];
+  await assert.rejects(()=>generateSpeech('Erro 5xx.',{elevenLabsVoiceId:'clonedVoice1',fetchImpl:async url=>{fiveXx.push(String(url));return new Response('oops',{status:503});}}),error=>error.providerFailures.length===1);
+  assert.equal(fiveXx.length,1);
   globalThis.Netlify={env:{get:key=>env[key]||''}};
 
   let voiceListRequest=null;
@@ -88,10 +107,14 @@ try{
   const app=readFileSync(new URL('../public/app.js',import.meta.url),'utf8');
   assert.ok(!app.includes('fallbackLiveSpeech'),'browser speech synthesis cannot silently mask TTS failures');
   const play=app.slice(app.indexOf('async function sayZeusReply('),app.indexOf('function stopLiveCapture('));
-  assert.match(play,/if\(!res\.ok\)\{\s*const failure=await res\.json\(\)/);
-  assert.match(play,/failure\?\.error/,'Live Talk shows the safe server error instead of replacing it with a generic message');
-  assert.match(play,/failure\?\.providerFailures/,'Live Talk includes safe provider status diagnostics');
+  const describe=app.slice(app.indexOf('function describeSpeechFailure('),app.indexOf('async function requestSpeechAudio('));
+  assert.match(describe,/failure\?\.error/,'Live Talk shows the safe server error instead of replacing it with a generic message');
+  assert.match(describe,/failure\?\.providerFailures/,'Live Talk includes safe provider status diagnostics');
+  assert.match(describe,/item\.detail/,'ElevenLabs detail is shown');
+  assert.match(play,/requestSpeechAudio\(/);assert.match(play,/NotAllowedError/,'autoplay rejection is distinguished from a failed fetch');
+  assert.match(play,/liveSpeechCache/,'a blocked playback is retried from cache without another server call');
   assert.match(play,/Natural voice audio is unavailable/);
+  assert.match(app,/id="test-voice"/,'settings expose a Test voice button');assert.match(app,/id="voice-save-status"/,'voice save status is visible inline');
   assert.match(app,/id="elevenlabs-voice-id"/,'settings expose a custom ElevenLabs Voice ID field');
   assert.match(app,/id="elevenlabs-voice-preset"/,'settings expose an account voice picker');
   assert.match(play,/elevenLabsVoiceId/,'Live Talk sends the selected ElevenLabs Voice ID to the server');

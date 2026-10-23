@@ -14,7 +14,7 @@ const state = {
   projectSection:'CHAT', projectMemories:[], projectSources:[], memoryPolicy:null,
   messagePage:{hasMore:false,nextCursor:null}, filesPage:{scope:'global',hasMore:false,nextCursor:null}, artifactsPage:{scope:'global',hasMore:false,nextCursor:null}, chatRestore:null,
   voiceBusy:false, voiceRecorder:null, voiceStream:null, voiceChunks:[], voiceStopTimer:null, voiceRecognition:null, voiceBytes:0, voiceHitSizeLimit:false,
-  liveTalk:false, liveTalkStopRequested:false, liveMuted:false, liveStageBeforeMute:'idle', liveFailureKind:null, liveRecognizer:null, liveRecognitionTimer:null, liveCapture:null, liveGeneration:0, liveRetryTimer:null, liveRetryCount:0, liveStage:'idle', voiceId:'marin', elevenLabsVoiceId:'', voiceReplyAudio:null, liveAudioUrl:null, liveSpeechController:null, liveAudioUnlocked:false, liveSpeechUnlocked:false,
+  liveTalk:false, liveTalkStopRequested:false, liveMuted:false, liveStageBeforeMute:'idle', liveFailureKind:null, liveRecognizer:null, liveRecognitionTimer:null, liveCapture:null, liveGeneration:0, liveRetryTimer:null, liveRetryCount:0, liveStage:'idle', voiceId:'marin', elevenLabsVoiceId:'', voiceStatus:null, voiceTesting:false, liveSpeechCache:null, voiceReplyAudio:null, liveAudioUrl:null, liveSpeechController:null, liveAudioUnlocked:false, liveSpeechUnlocked:false,
   liveLocale:'auto', voiceAvatar:'lightning', elevenLabsVoices:[], elevenLabsVoicesLoaded:false, elevenLabsVoicesLoading:false, elevenLabsVoicesError:'', elevenLabsVoicePageToken:'', elevenLabsVoiceHasMore:false,
   preferences:{personality:'balanced',instructions:''}, preferencesLoaded:false,
   googleSearchResults:{}, googleSearchQueries:{}, googleSearchBusy:null,
@@ -340,6 +340,78 @@ function initVoicePrefs(){
  const savedVoice=String(localStorage.getItem('zeus-voice-id')||'marin').toLowerCase();
  state.voiceId=['alloy','ash','ballad','coral','echo','fable','nova','onyx','sage','shimmer','verse','marin','cedar'].includes(savedVoice)?savedVoice:'marin';
  const customVoice=String(localStorage.getItem('zeus-elevenlabs-voice-id')||'').trim();state.elevenLabsVoiceId=/^[A-Za-z0-9_-]{2,120}$/.test(customVoice)?customVoice:'';}catch{}
+}
+const ELEVENLABS_VOICE_PATTERN=/^[A-Za-z0-9_-]{2,120}$/;
+const OPENAI_VOICE_NAMES=['alloy','ash','ballad','coral','echo','fable','nova','onyx','sage','shimmer','verse','marin','cedar'];
+function storageGet(key){try{return localStorage.getItem(key)||''}catch{return ''}}
+function storedElevenLabsVoiceId(){const v=storageGet('zeus-elevenlabs-voice-id').trim();return ELEVENLABS_VOICE_PATTERN.test(v)?v:'';}
+function elevenLabsVoiceLabel(id){if(!id)return '';const voice=state.elevenLabsVoices.find(v=>v.voice_id===id);return voice?.name?`${voice.name} (${id})`:id;}
+function setVoiceStatus(kind,text){state.voiceStatus={kind,text};announce(text);render();}
+function persistVoicePrefs(openaiVoice,elevenLabsVoiceId){
+  try{
+    localStorage.setItem('zeus-voice-id',openaiVoice);
+    if(elevenLabsVoiceId)localStorage.setItem('zeus-elevenlabs-voice-id',elevenLabsVoiceId);else localStorage.removeItem('zeus-elevenlabs-voice-id');
+    return true;
+  }catch{return false;}
+}
+function saveVoiceSettings({elevenLabsVoiceId,source='button'}={}){
+  const openaiVoice=String($('#zeus-voice-preset')?.value||state.voiceId||'marin').toLowerCase();
+  if(!OPENAI_VOICE_NAMES.includes(openaiVoice)){setVoiceStatus('error','Choose a supported OpenAI fallback voice.');return false;}
+  const id=String(elevenLabsVoiceId||'').trim();
+  if(id&&!ELEVENLABS_VOICE_PATTERN.test(id)){setVoiceStatus('error','Enter a valid ElevenLabs Voice ID (letters, numbers, hyphens, or underscores).');return false;}
+  const stored=persistVoicePrefs(openaiVoice,id);
+  state.voiceId=openaiVoice;state.elevenLabsVoiceId=id;state.error='';
+  if(!stored)setVoiceStatus('error','Could not save the voice in this browser (storage is blocked). It only applies until you reload.');
+  else setVoiceStatus('ok',id?`Voice saved: ${elevenLabsVoiceLabel(id)}`:'Voice removed.');
+  return true;
+}
+function describeSpeechFailure(failure,status){
+  const names={elevenlabs:'ElevenLabs',openai_gateway:'OpenAI TTS',gemini_gateway:'Gemini TTS'};
+  const list=(Array.isArray(failure?.providerFailures)?failure.providerFailures:[]).filter(item=>names[item?.provider]&&Number.isInteger(Number(item?.status)));
+  const part=item=>`${names[item.provider]} ${Number(item.status)}${item.detail?`: ${String(item.detail).slice(0,160)}`:''}`;
+  const eleven=list.filter(item=>item.provider==='elevenlabs');
+  const others=list.filter(item=>item.provider!=='elevenlabs');
+  if(eleven.length){
+    const backups=others.length?` Backup voices also failed (${others.map(part).join(', ')}).`:'';
+    return `ElevenLabs voice failed — ${eleven.map(part).join(' → ')}.${backups}`.slice(0,420);
+  }
+  const base=String(failure?.error||`Voice providers are unavailable (HTTP ${status||'?'}).`).slice(0,240);
+  return `${base}${others.length?` (${others.map(part).join(' → ')})`:''}`;
+}
+async function requestSpeechAudio(text,{elevenLabsVoiceId='',signal}={}){
+  let res;
+  try{
+    res=await fetch('/api/speech',{method:'POST',headers:new Headers({'Content-Type':'application/json'}),signal,body:JSON.stringify({text,voiceId:state.voiceId||storageGet('zeus-voice-id')||'marin',elevenLabsVoiceId})});
+  }catch(error){
+    if(error?.name==='AbortError')throw error;
+    const failed=new Error('Could not reach the voice service. Check your connection and try again.');failed.stage='fetch';throw failed;
+  }
+  if(!res.ok){
+    const failure=await res.json().catch(()=>({}));
+    const failed=new Error(describeSpeechFailure(failure,res.status));failed.stage='fetch';throw failed;
+  }
+  const blob=await res.blob();
+  if(!blob.size){const failed=new Error('Voice provider returned empty audio.');failed.stage='fetch';throw failed;}
+  return {blob,voiceFallback:res.headers.get('X-Zeus-Voice-Fallback')==='1'};
+}
+async function testElevenLabsVoice(){
+  if(state.voiceTesting)return;
+  const typed=String($('#elevenlabs-voice-id')?.value??state.elevenLabsVoiceId).trim();
+  if(typed&&!ELEVENLABS_VOICE_PATTERN.test(typed)){setVoiceStatus('error','Enter a valid ElevenLabs Voice ID (letters, numbers, hyphens, or underscores).');return;}
+  state.voiceTesting=true;
+  unlockLiveAudioFromGesture();
+  setVoiceStatus('info','Testing voice…');
+  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),25000);
+  try{
+    const {blob,voiceFallback}=await requestSpeechAudio('Olá, eu sou o Zeus. Este é um teste de voz.',{elevenLabsVoiceId:typed,signal:controller.signal});
+    const url=URL.createObjectURL(blob),audio=state.voiceReplyAudio||new Audio();
+    state.voiceReplyAudio=audio;audio.muted=false;audio.volume=1;audio.playsInline=true;audio.src=url;
+    audio.onended=()=>URL.revokeObjectURL(url);
+    try{await audio.play();}catch{URL.revokeObjectURL(url);setVoiceStatus('error','The voice audio was generated, but the browser blocked playback. Tap Test voice again.');return;}
+    setVoiceStatus(voiceFallback?'warn':'ok',voiceFallback?'The saved voice was rejected by ElevenLabs; the default voice was used.':'Voice test played.');
+  }catch(error){
+    setVoiceStatus('error',error?.name==='AbortError'?'Voice test timed out. Check the voice provider and try again.':`Voice test failed: ${String(error?.message||'unknown error').slice(0,360)}`);
+  }finally{clearTimeout(timer);state.voiceTesting=false;render();}
 }
 async function loadElevenLabsVoices({append=false}={}){
  if(state.elevenLabsVoicesLoading)return;
@@ -780,7 +852,7 @@ function settingsView(){const providers=state.health?.providerReadiness||{};cons
   <p class="muted tiny">Actual spending may be higher than shown. Reconcile Netlify and external provider billing before treating this as an accurate total.</p>
   ${state.health?.monthlyBudget?.targetReached?'<p class="status-warn">Target reached in known estimates. Services remain available.</p>':''}
 </article>${preferencesSettings()}${googleIntegrationSettings()}<article class="card settings-card"><h3>Voice settings</h3>
-<p class="muted tiny">Live Talk uses your selected ElevenLabs voice first, then OpenAI and Gemini through Netlify. The browser’s system voice is not used as a silent fallback.</p>
+<p class="muted tiny">Live Talk speaks with ElevenLabs. If no voice is saved in this browser, the server default voice is used. The browser’s system voice is not used as a silent fallback.</p>
 <div class="field"><label for="elevenlabs-voice-preset">Choose an ElevenLabs voice from your account</label><select id="elevenlabs-voice-preset">
 <option value="">${state.elevenLabsVoicesLoading?'Loading ElevenLabs voices…':state.elevenLabsVoicesLoaded&&!state.elevenLabsVoices.length?'No voices found':'Choose a voice'}</option>
 ${state.elevenLabsVoiceId&&!state.elevenLabsVoices.some(v=>v.voice_id===state.elevenLabsVoiceId)?`<option value="${esc(state.elevenLabsVoiceId)}" selected>Custom voice · ${esc(state.elevenLabsVoiceId)}</option>`:''}
@@ -799,7 +871,9 @@ ${[['auto','Auto (device locale in browser)'],['pt','Português (Brasil)'],['en'
 </select></div><div class="field"><label for="voice-avatar">Live Talk avatar</label><select id="voice-avatar">
 ${[['lightning','Lightning plasma'],['classic','Classic orb'],['olympus','Olympus'],['liquid','Liquid metal']].map(([v,label])=>`<option value="${v}" ${state.voiceAvatar===v?'selected':''}>${label}</option>`).join('')}</select></div>
 <p class="muted tiny">Browser speech recognition handles one locale at a time. Voice Message uses server language detection if available.</p>
-<button type="button" class="secondary compact" id="save-voice-id">Save voice</button>
+<p class="muted tiny" id="voice-saved-line">${storedElevenLabsVoiceId()?esc(`Voice saved in this browser: ${elevenLabsVoiceLabel(storedElevenLabsVoiceId())}`):'No voice saved in this browser; the server default voice is used.'}</p>
+<div class="row"><button type="button" class="secondary compact" id="save-voice-id">Save voice</button><button type="button" class="secondary compact" id="test-voice" ${state.voiceTesting?'disabled':''}>${state.voiceTesting?'Testing voice…':'Test voice'}</button></div>
+<p class="${state.voiceStatus?.kind==='error'?'status-warn':state.voiceStatus?.kind==='warn'?'status-warn':'status-good'}" id="voice-save-status" role="status" aria-live="polite">${state.voiceStatus?esc(state.voiceStatus.text):''}</p>
 </article><article class="card settings-card"><h3>Go-live checklist</h3>${(state.health?.warnings||[]).length?`<div class="diag-list health-warnings" role="status">${state.health.warnings.map(w=>`<p class="diag-warning"><strong>${esc(w.section)}</strong>: ${esc(w.message)}</p>`).join('')}</div>`:''}<div class="diag-list">${[['Workspace API open',state.health?.goLive?.workspaceAccess==='open'],['Database',state.health?.goLive?.database],['Blob maintenance',state.health?.goLive?.blobMaintenance],['Provider configured',Number(state.health?.goLive?.configuredProviders||0)>0],['Chat callable',['observed_healthy','configured_unverified'].includes(state.health?.goLive?.chatState)]].map(([label,ok])=>`<div class="diag-row"><span>${esc(label)}</span><strong class="${ok?'status-good':'status-warn'}">${ok?'READY':'BLOCKED'}</strong></div>`).join('')}</div><p class="muted tiny" style="line-height:1.55;margin-top:14px">${state.health?.goLive?.ready?'Core runtime checks passed for this workspace.':'The workspace is waiting for its database, an AI provider and a callable chat route.'}</p></article><article class="card settings-card"><h3>AI provider diagnostics</h3><div class="diag-list">${['openai','anthropic','gemini','openrouter'].map(p=>{const v=providers[p]?.status||'not_configured';return `<div class="diag-row"><span>${p}</span><strong class="${statusGood(v)?'status-good':'status-warn'}">${esc(statusLabel(v))}</strong></div>`}).join('')}</div><p class="muted tiny" style="line-height:1.55;margin-top:14px">Diagnostics are runtime-local evidence. CONFIGURED UNVERIFIED means credentials/models were detected but this warm Function runtime has not observed a successful call yet. DEGRADED means the temporary circuit breaker is open.</p></article><article class="card settings-card"><h3>Capabilities</h3><div class="diag-list">${Object.keys(state.health?.capabilityReadiness||{}).length?'':`<div class="muted tiny">${state.health?'No capability diagnostics reported.':'Diagnostics load when the workspace runtime responds.'}</div>`}${Object.entries(state.health?.capabilityReadiness||{}).map(([k,v])=>`<div class="diag-row"><span>${esc(k)}</span><strong class="${v==='observed_healthy'?'status-good':'status-warn'}">${esc(statusLabel(v))}</strong></div>`).join('')}</div></article></div></section>`}
 
 
@@ -966,19 +1040,12 @@ function bind(){
   });
   $('#voice-avatar')?.addEventListener('change',e=>{const v=e.target.value;if(VOICE_AVATARS.has(v)){state.voiceAvatar=v;localStorage.setItem('zeus-voice-avatar',v);render();}});
   $('#live-language')?.addEventListener('change',e=>{const v=e.target.value;if(Object.prototype.hasOwnProperty.call(LIVE_LOCALES,v)){state.liveLocale=v;localStorage.setItem('zeus-live-locale',v);render();}});
-  $('#elevenlabs-voice-preset')?.addEventListener('change',e=>{const value=String(e.target.value||'');if(value){const input=$('#elevenlabs-voice-id');if(input)input.value=value;}});
+  $('#elevenlabs-voice-preset')?.addEventListener('change',e=>{const value=String(e.target.value||'');if(value){const input=$('#elevenlabs-voice-id');if(input)input.value=value;saveVoiceSettings({elevenLabsVoiceId:value,source:'preset'});}});
   $('#reload-elevenlabs-voices')?.addEventListener('click',()=>loadElevenLabsVoices());
   $('#load-more-elevenlabs-voices')?.addEventListener('click',()=>loadElevenLabsVoices({append:true}));
   if($('#elevenlabs-voice-preset')&&!state.elevenLabsVoicesLoaded&&!state.elevenLabsVoicesLoading)loadElevenLabsVoices();
-  $('#save-voice-id')?.addEventListener('click',()=>{
-    const value=String($('#zeus-voice-preset')?.value||'marin').toLowerCase();
-    if(!['alloy','ash','ballad','coral','echo','fable','nova','onyx','sage','shimmer','verse','marin','cedar'].includes(value)){state.error='Choose a supported OpenAI fallback voice.';render();return;}
-    const elevenLabsVoiceId=String($('#elevenlabs-voice-id')?.value||'').trim();
-    if(elevenLabsVoiceId&&!/^[A-Za-z0-9_-]{2,120}$/.test(elevenLabsVoiceId)){state.error='Enter a valid ElevenLabs Voice ID (letters, numbers, hyphens, or underscores).';render();return;}
-    localStorage.setItem('zeus-voice-id',value);
-    if(elevenLabsVoiceId)localStorage.setItem('zeus-elevenlabs-voice-id',elevenLabsVoiceId);else localStorage.removeItem('zeus-elevenlabs-voice-id');
-    state.voiceId=value;state.elevenLabsVoiceId=elevenLabsVoiceId;state.error='';render();
-  });
+  $('#save-voice-id')?.addEventListener('click',()=>{saveVoiceSettings({elevenLabsVoiceId:$('#elevenlabs-voice-id')?.value||'',source:'button'});});
+  $('#test-voice')?.addEventListener('click',()=>{testElevenLabsVoice();});
   $$('[data-tab]').forEach(b=>b.addEventListener('click',async()=>{
     const next=b.dataset.tab;state.drawer=false;
     if(next==='Home' && state.currentProject){
@@ -1394,34 +1461,40 @@ async function sayZeusReply(text){
   if(!state.liveTalk||!text)return;
   state.liveStage='speaking';render();
   const line=String(text).slice(0,1800);
-  const selected=state.voiceId||localStorage.getItem('zeus-voice-id')||'marin';
-  const elevenLabsVoiceId=state.elevenLabsVoiceId||localStorage.getItem('zeus-elevenlabs-voice-id')||'';
+  const elevenLabsVoiceId=state.elevenLabsVoiceId||storedElevenLabsVoiceId();
   try{state.liveSpeechController?.abort()}catch{}
   const speechController=new AbortController();state.liveSpeechController=speechController;
   const speechTimeout=setTimeout(()=>speechController.abort(),40000);
+  let blob=null;
   try{
-    const res=await fetch('/api/speech',{method:'POST',headers:new Headers({'Content-Type':'application/json'}),signal:speechController.signal,body:JSON.stringify({text:line,voiceId:selected,elevenLabsVoiceId})});
-    if(!res.ok){
-      const failure=await res.json().catch(()=>({}));
-      const providerNames={elevenlabs:'ElevenLabs',openai_gateway:'OpenAI TTS',gemini_gateway:'Gemini TTS'};
-      const attempts=(Array.isArray(failure?.providerFailures)?failure.providerFailures:[])
-        .filter(item=>providerNames[item?.provider]&&Number.isInteger(Number(item?.status)))
-        .map(item=>`${providerNames[item.provider]} ${Number(item.status)}`);
-      const detail=attempts.length?` (${attempts.join(' → ')})`:'';
-      throw new Error(`${String(failure?.error||'Voice providers are unavailable.').slice(0,240)}${detail}`);
+    // A previous attempt that was only blocked at playback (iOS autoplay) is replayed without another server call.
+    if(state.liveSpeechCache&&state.liveSpeechCache.line===line){blob=state.liveSpeechCache.blob;}
+    else{
+      state.liveSpeechCache=null;
+      const result=await requestSpeechAudio(line,{elevenLabsVoiceId,signal:speechController.signal});
+      blob=result.blob;
+      if(result.voiceFallback)announce('The saved voice was rejected by ElevenLabs; the default voice was used.');
     }
-    const blob=await res.blob();
-    if(!blob.size)throw new Error('Voice provider returned empty audio.');
     if(!state.liveTalk||speechController.signal.aborted){clearTimeout(speechTimeout);return;}
     const url=URL.createObjectURL(blob),audio=state.voiceReplyAudio||new Audio();
     discardLiveAudio({keepElement:true});audio.src=url;audio.muted=false;audio.volume=1;audio.playsInline=true;state.voiceReplyAudio=audio;state.liveAudioUrl=url;
-    audio.onended=()=>{clearTimeout(speechTimeout);discardLiveAudio();continueLiveTalkAfterTurn();};
-    audio.onerror=()=>{clearTimeout(speechTimeout);discardLiveAudio();pauseLiveTalkOnError('Zeus replied in chat, but the generated voice audio could not be played.','speech');};
-    await audio.play();
+    audio.onended=()=>{clearTimeout(speechTimeout);state.liveSpeechCache=null;discardLiveAudio();continueLiveTalkAfterTurn();};
+    audio.onerror=()=>{clearTimeout(speechTimeout);state.liveSpeechCache=null;discardLiveAudio();pauseLiveTalkOnError('Zeus replied in chat, but the generated voice audio could not be played.','speech');};
+    try{await audio.play();}
+    catch(playError){
+      if(playError?.name!=='NotAllowedError')throw playError;
+      clearTimeout(speechTimeout);
+      state.liveSpeechCache={line,blob};
+      discardLiveAudio();
+      if(!state.liveTalk||state.liveStage==='error')return;
+      pauseLiveTalkOnError('The voice audio is ready, but the browser blocked playback (iOS autoplay). Tap Try again to play it.','speech');
+      return;
+    }
+    state.liveSpeechCache=null;
   }catch(error){
     clearTimeout(speechTimeout);discardLiveAudio();
     if(!state.liveTalk||state.liveStage==='error')return;
-    const reason=error?.name==='AbortError'?'Natural voice audio timed out. Check the voice provider and retry.':String(error?.message||'Natural voice audio is unavailable. Check the ElevenLabs voice and Netlify AI Gateway settings, then try again.').slice(0,320);
+    const reason=error?.name==='AbortError'?'Natural voice audio timed out. Check the voice provider and retry.':String(error?.message||'Natural voice audio is unavailable. Check the ElevenLabs voice and Netlify settings, then try again.').slice(0,420);
     pauseLiveTalkOnError(reason,'speech');
   }
 }
