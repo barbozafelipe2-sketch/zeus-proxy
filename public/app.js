@@ -14,7 +14,7 @@ const state = {
   projectSection:'CHAT', projectMemories:[], projectSources:[], memoryPolicy:null,
   messagePage:{hasMore:false,nextCursor:null}, filesPage:{scope:'global',hasMore:false,nextCursor:null}, artifactsPage:{scope:'global',hasMore:false,nextCursor:null}, chatRestore:null,
   voiceBusy:false, voiceRecorder:null, voiceStream:null, voiceChunks:[], voiceStopTimer:null, voiceRecognition:null, voiceBytes:0, voiceHitSizeLimit:false,
-  liveTalk:false, liveTalkStopRequested:false, liveRecognizer:null, liveCapture:null, liveGeneration:0, liveStage:'idle', voiceId:'sarah', voiceReplyAudio:null, liveAudioUrl:null, liveSpeechController:null,
+  liveTalk:false, liveTalkStopRequested:false, liveRecognizer:null, liveCapture:null, liveGeneration:0, liveStage:'idle', voiceId:'sarah', voiceReplyAudio:null, liveAudioUrl:null, liveSpeechController:null, liveAudioUnlocked:false, liveSpeechUnlocked:false,
   liveLocale:'auto', voiceAvatar:'lightning',
   preferences:{personality:'balanced',instructions:''}, preferencesLoaded:false,
   googleSearchResults:{}, googleSearchQueries:{}, googleSearchBusy:null,
@@ -291,10 +291,6 @@ function navButtons(){
   const items=[['Home','home','Home'],['Projects','projects','Agents'],['Tools','tools','Tools'],['Files','files','Files'],['Settings','settings','Settings']];
   return items.map(([tab,ico,label])=>`<button data-tab="${tab}" class="${state.tab===tab?'active':''}" ${state.tab===tab?'aria-current="page"':''}>${icon(ico)}<span>${label}</span></button>`).join('');
 }
-function mobileNav(){
-  const items=[['Home','home','Hub'],['Projects','projects','Agents'],['Files','files','Artifacts'],['Settings','settings','Profile']];
-  return `<nav class="mobile-tabbar" aria-label="Main navigation">${items.slice(0,2).map(([tab,ico,label])=>`<button type="button" class="mobile-tab ${state.tab===tab?'active':''}" data-tab="${tab}" ${state.tab===tab?'aria-current="page"':''}>${icon(ico)}<span>${label}</span></button>`).join('')}<button type="button" id="mobile-live-talk" class="mobile-tab-live" aria-label="Start Zeus Live Talk" title="Zeus Live Talk"><span class="mobile-live-mark">ϟ</span></button>${items.slice(2).map(([tab,ico,label])=>`<button type="button" class="mobile-tab ${state.tab===tab?'active':''}" data-tab="${tab}" ${state.tab===tab?'aria-current="page"':''}>${icon(ico)}<span>${label}</span></button>`).join('')}</nav>`;
-}
 function homeChats(){ return (state.conversations||[]).filter(c=>!c.project_id); }
 function projectChats(){ return (state.conversations||[]).filter(c=>c.project_id); }
 function managerAgentStrip(){
@@ -338,11 +334,11 @@ function autoModeKey(){return 'zeus.olympusAuto.v1.'+(state.user?.id||'anonymous
 function automaticOlympus(){try{return localStorage.getItem(autoModeKey())==='true';}catch{return state.olympusAuto===true;}}
 function selectedZeusLevelCap(){try{const n=Number(localStorage.getItem('zeus.maxLevel.v1')||3);return [1,2,3].includes(n)?n:3;}catch{return 3;}}
 function modeStrip(){
-  const selected=liveMode(),lastLevel=state.activeLevel?String(state.activeLevel).replaceAll('_',' '):'';
+  const selected=liveMode();
   return `<div class="mode-select-wrap"><div class="mode-strip" role="group" aria-label="Intelligence mode">
-    <button type="button" class="mode-card zeus ${selected==='ZEUS'?'selected':''}" data-mode="ZEUS" aria-pressed="${selected==='ZEUS'}" ${state.sending?'disabled':''}><div class="mode-icon">${icon('auto')}</div><div><strong>Zeus <em>STANDARD</em></strong><small>Automatic Levels 1, 2 or 3</small></div></button>
-    <button type="button" class="mode-card olympus ${selected==='OLYMPUS'?'selected':''}" data-mode="OLYMPUS" aria-pressed="${selected==='OLYMPUS'}" ${state.sending?'disabled':''}><div class="mode-icon">${icon('globe')}</div><div><strong>Olympus <em>ADVANCED</em></strong><small>Automatic level: Compound Plus or Complex Turbo</small></div></button>
-  </div><div class="mode-blurb"><label class="mode-level-control" for="zeus-level-cap">Zeus max <select id="zeus-level-cap" aria-label="Maximum Zeus level" ${state.sending?'disabled':''}>${[1,2,3].map(n=>'<option value="'+n+'" '+(selectedZeusLevelCap()===n?'selected':'')+'>Level '+n+'</option>').join('')}</select></label><label class="mode-auto-control"><input type="checkbox" id="olympus-auto" ${automaticOlympus()?'checked':''} ${state.sending?'disabled':''}> Olympus automatic <span>${automaticOlympus()?'On':'Off'}</span></label><span class="mode-help">The zero-token router keeps automatic routing within usage limits. Manual Olympus remains available.${lastLevel?` Last execution: ${esc(lastLevel)}.`:''}</span></div></div>`;
+    <button type="button" class="mode-card zeus ${selected==='ZEUS'?'selected':''}" data-mode="ZEUS" aria-pressed="${selected==='ZEUS'}" ${state.sending?'disabled':''}><div class="mode-icon">${icon('auto')}</div><div><strong>Zeus</strong></div></button>
+    <button type="button" class="mode-card olympus ${selected==='OLYMPUS'?'selected':''}" data-mode="OLYMPUS" aria-pressed="${selected==='OLYMPUS'}" ${state.sending?'disabled':''}><div class="mode-icon">${icon('globe')}</div><div><strong>Olympus</strong></div></button>
+  </div></div>`;
 }
 
 function homeView(){
@@ -350,20 +346,15 @@ function homeView(){
   const msgs=state.messages.map(m=>messageHtml(m)).join('');
   const exec=state.execStatus?`<div class="exec-card live" aria-hidden="true"><div class="exec-head"><span class="exec-pulse"></span><div><strong>${esc(state.execTitle||'Zeus is working')}</strong><div class="muted tiny">${esc(state.execStatus)}</div></div></div><div class="exec-foot">Live execution status — no simulated timings.</div></div>`:'';
   return `<section class="page chat-page home-workspace">
-    ${homeAgentPanel()}
     <div class="home-chat-column">
-    ${managerAgentStrip()}
     ${modeStrip()}
-    ${state.currentConversation&&!state.currentProject?`<div style="padding:6px 16px;text-align:right"><button class="secondary compact" data-move-current="${esc(state.currentConversation)}">Move to project</button></div>`:''}
     <div class="chat-scroll" id="chat-scroll">
-      ${isEmpty?`<div class="welcome"><div class="eyebrow">${state.currentProject?esc(state.currentProject.name):'ONE AI ENVIRONMENT. REAL RESULTS.'}</div><h1>Turn the request into a result.</h1><p>Attach the source, give the goal, and keep the conversation, files and deliverables together.</p><div class="quick-prompts"><button data-prompt="Analyze the attached file and ground every important claim in the source. Call out anything the source does not support.">Review a source</button><button data-prompt="Create the next professional deliverable for this work and keep it connected to the conversation.">Create a deliverable</button><button data-prompt="Build this as runnable code. Include focused tests and tell me clearly which tests were not actually executed.">Build with tests</button><button data-prompt="Turn this goal into a project plan with clear tasks, risks, and milestones.">Plan a project</button></div></div>`:`${state.messagePage?.hasMore?'<div class="history-more"><button class="secondary compact" id="load-older-messages">Load older messages</button></div>':''}<div class="message-list">${msgs}</div>`}
+      ${isEmpty?`<div class="welcome"><div class="eyebrow">${state.currentProject?esc(state.currentProject.name):'ONE AI ENVIRONMENT. REAL RESULTS.'}</div><h1>Turn the request into a result.</h1><p>Tell Zeus what you need. Your work stays saved in this conversation.</p><div class="quick-prompts"><button data-prompt="Analyze the attached file and ground every important claim in the source. Call out anything the source does not support.">Review a source</button><button data-prompt="Create the next professional deliverable for this work and keep it connected to the conversation.">Create a deliverable</button><button data-prompt="Build this as runnable code. Include focused tests and tell me clearly which tests were not actually executed.">Build with tests</button><button data-prompt="Turn this goal into a project plan with clear tasks, risks, and milestones.">Plan a project</button></div></div>`:`${state.messagePage?.hasMore?'<div class="history-more"><button class="secondary compact" id="load-older-messages">Load older messages</button></div>':''}<div class="message-list">${msgs}</div>`}
       ${exec}
       ${errorBanner()}
-      ${homeMobileArtifacts()}
     </div>
     ${composer()}
     </div>
-    ${homeContextPanel()}
   </section>`;
 }
 function safeSources(m){
@@ -488,8 +479,30 @@ function voiceAvatarMarkup(){
  ? `<div class="zeus-voice-presence lightning ${state.liveTalk?'active':''}" aria-hidden="true"><canvas class="zeus-plasma-canvas" width="256" height="256"></canvas></div>`
  : `<div class="zeus-voice-presence ${kind} ${state.liveTalk?'active':''}" aria-hidden="true"><div class="zeus-voice-core"><span class="zeus-voice-symbol">●</span></div></div>`;
 }
-function discardLiveAudio(){try{state.voiceReplyAudio?.pause()}catch{}state.voiceReplyAudio=null;
+function discardLiveAudio({keepElement=false}={}){try{state.voiceReplyAudio?.pause()}catch{}if(!keepElement)state.voiceReplyAudio=null;
  if(state.liveAudioUrl){URL.revokeObjectURL(state.liveAudioUrl);state.liveAudioUrl=null;}}
+let silentLiveAudioDataUrl='';
+function unlockLiveAudioFromGesture(){
+  try{
+    if(!state.voiceReplyAudio)state.voiceReplyAudio=new Audio();
+    const audio=state.voiceReplyAudio;
+    audio.playsInline=true;audio.muted=true;
+    if(!silentLiveAudioDataUrl){
+      const dataBytes=1600,bytes=new Uint8Array(44+dataBytes),view=new DataView(bytes.buffer);
+      const text=(offset,value)=>{for(let i=0;i<value.length;i++)bytes[offset+i]=value.charCodeAt(i);};
+      text(0,'RIFF');view.setUint32(4,36+dataBytes,true);text(8,'WAVE');text(12,'fmt ');view.setUint32(16,16,true);view.setUint16(20,1,true);view.setUint16(22,1,true);view.setUint32(24,8000,true);view.setUint32(28,16000,true);view.setUint16(32,2,true);view.setUint16(34,16,true);text(36,'data');view.setUint32(40,dataBytes,true);
+      silentLiveAudioDataUrl=`data:audio/wav;base64,${btoa(String.fromCharCode(...bytes))}`;
+    }
+    audio.src=silentLiveAudioDataUrl;
+    const playing=audio.play();
+    if(playing?.then)playing.then(()=>{audio.pause();audio.currentTime=0;audio.muted=false;state.liveAudioUnlocked=true;}).catch(()=>{audio.muted=false;});
+  }catch{}
+  try{
+    if(window.speechSynthesis&&window.SpeechSynthesisUtterance){
+      speechSynthesis.cancel();const unlock=new SpeechSynthesisUtterance(' ');unlock.volume=0;speechSynthesis.speak(unlock);state.liveSpeechUnlocked=true;
+    }
+  }catch{}
+}
 initVoicePrefs();
 function liveTalkSupported(){return Boolean(window.speechSynthesis&&((window.SpeechRecognition||window.webkitSpeechRecognition)||(state.health?.capabilities?.serverTranscription&&navigator.mediaDevices?.getUserMedia&&window.MediaRecorder)))}
 function voiceSupported(){
@@ -571,7 +584,7 @@ function composer(){
   const chips=state.attachedFiles.map(f=>`<span class="file-chip">${icon('files')} ${esc(f.filename)}<button type="button" data-remove-file="${esc(f.id)}" aria-label="Remove ${esc(f.filename)}" title="Remove attachment">${icon('close')}</button></span>`).join('');
   const showMic=voiceSupported();
   const scope=state.currentProject?`Project: ${esc(state.currentProject.name)}`:'This conversation';
-  return `<div class="composer-shell">${state.liveTalk?`<div class="zeus-live-stage" role="status" aria-label="Live Talk active">${voiceAvatarMarkup()}<span class="${state.liveStage==='speaking'?'zeus-speaking-state':''}">${state.liveStage==='speaking'?'<span class="zeus-speaking-bolt" aria-hidden="true">⚡</span>':''}Live Talk · ${esc(state.liveTalkStopRequested?'Finishing this turn':state.liveStage==='speaking'?'Speaking':state.liveStage==='processing'?'Processing':state.liveStage==='listening'?'Listening':'Connected')} · ${esc(state.liveLocale==='auto'?'Device language':state.liveLocale.toUpperCase())}</span></div>`:''}${state.attachMenu?`<div class="attach-menu" role="menu" id="attach-menu" aria-label="Add attachment"><button type="button" role="menuitem" id="attach-media">${icon('image')}<span>Photo / Video</span></button><button type="button" role="menuitem" id="attach-camera">${icon('camera')}<span>Camera</span></button><button type="button" role="menuitem" id="attach-file">${icon('files')}<span>File</span></button><button type="button" role="menuitem" id="attach-saved">${icon('folder')}<span>Saved artifact</span></button></div>`:''}${chips?`<div class="attachments pending">${chips}</div>`:''}<form class="composer" id="composer"><button type="button" class="icon-btn attach-plus" id="attach" title="Add photo, video or file" aria-label="Add photo, video or file" aria-haspopup="menu" aria-expanded="${state.attachMenu}" ${state.attachMenu?'aria-controls="attach-menu"':''}>＋</button><textarea id="composer-text" rows="1" aria-label="Message ${composerMode}" placeholder="Message ${composerMode}…" ${state.sending?'disabled':''}>${esc(state.draft)}</textarea>${showMic?`<button type="button" class="icon-btn ${state.recording?'recording':''}" id="voice" title="${state.recording?'Stop recording':state.voiceBusy?'Transcribing…':'Voice input'}" aria-label="${state.recording?'Stop recording':state.voiceBusy?'Transcribing voice':'Voice input'}" ${state.voiceBusy?'disabled':''}>${icon('mic')}</button>`:''}${liveTalkSupported()?`<button type="button" class="icon-btn" id="live-talk" aria-pressed="${state.liveTalk}" aria-label="${state.liveTalk?'Finish this turn and stop Live Talk':'Start Live Talk'}" title="${state.liveTalk?'Finish this turn and stop Live Talk':'Start Live Talk'}">${state.liveTalk?'■':'◉'}</button>`:''}<button type="submit" class="icon-btn send-btn" title="Send (Ctrl/⌘+Enter)" aria-label="Send message" ${state.sending?'disabled':''}>${icon('send')}</button></form><div class="composer-meta"><span>${state.currentProject?'Permanent Project chat · dedicated memory + files':'Conversation history available · no Project memory'}</span><span>Enter adds a new line · use the arrow to send</span></div></div>`;
+  return `<div class="composer-shell">${state.liveTalk?`<div class="zeus-live-stage" role="status" aria-label="Live Talk active">${voiceAvatarMarkup()}<span class="${state.liveStage==='speaking'?'zeus-speaking-state':''}">${state.liveStage==='speaking'?'<span class="zeus-speaking-bolt" aria-hidden="true">⚡</span>':''}Live Talk · ${esc(state.liveTalkStopRequested?'Finishing this turn':state.liveStage==='speaking'?'Speaking':state.liveStage==='processing'?'Processing':state.liveStage==='listening'?'Listening':'Connected')} · ${esc(state.liveLocale==='auto'?'Device language':state.liveLocale.toUpperCase())}</span></div>`:''}${state.attachMenu?`<div class="attach-menu" role="menu" id="attach-menu" aria-label="Add attachment"><button type="button" role="menuitem" id="attach-media">${icon('image')}<span>Photo / Video</span></button><button type="button" role="menuitem" id="attach-camera">${icon('camera')}<span>Camera</span></button><button type="button" role="menuitem" id="attach-file">${icon('files')}<span>File</span></button><button type="button" role="menuitem" id="attach-saved">${icon('folder')}<span>Saved artifact</span></button></div>`:''}${chips?`<div class="attachments pending">${chips}</div>`:''}<form class="composer" id="composer"><button type="button" class="icon-btn attach-plus" id="attach" title="Add photo, video or file" aria-label="Add photo, video or file" aria-haspopup="menu" aria-expanded="${state.attachMenu}" ${state.attachMenu?'aria-controls="attach-menu"':''}>＋</button><textarea id="composer-text" rows="1" aria-label="Message ${composerMode}" placeholder="Message ${composerMode}…" ${state.sending?'disabled':''}>${esc(state.draft)}</textarea>${showMic?`<button type="button" class="icon-btn ${state.recording?'recording':''}" id="voice" title="${state.recording?'Stop recording':state.voiceBusy?'Transcribing…':'Voice input'}" aria-label="${state.recording?'Stop recording':state.voiceBusy?'Transcribing voice':'Voice input'}" ${state.voiceBusy?'disabled':''}>${icon('mic')}</button>`:''}${liveTalkSupported()?`<button type="button" class="icon-btn live-talk-trigger ${state.liveTalk?'active':''}" id="live-talk" aria-pressed="${state.liveTalk}" aria-label="${state.liveTalk?'Finish this turn and stop Live Talk':'Start Live Talk'}" title="${state.liveTalk?'Finish this turn and stop Live Talk':'Start Live Talk'}">⚡</button>`:''}<button type="submit" class="icon-btn send-btn" title="Send (Ctrl/⌘+Enter)" aria-label="Send message" ${state.sending?'disabled':''}>${icon('send')}</button></form><div class="composer-meta"><span>${state.currentProject?'Permanent Project chat · dedicated memory + files':'Conversation history available · no Project memory'}</span><span>Enter adds a new line · use the arrow to send</span></div></div>`;
 }
 
 function projectsView(){
@@ -918,7 +931,7 @@ function liveTalkExperience(){
     <footer class="live-talk-controls"><div class="live-control-hint"><span class="live-mic-dot"></span>${state.liveStage==='listening'?'Microphone active':state.liveStage==='processing'?'Voice captured':state.liveStage==='speaking'?'Reply audio active':'Session ready'}</div><button type="button" class="live-end-call" id="live-talk-end" aria-label="Finish this turn and return to chat" title="Finish Live Talk">${icon('close')}</button><div class="live-control-caption">Finish and return to your saved conversation</div></footer>
   </main>`;
 }
-function appView(){if(state.liveTalk)return liveTalkExperience();const page=state.tab==='Home'?homeView():state.tab==='Projects'?projectsView():state.tab==='Tools'?toolsView():state.tab==='Files'?filesView():settingsView();return `<div class="app-shell">${sidebar()}<main class="main" id="main-content" tabindex="-1">${topbar()}${page}</main>${mobileNav()}<div id="modal-root"></div></div>`}
+function appView(){if(state.liveTalk)return liveTalkExperience();const page=state.tab==='Home'?homeView():state.tab==='Projects'?projectsView():state.tab==='Tools'?toolsView():state.tab==='Files'?filesView():settingsView();return `<div class="app-shell">${sidebar()}<main class="main" id="main-content" tabindex="-1">${topbar()}${page}</main><div id="modal-root"></div></div>`}
 function focusKey(el){
   if(!el||el===document.body||!app.contains(el))return null;
   if(el.id)return `#${CSS.escape(el.id)}`;
@@ -1081,7 +1094,7 @@ function bind(){
   $('#global-file-input').onchange=handleUpload; $('#global-media-input').onchange=handleMedia; $('#global-camera-input').onchange=handleMedia;
   $$('[data-remove-file]').forEach(b=>b.addEventListener('click',()=>{state.attachedFiles=state.attachedFiles.filter(f=>f.id!==b.dataset.removeFile);render()}));
   $('#voice')?.addEventListener('click',startVoice);
-  $$('#live-talk,#live-talk-return,#live-talk-end,#mobile-live-talk').forEach(button=>button.addEventListener('click',toggleLiveTalk));
+  $$('#live-talk,#live-talk-return,#live-talk-end').forEach(button=>button.addEventListener('click',toggleLiveTalk));
   $('#retry-last')?.addEventListener('click',retryLastMessage);
   $('#zeus-level-cap')?.addEventListener('change',e=>{const n=Number(e.target.value);if([1,2,3].includes(n)){localStorage.setItem('zeus.maxLevel.v1',String(n));render();}});
   $('#olympus-auto')?.addEventListener('change',e=>{state.olympusAuto=e.target.checked;try{localStorage.setItem(autoModeKey(),String(state.olympusAuto));}catch{}render();});
@@ -1408,8 +1421,8 @@ async function sayZeusReply(text){
       if(res.ok&&state.liveTalk&&!speechController.signal.aborted){
         const blob=await res.blob();
         if(!state.liveTalk||speechController.signal.aborted)return;
-        const url=URL.createObjectURL(blob),audio=new Audio(url);
-        discardLiveAudio();state.voiceReplyAudio=audio;state.liveAudioUrl=url;
+        const url=URL.createObjectURL(blob),audio=state.voiceReplyAudio||new Audio();
+        discardLiveAudio({keepElement:true});audio.src=url;audio.muted=false;audio.volume=1;audio.playsInline=true;state.voiceReplyAudio=audio;state.liveAudioUrl=url;
         audio.onended=()=>{discardLiveAudio();continueLiveTalkAfterTurn();};
         audio.onerror=()=>{discardLiveAudio();continueLiveTalkAfterTurn();};
         await audio.play();return;
@@ -1417,10 +1430,11 @@ async function sayZeusReply(text){
     }catch{discardLiveAudio();if(!state.liveTalk)return;}
   }
   if(!state.liveTalk)return;
+  try{speechSynthesis.cancel()}catch{}
   const msg=new SpeechSynthesisUtterance(line);
   msg.lang=speechLocale(line);
   msg.onend=continueLiveTalkAfterTurn;
-  msg.onerror=continueLiveTalkAfterTurn;
+  msg.onerror=event=>{if(state.liveTalk&&event?.error!=='interrupted'&&event?.error!=='canceled'){state.error='Zeus could not play the spoken reply. Check your audio output and try Live Talk again.';render();}continueLiveTalkAfterTurn();};
   speechSynthesis.speak(msg);
 }
 function stopLiveCapture(){
@@ -1512,15 +1526,14 @@ async function listenServerLiveTalk(){
     state.liveTalk=false;state.error=error?.name==='NotAllowedError'?'Allow microphone access for Live Talk.':'Live Talk audio capture failed. Voice Message remains available.';render();
   }
 }
-const LIVE_TALK_SERVER_MISSING='Live Talk on this device needs server transcription, which is not configured. Enable OpenRouter in Netlify AI Gateway (OPENROUTER_API_KEY + OPENROUTER_BASE_URL) or set OPENROUTER_DIRECT_API_KEY; ElevenLabs Scribe (OPENROUTER_TRANSCRIPTION_MODEL, default elevenlabs/scribe-v2) is then used. Voice Message remains available.';
-function isAppleMobile(){const ua=navigator.userAgent||'';return /iPhone|iPad|iPod/.test(ua)||(/Macintosh/.test(ua)&&navigator.maxTouchPoints>1);}
+const LIVE_TALK_SERVER_MISSING='Live Talk is unavailable because this browser has no speech recognition and server transcription is not configured.';
 function listenLiveTalk(){
   state.liveStage='listening';render();
-  if(state.health?.capabilities?.serverTranscription&&navigator.mediaDevices?.getUserMedia&&window.MediaRecorder){void listenServerLiveTalk();return;}
   if(!state.liveTalk)return;
   const Engine=window.SpeechRecognition||window.webkitSpeechRecognition;
-  if((!Engine||isAppleMobile())&&state.healthError&&navigator.mediaDevices?.getUserMedia&&window.MediaRecorder){void listenServerLiveTalk();return;}
-  if(!Engine||isAppleMobile()){
+  if(!Engine){
+    if(state.health?.capabilities?.serverTranscription&&navigator.mediaDevices?.getUserMedia&&window.MediaRecorder){void listenServerLiveTalk();return;}
+
     state.liveRecognizer=null;state.liveTalk=false;state.liveStage='idle';
     state.error=LIVE_TALK_SERVER_MISSING;render();return;
   }
@@ -1562,6 +1575,7 @@ function toggleLiveTalk(){
   }
   if(!liveTalkSupported()){state.error='Live Talk requires browser speech recognition and speech output.';render();return;}
   state.voiceId=localStorage.getItem('zeus-voice-id')||'sarah';
+  unlockLiveAudioFromGesture();
   state.liveTalkStopRequested=false;
   state.liveTalk=true;state.liveStage='listening';state.liveGeneration++;render();listenLiveTalk();
 }

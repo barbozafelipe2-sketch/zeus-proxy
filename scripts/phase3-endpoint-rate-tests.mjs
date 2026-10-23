@@ -2,7 +2,7 @@
 // All PostgreSQL behavior is mocked in-process; this suite does not contact any provider.
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {consumeEndpointRate} from '../netlify/functions/_shared/limits.mjs';
+import {consumeEndpointRate,endpointLimit} from '../netlify/functions/_shared/limits.mjs';
 
 const previousNetlify=globalThis.Netlify;
 globalThis.Netlify={env:{get:()=>''}};
@@ -60,6 +60,10 @@ try{
     await assert.rejects(()=>consumeEndpointRate(db,'user',kind,sameId,2),e=>e.code==='RATE_LIMIT');
     assert.equal(db.committed.filter(x=>x.kind===kind).length,2);
   }
+  assert.equal(endpointLimit('google_read'),60,'Google reads have a bounded default hourly budget');
+  for(let i=0;i<2;i++)await consumeEndpointRate(db,'user','google_read',sameId,2);
+  await assert.rejects(()=>consumeEndpointRate(db,'user','google_read','another-request',2),e=>e.code==='RATE_LIMIT');
+  assert.equal(db.committed.filter(x=>x.owner==='user'&&x.kind==='google_read').length,2);
   await consumeEndpointRate(db,'different-owner','upload',sameId,1); // independent owner
   assert.equal(db.committed.filter(x=>x.owner==='different-owner').length,1);
   // Competing requests must serialize budget admission, even with the same client ID.
@@ -68,7 +72,7 @@ try{
   assert.equal(results.filter(x=>x.status==='fulfilled').length,2,'concurrent requests cannot oversubscribe the limit');
   assert.equal(results.filter(x=>x.status==='rejected'&&x.reason?.code==='RATE_LIMIT').length,6);
   assert.equal(concurrent.committed.length,2);
-  for(const path of ['netlify/functions/files.mjs','netlify/functions/transcribe.mjs','netlify/functions/artifacts.mjs','netlify/functions/storage-maintenance.mjs']){
+  for(const path of ['netlify/functions/files.mjs','netlify/functions/transcribe.mjs','netlify/functions/artifacts.mjs','netlify/functions/storage-maintenance.mjs','netlify/functions/google-integration.mjs','netlify/functions/chat.mjs']){
     const src=readFileSync(path,'utf8');
     assert.ok(src.includes('await consumeEndpointRate('),path+' must charge endpoint admission');
   }

@@ -29,6 +29,8 @@ A deterministic zero-token router chooses Zeus Level 1 / 2 / 3; Olympus is a sin
 
 Settings can connect Gmail, Calendar and Drive separately. Connected services can be searched in Settings and explicitly requested in chat; chat requests load a bounded result set into context. Gmail returns up to 10 message headers/snippets, Calendar up to 20 events from a maximum 31-day window (default: the next 7 days), and Drive up to 20 file metadata records per page. The app never writes to Google. OAuth access and refresh tokens are encrypted server-side with AES-256-GCM.
 
+Google reads from Settings and chat share a per-owner hourly safety limit of 60 requests by default. Set `OLYHUB_GOOGLE_READ_HOURLY_LIMIT` in Netlify Functions to adjust it; the limit is enforced atomically in the database before refreshing tokens or querying Google.
+
 To enable Google access, enable the Gmail API, Google Calendar API and Google Drive API in a Google Cloud project. Create a **Web application** OAuth client and set its authorized redirect URI to the exact app origin plus `/api/google-integration/callback`. Add these environment variables with **Functions** scope in Netlify:
 
 - `GOOGLE_CLIENT_ID`

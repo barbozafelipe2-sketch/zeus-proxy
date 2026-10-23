@@ -1,6 +1,7 @@
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { requireUser } from './_shared/auth.mjs';
 import { json, getRequestId, errorJson } from './_shared/http.mjs';
+import { consumeEndpointRate } from './_shared/limits.mjs';
 import { decryptGoogleToken, encryptGoogleToken, encryptionKeyFromHex, resolveGoogleAccessToken, searchGoogleService } from './_shared/google-service.mjs';
 
 const env=k=>globalThis.Netlify?.env?.get?.(k)||process.env?.[k]||'';
@@ -49,6 +50,7 @@ export default async function(req,context){
      return json({configured:Boolean(configured()&&redirect(req)),connections:Object.fromEntries(Object.keys(SCOPES).map(s=>[s,{connected:rows.some(r=>r.service===s),updatedAt:rows.find(r=>r.service===s)?.updated_at||null}]))});
    }
    if(services.has(action)&&req.method==='GET'){
+     await consumeEndpointRate(db,user.id,'google_read',requestId);
      const url=new URL(req.url);
      const token=await resolveGoogleAccessToken({db,ownerId:user.id,service:action,key:encKey(),clientId:env('GOOGLE_CLIENT_ID'),clientSecret:env('GOOGLE_CLIENT_SECRET')});
      const result=await searchGoogleService({service:action,query:url.searchParams.get('q')||'',timeMin:url.searchParams.get('timeMin')||'',timeMax:url.searchParams.get('timeMax')||'',pageToken:url.searchParams.get('pageToken')||'',accessToken:token});
@@ -75,6 +77,7 @@ export default async function(req,context){
    }
    return errorJson('Not found.',404,'NOT_FOUND',requestId);
  }catch(error){
+   if(error?.code==='RATE_LIMIT')return json({error:error.message||'Google read safety limit reached. Try again later.',code:'RATE_LIMIT',requestId,retryAfter:error.retryAfter||300},429,{'Retry-After':String(error.retryAfter||300)});
    if(/^GOOGLE_[A-Z0-9_]+$/.test(String(error?.code||'')))return errorJson(error.message||'Google service request failed.',Number(error.status)||503,error.code,requestId);
    return errorJson('Google connection could not be completed.',503,'GOOGLE_CONNECT_FAILED',requestId);
  }

@@ -6,6 +6,7 @@ import { runZeus, runOlympus, runOlympusCompoundPlus, TURBO_LIMITS, generateImag
 import { modelFamily } from './_shared/provider-routing.mjs';
 import { runIndependentArtifactPair } from './_shared/compare-pair.mjs';
 import { detectGoogleServiceRequests, encryptionKeyFromHex, resolveGoogleAccessToken, searchGoogleService } from './_shared/google-service.mjs';
+import { consumeEndpointRate } from './_shared/limits.mjs';
 import { snapshotProviderTelemetry, summarizeRequestUsage } from './_shared/provider-observability.mjs';
 import { deliveryContract as artifactDeliveryContract, parseArtifactDelivery, isArtifactContinuation } from './_shared/artifact-delivery.mjs';
 import { publicExecutionFailure } from './_shared/execution-error.mjs';
@@ -503,12 +504,13 @@ ${aiContext}`);
       const googleKey=encryptionKeyFromHex(runtimeEnv('GOOGLE_OAUTH_ENCRYPTION_KEY'));
       const googleResults=await Promise.all(googleRequests.map(async request=>{
         try{
+          await consumeEndpointRate(db,user.id,'google_read',requestId);
           const accessToken=await resolveGoogleAccessToken({db,ownerId:user.id,service:request.service,key:googleKey,clientId:runtimeEnv('GOOGLE_CLIENT_ID'),clientSecret:runtimeEnv('GOOGLE_CLIENT_SECRET')});
           const data=await searchGoogleService({service:request.service,query:request.query,accessToken});
           return {service:request.service,status:'completed',query:request.query,items:data.items};
         }catch(error){
-          const code=/^GOOGLE_[A-Z0-9_]+$/.test(String(error?.code||''))?error.code:'GOOGLE_READ_FAILED';
-          return {service:request.service,status:'unavailable',code,message:code.startsWith('GOOGLE_')&&error?.code?String(error.message||'Google service could not be read.').slice(0,260):'Google integration could not complete this read.'};
+          const code=error?.code==='RATE_LIMIT'?'GOOGLE_RATE_LIMIT':(/^GOOGLE_[A-Z0-9_]+$/.test(String(error?.code||''))?error.code:'GOOGLE_READ_FAILED');
+          return {service:request.service,status:'unavailable',code,...(error?.retryAfter?{retryAfter:error.retryAfter}:{}),message:(code==='GOOGLE_RATE_LIMIT'||code.startsWith('GOOGLE_')&&error?.code)?String(error.message||'Google service could not be read.').slice(0,260):'Google integration could not complete this read.'};
         }
       }));
       for(const result of googleResults){

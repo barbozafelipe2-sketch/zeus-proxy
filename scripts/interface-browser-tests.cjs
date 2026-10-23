@@ -38,8 +38,10 @@ const markdown='# Análise\n\n**Prioridade alta**\n\n| Item | Estado |\n| --- | 
    await page.setViewportSize({width,height:width===320?568:900});await go();
    assert.equal(await page.locator('html').getAttribute('lang'),'pt-BR');
    assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
-   assert.equal(await page.locator('.mode-card small').first().isVisible(),true);
-   assert.equal(await page.locator('.mode-blurb').isVisible(),true);
+   assert.equal(await page.locator('.mode-card small').count(),0);
+   assert.equal(await page.locator('.mode-blurb').count(),0);
+   assert.equal(await page.locator('.mobile-tabbar').count(),0);
+   assert.equal(await page.locator('#live-talk').innerText(),'⚡');
    await page.locator('#composer-text').fill('Meu rascunho');await page.locator('#attach').click();
    assert.equal(await page.locator('#composer-text').inputValue(),'Meu rascunho');await page.keyboard.press('Escape');
    if(width<960){

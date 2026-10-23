@@ -1439,3 +1439,26 @@ body .message.user .message-body{border-color:#d4b66e55!important;background:lin
   .mobile-tab span{font-size:8px}
   .compare-evolve-modal .modal-head h2{font-size:19px}
 }
+
+/* 2026-10 — conversation-first layout and unified voice controls */
+.mobile-tabbar{display:none!important}
+.mode-strip .mode-card{align-items:center;min-height:44px}
+.mode-card strong em,.mode-card small,.mode-select-wrap .mode-blurb{display:none!important}
+.live-talk-trigger{color:#e8c77c!important;font-size:21px!important;font-weight:700;line-height:1;text-shadow:0 0 12px #d8b56a55}
+.live-talk-trigger:hover,.live-talk-trigger.active{border-color:#d5ad56!important;background:rgba(213,173,86,.16)!important;box-shadow:0 0 0 2px #d5ad5633,0 0 18px #d5ad5628}
+.home-workspace{display:flex!important;flex-direction:column!important;align-items:stretch!important;gap:0!important;height:calc(100dvh - 66px)!important;min-height:0!important;padding:0!important;overflow:hidden!important}
+.home-agent-rail,.home-context-rail,.home-mobile-artifacts,.home-workspace .manager-panel{display:none!important}
+.home-chat-column{display:flex!important;flex:1 1 auto!important;flex-direction:column!important;min-width:0;width:100%!important;max-width:none!important;min-height:0!important;overflow:hidden!important}
+.home-chat-column>.mode-select-wrap{flex:0 0 auto;width:min(100%,650px)!important;margin:10px auto 4px!important;padding:0 12px!important}
+.home-chat-column>.mode-select-wrap .mode-strip{width:100%!important;max-width:none!important;margin:0!important}
+.home-chat-column>.mode-select-wrap .mode-card{justify-content:center;flex:1 1 0;min-width:0!important}
+.home-chat-column>.chat-scroll{flex:1 1 auto!important;width:min(100%,900px);min-height:0!important;margin:0 auto;overflow-y:auto!important;padding:12px 22px 108px!important}
+.home-chat-column>.composer-shell{left:var(--sidebar)!important;right:0!important;bottom:0!important;padding:12px max(18px,5vw) calc(10px + env(safe-area-inset-bottom))!important}
+.home-chat-column>.composer-shell .composer{max-width:900px!important}
+@media(max-width:959px){
+  .main{padding-bottom:0!important}
+  .home-workspace{height:calc(100dvh - 60px - env(safe-area-inset-top))!important}
+  .home-chat-column>.mode-select-wrap{margin:6px auto 2px!important;padding:0 10px!important}
+  .home-chat-column>.chat-scroll{padding:10px 13px 96px!important}
+  .home-chat-column>.composer-shell{left:0!important;right:0!important;bottom:0!important;padding:8px max(10px,env(safe-area-inset-left)) calc(8px + env(safe-area-inset-bottom))!important}
+}

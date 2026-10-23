@@ -21,6 +21,14 @@ const required = [
 ];
 for (const file of required) if (!existsSync(file)) throw new Error(`Missing required file: ${file}`);
 
+const migrationsRoot = 'netlify/database/migrations';
+for (const entry of readdirSync(migrationsRoot)) {
+  const migrationDirectory = join(migrationsRoot, entry);
+  if (!statSync(migrationDirectory).isDirectory()) continue;
+  const migrationFile = join(migrationDirectory, 'migration.sql');
+  if (!existsSync(migrationFile)) throw new Error(`Database migration directory is missing migration.sql: ${entry}`);
+}
+
 const read = f => readFileSync(f,'utf8');
 const app = read('public/app.js');
 const css = read('public/ui-premium.css');
@@ -213,7 +221,7 @@ const mustContain = [
   [css,'OH-004.2.10 — operational pagination controls','4.2.10 pagination UI'],
   [css,'OH-004.3.0 — premium product UI refinement','4.3.0 premium UI refinement'],
   [css,'OH-004.3.4 — final product polish','4.3.4 final polish layer'],
-  [app,'Automatic level: Compound Plus or Complex Turbo','truthful Olympus level positioning'],
+  [chat,'COMPLEX_TURBO','truthful Olympus level routing'],
   [app,'OLYMPUS HUB · PERSONAL','personal Zeus product identity'],
   [app,'composer-meta','composer persistence guidance'],
   [chat,'queryAwareExcerpt','query-aware long attachment excerpts'],

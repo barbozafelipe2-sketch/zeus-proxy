@@ -13,7 +13,7 @@ export function aiLimits(mode='ZEUS') {
 }
 
 export function endpointLimit(kind) {
-  const defaults = { transcribe: 30, artifact: 60, upload: 120, maintenance: 12 };
+  const defaults = { transcribe: 30, artifact: 60, google_read: 60, upload: 120, maintenance: 12 };
   const envName = `OLYHUB_${String(kind).toUpperCase()}_HOURLY_LIMIT`;
   return envInt(envName, defaults[kind] || 60, 1, 2000);
 }

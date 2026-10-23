@@ -9,7 +9,9 @@ const models=readFileSync('netlify/functions/_shared/models.mjs','utf8');
 const chat=readFileSync('netlify/functions/chat.mjs','utf8');
 const health=readFileSync('netlify/functions/health.mjs','utf8');
 
-assert.ok(app.includes('data-mode="ZEUS"')&&app.includes('data-mode="OLYMPUS"')&&app.includes('zero-token router'),'manual Zeus/Olympus selector missing');
+assert.ok(app.includes('data-mode="ZEUS"')&&app.includes('data-mode="OLYMPUS"')&&app.includes('<strong>Zeus</strong>')&&app.includes('<strong>Olympus</strong>'),'clean Zeus/Olympus selector missing');
+assert.ok(!app.includes('${homeAgentPanel()}')&&!app.includes('${homeContextPanel()}')&&!app.includes('${homeMobileArtifacts()}'),'conversation view must stay focused on messages');
+assert.ok(!app.includes('${mobileNav()}')&&app.includes('id="hamburger"'),'mobile navigation should use the existing side drawer');
 assert.ok(!/data-mode=["'](?:OPENAI|CLAUDE|GEMINI|GOOGLE)/i.test(app),'direct provider mode leaked into UI');
 assert.ok(app.includes('id="hamburger" aria-label="Open navigation" title="Navigation">${icon(\'menu\')}</button>')&&app.includes("['Projects','projects','Agents']"),'simplified menu navigation with Agents missing');
 assert.ok(app.includes('function managerAgentStrip()')&&app.includes('id="manager-title">Manager</h1>')&&app.includes('class="manager-agent-chip"'),'Home Manager must expose clickable agent shortcuts');

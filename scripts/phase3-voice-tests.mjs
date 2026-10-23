@@ -17,4 +17,11 @@ assert.match(ui,/state\.liveRecognizer\.stop\(\)/,'finishing a spoken turn must 
 assert.match(ui,/__zeusHandledResult/,'recognizer completion must not discard an in-flight final transcript');
 assert.match(ui,/Finish this turn and stop Live Talk/,'stop control must finish and answer a captured turn');
 assert.match(ui,/continueLiveTalkAfterTurn/,'stop-after-turn must end only after the reply is delivered');
+const unlock=ui.slice(ui.indexOf('function unlockLiveAudioFromGesture(){'),ui.indexOf('function unlockLiveAudioFromGesture(){')+1800);
+assert.match(unlock,/audio\.play\(\)/,'Live Talk must unlock HTML audio synchronously from the start gesture');
+assert.match(unlock,/speechSynthesis\.speak\(unlock\)/,'Live Talk must prime the browser speech engine from the start gesture');
+assert.match(ui,/const url=URL\.createObjectURL\(blob\),audio=state\.voiceReplyAudio\|\|new Audio\(\)/,'server voice playback must reuse the audio element unlocked by the gesture');
+const listen=ui.slice(ui.indexOf('function listenLiveTalk(){'),ui.indexOf('function listenLiveTalk(){')+1100);
+assert.ok(listen.indexOf('const Engine=window.SpeechRecognition')<listen.indexOf('if(!Engine)'), 'use native speech recognition before server transcription when available');
+assert.match(ui,/msg\.onerror=event=>\{if\(state\.liveTalk/,'speech playback failures must be surfaced to the user');
 console.log('Phase 3 voice, VAD, cancellation and avatar regressions PASS');
