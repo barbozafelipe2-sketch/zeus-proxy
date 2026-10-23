@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1800 1200" fill="none">
+  <defs>
+    <radialGradient id="void" cx="50%" cy="46%" r="72%">
+      <stop offset="0" stop-color="#15110b"/>
+      <stop offset=".42" stop-color="#090909"/>
+      <stop offset="1" stop-color="#020304"/>
+    </radialGradient>
+    <linearGradient id="gold-vein" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#fff1bf" stop-opacity=".08"/>
+      <stop offset=".25" stop-color="#d6b16b" stop-opacity=".72"/>
+      <stop offset=".48" stop-color="#fff0b3" stop-opacity=".24"/>
+      <stop offset=".7" stop-color="#92703a" stop-opacity=".58"/>
+      <stop offset="1" stop-color="#e9d18d" stop-opacity=".1"/>
+    </linearGradient>
+    <linearGradient id="silver-vein" x1="0" y1="0" x2="1" y2="0">
+      <stop stop-color="#7e8790" stop-opacity="0"/>
+      <stop offset=".45" stop-color="#c5c9ca" stop-opacity=".52"/>
+      <stop offset=".58" stop-color="#e2d8bd" stop-opacity=".2"/>
+      <stop offset="1" stop-color="#8b9097" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="soft-glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="13"/>
+    </filter>
+    <filter id="fine-glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="3"/>
+    </filter>
+    <pattern id="stars" width="240" height="180" patternUnits="userSpaceOnUse">
+      <circle cx="24" cy="34" r="1.1" fill="#ffe9ad" fill-opacity=".44"/>
+      <circle cx="158" cy="72" r=".8" fill="#d3d8dd" fill-opacity=".36"/>
+      <circle cx="84" cy="145" r=".7" fill="#fff4d2" fill-opacity=".3"/>
+      <circle cx="214" cy="158" r="1" fill="#d6b16b" fill-opacity=".35"/>
+    </pattern>
+  </defs>
+  <path fill="url(#void)" d="M0 0h1800v1200H0z"/>
+  <path fill="url(#stars)" d="M0 0h1800v1200H0z"/>
+  <g opacity=".5" filter="url(#soft-glow)" stroke="url(#gold-vein)" stroke-width="24">
+    <path d="M-180 250C60 310 96 494 245 520s165-78 304-36 180 195 342 175 171-119 304-94 206 126 342 76 192-161 424-106"/>
+    <path d="M-130 1000c198-198 242-208 396-174s207 128 374 93 181-196 343-179 226 132 374 71 198-148 386-84"/>
+    <path d="M220-150c-30 194 35 304 174 374s170 112 190 264-48 198 35 343 213 169 218 326"/>
+    <path d="M1480-120c-132 198-178 338-115 479s139 155 125 298-140 220-98 357 150 181 186 313"/>
+  </g>
+  <g opacity=".36" fill="none" stroke="url(#silver-vein)" stroke-width="9">
+    <path d="M-180 250C60 310 96 494 245 520s165-78 304-36 180 195 342 175 171-119 304-94 206 126 342 76 192-161 424-106"/>
+    <path d="M-130 1000c198-198 242-208 396-174s207 128 374 93 181-196 343-179 226 132 374 71 198-148 386-84"/>
+    <path d="M220-150c-30 194 35 304 174 374s170 112 190 264-48 198 35 343 213 169 218 326"/>
+    <path d="M1480-120c-132 198-178 338-115 479s139 155 125 298-140 220-98 357 150 181 186 313"/>
+  </g>
+  <g opacity=".55" filter="url(#fine-glow)" stroke="#f0cf83" stroke-width="2">
+    <path d="M-100 330c209 64 249 191 379 211s182-61 299-22 182 190 331 162"/>
+    <path d="M720 1018c86-128 192-189 315-160s188 96 322 48 222-166 412-123"/>
+    <path d="M1565-28c-105 165-149 268-102 388s110 129 102 236-108 164-77 273"/>
+  </g>
+  <ellipse cx="900" cy="590" rx="530" ry="460" fill="#e9bd5d" fill-opacity=".035" filter="url(#soft-glow)"/>
+</svg>
