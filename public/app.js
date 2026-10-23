@@ -939,7 +939,7 @@ function githubCommitModal(sourceKind,sourceId,sourceName='project.zip'){
 }
 
 function liveTalkExperience(){
-  const stage=state.liveTalkStopRequested?'Finishing your turn':state.liveMuted?'Microphone muted':state.liveStage==='error'?'Live Talk paused':state.liveStage==='speaking'?'Zeus is speaking':state.liveStage==='processing'?'Preparing your reply':state.liveStage==='listening'?'Listening':'Live Talk connected';
+  const stage=state.liveTalkStopRequested?'Finishing your turn':state.liveMuted?'Microphone muted':state.liveStage==='error'?'Live Talk paused':state.liveStage==='speaking'?'Zeus is speaking':state.liveStage==='processing'?'Preparing your reply':state.liveStage==='connecting'?'Connecting microphone':state.liveStage==='listening'?'Listening':'Live Talk connected';
   const latest=[...(state.messages||[])].reverse().find(m=>['assistant','user'].includes(m.role));
   const excerpt=latest?String(latest.content||'').replace(/\s+/g,' ').trim().slice(0,220):'';
   const bars=Array.from({length:41},(_,i)=>`<i style="--wave:${12+((i*17)%39)}%;--delay:${(i%13)*-0.09}s"></i>`).join('');
@@ -958,7 +958,7 @@ function liveTalkExperience(){
       <p class="live-talk-latest">${excerpt?esc(excerpt):'Fale naturalmente. Sua conversa será salva no chat.'}</p>
       <div class="live-talk-mode"><span class="live-mode-dot"></span>${esc(liveMode()==='OLYMPUS'?'OLYMPUS':'ZEUS')} <span>·</span> ${esc(state.liveLocale==='auto'?'AUTO LANGUAGE':state.liveLocale.toUpperCase())}</div>
     </section>
-    ${state.error?`<div class="live-talk-error" role="alert">${esc(state.error)}${state.liveStage==='error'?'<button type="button" id="live-talk-retry">Try again</button>':''}</div>`:''}
+    ${state.error?`<div class="live-talk-error" role="alert">${esc(state.error)}${state.liveStage==='error'?`<button type="button" id="live-talk-retry">${state.liveFailureKind==='capture_resume'||state.liveFailureKind==='playback_blocked'?'Tap to resume':'Try again'}</button>`:''}</div>`:''}
     <footer class="live-talk-controls"><div class="live-control-hint"><span class="live-mic-dot"></span>${state.liveMuted?'Microphone muted':state.liveStage==='listening'?'Microphone active':state.liveStage==='processing'?'Voice captured':state.liveStage==='speaking'?'Reply audio active':state.liveStage==='error'?'Live Talk paused':'Session ready'}</div><div class="live-call-actions"><button type="button" class="live-mute-button ${state.liveMuted?'is-muted':''}" id="live-talk-mute" aria-pressed="${state.liveMuted}" aria-label="${state.liveMuted?'Unmute microphone':'Mute microphone'}" title="${state.liveMuted?'Unmute microphone':'Mute microphone'}">${icon(state.liveMuted?'mic-off':'mic')}</button><button type="button" class="live-end-call" id="live-talk-end" aria-label="Exit Live Talk immediately and return to chat" title="Exit Live Talk">${icon('close')}</button></div><div class="live-control-caption">Mute the microphone or exit to your saved conversation</div></footer>
   </main>`;
 }
@@ -1445,12 +1445,12 @@ function pauseLiveTalkOnError(message,kind='capture'){
   try{recognition?.abort()}catch{}
   stopLiveCapture();
   try{state.liveSpeechController?.abort()}catch{}
-  discardLiveAudio();try{window.speechSynthesis?.cancel()}catch{}render();
+  discardLiveAudio({keepElement:true});try{window.speechSynthesis?.cancel()}catch{}render();
 }
 function scheduleLiveRecognitionRetry({network=false}={}){
   if(!state.liveTalk||state.liveMuted||state.liveTalkStopRequested||state.liveRetryTimer)return;
   if(network&&++state.liveRetryCount>3){pauseLiveTalkOnError('The browser speech service keeps disconnecting. Check your connection or allow microphone and speech access, then try again.');return;}
-  state.liveStage='listening';render();
+  state.liveStage='connecting';render();
   const generation=state.liveGeneration;
   state.liveRetryTimer=setTimeout(()=>{
     state.liveRetryTimer=null;
@@ -1478,21 +1478,21 @@ async function sayZeusReply(text){
     if(!state.liveTalk||speechController.signal.aborted){clearTimeout(speechTimeout);return;}
     const url=URL.createObjectURL(blob),audio=state.voiceReplyAudio||new Audio();
     discardLiveAudio({keepElement:true});audio.src=url;audio.muted=false;audio.volume=1;audio.playsInline=true;state.voiceReplyAudio=audio;state.liveAudioUrl=url;
-    audio.onended=()=>{clearTimeout(speechTimeout);state.liveSpeechCache=null;discardLiveAudio();continueLiveTalkAfterTurn();};
-    audio.onerror=()=>{clearTimeout(speechTimeout);state.liveSpeechCache=null;discardLiveAudio();pauseLiveTalkOnError('Zeus replied in chat, but the generated voice audio could not be played.','speech');};
+    audio.onended=()=>{clearTimeout(speechTimeout);state.liveSpeechCache=null;discardLiveAudio({keepElement:true});continueLiveTalkAfterTurn();};
+    audio.onerror=()=>{clearTimeout(speechTimeout);state.liveSpeechCache=null;discardLiveAudio({keepElement:true});pauseLiveTalkOnError('Zeus replied in chat, but the generated voice audio could not be played.','speech');};
     try{await audio.play();}
     catch(playError){
       if(playError?.name!=='NotAllowedError')throw playError;
       clearTimeout(speechTimeout);
       state.liveSpeechCache={line,blob};
-      discardLiveAudio();
+      discardLiveAudio({keepElement:true});
       if(!state.liveTalk||state.liveStage==='error')return;
-      pauseLiveTalkOnError('The voice audio is ready, but the browser blocked playback (iOS autoplay). Tap Try again to play it.','speech');
+      pauseLiveTalkOnError('The voice audio is ready, but the browser blocked playback (iOS autoplay). Tap to resume the reply.','playback_blocked');
       return;
     }
     state.liveSpeechCache=null;
   }catch(error){
-    clearTimeout(speechTimeout);discardLiveAudio();
+    clearTimeout(speechTimeout);discardLiveAudio({keepElement:true});
     if(!state.liveTalk||state.liveStage==='error')return;
     const reason=error?.name==='AbortError'?'Natural voice audio timed out. Check the voice provider and retry.':String(error?.message||'Natural voice audio is unavailable. Check the ElevenLabs voice and Netlify settings, then try again.').slice(0,420);
     pauseLiveTalkOnError(reason,'speech');
@@ -1503,46 +1503,60 @@ function stopLiveCapture(){
   if(!session)return;
   session.cancelled=true;
   if(session.frame)cancelAnimationFrame(session.frame);
-  try{if(session.recorder.state==='recording')session.recorder.stop()}catch{}
-  try{session.stream.getTracks().forEach(t=>t.stop())}catch{}
-  try{session.audioContext.close()}catch{}
+  try{if(session.segment?.recorder?.state==='recording')session.segment.recorder.stop()}catch{}
+  try{session.stream?.getTracks().forEach(t=>t.stop())}catch{}
+  try{session.audioContext?.close()}catch{}
   state.liveCapture=null;
 }
 async function listenServerLiveTalk(){
-  if(!state.liveTalk||state.liveCapture)return;
+  if(!state.liveTalk||state.liveMuted||state.liveTalkStopRequested)return;
   const generation=state.liveGeneration;
-  let stream=null,context=null,recorder=null;
+  let session=state.liveCapture;
   try{
-    stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}});
-    if(!state.liveTalk||generation!==state.liveGeneration){stream.getTracks().forEach(t=>t.stop());return;}
-    const AudioContextType=window.AudioContext||window.webkitAudioContext;
-    if(!AudioContextType)throw Error('Audio activity detection is unavailable');
-    context=new AudioContextType();
-    if(context.state==='suspended')await context.resume();
-    if(context.state!=='running')throw Error('Audio capture is paused by the browser. Allow microphone access and start Live Talk again.');
-    const analyzer=context.createAnalyser();analyzer.fftSize=1024;
-    context.createMediaStreamSource(stream).connect(analyzer);
-    const options=['audio/mp4','audio/webm;codecs=opus','audio/webm'];
-    const mime=options.find(x=>MediaRecorder.isTypeSupported(x))||'';
-    recorder=new MediaRecorder(stream,mime?{mimeType:mime}:undefined);
-    const chunks=[],samples=new Uint8Array(analyzer.fftSize);
-    const session={stream,audioContext:context,recorder,frame:0,cancelled:false,detected:false,startedAt:performance.now(),lastActive:0,voiceStarted:0,bytes:0};
-    state.liveCapture=session;
-    recorder.ondataavailable=e=>{if(e.data?.size){chunks.push(e.data);session.bytes+=e.data.size;if(session.bytes>3600*1024&&recorder.state==='recording')recorder.stop();}};
+    if(!session){
+      session={stream:null,audioContext:null,analyzer:null,segment:null,frame:0,cancelled:false,initializing:true,generation};
+      state.liveCapture=session;
+      state.liveStage='connecting';render();
+      const mediaPromise=navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}});
+      mediaPromise.then(lateStream=>{if(session.cancelled||state.liveCapture!==session)lateStream.getTracks().forEach(track=>track.stop());}).catch(()=>{});
+      session.stream=await Promise.race([mediaPromise,new Promise((_,reject)=>setTimeout(()=>reject(new Error('Microphone setup timed out. Tap to reconnect.')),12000))]);
+      if(session.cancelled||state.liveCapture!==session||generation!==state.liveGeneration)return;
+      session.stream.getAudioTracks().forEach(track=>{track.onended=()=>{if(!session.cancelled&&state.liveTalk&&state.liveGeneration===generation)pauseLiveTalkOnError('Microphone capture ended. Tap to reconnect.','capture_resume');};});
+      const AudioContextType=window.AudioContext||window.webkitAudioContext;
+      if(!AudioContextType)throw Error('Audio activity detection is unavailable');
+      session.audioContext=new AudioContextType();
+      if(session.audioContext.state==='suspended')await Promise.race([session.audioContext.resume(),new Promise((_,reject)=>setTimeout(()=>reject(new Error('Audio session needs a tap to resume.')),3000))]);
+      if(session.audioContext.state!=='running')throw Error('Audio capture is paused by the browser. Tap to reconnect.');
+      session.analyzer=session.audioContext.createAnalyser();session.analyzer.fftSize=1024;
+      session.audioContext.createMediaStreamSource(session.stream).connect(session.analyzer);
+      session.mime=(['audio/mp4','audio/webm;codecs=opus','audio/webm'].find(x=>MediaRecorder.isTypeSupported(x))||'');
+      session.initializing=false;
+    }
+    if(session.initializing||session.segment||session.cancelled)return;
+    if(session.audioContext?.state==='suspended')await Promise.race([session.audioContext.resume(),new Promise((_,reject)=>setTimeout(()=>reject(new Error('Audio session needs a tap to resume.')),3000))]);
+    if(session.audioContext?.state!=='running')throw Error('Audio session needs a tap to resume.');
+    if(!state.liveTalk||generation!==state.liveGeneration||state.liveMuted)return;
+    session.stream.getAudioTracks().forEach(track=>{track.enabled=true;});
+    const recorder=new MediaRecorder(session.stream,session.mime?{mimeType:session.mime}:undefined);
+    const segment={recorder,chunks:[],bytes:0,detected:false,voiceStarted:0,lastActive:0,startedAt:performance.now(),frame:0,discard:false};
+    session.segment=segment;
+    recorder.ondataavailable=e=>{if(e.data?.size){segment.chunks.push(e.data);segment.bytes+=e.data.size;if(segment.bytes>3600*1024&&recorder.state==='recording')recorder.stop();}};
+    recorder.onerror=()=>{if(state.liveTalk&&generation===state.liveGeneration)pauseLiveTalkOnError('The browser stopped recording this voice turn. Tap to resume.','capture_resume');};
     recorder.onstop=async()=>{
-      if(session.frame)cancelAnimationFrame(session.frame);
-      stream.getTracks().forEach(t=>t.stop());
-      try{await context.close()}catch{}
-      if(state.liveCapture===session)state.liveCapture=null;
-      if(session.cancelled||!state.liveTalk||generation!==state.liveGeneration)return;
-      if(!session.detected||!chunks.length){
-        // Silence never starts a charged transcription request.
+      if(segment.frame)cancelAnimationFrame(segment.frame);
+      session.stream?.getAudioTracks().forEach(track=>{track.enabled=false;});
+      if(session.segment===segment)session.segment=null;
+      if(session.cancelled||state.liveCapture!==session||!state.liveTalk||generation!==state.liveGeneration)return;
+      if(segment.discard||state.liveMuted){if(state.liveTalkStopRequested)finishLiveTalkSession();return;}
+      if(!segment.detected||!segment.chunks.length){
+        if(state.liveTalkStopRequested){finishLiveTalkSession();return;}
+        // Ignore silence without spending a transcription request, then reuse the same mic session.
         continueLiveTalkAfterTurn();return;
       }
       try{
         state.liveStage='processing';render();
-        const type=recorder.mimeType||'audio/webm';
-        const blob=new Blob(chunks,{type});
+        const type=recorder.mimeType||session.mime||'audio/webm';
+        const blob=new Blob(segment.chunks,{type});
         if(blob.size>4*1024*1024){pauseLiveTalkOnError('This voice recording exceeded the 4 MB limit. Try a shorter phrase.');return;}
         const fd=new FormData();fd.append('audio',blob,type.includes('mp4')?'live.m4a':'live.webm');
         const answer=await api('/api/transcribe',{method:'POST',body:fd});
@@ -1560,38 +1574,33 @@ async function listenServerLiveTalk(){
       }
     };
     recorder.start(250);
+    state.liveStage='listening';render();
+    const samples=new Uint8Array(session.analyzer.fftSize);
     const tick=()=>{
-      if(session.cancelled||!state.liveTalk||generation!==state.liveGeneration)return;
-      analyzer.getByteTimeDomainData(samples);
+      if(session.cancelled||session.segment!==segment||!state.liveTalk||generation!==state.liveGeneration)return;
+      session.analyzer.getByteTimeDomainData(samples);
       let sum=0;for(let i=0;i<samples.length;i++){const v=(samples[i]-128)/128;sum+=v*v;}
       const rms=Math.sqrt(sum/samples.length),now=performance.now();
-      if(rms>0.014){
-        if(!session.voiceStarted)session.voiceStarted=now;
-        session.lastActive=now;
-        if(now-session.voiceStarted>150)session.detected=true;
-      }
-      if(session.detected&&now-session.lastActive>850 || now-session.startedAt>18000){
-        if(recorder.state==='recording')recorder.stop();
-        return;
-      }
-      session.frame=requestAnimationFrame(tick);
+      if(rms>0.009){if(!segment.voiceStarted)segment.voiceStarted=now;segment.lastActive=now;if(now-segment.voiceStarted>220)segment.detected=true;}
+      const reachedSilence=segment.detected&&now-segment.lastActive>1200;
+      const reachedLimit=now-segment.startedAt>25000;
+      if(reachedSilence||reachedLimit){if(recorder.state==='recording')recorder.stop();return;}
+      segment.frame=requestAnimationFrame(tick);
     };
-    session.frame=requestAnimationFrame(tick);
+    segment.frame=requestAnimationFrame(tick);
   }catch(error){
-    try{if(recorder?.state==='recording')recorder.stop()}catch{}
-    try{stream?.getTracks().forEach(t=>t.stop())}catch{}
-    try{context?.close()}catch{}
-    state.liveCapture=null;
-    if(!state.liveTalk||generation!==state.liveGeneration)return;
-    pauseLiveTalkOnError(error?.name==='NotAllowedError'?'Allow microphone access for Live Talk.':'Live Talk audio capture failed. Voice Message remains available.');
+    if(session){session.initializing=false;if(session.stream)session.stream.getTracks().forEach(track=>track.stop());try{session.audioContext?.close()}catch{}if(state.liveCapture===session)state.liveCapture=null;}
+    if(!state.liveTalk||state.liveMuted||session?.cancelled||generation!==state.liveGeneration)return;
+    const permissionDenied=error?.name==='NotAllowedError'||error?.name==='SecurityError';
+    pauseLiveTalkOnError(permissionDenied?'Allow microphone access for Live Talk.':`${error?.message||'Live Talk audio capture failed.'} Tap to resume.`,permissionDenied?'capture':'capture_resume');
   }
 }
 const LIVE_TALK_SERVER_MISSING='Live Talk is unavailable because this browser has no speech recognition and server transcription is not configured.';
 function listenLiveTalk(){
   clearTimeout(state.liveRetryTimer);state.liveRetryTimer=null;
   if(!state.liveTalk||state.liveMuted||state.liveTalkStopRequested)return;
-  state.liveStage='listening';render();
-  if(state.health?.capabilities?.serverTranscription&&navigator.mediaDevices?.getUserMedia&&window.MediaRecorder){void listenServerLiveTalk();return;}
+  if(state.health?.capabilities?.serverTranscription&&navigator.mediaDevices?.getUserMedia&&window.MediaRecorder){state.liveStage='connecting';render();void listenServerLiveTalk();return;}
+  state.liveStage='connecting';render();
   const Engine=window.SpeechRecognition||window.webkitSpeechRecognition;
   if(!Engine){
     state.liveRecognizer=null;state.liveTalk=false;state.liveStage='idle';
@@ -1632,6 +1641,7 @@ function listenLiveTalk(){
     // Use interim text after a short quiet period, while allowing final text a brief settle window.
     state.liveRecognitionTimer=setTimeout(()=>{void submitRecognizedTurn();},finalTranscript?220:650);
   };
+  recognition.onstart=()=>{if(state.liveRecognizer===recognition&&state.liveTalk){state.liveStage='listening';render();}};
   recognition.onerror=e=>{
     const code=String(e?.error||'');recognition.__zeusError=code;
     if(code==='aborted'&&(state.liveMuted||!state.liveTalk||state.liveTalkStopRequested))return;
@@ -1661,8 +1671,10 @@ function toggleLiveTalk(){
     state.liveTalkStopRequested=true;
     if(state.liveCapture){
       const session=state.liveCapture;
-      if(session.detected){state.liveStage='processing';try{if(session.recorder.state==='recording')session.recorder.stop()}catch{finishLiveTalkSession()}}
-      else {session.cancelled=true;state.liveTalk=false;state.liveGeneration++;stopLiveCapture();}
+      const segment=session.segment;
+      if(segment?.detected){state.liveStage='processing';try{if(segment.recorder.state==='recording')segment.recorder.stop()}catch{finishLiveTalkSession()}}
+      else if(segment){segment.discard=true;try{if(segment.recorder.state==='recording')segment.recorder.stop()}catch{finishLiveTalkSession()}}
+      else if(state.liveStage!=='processing'&&state.liveStage!=='speaking')finishLiveTalkSession();
       render();return;
     }
     if(state.liveRecognizer){
@@ -1686,15 +1698,18 @@ function toggleLiveTalkMute(){
   if(state.liveMuted){
     state.liveStageBeforeMute=state.liveStage;
     clearTimeout(state.liveRetryTimer);clearTimeout(state.liveRecognitionTimer);state.liveRetryTimer=null;state.liveRecognitionTimer=null;
-    if(state.liveStage==='listening'||state.liveStage==='muted'){
+    if(state.liveStage==='listening'||state.liveStage==='connecting'||state.liveStage==='muted'){
       const recognition=state.liveRecognizer;state.liveRecognizer=null;
       try{recognition?.abort()}catch{}
-      stopLiveCapture();state.liveStage='muted';
+      const session=state.liveCapture;
+      if(session?.initializing)stopLiveCapture();
+      else if(session){session.stream?.getAudioTracks().forEach(track=>{track.enabled=false;});if(session.segment){session.segment.discard=true;try{if(session.segment.recorder.state==='recording')session.segment.recorder.stop()}catch{}}}
+      state.liveStage='muted';
     }
   }else{
     state.liveRetryCount=0;
     if(state.liveStageBeforeMute==='listening'||state.liveStageBeforeMute==='muted'){
-      state.error='';state.liveStage='listening';listenLiveTalk();
+      state.error='';state.liveStage='connecting';listenLiveTalk();
     }else state.liveStage=state.liveStageBeforeMute;
   }
   render();
@@ -1713,6 +1728,10 @@ async function retryLiveTalk(){
     return;
   }
   if(failureKind==='speech'){
+    const latest=[...state.messages].reverse().find(m=>m.role==='assistant');
+    if(latest){await sayZeusReply(latest.content);return;}
+  }
+  if(failureKind==='playback_blocked'){
     const latest=[...state.messages].reverse().find(m=>m.role==='assistant');
     if(latest){await sayZeusReply(latest.content);return;}
   }
