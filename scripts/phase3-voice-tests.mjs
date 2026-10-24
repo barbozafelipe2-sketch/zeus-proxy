@@ -21,9 +21,9 @@ assert.match(ui,/sendContextualUpdate\(livePersonaContext\(\)\)/,'the selected p
 assert.match(ui,/talk\|speak\|switch/,'voice commands for Helen/Athena must switch the selected persona');
 assert.match(live,/connection\?\.endSession\?\.\(\)/,'exiting or pausing Live Talk must close the Realtime session');
 assert.match(ui,/Reconnect Realtime/,'Realtime failure must expose an explicit reconnect action');
-assert.match(live,/function describeLiveDisconnect\\(details\\)/,'Realtime disconnects must format the SDK diagnostic details');
-assert.match(live,/details\\?\\.context\\?\\.reason/,'Realtime disconnects must surface the LiveKit close reason');
-assert.match(live,/details\\?\\.closeCode\\?\\?details\\?\\.context\\?\\.code/,'Realtime disconnects must surface the transport close code');
+assert.match(live,/function describeLiveDisconnect\(details\)/,'Realtime disconnects must format the SDK diagnostic details');
+assert.match(live,/details\?\.context\?\.reason/,'Realtime disconnects must surface the LiveKit close reason');
+assert.match(live,/details\?\.closeCode\?\?details\?\.context\?\.code/,'Realtime disconnects must surface the transport close code');
 assert.ok(!/Scribe\.connect|SpeechRecognition|webkitSpeechRecognition|MediaRecorder|listenServerLiveTalk/.test(live),'Live Talk must not fall back to browser or batch transcription');
 assert.match(ui,/id="live-talk-mute"/,'Live Talk must provide an explicit microphone mute control');
 assert.match(liveView,/id="live-talk-text-form"/,'Live Talk must provide a typed-message fallback');
