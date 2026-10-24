@@ -14,7 +14,7 @@ const state = {
   projectSection:'CHAT', projectMemories:[], projectSources:[], memoryPolicy:null,
   messagePage:{hasMore:false,nextCursor:null}, filesPage:{scope:'global',hasMore:false,nextCursor:null}, artifactsPage:{scope:'global',hasMore:false,nextCursor:null}, chatRestore:null,
   voiceBusy:false, voiceRecorder:null, voiceStream:null, voiceChunks:[], voiceStopTimer:null, voiceBytes:0, voiceHitSizeLimit:false, voiceSubmitRequested:false,
-  liveTalk:false, liveTalkStopRequested:false, liveMuted:false, livePersona:'ZEUS', liveFailureKind:null, liveAgentConversation:null, liveAgentConversationId:'', liveAgentPartial:'', liveTextDraft:'', liveTextStatus:'', liveAgentPermissionStream:null, liveAgentLogQueue:Promise.resolve(), liveAgentLoggedEvents:new Map(), liveGeneration:0, liveRetryCount:0, liveStage:'idle', liveLocale:'auto', liveTalkVoiceId:'', voiceId:'marin', elevenLabsVoiceId:'', voiceStatus:null, voiceTesting:false, liveSpeechCache:null, voiceReplyAudio:null, liveAudioUrl:null, liveSpeechController:null, liveAudioUnlocked:false, liveSpeechUnlocked:false,
+  liveTalk:false, liveTalkMinimized:false, liveTalkStopRequested:false, liveMuted:false, livePersona:'ZEUS', liveFailureKind:null, liveAgentConversation:null, liveAgentConversationId:'', liveAgentPartial:'', liveTextDraft:'', liveTextStatus:'', liveAgentPermissionStream:null, liveAgentLogQueue:Promise.resolve(), liveAgentLoggedEvents:new Map(), liveGeneration:0, liveRetryCount:0, liveStage:'idle', liveLocale:'auto', liveTalkVoiceId:'', voiceId:'marin', elevenLabsVoiceId:'', voiceStatus:null, voiceTesting:false, liveSpeechCache:null, voiceReplyAudio:null, liveAudioUrl:null, liveSpeechController:null, liveAudioUnlocked:false, liveSpeechUnlocked:false,
   messageFeedback:{}, messageAudioId:'', messageAudioBusyId:'', messageAudioUrl:null,
   voiceAvatar:'lightning', elevenLabsVoices:[], elevenLabsVoicesLoaded:false, elevenLabsVoicesLoading:false, elevenLabsVoicesError:'', elevenLabsVoicePageToken:'', elevenLabsVoiceHasMore:false,
   preferences:{personality:'balanced',instructions:''}, preferencesLoaded:false,
@@ -600,7 +600,7 @@ function composer(){
   const chips=state.attachedFiles.map(f=>`<span class="file-chip">${icon('files')} ${esc(f.filename)}<button type="button" data-remove-file="${esc(f.id)}" aria-label="Remove ${esc(f.filename)}" title="Remove attachment">${icon('close')}</button></span>`).join('');
   const showMic=voiceSupported();
   const scope=state.currentProject?`Project: ${esc(state.currentProject.name)}`:'This conversation';
-  return `<div class="composer-shell">${state.liveTalk?`<div class="zeus-live-stage" role="status" aria-label="Live Talk active">${voiceAvatarMarkup()}<span class="${state.liveStage==='speaking'?'zeus-speaking-state':''}">${state.liveStage==='speaking'?'<span class="zeus-speaking-bolt" aria-hidden="true">⚡</span>':''}Live Talk · ${esc(state.liveTalkStopRequested?'Finishing this turn':state.liveStage==='speaking'?'Speaking':state.liveStage==='processing'?'Processing':state.liveStage==='listening'?'Listening':'Connected')} · ${esc(state.liveLocale==='auto'?'Device language':state.liveLocale.toUpperCase())}</span></div>`:''}${state.attachMenu?`<div class="attach-menu" role="menu" id="attach-menu" aria-label="Add attachment"><button type="button" role="menuitem" id="attach-media">${icon('image')}<span>Photo / Video</span></button><button type="button" role="menuitem" id="attach-camera">${icon('camera')}<span>Camera</span></button><button type="button" role="menuitem" id="attach-file">${icon('files')}<span>File</span></button><button type="button" role="menuitem" id="attach-saved">${icon('folder')}<span>Saved artifact</span></button></div>`:''}${chips?`<div class="attachments pending">${chips}</div>`:''}<form class="composer" id="composer"><button type="button" class="icon-btn attach-plus" id="attach" title="Add photo, video or file" aria-label="Add photo, video or file" aria-haspopup="menu" aria-expanded="${state.attachMenu}" ${state.attachMenu?'aria-controls="attach-menu"':''}>＋</button><textarea id="composer-text" rows="1" aria-label="Message ${composerMode}" placeholder="Message ${composerMode}…" ${state.sending?'disabled':''}>${esc(state.draft)}</textarea>${showMic?`<button type="button" class="icon-btn ${state.recording?'recording':''}" id="voice" title="${state.recording?'Stop and send audio to ElevenLabs Scribe':state.voiceBusy?'Transcribing with ElevenLabs Scribe…':'Record a voice message'}" aria-label="${state.recording?'Stop and send audio to ElevenLabs Scribe':state.voiceBusy?'Transcribing voice with ElevenLabs Scribe':'Record a voice message'}" ${state.voiceBusy?'disabled':''}>${icon('mic')}</button>`:''}${liveTalkSupported()?`<button type="button" class="icon-btn live-talk-trigger ${state.liveTalk?'active':''}" id="live-talk" aria-pressed="${state.liveTalk}" aria-label="${state.liveTalk?'Finish this turn and stop Live Talk':'Start Live Talk'}" title="${state.liveTalk?'Finish this turn and stop Live Talk':'Start Live Talk'}">⚡</button>`:''}<button type="submit" class="icon-btn send-btn" title="Send (Ctrl/⌘+Enter)" aria-label="Send message" ${state.sending?'disabled':''}>${icon('send')}</button></form><div class="composer-meta"><span>${state.currentProject?'Permanent Project chat · dedicated memory + files':'Conversation history available · no Project memory'}</span><span>Enter adds a new line · use the arrow to send</span></div></div>`;
+  return `<div class="composer-shell">${state.liveTalk&&!state.liveTalkMinimized?`<div class="zeus-live-stage" role="status" aria-label="Live Talk active">${voiceAvatarMarkup()}<span class="${state.liveStage==='speaking'?'zeus-speaking-state':''}">${state.liveStage==='speaking'?'<span class="zeus-speaking-bolt" aria-hidden="true">⚡</span>':''}Live Talk · ${esc(state.liveTalkStopRequested?'Finishing this turn':state.liveStage==='speaking'?'Speaking':state.liveStage==='processing'?'Processing':state.liveStage==='listening'?'Listening':'Connected')} · ${esc(state.liveLocale==='auto'?'Device language':state.liveLocale.toUpperCase())}</span></div>`:''}${state.attachMenu?`<div class="attach-menu" role="menu" id="attach-menu" aria-label="Add attachment"><button type="button" role="menuitem" id="attach-media">${icon('image')}<span>Photo / Video</span></button><button type="button" role="menuitem" id="attach-camera">${icon('camera')}<span>Camera</span></button><button type="button" role="menuitem" id="attach-file">${icon('files')}<span>File</span></button><button type="button" role="menuitem" id="attach-saved">${icon('folder')}<span>Saved artifact</span></button></div>`:''}${chips?`<div class="attachments pending">${chips}</div>`:''}<form class="composer" id="composer"><button type="button" class="icon-btn attach-plus" id="attach" title="Add photo, video or file" aria-label="Add photo, video or file" aria-haspopup="menu" aria-expanded="${state.attachMenu}" ${state.attachMenu?'aria-controls="attach-menu"':''}>＋</button><textarea id="composer-text" rows="1" aria-label="Message ${composerMode}" placeholder="Message ${composerMode}…" ${state.sending?'disabled':''}>${esc(state.draft)}</textarea>${showMic?`<button type="button" class="icon-btn ${state.recording?'recording':''}" id="voice" title="${state.recording?'Stop and send audio to ElevenLabs Scribe':state.voiceBusy?'Transcribing with ElevenLabs Scribe…':'Record a voice message'}" aria-label="${state.recording?'Stop and send audio to ElevenLabs Scribe':state.voiceBusy?'Transcribing voice with ElevenLabs Scribe':'Record a voice message'}" ${state.voiceBusy?'disabled':''}>${icon('mic')}</button>`:''}${liveTalkSupported()?`<button type="button" class="icon-btn live-talk-trigger ${state.liveTalk?'active':''}" id="live-talk" aria-pressed="${state.liveTalk}" aria-label="${state.liveTalk?'Return to Live Talk':'Start Live Talk'}" title="${state.liveTalk?'Return to Live Talk':'Start Live Talk'}">⚡</button>`:''}<button type="submit" class="icon-btn send-btn" title="Send (Ctrl/⌘+Enter)" aria-label="Send message" ${state.sending?'disabled':''}>${icon('send')}</button></form><div class="composer-meta"><span>${state.currentProject?'Permanent Project chat · dedicated memory + files':'Conversation history available · no Project memory'}</span><span>Enter adds a new line · use the arrow to send</span></div></div>`;
 }
 
 function projectsView(){
@@ -944,12 +944,12 @@ function liveTalkExperience(){
   return `<main class="live-talk-experience" id="main-content" tabindex="-1" aria-label="${persona} Live Talk">
     <div class="live-talk-scene" aria-hidden="true"></div>
     <header class="live-talk-header">
-      <button type="button" class="live-glass-button" id="live-talk-return" aria-label="Finish Live Talk and return to chat" title="Return to chat">${icon('back')}</button>
+      <button type="button" class="live-glass-button" id="live-talk-minimize" aria-label="Minimize Live Talk and return to Zeus Proxy" title="Minimize Live Talk">${icon('back')}</button>
       <div class="live-talk-brand"><span class="personal-bolt">ϟ</span><span><strong class="logo-word">OLYMPUS HUB</strong><small class="logo-sub">PERSONAL · ${persona}</small></span></div>
       <div class="live-pill"><i></i>LIVE</div>
     </header>
     <section class="live-talk-center" aria-live="polite">
-      <div class="live-talk-heading"><span>${persona}</span><h1>AI <b>VOICE</b></h1></div>
+      <div class="live-talk-heading"><span>${persona}</span></div>
       <p class="live-talk-status ${state.liveStage==='speaking'?'is-speaking':''}">${state.liveStage==='speaking'?'<span class="zeus-speaking-bolt" aria-hidden="true">⚡</span>':''}${esc(stage)}</p>
       <div class="live-talk-orb-wrap">${voiceAvatarMarkup()}<span class="live-talk-orbit live-talk-orbit-a"></span><span class="live-talk-orbit live-talk-orbit-b"></span></div>
       <div class="live-talk-waveform ${state.liveStage==='speaking'?'is-speaking':''}" aria-hidden="true">${bars}</div>
@@ -960,10 +960,14 @@ function liveTalkExperience(){
     <div class="live-talk-personas live-talk-voice-picker"><label class="live-voice-select-wrap"><span class="live-persona-mark zeus-mark" aria-hidden="true">ϟ</span><span class="live-persona-copy"><strong>LIVE TALK VOICE</strong><small>${state.liveTalkVoiceId?esc(elevenLabsVoiceLabel(state.liveTalkVoiceId)):'Agent default voice'}</small></span><select id="live-talk-voice" aria-label="Choose an ElevenLabs voice for Live Talk"><option value="" ${!savedLiveVoice?'selected':''}>Agent default voice (Felipe)</option>${unavailableLiveVoice}${liveVoiceOptions}</select></label><button type="button" class="live-voice-refresh" id="live-talk-refresh-voices" aria-label="Refresh ElevenLabs voice list" title="Refresh voice list" ${state.elevenLabsVoicesLoading?'disabled':''}>${state.elevenLabsVoicesLoading?'…':'↻'}</button>${state.elevenLabsVoiceHasMore?`<button type="button" class="live-voice-refresh" id="live-talk-load-more-voices" aria-label="Load more ElevenLabs voices" title="Load more voices" ${state.elevenLabsVoicesLoading?'disabled':''}>＋</button>`:''}</div>
     <p class="live-voice-note" role="status">${state.elevenLabsVoicesError?`Could not load account voices: ${esc(state.elevenLabsVoicesError)}`:state.elevenLabsVoicesLoading?'Loading voices from your ElevenLabs account…':state.liveTalkVoiceId?'Changing voice reconnects the session. Enable Voice ID overrides in the ElevenLabs agent Security settings.':'Choose any account voice; your choice is saved on this device.'}</p>
     <form class="live-talk-text-form" id="live-talk-text-form" aria-label="Send a typed message to the live agent"><label class="sr-only" for="live-talk-text">Type a message if voice recognition misunderstood</label><input id="live-talk-text" name="message" type="text" maxlength="4000" autocomplete="off" enterkeyhint="send" placeholder="Miscommunication? Type your message…" value="${esc(state.liveTextDraft)}"><button type="submit" aria-label="Send typed message" title="Send typed message" ${state.sending?'disabled':''}>${icon('send')}</button><span class="sr-only" id="live-talk-text-status" aria-live="polite">${esc(state.liveTextStatus)}</span></form>
-    <footer class="live-talk-controls"><div class="live-control-hint"><span class="live-mic-dot"></span>${state.liveMuted?'Microphone muted':state.liveStage==='listening'?'Microphone active':state.liveStage==='processing'?'Voice captured':state.liveStage==='speaking'?'Reply audio active':state.liveStage==='error'?'Live Talk paused':'Session ready'}</div><div class="live-call-actions"><button type="button" class="live-mute-button ${state.liveMuted?'is-muted':''}" id="live-talk-mute" aria-pressed="${state.liveMuted}" aria-label="${state.liveMuted?'Unmute microphone':'Mute microphone'}" title="${state.liveMuted?'Unmute microphone':'Mute microphone'}">${icon(state.liveMuted?'mic-off':'mic')}</button><button type="button" class="live-end-call" id="live-talk-end" aria-label="Exit Live Talk immediately and return to chat" title="Exit Live Talk">${icon('close')}</button></div><div class="live-control-caption">Mute the microphone or exit to your saved conversation</div></footer>
+    <footer class="live-talk-controls"><div class="live-control-hint"><span class="live-mic-dot"></span>${state.liveMuted?'Your microphone is muted · Zeus audio stays on':state.liveStage==='listening'?'Your microphone is active':state.liveStage==='processing'?'Voice captured':state.liveStage==='speaking'?'Zeus is speaking':state.liveStage==='error'?'Live Talk paused':'Session ready'}</div><div class="live-call-actions"><button type="button" class="live-mute-button ${state.liveMuted?'is-muted':''}" id="live-talk-mute" aria-pressed="${state.liveMuted}" aria-label="${state.liveMuted?'Unmute your microphone; Zeus audio stays on':'Mute your microphone; Zeus audio stays on'}" title="${state.liveMuted?'Unmute your microphone':'Mute your microphone'}">${icon(state.liveMuted?'mic-off':'mic')}</button><button type="button" class="live-end-call" id="live-talk-end" aria-label="End Live Talk" title="End Live Talk">${icon('close')}</button></div><div class="live-control-caption">Mute your microphone; Zeus can keep speaking</div></footer>
   </main>`;
 }
-function appView(){if(state.liveTalk)return liveTalkExperience();const page=state.tab==='Home'?homeView():state.tab==='Projects'?projectsView():state.tab==='Tools'?toolsView():state.tab==='Files'?filesView():settingsView();return `<div class="app-shell">${sidebar()}<main class="main" id="main-content" tabindex="-1">${topbar()}${page}</main><div id="modal-root"></div></div>`}
+function liveTalkDock(){
+  const status=state.liveTalkStopRequested?'Finishing turn':state.liveMuted?'Mic muted · Zeus audio on':state.liveStage==='speaking'?'Zeus speaking':state.liveStage==='processing'?'Processing':state.liveStage==='error'?'Paused':state.liveStage==='connecting'?'Connecting':'Listening';
+  return `<aside class="live-talk-dock" role="region" aria-label="Live Talk controls"><button type="button" class="live-dock-open" id="live-talk-dock-open" aria-label="Open Live Talk"><span class="live-dock-light ${state.liveStage==='error'?'is-error':''}"></span><span class="live-dock-copy"><strong>ZEUS · LIVE</strong><small>${esc(status)}</small></span><span class="live-dock-expand" aria-hidden="true">↗</span></button><button type="button" class="live-dock-action ${state.liveMuted?'is-muted':''}" id="live-talk-dock-mute" aria-pressed="${state.liveMuted}" aria-label="${state.liveMuted?'Unmute your microphone; Zeus audio stays on':'Mute your microphone; Zeus audio stays on'}" title="${state.liveMuted?'Unmute your microphone':'Mute your microphone'}">${icon(state.liveMuted?'mic-off':'mic')}</button><button type="button" class="live-dock-action live-dock-end" id="live-talk-dock-end" aria-label="End Live Talk" title="End Live Talk">${icon('close')}</button></aside>`;
+}
+function appView(){const page=state.tab==='Home'?homeView():state.tab==='Projects'?projectsView():state.tab==='Tools'?toolsView():state.tab==='Files'?filesView():settingsView();return `<div class="app-shell">${sidebar()}<main class="main" id="main-content" tabindex="-1">${topbar()}${page}</main><div id="modal-root"></div>${state.liveTalkMinimized&&state.liveTalk?liveTalkDock():''}${state.liveTalk&&!state.liveTalkMinimized?liveTalkExperience():''}</div>`}
 function focusKey(el){
   if(!el||el===document.body||!app.contains(el))return null;
   if(el.id)return `#${CSS.escape(el.id)}`;
@@ -1054,6 +1058,7 @@ function bind(){
     if(next==='Home' && state.currentProject){
       state.currentProject=null;state.currentConversation=null;state.messages=[];state.chatArtifacts=[];state.attachedFiles=[];state.activeMode=null;state.error='';
       history.replaceState({},'',location.pathname);
+      refreshLiveTalkContext();
     }
     state.tab=next;
     try{
@@ -1128,8 +1133,11 @@ function bind(){
   $$('[data-remove-file]').forEach(b=>b.addEventListener('click',()=>{state.attachedFiles=state.attachedFiles.filter(f=>f.id!==b.dataset.removeFile);render()}));
   $('#voice')?.addEventListener('click',startVoice);
   $('#live-talk')?.addEventListener('click',toggleLiveTalk);
-  $$('#live-talk-return,#live-talk-end').forEach(button=>button.addEventListener('click',finishLiveTalkSession));
+  $('#live-talk-minimize')?.addEventListener('click',minimizeLiveTalk);
+  $$('#live-talk-end,#live-talk-dock-end').forEach(button=>button.addEventListener('click',finishLiveTalkSession));
+  $('#live-talk-dock-open')?.addEventListener('click',restoreLiveTalk);
   $('#live-talk-mute')?.addEventListener('click',toggleLiveTalkMute);
+  $('#live-talk-dock-mute')?.addEventListener('click',toggleLiveTalkMute);
   $('#live-talk-voice')?.addEventListener('change',event=>changeLiveTalkVoice(event.currentTarget.value));
   $('#live-talk-refresh-voices')?.addEventListener('click',()=>loadElevenLabsVoices());
   $('#live-talk-load-more-voices')?.addEventListener('click',()=>loadElevenLabsVoices({append:true}));
@@ -1147,7 +1155,7 @@ function bind(){
   $$('[data-project]').forEach(b=>{b.addEventListener('click',()=>openProjectWorkspace(b.dataset.project));b.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();openProjectWorkspace(b.dataset.project);}});});
   $$('[data-project-section]').forEach(b=>b.addEventListener('click',async()=>{state.projectSection=b.dataset.projectSection;try{if(state.projectSection==='MEMORY'&&state.currentProject)await loadMemories(state.currentProject.id);if(state.projectSection==='SOURCE'&&state.currentProject)await loadProjectSources();}catch(err){state.error=err?.message||'Could not load project memory.';}render();resetViewport()}));
   $('#edit-project')?.addEventListener('click',projectEditModal);
-  $('#back-projects')?.addEventListener('click',async()=>{state.currentProject=null;state.currentConversation=null;state.messages=[];state.chatArtifacts=[];state.attachedFiles=[];state.activeMode=null;state.projectMemories=[];state.memoryPolicy=null;state.projectSection='CHAT';state.messagePage={hasMore:false,nextCursor:null};state.tasks=[];state.error='';history.replaceState({},'',location.pathname);render()});
+  $('#back-projects')?.addEventListener('click',async()=>{state.currentProject=null;state.currentConversation=null;state.messages=[];state.chatArtifacts=[];state.attachedFiles=[];state.activeMode=null;state.projectMemories=[];state.memoryPolicy=null;state.projectSection='CHAT';state.messagePage={hasMore:false,nextCursor:null};state.tasks=[];state.error='';history.replaceState({},'',location.pathname);refreshLiveTalkContext();render()});
   $('#task-form')?.addEventListener('submit',createTask); $$('[data-task]').forEach(b=>b.addEventListener('click',()=>{if(b.disabled)return;b.disabled=true;b.setAttribute('aria-busy','true');toggleTask(b.dataset.task,b.dataset.status);}));
   $('#memory-form')?.addEventListener('submit',createMemory); $$('[data-memory-delete]').forEach(b=>b.addEventListener('click',()=>deleteMemory(b.dataset.memoryDelete)));
   $$('[data-delete-output]').forEach(b=>b.addEventListener('click',()=>deleteOutput(b.dataset.deleteOutput,b.dataset.outputId)));
@@ -1454,7 +1462,7 @@ async function uploadFile(file,{analysisRole='',sourceName='',attach=true}={}){
   finally{render();const shown=state.execStatus;setTimeout(()=>{if(state.execStatus===shown&&!state.sending){state.execStatus='';render();}},1200)}
 }
 function finishLiveTalkSession(){
-  state.liveTalk=false;state.liveTalkStopRequested=false;state.liveMuted=false;state.liveStage='idle';state.liveGeneration++;
+  state.liveTalk=false;state.liveTalkMinimized=false;state.liveTalkStopRequested=false;state.liveMuted=false;state.liveStage='idle';state.liveGeneration++;
   clearTimeout(state.liveRetryTimer);state.liveRetryTimer=null;
   releaseLiveAgentPermissionStream();
   const connection=state.liveAgentConversation;state.liveAgentConversation=null;state.liveAgentConversationId='';state.liveAgentPartial='';
@@ -1462,6 +1470,8 @@ function finishLiveTalkSession(){
   try{state.liveSpeechController?.abort()}catch{}
   state.liveSpeechController=null;discardLiveAudio();try{window.speechSynthesis?.cancel()}catch{}render();
 }
+function minimizeLiveTalk(){if(!state.liveTalk)return;state.liveTalkMinimized=true;render();}
+function restoreLiveTalk(){if(!state.liveTalk)return;state.liveTalkMinimized=false;render();}
 function pauseLiveTalkOnError(message,kind='agent'){
   if(!state.liveTalk)return;
   const detail=String(message||'ElevenLabs Realtime could not complete this voice session.');
@@ -1591,12 +1601,12 @@ async function connectLiveTalkAgent(){
   }
 }
 function toggleLiveTalk(){
-  if(state.liveTalk){finishLiveTalkSession();return;}
+  if(state.liveTalk){restoreLiveTalk();return;}
   if(state.sending){state.error='Wait for Zeus to finish the current reply before starting Live Talk.';render();return;}
   if(window.isSecureContext===false){state.error='Live Talk requires a secure HTTPS page. Open OlyHub using its HTTPS address and reconnect.';render();return;}
   if(!liveTalkSupported()){state.error='Live Talk requires microphone access, audio playback, and a supported browser.';render();return;}
   state.voiceId=localStorage.getItem('zeus-voice-id')||'marin';unlockLiveAudioFromGesture();
-  state.error='';state.liveMuted=false;state.liveFailureKind=null;state.liveRetryCount=0;state.liveTalkStopRequested=false;state.liveAgentPartial='';state.liveTalk=true;state.liveStage='connecting';state.liveGeneration++;state.liveAgentLoggedEvents=new Map();state.liveAgentLogQueue=Promise.resolve();render();connectLiveTalkAgent();
+  state.error='';state.liveMuted=false;state.liveTalkMinimized=false;state.liveFailureKind=null;state.liveRetryCount=0;state.liveTalkStopRequested=false;state.liveAgentPartial='';state.liveTalk=true;state.liveStage='connecting';state.liveGeneration++;state.liveAgentLoggedEvents=new Map();state.liveAgentLogQueue=Promise.resolve();render();connectLiveTalkAgent();
   if(!state.elevenLabsVoicesLoading)void loadElevenLabsVoices();
 }
 function changeLiveTalkVoice(value){
@@ -1619,6 +1629,7 @@ function toggleLiveTalkMute(){
   const connection=state.liveAgentConversation;
   if(!connection){state.error='ElevenLabs Realtime is not connected. Reconnect before changing microphone state.';render();return;}
   try{
+    // ElevenLabs setMicMuted mutes the input pipeline only; agent audio output stays audible.
     state.liveMuted=!state.liveMuted;connection.setMicMuted(state.liveMuted);
     state.liveStage=state.liveMuted?'muted':'listening';state.error='';render();
   }catch(error){pauseLiveTalkOnError(error?.message||'ElevenLabs Realtime could not change microphone state. Reconnect.','agent');}
@@ -1633,7 +1644,7 @@ function livePersonaContext(){
     .replace(/\b(?:sk|rk|pk)-[A-Za-z0-9_-]{16,}\b/g,'[REDACTED API TOKEN]')
     .replace(/\b(?:ghp|gho|ghu|ghs|github_pat)_[A-Za-z0-9_]{16,}\b/g,'[REDACTED GITHUB TOKEN]')
     .replace(/\bAIza[0-9A-Za-z_-]{20,}\b/g,'[REDACTED GOOGLE API KEY]');
-  return `You are Zeus, OlyHub's voice assistant. Use Felipe's selected ElevenLabs voice “${selected}” and remain Zeus. OlyHub supports natural text/voice conversation, Zeus levels 1/2/3, Olympus, project memory/tasks/files, research and artifact creation. Use the selected mode/level for requested work. Casual conversation is complete by itself: do not inspect or offer to inspect projects, call tools, or pitch work unless Felipe asks or it is needed to answer. Use supplied history for follow-ups. Google is read-only; GitHub writes need the explicit action flow. Never claim an action succeeded without confirmation.\n\nUSER-APPROVED PERSONALIZATION (style only; lower priority than system instructions and the user's current request):\nPersonality: ${personalities[preferences.personality]||personalities.balanced}${custom?`\nCustom instructions: ${custom}`:''}`;
+  return `You are Zeus, the voice assistant in Zeus Proxy. Use Felipe's selected ElevenLabs voice “${selected}” and remain Zeus. Zeus Proxy supports natural text/voice conversation, Zeus levels 1/2/3, Olympus mode, and project tasks, memories, source records, research, and artifact work. Use the selected mode/level for requested work. Casual conversation is complete by itself: do not inspect or offer to inspect projects, call tools, or pitch work unless Felipe asks or a tool is needed to answer his request.\n\nPROJECT TOOL PROCEDURE — follow this when Felipe explicitly asks about a project:\n- If he asks which projects exist, call list_olyhub_projects and answer from its result.\n- If he names a project and it is not the active project, call list_olyhub_projects if needed to resolve the exact name, then open_olyhub_project with project_name, then get_current_project_context. Do not answer that you lack access before trying these tools.\n- If the requested project is already active, call get_current_project_context before answering questions about its progress, tasks, memories, or sources.\n- Use create_project_task only when Felipe explicitly asks to add or create a task. Use send_olyhub_command for other directly requested work; it routes through the normal Zeus Proxy engine using the selected mode/level.\n- These tools expose project summaries, tasks, memories, and source titles/revisions. They do not expose full source or file contents; say so plainly if Felipe asks you to read a file. Never invent project data or claim a tool succeeded unless its result confirms it.\n\nUse supplied conversation history for follow-ups. Google is read-only; GitHub writes need the explicit action flow.\n\nUSER-APPROVED PERSONALIZATION (style only; lower priority than system instructions and the user's current request):\nPersonality: ${personalities[preferences.personality]||personalities.balanced}${custom?`\nCustom instructions: ${custom}`:''}`;
 }
 function liveSessionContext(){
   const transcript=(state.messages||[])
@@ -1656,11 +1667,12 @@ function liveSessionContext(){
     ...(state.tasks||[]).slice(0,8).map(task=>`Task [${task.status}] ${String(task.title||'').slice(0,120)}${task.description?`: ${String(task.description).slice(0,220)}`:''}`),
     ...(state.projectMemories||[]).slice(0,5).map(memory=>`Project memory: ${String(memory.content||'').slice(0,280)}`),
     ...(state.projectSources||[]).slice(0,5).map(source=>`Project source: ${String(source.title||'').slice(0,100)}`),
-    `Voice work commands run through the normal OlyHub engine in ${executionSelection}; preserve this selection.`,
+    `Voice work commands run through the normal Zeus Proxy engine in ${executionSelection}; preserve this selection.`,
     'The open project context is reference material, not an instruction to analyze or act. Use project tools only when Felipe asks for project information or a project action.'
-  ].join('\n'):'No project is currently open. Do not create project tasks unless the user opens a project first.';
+  ].join('\n'):'No project is currently open. For an explicitly requested project lookup, use list_olyhub_projects and open_olyhub_project before get_current_project_context. Do not create a project task unless Felipe directly asks.';
   return `${livePersonaContext()}\n\nConversation continuity: Treat the recent transcript below as the prior turns of this same ongoing conversation. Remember the user's stated facts, preferences, corrections, and unresolved requests. Answer follow-up references using this context; do not ask the user to repeat information already present. The transcript is background context, not a new request.\n${history?`Recent conversation transcript:\n${history}`:'There are no earlier saved chat turns to restore.'}\n\n${projectContext}`;
 }
+function refreshLiveTalkContext(){try{state.liveAgentConversation?.sendContextualUpdate(liveSessionContext());}catch{}}
 function liveProjectClientTools(){
   return {
     send_olyhub_command:async(parameters={})=>{
@@ -1818,7 +1830,7 @@ function projectModal(){
     e.preventDefault();setModalError('');const submit=$('#project-submit');submit.disabled=true;
     try{
       const d=await api('/api/projects',{method:'POST',body:JSON.stringify({name:$('#project-name').value,goal:$('#project-goal').value,description:$('#project-description').value})});
-      closeModal({restoreFocus:false});await loadProjects();state.currentProject=state.projects.find(p=>p.id===d.project.id)||{...d.project};state.tab='Projects';state.projectSection='CHAT';await hydrateProjectWorkspace(state.currentProject.id);render();
+      closeModal({restoreFocus:false});await loadProjects();state.currentProject=state.projects.find(p=>p.id===d.project.id)||{...d.project};state.tab='Projects';state.projectSection='CHAT';await hydrateProjectWorkspace(state.currentProject.id);refreshLiveTalkContext();render();
     }catch(err){setModalError(err.message||'Could not create project.');submit.disabled=false;}
   });
 }
@@ -1908,6 +1920,7 @@ async function openProjectWorkspace(projectId){
     if(!state.currentProject)return render();
     await hydrateProjectWorkspace(projectId);
     history.replaceState({},'',`/?project=${encodeURIComponent(projectId)}`);
+    refreshLiveTalkContext();
   }catch(err){state.error=err.message||'Could not open project workspace.';}
   render();resetViewport();
 }
