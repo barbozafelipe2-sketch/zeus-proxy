@@ -1411,6 +1411,13 @@ function pauseLiveTalkOnError(message,kind='agent'){
   try{state.liveSpeechController?.abort()}catch{}
   discardLiveAudio({keepElement:true});try{window.speechSynthesis?.cancel()}catch{}render();
 }
+function describeLiveDisconnect(details){
+  const reason=String(details?.message||details?.context?.reason||details?.closeReason||'').trim();
+  const code=details?.closeCode??details?.context?.code;
+  const category=details?.reason==='agent'?'The ElevenLabs agent/LiveKit closed the session':details?.reason==='error'?'The Realtime transport failed':'The Realtime session ended';
+  const diagnostic=[reason,code!=null?`code ${Number(code)}`:''].filter(Boolean).join(' · ');
+  return diagnostic?`${category}: ${diagnostic}`:`${category}. The SDK did not provide a close reason.`;
+}
 function saveLiveAgentMessage(payload,generation,providerConversationId){
   const content=String(payload?.message||'').replace(/<\/?Athena>/gi,'').trim(),eventId=String(payload?.event_id??'');
   if(!content||!eventId||!state.liveTalk||generation!==state.liveGeneration)return;
@@ -1496,8 +1503,7 @@ async function connectLiveTalkAgent(){
       onError:(message)=>{if(state.liveTalk&&generation===state.liveGeneration)pauseLiveTalkOnError(String(message||'ElevenLabs Realtime encountered an error.'),'agent');},
       onDisconnect:details=>{
         if(state.liveTalk&&generation===state.liveGeneration){
-          const reason=details?.message||details?.closeReason||'The ElevenLabs Realtime session disconnected.';
-          pauseLiveTalkOnError(reason,'agent');
+          pauseLiveTalkOnError(describeLiveDisconnect(details),'agent');
         }
       },
     });
