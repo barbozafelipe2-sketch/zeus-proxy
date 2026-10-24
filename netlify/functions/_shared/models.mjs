@@ -60,26 +60,8 @@ function geminiBase() {
 function openrouterBase() {
   return env('OPENROUTER_BASE_URL') || (env('OPENROUTER_API_KEY') ? 'https://openrouter.ai/api/v1' : '');
 }
-function audioBase() { return env('OLYHUB_AUDIO_BASE_URL'); }
-function audioKey() { return env('OLYHUB_AUDIO_API_KEY'); }
-function explicitAudioConfigured() {
-  return String(env('OLYHUB_SERVER_TRANSCRIPTION')).toLowerCase() === 'true' && Boolean(audioBase() && audioKey());
-}
-
-// ElevenLabs Scribe via OpenRouter's POST /audio/transcriptions (OpenAI-style multipart).
-// Same routing as speech.mjs: Netlify AI Gateway OpenRouter first, direct key as fallback.
-// Gateway credentials are never forwarded to the public openrouter.ai URL.
-export function openrouterTranscriptionRoutes() {
-  if (String(env('OPENROUTER_TRANSCRIPTION')).toLowerCase() === 'false') return [];
-  const items = [];
-  const gatewayKey = env('OPENROUTER_API_KEY'), gatewayBase = env('OPENROUTER_BASE_URL');
-  if (gatewayKey && gatewayBase) items.push({ name: 'gateway', key: gatewayKey, base: gatewayBase });
-  const directKey = env('OPENROUTER_DIRECT_API_KEY');
-  if (directKey) items.push({ name: 'openrouter_direct', key: directKey, base: env('OPENROUTER_DIRECT_BASE_URL') || 'https://openrouter.ai/api/v1' });
-  return items;
-}
 export function serverTranscriptionConfigured() {
-  return openrouterTranscriptionRoutes().length > 0 || explicitAudioConfigured() || providerStatus().gemini;
+  return Boolean(env('ELEVENLABS_API_KEY')||env('ELEVEN_LABS_API_KEY'));
 }
 
 export function providerStatus() {
@@ -1216,87 +1198,29 @@ export async function runOlympus(args){return runOlympusComplexTurbo(args);}
 
 export async function transcribeAudio(audioBytes, filename = 'voice.webm', mimeType = 'audio/webm', { budget = null } = {}) {
   const localBudget = budget || createExecutionBudget({ timeoutMs: 42000, maxCalls: 3 });
-  let last;
-
-  const sttModel = env('OPENROUTER_TRANSCRIPTION_MODEL').trim() || 'elevenlabs/scribe-v2';
-  for (const route of openrouterTranscriptionRoutes()) {
-    if (!localBudget.canCall()) break;
-    try {
-      const url = new URL(String(route.base).replace(/\/$/, '') + '/audio/transcriptions');
-      if (url.protocol !== 'https:') throw providerError('Invalid OpenRouter transcription URL.');
-      localBudget.reserveCall(`transcription:openrouter:${sttModel}`);
-      const form = new FormData();
-      form.append('model', sttModel);
-      form.append('file', new Blob([audioBytes], { type: mimeType || 'audio/webm' }), filename || 'voice.webm');
-      const res = await fetch(url.toString(), { method: 'POST', signal: localBudget.signal(20000), headers: { Authorization: `Bearer ${route.key}`, 'X-Title': 'Zeus Proxy' }, body: form });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw providerError(data.error?.message || `OpenRouter transcription ${res.status} (${route.name})`, res.status);
-      const text = String(data.text || '').trim();
-      if (!text) throw providerError('Transcription provider returned no text.');
-      return { text, model: `openrouter:${sttModel}`, route: route.name, language: data.language || null };
-    } catch (error) { last = error; }
+  const key=env('ELEVENLABS_API_KEY')||env('ELEVEN_LABS_API_KEY');
+  if(!key)throw Object.assign(new Error('ElevenLabs Scribe is not configured. Add ELEVENLABS_API_KEY to Netlify.'),{status:501,code:'ELEVENLABS_STT_NOT_CONFIGURED'});
+  if(!localBudget.canCall())throw providerError('ElevenLabs Scribe could not start within the voice processing budget.');
+  localBudget.reserveCall('transcription:elevenlabs:scribe_v2');
+  const form=new FormData();
+  form.append('model_id','scribe_v2');
+  form.append('file',new Blob([audioBytes],{type:mimeType||'audio/webm'}),filename||'voice.webm');
+  let response;
+  try{
+    response=await fetch('https://api.elevenlabs.io/v1/speech-to-text',{method:'POST',signal:localBudget.signal(25000),headers:{'xi-api-key':key},body:form});
+  }catch(error){
+    if(error?.name==='AbortError')throw Object.assign(new Error('ElevenLabs Scribe timed out while processing the audio.'),{status:504,code:'ELEVENLABS_STT_TIMEOUT'});
+    throw Object.assign(new Error('Could not reach ElevenLabs Scribe to process the audio.'),{status:502,code:'ELEVENLABS_STT_UNREACHABLE'});
   }
-
-  if (explicitAudioConfigured()) {
-    const base = apiRoot(audioBase());
-    const key = audioKey();
-    const configured = env('OLYHUB_AUDIO_MODEL').trim();
-    const candidates = [...new Set([configured, 'gpt-4o-mini-transcribe', 'gpt-4o-transcribe'].filter(Boolean))].slice(0, 2);
-    for (const model of candidates) {
-      if (!localBudget.canCall()) break;
-      try {
-        localBudget.reserveCall(`transcription:${model}`);
-        const form = new FormData();
-        form.append('model', model);
-        form.append('file', new Blob([audioBytes], { type: mimeType || 'audio/webm' }), filename || 'voice.webm');
-        const res = await fetch(`${base}/audio/transcriptions`, {
-          method: 'POST',
-          signal: localBudget.signal(18000),
-          headers: { Authorization: `Bearer ${key}` },
-          body: form,
-        });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw providerError(data.error?.message || `Transcription ${res.status}`, res.status);
-        const text = String(data.text || '').trim();
-        if (!text) throw providerError('Transcription provider returned no text.');
-        return { text, model, language: data.language || null };
-      } catch (error) { last = error; }
-    }
+  const payload=await response.json().catch(()=>({}));
+  if(!response.ok){
+    const status=response.status===429?429:response.status===401||response.status===403?502:response.status===422||response.status===400?422:503;
+    const message=response.status===401||response.status===403?'ElevenLabs rejected the server API key for Scribe.':response.status===429?'ElevenLabs Scribe rate-limited this audio. Try again shortly.':response.status===422||response.status===400?'ElevenLabs Scribe could not read this audio format. Record again and retry.':'ElevenLabs Scribe is temporarily unavailable.';
+    throw Object.assign(new Error(message),{status,code:response.status===429?'ELEVENLABS_STT_RATE_LIMITED':status===422?'ELEVENLABS_STT_AUDIO_INVALID':'ELEVENLABS_STT_FAILED'});
   }
-
-  const providers=providerStatus();
-  if (providers.gemini && localBudget.canCall()) {
-    const model=env('OLYHUB_AUDIO_GEMINI_MODEL').trim()||'gemini-2.5-flash';
-    try {
-      localBudget.reserveCall(`transcription:gemini:${model}`);
-      const base=geminiBase().replace(/\/$/,'');
-      const key=env('GEMINI_API_KEY');
-      const data64=Buffer.from(audioBytes).toString('base64');
-      const res=await fetch(`${base}/v1beta/models/${encodeURIComponent(model)}:generateContent`,{
-        method:'POST',
-        signal:localBudget.signal(22000),
-        headers:{'Content-Type':'application/json','x-goog-api-key':key},
-        body:JSON.stringify({
-          contents:[{role:'user',parts:[
-            {text:'Transcribe this audio verbatim. Automatically detect the spoken language. Preserve the original language, punctuation, names, numbers, and any code-switching between languages. Return only the transcript with no commentary or labels.'},
-            {inlineData:{mimeType:mimeType||'audio/webm',data:data64}}
-          ]}],
-          generationConfig:{temperature:0,maxOutputTokens:3000}
-        })
-      });
-      const data=await res.json().catch(()=>({}));
-      if(!res.ok)throw providerError(data.error?.message||`Gemini transcription ${res.status}`,res.status);
-      const text=String(data.candidates?.[0]?.content?.parts?.map(p=>p.text||'').join('')||'').trim();
-      if(!text)throw providerError('Multilingual transcription returned no text.');
-      recordProviderSuccess('gemini');
-      return {text,model:`gemini:${model}`,language:'auto'};
-    } catch(error){
-      last=error;
-      if(countsAsProviderFailure(error))recordProviderFailure('gemini',error);
-    }
-  }
-
-  throw last || new Error('Automatic multilingual transcription is not available on this deploy.');
+  const text=String(payload?.text||'').trim();
+  if(!text)throw Object.assign(new Error('ElevenLabs Scribe did not detect speech in this recording.'),{status:422,code:'ELEVENLABS_STT_NO_SPEECH'});
+  return {text,model:'elevenlabs:scribe_v2',route:'elevenlabs',language:payload.language_code||null};
 }
 // gpt-image-* models always return base64 and reject DALL-E style `response_format`; only send it to dall-e models.
 export function imageModelCandidates() {

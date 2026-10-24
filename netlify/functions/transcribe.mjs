@@ -34,7 +34,7 @@ async function handler(req, context, requestId) {
     }
   }
   if (req.method !== 'POST') return errorJson('Method not allowed.', 405, 'METHOD_NOT_ALLOWED', requestId);
-  if(!serverTranscriptionConfigured())return errorJson('Server transcription is not configured. Browser-native voice remains the default.',501,'TRANSCRIPTION_NOT_CONFIGURED',requestId);
+  if(!serverTranscriptionConfigured())return errorJson('ElevenLabs Scribe is not configured. Add ELEVENLABS_API_KEY to Netlify Functions.',501,'ELEVENLABS_STT_NOT_CONFIGURED',requestId);
 
   try {
     await consumeEndpointRate(db,user.id,'transcribe',requestId);

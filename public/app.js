@@ -13,7 +13,7 @@ const state = {
   files:[], artifacts:[], health:null, recording:false,
   projectSection:'CHAT', projectMemories:[], projectSources:[], memoryPolicy:null,
   messagePage:{hasMore:false,nextCursor:null}, filesPage:{scope:'global',hasMore:false,nextCursor:null}, artifactsPage:{scope:'global',hasMore:false,nextCursor:null}, chatRestore:null,
-  voiceBusy:false, voiceRecorder:null, voiceStream:null, voiceChunks:[], voiceStopTimer:null, voiceRecognition:null, voiceBytes:0, voiceHitSizeLimit:false, voiceSubmitRequested:false,
+  voiceBusy:false, voiceRecorder:null, voiceStream:null, voiceChunks:[], voiceStopTimer:null, voiceBytes:0, voiceHitSizeLimit:false, voiceSubmitRequested:false,
   liveTalk:false, liveTalkStopRequested:false, liveMuted:false, livePersona:'ZEUS', liveFailureKind:null, liveAgentConversation:null, liveAgentConversationId:'', liveAgentPartial:'', liveTextDraft:'', liveTextStatus:'', liveAgentPermissionStream:null, liveAgentLogQueue:Promise.resolve(), liveAgentLoggedEvents:new Map(), liveGeneration:0, liveRetryCount:0, liveStage:'idle', liveLocale:'auto', voiceId:'marin', elevenLabsVoiceId:'', voiceStatus:null, voiceTesting:false, liveSpeechCache:null, voiceReplyAudio:null, liveAudioUrl:null, liveSpeechController:null, liveAudioUnlocked:false, liveSpeechUnlocked:false,
   messageFeedback:{}, messageAudioId:'', messageAudioBusyId:'', messageAudioUrl:null,
   voiceAvatar:'lightning', elevenLabsVoices:[], elevenLabsVoicesLoaded:false, elevenLabsVoicesLoading:false, elevenLabsVoicesError:'', elevenLabsVoicePageToken:'', elevenLabsVoiceHasMore:false,
@@ -520,7 +520,7 @@ function releaseLiveAgentPermissionStream(stream=state.liveAgentPermissionStream
   if(state.liveAgentPermissionStream===stream)state.liveAgentPermissionStream=null;
 }
 function voiceSupported(){
-  return Boolean(window.SpeechRecognition||window.webkitSpeechRecognition||(navigator.mediaDevices&&window.MediaRecorder));
+  return Boolean(state.health?.capabilities?.serverTranscription&&navigator.mediaDevices?.getUserMedia&&window.MediaRecorder);
 }
 async function attachSavedArtifact(artifactId){
  const artifact=state.artifacts.find(a=>a.id===artifactId);
@@ -598,7 +598,7 @@ function composer(){
   const chips=state.attachedFiles.map(f=>`<span class="file-chip">${icon('files')} ${esc(f.filename)}<button type="button" data-remove-file="${esc(f.id)}" aria-label="Remove ${esc(f.filename)}" title="Remove attachment">${icon('close')}</button></span>`).join('');
   const showMic=voiceSupported();
   const scope=state.currentProject?`Project: ${esc(state.currentProject.name)}`:'This conversation';
-  return `<div class="composer-shell">${state.liveTalk?`<div class="zeus-live-stage" role="status" aria-label="Live Talk active">${voiceAvatarMarkup()}<span class="${state.liveStage==='speaking'?'zeus-speaking-state':''}">${state.liveStage==='speaking'?'<span class="zeus-speaking-bolt" aria-hidden="true">⚡</span>':''}Live Talk · ${esc(state.liveTalkStopRequested?'Finishing this turn':state.liveStage==='speaking'?'Speaking':state.liveStage==='processing'?'Processing':state.liveStage==='listening'?'Listening':'Connected')} · ${esc(state.liveLocale==='auto'?'Device language':state.liveLocale.toUpperCase())}</span></div>`:''}${state.attachMenu?`<div class="attach-menu" role="menu" id="attach-menu" aria-label="Add attachment"><button type="button" role="menuitem" id="attach-media">${icon('image')}<span>Photo / Video</span></button><button type="button" role="menuitem" id="attach-camera">${icon('camera')}<span>Camera</span></button><button type="button" role="menuitem" id="attach-file">${icon('files')}<span>File</span></button><button type="button" role="menuitem" id="attach-saved">${icon('folder')}<span>Saved artifact</span></button></div>`:''}${chips?`<div class="attachments pending">${chips}</div>`:''}<form class="composer" id="composer"><button type="button" class="icon-btn attach-plus" id="attach" title="Add photo, video or file" aria-label="Add photo, video or file" aria-haspopup="menu" aria-expanded="${state.attachMenu}" ${state.attachMenu?'aria-controls="attach-menu"':''}>＋</button><textarea id="composer-text" rows="1" aria-label="Message ${composerMode}" placeholder="Message ${composerMode}…" ${state.sending?'disabled':''}>${esc(state.draft)}</textarea>${showMic?`<button type="button" class="icon-btn ${state.recording?'recording':''}" id="voice" title="${state.recording?'Stop recording':state.voiceBusy?'Transcribing…':'Voice input'}" aria-label="${state.recording?'Stop recording':state.voiceBusy?'Transcribing voice':'Voice input'}" ${state.voiceBusy?'disabled':''}>${icon('mic')}</button>`:''}${liveTalkSupported()?`<button type="button" class="icon-btn live-talk-trigger ${state.liveTalk?'active':''}" id="live-talk" aria-pressed="${state.liveTalk}" aria-label="${state.liveTalk?'Finish this turn and stop Live Talk':'Start Live Talk'}" title="${state.liveTalk?'Finish this turn and stop Live Talk':'Start Live Talk'}">⚡</button>`:''}<button type="submit" class="icon-btn send-btn" title="Send (Ctrl/⌘+Enter)" aria-label="Send message" ${state.sending?'disabled':''}>${icon('send')}</button></form><div class="composer-meta"><span>${state.currentProject?'Permanent Project chat · dedicated memory + files':'Conversation history available · no Project memory'}</span><span>Enter adds a new line · use the arrow to send</span></div></div>`;
+  return `<div class="composer-shell">${state.liveTalk?`<div class="zeus-live-stage" role="status" aria-label="Live Talk active">${voiceAvatarMarkup()}<span class="${state.liveStage==='speaking'?'zeus-speaking-state':''}">${state.liveStage==='speaking'?'<span class="zeus-speaking-bolt" aria-hidden="true">⚡</span>':''}Live Talk · ${esc(state.liveTalkStopRequested?'Finishing this turn':state.liveStage==='speaking'?'Speaking':state.liveStage==='processing'?'Processing':state.liveStage==='listening'?'Listening':'Connected')} · ${esc(state.liveLocale==='auto'?'Device language':state.liveLocale.toUpperCase())}</span></div>`:''}${state.attachMenu?`<div class="attach-menu" role="menu" id="attach-menu" aria-label="Add attachment"><button type="button" role="menuitem" id="attach-media">${icon('image')}<span>Photo / Video</span></button><button type="button" role="menuitem" id="attach-camera">${icon('camera')}<span>Camera</span></button><button type="button" role="menuitem" id="attach-file">${icon('files')}<span>File</span></button><button type="button" role="menuitem" id="attach-saved">${icon('folder')}<span>Saved artifact</span></button></div>`:''}${chips?`<div class="attachments pending">${chips}</div>`:''}<form class="composer" id="composer"><button type="button" class="icon-btn attach-plus" id="attach" title="Add photo, video or file" aria-label="Add photo, video or file" aria-haspopup="menu" aria-expanded="${state.attachMenu}" ${state.attachMenu?'aria-controls="attach-menu"':''}>＋</button><textarea id="composer-text" rows="1" aria-label="Message ${composerMode}" placeholder="Message ${composerMode}…" ${state.sending?'disabled':''}>${esc(state.draft)}</textarea>${showMic?`<button type="button" class="icon-btn ${state.recording?'recording':''}" id="voice" title="${state.recording?'Stop and send audio to ElevenLabs Scribe':state.voiceBusy?'Transcribing with ElevenLabs Scribe…':'Record a voice message'}" aria-label="${state.recording?'Stop and send audio to ElevenLabs Scribe':state.voiceBusy?'Transcribing voice with ElevenLabs Scribe':'Record a voice message'}" ${state.voiceBusy?'disabled':''}>${icon('mic')}</button>`:''}${liveTalkSupported()?`<button type="button" class="icon-btn live-talk-trigger ${state.liveTalk?'active':''}" id="live-talk" aria-pressed="${state.liveTalk}" aria-label="${state.liveTalk?'Finish this turn and stop Live Talk':'Start Live Talk'}" title="${state.liveTalk?'Finish this turn and stop Live Talk':'Start Live Talk'}">⚡</button>`:''}<button type="submit" class="icon-btn send-btn" title="Send (Ctrl/⌘+Enter)" aria-label="Send message" ${state.sending?'disabled':''}>${icon('send')}</button></form><div class="composer-meta"><span>${state.currentProject?'Permanent Project chat · dedicated memory + files':'Conversation history available · no Project memory'}</span><span>Enter adds a new line · use the arrow to send</span></div></div>`;
 }
 
 function projectsView(){
@@ -1254,12 +1254,17 @@ async function sendMessage(e){
   if(voiceCaptureActive()){
     state.voiceSubmitRequested=true;
     state.execStatus='Finishing audio, then sending…';render();
-    if(state.voiceRecognition)stopVoiceRecognition();else stopVoiceRecording();
+    stopVoiceRecording();
     return;
   }
   const text=$('#composer-text')?.value.trim()||'';
   if(!text||state.sending)return;
   await sendText(text,[...state.attachedFiles]);
+}
+async function sendVoiceTranscript(transcript){
+  const typed=String($('#composer-text')?.value||state.draft||'').trim();
+  state.draft='';
+  await sendText([typed,String(transcript||'').trim()].filter(Boolean).join('\n\n'),[...state.attachedFiles]);
 }
 async function pollForReply(conversationId, executionId){
   const deadline=Date.now()+180000;let waitMs=1800,lastStatusPaint=0;
@@ -1628,15 +1633,13 @@ async function retryLiveTalk(){
 }
 
 async function startVoice(){
-  if(state.voiceRecognition){stopVoiceRecognition();return;}
-  if(state.recording&&state.voiceRecorder){stopVoiceRecording();return;}
+  if(state.recording&&state.voiceRecorder){state.voiceSubmitRequested=true;state.execStatus='Sending audio to ElevenLabs Scribe…';stopVoiceRecording();return;}
   if(state.voiceBusy)return;
 
-  // Prefer server transcription when available. It receives raw audio and
-  // automatically detects the spoken language, including code-switching.
   const canRecord=Boolean(navigator.mediaDevices?.getUserMedia&&window.MediaRecorder);
-  if(state.health?.capabilities?.serverTranscription&&canRecord){
-    try{
+  if(!canRecord){state.error='Audio recording is not supported by this browser.';render();return;}
+  if(!state.health?.capabilities?.serverTranscription){state.error='ElevenLabs Scribe is not configured on this deploy.';render();return;}
+  try{
       const stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}});
       const choices=['audio/mp4','audio/aac','audio/webm;codecs=opus','audio/webm'];
       const mime=choices.find(x=>MediaRecorder.isTypeSupported?.(x))||'';
@@ -1651,7 +1654,7 @@ async function startVoice(){
         const type=recorder.mimeType||'audio/webm';const hitSizeLimit=state.voiceHitSizeLimit;
         cleanupVoice();
         if(!chunks.length){state.voiceSubmitRequested=false;state.error='No voice audio was captured.';render();return;}
-        state.voiceBusy=true;state.execStatus=hitSizeLimit?'Recording reached the safe size limit; transcribing captured audio…':'Detecting language and transcribing…';render();
+        state.voiceBusy=true;state.execStatus=hitSizeLimit?'Sending captured audio to ElevenLabs Scribe…':'Sending audio to ElevenLabs Scribe…';render();
         try{
           const blob=new Blob(chunks,{type});
           const ext=type.includes('mp4')||type.includes('aac')?'m4a':'webm';
@@ -1659,8 +1662,8 @@ async function startVoice(){
           const d=await api('/api/transcribe',{method:'POST',body:fd});
           state.voiceBusy=false;state.execStatus='';render();
           if(d.text){
-            if(state.voiceSubmitRequested){state.voiceSubmitRequested=false;state.draft='';await sendText(d.text,[...state.attachedFiles]);}
-            else{state.draft=d.text;render();$('#composer-text')?.focus();}
+            if(state.voiceSubmitRequested){state.voiceSubmitRequested=false;await sendVoiceTranscript(d.text);}
+            else{state.draft=d.text;state.execStatus='Transcript ready. Review it, then tap Send.';render();$('#composer-text')?.focus();}
           } else throw new Error('No speech was detected.');
         }catch(error){
           state.voiceSubmitRequested=false;
@@ -1670,68 +1673,15 @@ async function startVoice(){
         }
       };
       recorder.start(250);
-      state.recording=true;state.error='';state.execStatus='Listening… tap the mic when finished';
+      state.recording=true;state.error='';state.execStatus='Recording… tap the mic again to send to ElevenLabs Scribe';
       state.voiceStopTimer=setTimeout(()=>{if(state.recording&&state.voiceRecorder===recorder)stopVoiceRecording();},60000);
       render();return;
     }catch(error){
       state.voiceSubmitRequested=false;
       cleanupVoice();
-      if(error?.name==='NotAllowedError'){state.error='Microphone permission was denied. Enable it for this site and try again.';render();return;}
-      console.warn('Server voice capture unavailable; falling back to browser recognition.',error);
-    }
+      state.error=error?.name==='NotAllowedError'?'Microphone permission was denied. Enable microphone access for this site and try again.':`Could not start microphone recording: ${String(error?.message||'unknown error').slice(0,180)}`;
+      render();
   }
-
-  // Browser fallback. Browsers do not expose true per-utterance language
-  // detection, so use the device locale only if server transcription is unavailable.
-  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
-  if(SR){
-    try{
-      const r=new SR();
-      state.voiceRecognition=r;state.recording=true;state.error='';state.execStatus='Listening… tap the mic when finished';
-      state.voiceStopTimer=setTimeout(()=>{if(state.voiceRecognition===r)stopVoiceRecognition();},60000);
-      r.lang=browserInputLocale();r.interimResults=false;r.continuous=false;r.maxAlternatives=3;
-      r.onresult=async e=>{
-        const alternatives=[...(e.results?.[0]||[])];
-        const best=alternatives.sort((a,b)=>(Number(b.confidence)||0)-(Number(a.confidence)||0))[0];
-        const text=best?.transcript?.trim();
-        finishVoiceRecognition(r);render();
-        if(text){
-          if(state.voiceSubmitRequested){state.voiceSubmitRequested=false;state.draft='';await sendText(text,[...state.attachedFiles]);}
-          else{state.draft=text;render();$('#composer-text')?.focus();}
-        } else {state.voiceSubmitRequested=false;state.error='No speech was detected.';render();}
-      };
-      r.onerror=e=>{
-        finishVoiceRecognition(r);
-        state.voiceSubmitRequested=false;
-        const code=String(e?.error||'');
-        if(code==='aborted')return;
-        state.error=speechErrorMessage(code);
-        render();
-      };
-      r.onend=()=>{if(state.voiceRecognition===r){finishVoiceRecognition(r);state.voiceSubmitRequested=false;render();}};
-      r.start();render();return;
-    }catch{}
-  }
-
-  state.error='Voice input is not supported by this browser.';render();
-}
-function speechErrorMessage(code){
-  if(code==='not-allowed'||code==='service-not-allowed')return 'Microphone / speech recognition permission was denied for this site. On iPhone, also enable Siri & Dictation.';
-  if(code==='no-speech')return 'No speech was detected. Tap the mic and try again.';
-  if(code==='network')return 'Speech recognition needs a network connection (browser speech service unreachable).';
-  if(code==='audio-capture')return 'No microphone was found or it is in use by another app.';
-  return `Voice recognition could not complete${code?` (${code})`:''}. Tap the mic and try again.`;
-}
-function finishVoiceRecognition(r){
-  if(state.voiceRecognition!==r)return;
-  clearTimeout(state.voiceStopTimer);state.voiceStopTimer=null;clearTimeout(r?._zeusWatchdog);
-  state.voiceRecognition=null;state.recording=false;state.voiceBusy=false;state.execStatus='';
-}
-function stopVoiceRecognition(){
-  const r=state.voiceRecognition;if(!r)return;
-  try{r.stop()}catch{}
-  // iOS WebKit sometimes never fires onresult/onend after stop(); force-release.
-  r._zeusWatchdog=setTimeout(()=>{if(state.voiceRecognition===r){try{r.abort?.()}catch{}finishVoiceRecognition(r);render();}},2500);
 }
 function stopVoiceRecording(){
   const recorder=state.voiceRecorder;if(!recorder)return;
@@ -1743,7 +1693,7 @@ function stopVoiceRecording(){
   recorder._zeusWatchdog=setTimeout(()=>{if(!recorder._zeusFinalized)recorder.onstop?.();},3000);
   state.execStatus='Finishing recording…';render();
 }
-function voiceCaptureActive(){return Boolean(state.voiceRecognition||(state.recording&&state.voiceRecorder));}
+function voiceCaptureActive(){return Boolean(state.recording&&state.voiceRecorder);}
 function cleanupVoice(){
   state.voiceStream?.getTracks?.().forEach(t=>t.stop());
   state.recording=false;state.voiceRecorder=null;state.voiceStream=null;state.voiceChunks=[];state.voiceBytes=0;state.voiceHitSizeLimit=false;

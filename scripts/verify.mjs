@@ -92,8 +92,7 @@ const mustContain = [
   [app,'id="attach"','chat attachment control'],
   [app,'uploadFile(file)','upload handler'],
   [app,'startVoice','voice input handler'],
-  [app,'window.webkitSpeechRecognition','browser-native voice recognition'],
-  [app,'state.health?.capabilities?.serverTranscription','server transcription gating'],
+  [app,'state.health?.capabilities?.serverTranscription','ElevenLabs Scribe transcription gating'],
   [app,'activeMode','actual execution mode display'],
   [app,'data-mode="ZEUS"','manual Zeus selector'],
   [app,'data-mode="OLYMPUS"','manual Olympus selector'],
@@ -270,7 +269,7 @@ if (!chat.includes('classifyIntent(modelText') || !chat.includes('isArtifactCont
 if (!chat.includes('loadVisionInputs')) throw new Error('Real image understanding input loader is missing.');
 if (!chat.includes('redactSecrets(content)')) throw new Error('User/provider context secret redaction missing.');
 if (!models.includes('maxCreators:2') || !models.includes('roleCandidates(\'CREATOR\'')) throw new Error('Olympus Turbo must remain bounded to role-scoped creator workstreams.');
-if (!models.includes("String(env('OLYHUB_SERVER_TRANSCRIPTION')).toLowerCase() === 'true' && Boolean(audioBase() && audioKey())")) throw new Error('Server transcription no longer requires an explicit audio endpoint/key.');
+if (!models.includes("https://api.elevenlabs.io/v1/speech-to-text") || !models.includes("form.append('model_id','scribe_v2')")) throw new Error('Voice message input must post directly to ElevenLabs Scribe v2.');
 if (Object.prototype.hasOwnProperty.call(pkg.dependencies||{},'xlsx')) throw new Error('Redundant legacy xlsx dependency returned.');
 if (!app.includes("if(state.tab==='Tools')await Promise.all([loadHealth(),loadFiles(),loadArtifacts()])")) throw new Error('Tools can still render stale Project-scoped outputs.');
 if (!app.includes('await hydrateProjectWorkspace(state.currentProject.id,{loadConversation:false})')) throw new Error('Opening a Project conversation does not hydrate the full workspace.');
