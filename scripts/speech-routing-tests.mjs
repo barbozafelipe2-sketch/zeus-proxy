@@ -114,7 +114,9 @@ try{
   assert.match(app,/id="test-voice"/,'settings expose a Test voice button');assert.match(app,/id="voice-save-status"/,'voice save status is visible inline');
   assert.match(app,/id="elevenlabs-voice-id"/,'settings expose a custom ElevenLabs Voice ID field');
   assert.match(app,/id="elevenlabs-voice-preset"/,'settings expose an account voice picker');
-  assert.match(app,/tts:\{voiceId:selectedVoice\}/,'Live Talk applies the selected ElevenLabs voice to the Realtime agent');
+  const liveConnect=app.slice(app.indexOf('async function connectLiveTalkAgent(){'),app.indexOf('\nfunction pauseLiveTalkOnError('));
+  assert.ok(!liveConnect.includes('tts:{voiceId:'),'Live Talk must not send a voice_id override rejected by the published agent configuration');
+  assert.match(app,/JSON\.stringify\(\{text,voiceId:state\.voiceId\|\|storageGet\('zeus-voice-id'\)\|\|'marin',elevenLabsVoiceId\}\)/,'standalone TTS still accepts a selected ElevenLabs voice');
   assert.match(app,/zeus-elevenlabs-voice-id/,'the selected ElevenLabs Voice ID is persisted locally');
   assert.match(app,/\/api\/speech\/voices/,'settings load the selectable ElevenLabs account voice catalog');
   console.log('ElevenLabs → OpenAI Gateway → Gemini TTS routing and visible failure handling: PASS');

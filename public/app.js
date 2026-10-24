@@ -13,7 +13,7 @@ const state = {
   files:[], artifacts:[], health:null, recording:false,
   projectSection:'CHAT', projectMemories:[], projectSources:[], memoryPolicy:null,
   messagePage:{hasMore:false,nextCursor:null}, filesPage:{scope:'global',hasMore:false,nextCursor:null}, artifactsPage:{scope:'global',hasMore:false,nextCursor:null}, chatRestore:null,
-  voiceBusy:false, voiceRecorder:null, voiceStream:null, voiceChunks:[], voiceStopTimer:null, voiceRecognition:null, voiceBytes:0, voiceHitSizeLimit:false,
+  voiceBusy:false, voiceRecorder:null, voiceStream:null, voiceChunks:[], voiceStopTimer:null, voiceRecognition:null, voiceBytes:0, voiceHitSizeLimit:false, voiceSubmitRequested:false,
   liveTalk:false, liveTalkStopRequested:false, liveMuted:false, livePersona:'ZEUS', liveFailureKind:null, liveAgentConversation:null, liveAgentConversationId:'', liveAgentPartial:'', liveTextDraft:'', liveTextStatus:'', liveAgentPermissionStream:null, liveAgentLogQueue:Promise.resolve(), liveAgentLoggedEvents:new Map(), liveGeneration:0, liveRetryCount:0, liveStage:'idle', liveLocale:'auto', voiceId:'marin', elevenLabsVoiceId:'', voiceStatus:null, voiceTesting:false, liveSpeechCache:null, voiceReplyAudio:null, liveAudioUrl:null, liveSpeechController:null, liveAudioUnlocked:false, liveSpeechUnlocked:false,
   voiceAvatar:'lightning', elevenLabsVoices:[], elevenLabsVoicesLoaded:false, elevenLabsVoicesLoading:false, elevenLabsVoicesError:'', elevenLabsVoicePageToken:'', elevenLabsVoiceHasMore:false,
   preferences:{personality:'balanced',instructions:''}, preferencesLoaded:false,
@@ -1203,7 +1203,12 @@ async function loadOlderOutputs(){
 
 async function sendMessage(e){
   e.preventDefault();
-  if(voiceCaptureActive()){if(state.voiceRecognition)stopVoiceRecognition();else stopVoiceRecording();return;}
+  if(voiceCaptureActive()){
+    state.voiceSubmitRequested=true;
+    state.execStatus='Finishing audio, then sending…';render();
+    if(state.voiceRecognition)stopVoiceRecognition();else stopVoiceRecording();
+    return;
+  }
   const text=$('#composer-text')?.value.trim()||'';
   if(!text||state.sending)return;
   await sendText(text,[...state.attachedFiles]);
@@ -1475,10 +1480,12 @@ async function connectLiveTalkAgent(){
     if(!state.liveTalk||generation!==state.liveGeneration)return;
     const {Conversation}=await import('/assets/elevenlabs-agent.js');
     const selectedLanguage=state.liveLocale==='auto'?'':({pt:'pt',en:'en',es:'es'}[state.liveLocale]||'');
-    const selectedVoice=state.elevenLabsVoiceId||storedElevenLabsVoiceId();
+    // Keep the Realtime voice owned by the published agent configuration. This
+    // agent does not allow `voice_id` overrides, and ElevenLabs closes the
+    // session with code 1008 when the SDK sends one. Custom voices remain
+    // available to the standalone TTS route.
     const overrides={
       ...(selectedLanguage?{agent:{language:selectedLanguage}}:{}),
-      ...(selectedVoice?{tts:{voiceId:selectedVoice}}:{}),
     };
     const conversation=await Conversation.startSession({
       ...(isIosWebKit?{signedUrl:issued.signedUrl,connectionType:'websocket'}:{conversationToken:issued.token,connectionType:'webrtc'}),
@@ -1588,14 +1595,14 @@ async function startVoice(){
       const recorder=new MediaRecorder(stream,mime?{mimeType:mime}:undefined);
       state.voiceStream=stream;state.voiceRecorder=recorder;state.voiceChunks=[];state.voiceBytes=0;state.voiceHitSizeLimit=false;
       recorder.ondataavailable=e=>{if(e.data?.size){state.voiceChunks.push(e.data);state.voiceBytes+=e.data.size;if(state.voiceBytes>3600*1024&&recorder.state==='recording'){state.voiceHitSizeLimit=true;recorder.stop();}}};
-      recorder.onerror=e=>{state.error=`Voice recording failed${e?.error?.name?` (${e.error.name})`:''}. Check microphone permission.`;cleanupVoice();render();};
+      recorder.onerror=e=>{state.voiceSubmitRequested=false;state.error=`Voice recording failed${e?.error?.name?` (${e.error.name})`:''}. Check microphone permission.`;cleanupVoice();render();};
       recorder.onstop=async()=>{
         if(recorder._zeusFinalized)return;recorder._zeusFinalized=true;
         clearTimeout(state.voiceStopTimer);clearTimeout(recorder._zeusWatchdog);
         const chunks=state.voiceChunks.slice();
         const type=recorder.mimeType||'audio/webm';const hitSizeLimit=state.voiceHitSizeLimit;
         cleanupVoice();
-        if(!chunks.length){state.error='No voice audio was captured.';render();return;}
+        if(!chunks.length){state.voiceSubmitRequested=false;state.error='No voice audio was captured.';render();return;}
         state.voiceBusy=true;state.execStatus=hitSizeLimit?'Recording reached the safe size limit; transcribing captured audio…':'Detecting language and transcribing…';render();
         try{
           const blob=new Blob(chunks,{type});
@@ -1603,8 +1610,12 @@ async function startVoice(){
           const fd=new FormData();fd.append('audio',blob,`voice-${Date.now()}.${ext}`);
           const d=await api('/api/transcribe',{method:'POST',body:fd});
           state.voiceBusy=false;state.execStatus='';render();
-          if(d.text){state.draft=d.text;render();$('#composer-text')?.focus();} else throw new Error('No speech was detected.');
+          if(d.text){
+            if(state.voiceSubmitRequested){state.voiceSubmitRequested=false;state.draft='';await sendText(d.text,[...state.attachedFiles]);}
+            else{state.draft=d.text;render();$('#composer-text')?.focus();}
+          } else throw new Error('No speech was detected.');
         }catch(error){
+          state.voiceSubmitRequested=false;
           state.voiceBusy=false;state.execStatus='';
           state.error=error.message||'Voice transcription failed.';
           render();
@@ -1615,6 +1626,7 @@ async function startVoice(){
       state.voiceStopTimer=setTimeout(()=>{if(state.recording&&state.voiceRecorder===recorder)stopVoiceRecording();},60000);
       render();return;
     }catch(error){
+      state.voiceSubmitRequested=false;
       cleanupVoice();
       if(error?.name==='NotAllowedError'){state.error='Microphone permission was denied. Enable it for this site and try again.';render();return;}
       console.warn('Server voice capture unavailable; falling back to browser recognition.',error);
@@ -1635,16 +1647,20 @@ async function startVoice(){
         const best=alternatives.sort((a,b)=>(Number(b.confidence)||0)-(Number(a.confidence)||0))[0];
         const text=best?.transcript?.trim();
         finishVoiceRecognition(r);render();
-        if(text){state.draft=text;render();$('#composer-text')?.focus();} else {state.error='No speech was detected.';render();}
+        if(text){
+          if(state.voiceSubmitRequested){state.voiceSubmitRequested=false;state.draft='';await sendText(text,[...state.attachedFiles]);}
+          else{state.draft=text;render();$('#composer-text')?.focus();}
+        } else {state.voiceSubmitRequested=false;state.error='No speech was detected.';render();}
       };
       r.onerror=e=>{
         finishVoiceRecognition(r);
+        state.voiceSubmitRequested=false;
         const code=String(e?.error||'');
         if(code==='aborted')return;
         state.error=speechErrorMessage(code);
         render();
       };
-      r.onend=()=>{if(state.voiceRecognition===r){finishVoiceRecognition(r);render();}};
+      r.onend=()=>{if(state.voiceRecognition===r){finishVoiceRecognition(r);state.voiceSubmitRequested=false;render();}};
       r.start();render();return;
     }catch{}
   }

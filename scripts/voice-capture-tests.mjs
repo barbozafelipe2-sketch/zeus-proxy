@@ -5,7 +5,9 @@ const start=app.slice(app.indexOf('async function startVoice(){'),app.indexOf('a
 assert.ok(start.includes('stopVoiceRecognition()')&&start.includes('stopVoiceRecording()'),'second mic tap must stop both capture paths');
 assert.ok(!/state\.voiceRecognition=r;state\.voiceBusy=true/.test(app),'browser recognition must not disable the mic button while listening');
 const send=app.slice(app.indexOf('async function sendMessage(e){'),app.indexOf('async function sendMessage(e){')+300);
-assert.ok(send.includes('voiceCaptureActive()'),'Send while recording must stop and send the audio');
+assert.ok(send.includes('voiceCaptureActive()')&&send.includes('state.voiceSubmitRequested=true'),'Send while recording must mark the captured audio for submission');
+assert.ok(app.includes('if(state.voiceSubmitRequested){state.voiceSubmitRequested=false;state.draft=\'\';await sendText(d.text,[...state.attachedFiles]);}'),'server transcription must submit the recognized transcript when Send was tapped during recording');
+assert.ok(app.includes('if(state.voiceSubmitRequested){state.voiceSubmitRequested=false;state.draft=\'\';await sendText(text,[...state.attachedFiles]);}'),'browser speech recognition must submit the recognized transcript when Send was tapped during recording');
 const stopRec=app.slice(app.indexOf('function stopVoiceRecording(){'),app.indexOf('function voiceCaptureActive'));
 assert.ok(stopRec.includes('getTracks')&&stopRec.includes('t.stop()'),'stopping must release microphone tracks');
 assert.ok(stopRec.includes('_zeusWatchdog')&&stopRec.includes('onstop'),'stop needs a watchdog when onstop never fires');
