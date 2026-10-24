@@ -21,6 +21,15 @@ assert.match(live,/rawAudioProcessor:'\/assets\/elevenlabs-worklets\/raw-audio-p
 assert.match(live,/audioConcatProcessor:'\/assets\/elevenlabs-worklets\/audio-concat-processor\.js'/,'Live Talk must self-host the output AudioWorklet under the strict CSP');
 assert.match(live,/libsampleratePath:'\/assets\/elevenlabs-worklets\/libsamplerate\.worklet\.js'/,'Live Talk must self-host the iOS resampler worklet under the strict CSP');
 assert.match(live,/connection\.setMicMuted\(state\.liveMuted\)/,'Live Talk must mute and unmute the agent microphone');
+assert.match(live,/setMicMuted mutes the input pipeline only; agent audio output stays audible/,'Live Talk mute must only suppress Felipe’s microphone input, not agent playback');
+assert.match(live,/function minimizeLiveTalk\(\)\{if\(!state\.liveTalk\)return;state\.liveTalkMinimized=true;render\(\);\}/,'returning from Live Talk must minimize the screen without ending the session');
+assert.match(live,/function restoreLiveTalk\(\)\{if\(!state\.liveTalk\)return;state\.liveTalkMinimized=false;render\(\);\}/,'the floating Live Talk control must restore the full session screen');
+assert.match(liveView,/id="live-talk-minimize"[^>]*aria-label="Minimize Live Talk and return to Zeus Proxy"/,'Live Talk back control must minimize rather than disconnect');
+assert.match(ui,/id="live-talk-dock-open"/,'the minimized Live Talk session must have a restore control');
+assert.match(ui,/id="live-talk-dock-mute"/,'the minimized Live Talk session must keep a microphone mute control');
+assert.match(ui,/id="live-talk-dock-end"/,'the minimized Live Talk session must keep an end-call control');
+assert.match(ui,/state\.liveTalkMinimized&&state\.liveTalk\?liveTalkDock\(\)/,'the floating session controls must remain visible while the normal app is rendered');
+assert.match(ui,/state\.liveTalk&&!state\.liveTalkMinimized\?liveTalkExperience\(\)/,'the full Live Talk view must only cover the app while expanded');
 assert.match(liveView,/id="live-talk-voice"/,'Live Talk must let the user choose an account voice');
 assert.match(liveView,/state\.elevenLabsVoices\.map\(voice/,'Live Talk voice choices must come from the authenticated ElevenLabs account list');
 assert.match(liveView,/Agent default voice \(Felipe\)/,'Live Talk must retain an option to use the configured default voice');
@@ -34,7 +43,10 @@ assert.match(ui,/open_olyhub_project:async/,'the voice agent must be able to ope
 assert.match(ui,/project\.name\)===query/,"voice navigation must resolve a project against the user's loaded project list");
 assert.match(ui,/sendContextualUpdate\(liveSessionContext\(\)\)/,'Realtime reconnects must restore the recent chat context together with the selected persona');
 assert.match(ui,/function liveSessionContext\(/,'Live Talk must build a context restoration update from saved conversation turns');
-assert.match(ui,/You are Zeus, OlyHub's voice assistant/,'Live Talk must explain Zeus and OlyHub capabilities');
+assert.match(ui,/You are Zeus, the voice assistant in Zeus Proxy/,'Live Talk must identify the correct Zeus Proxy voice agent');
+assert.match(ui,/call list_olyhub_projects if needed to resolve the exact name, then open_olyhub_project with project_name, then get_current_project_context/,'Live Talk must follow the project lookup sequence when Felipe names a project');
+assert.match(ui,/Do not answer that you lack access before trying these tools/,'Live Talk must attempt the available project tools before claiming it lacks access');
+assert.match(ui,/They do not expose full source or file contents/,'Live Talk must be honest about the current project file access boundary');
 assert.match(ui,/Casual conversation is complete by itself/,'Live Talk must support conversation without project work');
 assert.match(ui,/do not inspect or offer to inspect projects, call tools, or pitch work/,'Live Talk must not proactively inspect projects or spend tool calls');
 assert.match(ui,/state\.preferences\|\|\{\}/,'Live Talk must use the same saved personalization as text/voice chat');
@@ -79,7 +91,7 @@ assert.match(ui,/sendText\(text,\[\],undefined,'ZEUS',null,null,\{liveTalk:true\
 assert.match(ui,/requestSpeechAudio\(assistant\.content\|\|''/,'manual Live Talk replies must be spoken aloud');
 assert.match(ui,/You can still type below; Zeus will answer by voice/,'a microphone security failure must preserve the typed voice-response path');
 assert.match(ui,/\$\('#live-talk-text-form'\)\?\.addEventListener\('submit',sendLiveTalkText\)/,'typed fallback must be wired to submit');
-assert.match(ui,/aria-label="Exit Live Talk immediately and return to chat"/,'Live Talk exit must be immediate and accessible');
+assert.match(ui,/aria-label="End Live Talk"/,'Live Talk end action must be explicit and accessible');
 assert.match(transcribe,/createElevenLabsRealtimeConversationToken/,'server creates temporary ElevenLabs Realtime conversation credentials');
 assert.match(transcribe,/elevenlabs_realtime_token/,'token mint endpoint must be rate-limited');
 assert.match(transcribe,/path: \['\/api\/transcribe','\/api\/voice\/realtime-token','\/api\/voice\/realtime-signed-url'\]/,'Netlify must route both Realtime credential endpoints');
