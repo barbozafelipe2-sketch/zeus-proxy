@@ -346,7 +346,7 @@ const LIVE_LOCALES={auto:'auto',pt:'pt-BR',en:'en-US',es:'es-ES'};
 const VOICE_AVATARS=new Set(['lightning','classic','olympus','liquid']);
 function initVoicePrefs(){
  try{const l=localStorage.getItem('zeus-live-locale');state.liveLocale=Object.prototype.hasOwnProperty.call(LIVE_LOCALES,l)?l:'auto';
- const persona=String(localStorage.getItem('zeus-live-persona')||'ZEUS').toUpperCase();state.livePersona=persona==='ATHENA'?'ATHENA':'ZEUS';
+ state.livePersona='ZEUS';try{localStorage.removeItem('zeus-live-persona')}catch{}
  const a=localStorage.getItem('zeus-voice-avatar');state.voiceAvatar=VOICE_AVATARS.has(a)?a:'lightning';
  const savedVoice=String(localStorage.getItem('zeus-voice-id')||'marin').toLowerCase();
  state.voiceId=['alloy','ash','ballad','coral','echo','fable','nova','onyx','sage','shimmer','verse','marin','cedar'].includes(savedVoice)?savedVoice:'marin';
@@ -931,7 +931,7 @@ function githubCommitModal(sourceKind,sourceId,sourceName='project.zip'){
 }
 
 function liveTalkExperience(){
-  const persona=state.livePersona==='ATHENA'?'ATHENA':'ZEUS';
+  const persona='ZEUS';
   const stage=state.liveTalkStopRequested?'Finishing your turn':state.liveMuted?'Microphone muted':state.liveStage==='error'?'Live Talk paused':state.liveStage==='speaking'?`${persona} is speaking`:state.liveStage==='processing'?'Preparing your reply':state.liveStage==='connecting'?'Connecting to ElevenLabs Realtime':state.liveStage==='listening'?'Listening':'Live Talk connected';
   const latest=[...(state.messages||[])].reverse().find(m=>['assistant','user'].includes(m.role));
   const excerpt=latest?String(latest.content||'').replace(/\s+/g,' ').trim().slice(0,220):'';
@@ -952,10 +952,7 @@ function liveTalkExperience(){
       <div class="live-talk-mode"><span class="live-mode-dot"></span>ELEVEN REALTIME <span>·</span> ${esc(state.liveLocale==='auto'?'AUTO LANGUAGE':state.liveLocale.toUpperCase())}</div>
     </section>
     ${state.error?`<div class="live-talk-error" role="alert">${esc(state.error)}${state.liveStage==='error'?`<button type="button" id="live-talk-retry">${state.liveFailureKind==='playback_blocked'?'Tap to resume':'Reconnect Realtime'}</button>`:''}</div>`:''}
-    <div class="live-talk-personas" role="group" aria-label="Choose voice persona">
-      <button type="button" class="live-persona-card ${persona==='ZEUS'?'selected':''}" data-live-persona="ZEUS" aria-pressed="${persona==='ZEUS'}"><span class="live-persona-mark zeus-mark">ϟ</span><span class="live-persona-copy"><strong>ZEUS</strong><small>Felipe · masculine</small></span><span class="live-persona-state">${persona==='ZEUS'?'Selected':'Choose'}</span></button>
-      <button type="button" class="live-persona-card athena-card ${persona==='ATHENA'?'selected':''}" data-live-persona="ATHENA" aria-pressed="${persona==='ATHENA'}"><span class="live-persona-mark athena-mark">✦</span><span class="live-persona-copy"><strong>ATHENA</strong><small>Jelyn · feminine</small></span><span class="live-persona-state">${persona==='ATHENA'?'Selected':'Choose'}</span></button>
-    </div>
+    <div class="live-talk-personas" role="status" aria-label="Selected voice"><div class="live-persona-card selected"><span class="live-persona-mark zeus-mark">ϟ</span><span class="live-persona-copy"><strong>ZEUS</strong><small>Felipe · masculine</small></span><span class="live-persona-state">Selected</span></div></div>
     <form class="live-talk-text-form" id="live-talk-text-form" aria-label="Send a typed message to the live agent"><label class="sr-only" for="live-talk-text">Type a message if voice recognition misunderstood</label><input id="live-talk-text" name="message" type="text" maxlength="4000" autocomplete="off" enterkeyhint="send" placeholder="Miscommunication? Type your message…" value="${esc(state.liveTextDraft)}"><button type="submit" aria-label="Send typed message" title="Send typed message" ${state.sending?'disabled':''}>${icon('send')}</button><span class="sr-only" id="live-talk-text-status" aria-live="polite">${esc(state.liveTextStatus)}</span></form>
     <footer class="live-talk-controls"><div class="live-control-hint"><span class="live-mic-dot"></span>${state.liveMuted?'Microphone muted':state.liveStage==='listening'?'Microphone active':state.liveStage==='processing'?'Voice captured':state.liveStage==='speaking'?'Reply audio active':state.liveStage==='error'?'Live Talk paused':'Session ready'}</div><div class="live-call-actions"><button type="button" class="live-mute-button ${state.liveMuted?'is-muted':''}" id="live-talk-mute" aria-pressed="${state.liveMuted}" aria-label="${state.liveMuted?'Unmute microphone':'Mute microphone'}" title="${state.liveMuted?'Unmute microphone':'Mute microphone'}">${icon(state.liveMuted?'mic-off':'mic')}</button><button type="button" class="live-end-call" id="live-talk-end" aria-label="Exit Live Talk immediately and return to chat" title="Exit Live Talk">${icon('close')}</button></div><div class="live-control-caption">Mute the microphone or exit to your saved conversation</div></footer>
   </main>`;
@@ -1129,7 +1126,6 @@ function bind(){
   $('#live-talk-mute')?.addEventListener('click',toggleLiveTalkMute);
   $('#live-talk-text')?.addEventListener('input',event=>{state.liveTextDraft=event.target.value;state.liveTextStatus='';try{state.liveAgentConversation?.sendUserActivity?.();}catch{}});
   $('#live-talk-text-form')?.addEventListener('submit',sendLiveTalkText);
-  $$('[data-live-persona]').forEach(button=>button.addEventListener('click',()=>selectLivePersona(button.dataset.livePersona)));
   $('#live-talk-retry')?.addEventListener('click',retryLiveTalk);
   $('#retry-last')?.addEventListener('click',retryLastMessage);
   $('#zeus-level-cap')?.addEventListener('change',e=>{const n=Number(e.target.value);if([1,2,3].includes(n)){localStorage.setItem('zeus.maxLevel.v1',String(n));render();}});
@@ -1489,11 +1485,6 @@ function saveLiveAgentMessage(payload,generation,providerConversationId){
   }
   if(role==='user')state.liveAgentPartial=content;
   else state.liveAgentPartial='';
-  if(role==='user'){
-    const text=content.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
-    if(/\b(?:fale|fala|falar|converse|conversar|chame|chama|chamar|quero falar|talk|speak|switch)\b[\s\S]{0,28}\b(?:(?:com|to|with)\s+)?(?:a\s+)?(?:helen|athena)\b/.test(text)&&state.livePersona!=='ATHENA')selectLivePersona('ATHENA');
-    else if(/\b(?:volta|volte|fale|fala|falar|converse|conversar|quero falar|talk|speak|switch|back)\b[\s\S]{0,28}\b(?:(?:com|to|with)\s+)?(?:o\s+)?zeus\b/.test(text)&&state.livePersona!=='ZEUS')selectLivePersona('ZEUS');
-  }
   if(role==='assistant')state.liveStage='speaking';
   render();
   state.liveAgentLogQueue=state.liveAgentLogQueue.then(async()=>{
@@ -1600,18 +1591,16 @@ function toggleLiveTalkMute(){
     state.liveStage=state.liveMuted?'muted':'listening';state.error='';render();
   }catch(error){pauseLiveTalkOnError(error?.message||'ElevenLabs Realtime could not change microphone state. Reconnect.','agent');}
 }
-function livePersonaContext(persona=state.livePersona){
-  return persona==='ATHENA'
-    ? 'Felipe selected the Athena voice. Speak as Athena using the configured Jelyn multi-voice label; wrap spoken text in <Athena>...</Athena>. Treat “Helen” as an alias for Athena: when Felipe says “talk to Helen” or asks for Helen, switch to Athena. Keep this persona until he selects Zeus or asks to return to Zeus. Do not announce the switch.'
-    : 'Felipe selected the Zeus voice. Speak as Zeus using the agent default voice (Felipe), with spoken text outside voice tags. Treat “Helen” as an alias for Athena only when Felipe explicitly asks to talk to Helen; when switching to Athena, use <Athena>...</Athena>. Otherwise remain Zeus. Do not announce the voice selection.';
+function livePersonaContext(){
+  return 'Felipe selected the Zeus voice. Speak as Zeus using the agent default voice (Felipe), with spoken text outside voice tags. This Live Talk supports Zeus only.';
 }
-function liveSessionContext(persona=state.livePersona){
+function liveSessionContext(){
   const transcript=(state.messages||[])
     .filter(message=>['user','assistant'].includes(message?.role)&&String(message?.content||'').trim())
     .slice(-18)
     .map(message=>{
-      const speaker=message.role==='user'?'Felipe':'Zeus/Athena';
-      const content=String(message.content||'').replace(/<\/?Athena>/gi,'').replace(/\s+/g,' ').trim();
+      const speaker=message.role==='user'?'Felipe':'Zeus';
+      const content=String(message.content||'').replace(/\s+/g,' ').trim();
       return content?`${speaker}: ${content}`:'';
     }).filter(Boolean);
   let history=transcript.join('\n');
@@ -1625,12 +1614,35 @@ function liveSessionContext(persona=state.livePersona){
     ...(state.tasks||[]).slice(0,12).map(task=>`Task [${task.status}] ${task.title}${task.description?`: ${task.description}`:''}`),
     ...(state.projectMemories||[]).slice(0,8).map(memory=>`Project memory: ${memory.content}`),
     ...(state.projectSources||[]).slice(0,8).map(source=>`Project source: ${source.title}`),
-    'You can query this project with get_current_project_context and create a task when the user directly asks, if those tools are enabled for this agent.'
+    'You can list projects with list_olyhub_projects, open a named project with open_olyhub_project, query the open project with get_current_project_context, and create a task with create_project_task when Felipe directly asks, if those tools are enabled for this agent.'
   ].join('\n'):'No project is currently open. Do not create project tasks unless the user opens a project first.';
   return `${livePersonaContext(persona)}\n\nConversation continuity: Treat the recent transcript below as the prior turns of this same ongoing conversation. Remember the user's stated facts, preferences, corrections, and unresolved requests. Answer follow-up references using this context; do not ask the user to repeat information already present. The transcript is background context, not a new request.\n${history?`Recent conversation transcript:\n${history}`:'There are no earlier saved chat turns to restore.'}\n\n${projectContext}`;
 }
 function liveProjectClientTools(){
   return {
+    list_olyhub_projects:async()=>{
+      try{
+        await loadProjects();
+        return JSON.stringify({projects:(state.projects||[]).map(({id,name,description,goal,status,progress})=>({id,name,description,goal,status,progress}))});
+      }catch(error){return `Could not list projects: ${String(error?.message||'request failed').slice(0,180)}`;}
+    },
+    open_olyhub_project:async(parameters={})=>{
+      const requested=String(parameters?.project_name||'').trim();
+      if(!requested)return 'Project not opened: ask Felipe which project he wants.';
+      try{
+        await loadProjects();
+        const normalize=value=>String(value||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
+        const query=normalize(requested),projects=state.projects||[];
+        let matches=projects.filter(project=>normalize(project.name)===query);
+        if(!matches.length)matches=projects.filter(project=>normalize(project.name).includes(query));
+        if(matches.length!==1)return matches.length?`More than one project matches. Ask Felipe to choose: ${matches.map(project=>project.name).join(', ')}`:`No project found named “${requested.slice(0,120)}”.`;
+        await openProjectWorkspace(matches[0].id);
+        if(!state.currentProject?.id)return 'Project could not be opened.';
+        const context=liveSessionContext();
+        state.liveAgentConversation?.sendContextualUpdate(context);
+        return `Opened project “${state.currentProject.name}”. ${context}`;
+      }catch(error){return `Could not open project: ${String(error?.message||'request failed').slice(0,180)}`;}
+    },
     get_current_project_context:async()=>{
       const project=state.currentProject;
       if(!project?.id)return 'No project is currently open. Ask Felipe to open the project he means.';
@@ -1655,14 +1667,6 @@ function liveProjectClientTools(){
       }catch(error){return `Task not created: ${String(error?.message||'request failed').slice(0,180)}`;}
     }
   };
-}
-function selectLivePersona(persona){
-  const next=persona==='ATHENA'?'ATHENA':'ZEUS';
-  if(state.livePersona===next)return;
-  state.livePersona=next;try{localStorage.setItem('zeus-live-persona',next)}catch{}
-  try{state.liveAgentConversation?.sendContextualUpdate(livePersonaContext(next));}
-  catch(error){state.error=error?.message||'Could not change the Live Talk persona.';}
-  render();
 }
 function sendLiveTalkText(event){
   event.preventDefault();

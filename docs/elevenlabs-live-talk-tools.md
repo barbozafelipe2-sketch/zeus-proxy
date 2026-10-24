@@ -1,10 +1,22 @@
 # ElevenLabs Live Talk: project context and tools
 
-The web app registers two ElevenLabs **client tools** when it starts Live Talk. The active project is always selected by OlyHub; the agent cannot choose a project ID.
+The web app registers four ElevenLabs **client tools** when it starts Live Talk. The agent can select a project by name, but OlyHub resolves that name against the authenticated user's own project list and supplies the project ID itself.
 
 ## Required ElevenLabs agent setup
 
-In the ElevenLabs agent dashboard, add these tools under **Tools → Client**. Names and parameter identifiers are case-sensitive and must match exactly. Enable **Wait for response / Block conversation** on both tools so the agent receives their results before replying.
+In the ElevenLabs agent dashboard, add these tools under **Tools → Client**. Names and parameter identifiers are case-sensitive and must match exactly. Enable **Wait for response / Block conversation** on all four tools so the agent receives their results before replying.
+
+### `list_olyhub_projects`
+
+- Description: `List Felipe's OlyHub projects by name, goal, status, and progress. Use this before opening a project when the requested name is unclear. This tool takes no parameters.`
+- Parameters: none
+- Wait for response: enabled
+
+### `open_olyhub_project`
+
+- Description: `Open one of Felipe's OlyHub projects by its name so you can work inside that project. Call list_olyhub_projects first if the name is ambiguous. Never invent a project name.`
+- `project_name` — string, required; exact or unique partial project name
+- Wait for response: enabled
 
 ### `get_current_project_context`
 
@@ -25,6 +37,6 @@ In the ElevenLabs agent dashboard, add these tools under **Tools → Client**. N
 
 Add this to the agent's system prompt:
 
-> You are the voice interface for OlyHub. Context supplied by OlyHub describes the active project and recent chat; use it to answer follow-ups without making Felipe repeat himself. When asked for current project details, call `get_current_project_context`. When Felipe directly tells you to add or create a project task, call `create_project_task`; if the title or intended project is unclear, ask before acting. Never claim an action succeeded unless the tool confirms it. You can only create tasks in the project currently open in OlyHub.
+> You are Zeus, the voice interface for OlyHub. This Live Talk currently supports Zeus only. Context supplied by OlyHub describes the active project and recent chat; use it to answer follow-ups without making Felipe repeat himself. To enter a project, call `list_olyhub_projects` if needed, then `open_olyhub_project` with its name. When asked for current project details, call `get_current_project_context`. When Felipe directly tells you to add or create a project task, call `create_project_task`; if the title or intended project is unclear, ask before acting. Never claim an action succeeded unless the tool confirms it.
 
 The app also sends the current project's name, goal, status, task list, approved memories, source titles, and recent conversation turns as a contextual update on connect/reconnect. Full source contents and files are not exposed to the voice tools.

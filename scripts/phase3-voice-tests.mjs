@@ -19,9 +19,11 @@ assert.match(live,/rawAudioProcessor:'\/assets\/elevenlabs-worklets\/raw-audio-p
 assert.match(live,/audioConcatProcessor:'\/assets\/elevenlabs-worklets\/audio-concat-processor\.js'/,'Live Talk must self-host the output AudioWorklet under the strict CSP');
 assert.match(live,/libsampleratePath:'\/assets\/elevenlabs-worklets\/libsamplerate\.worklet\.js'/,'Live Talk must self-host the iOS resampler worklet under the strict CSP');
 assert.match(live,/connection\.setMicMuted\(state\.liveMuted\)/,'Live Talk must mute and unmute the agent microphone');
-assert.match(liveView,/data-live-persona="ZEUS"/,'Live Talk must offer Zeus');
-assert.match(liveView,/data-live-persona="ATHENA"/,'Live Talk must offer Athena');
-assert.ok(!liveView.includes('HERMES'),'Live Talk must not offer Hermes');
+assert.match(liveView,/class="live-persona-card selected"/,'Live Talk must show the selected Zeus voice');
+assert.ok(!liveView.includes('ATHENA')&&!liveView.includes('data-live-persona'),'Live Talk must temporarily hide Athena and voice switching');
+assert.match(ui,/list_olyhub_projects:async/,"the voice agent must be able to list the authenticated user's projects");
+assert.match(ui,/open_olyhub_project:async/,'the voice agent must be able to open a project by name');
+assert.match(ui,/project\.name\)===query/,"voice navigation must resolve a project against the user's loaded project list");
 assert.match(ui,/sendContextualUpdate\(liveSessionContext\(\)\)/,'Realtime reconnects must restore the recent chat context together with the selected persona');
 assert.match(ui,/function liveSessionContext\(/,'Live Talk must build a context restoration update from saved conversation turns');
 assert.match(ui,/clientTools:liveProjectClientTools\(\)/,'Live Talk must register scoped project tools with the ElevenLabs SDK');
@@ -32,7 +34,7 @@ assert.match(ui,/No project is currently open/,'project tools must refuse to ope
 assert.match(ui,/Active project: \$\{project\.name\}/,'the voice context must identify the currently open project');
 assert.match(ui,/slice\(-18\)/,'Live Talk context restoration must stay bounded to a recent transcript window');
 assert.match(ui,/Treat the recent transcript below as the prior turns of this same ongoing conversation/,'restored history must be clearly framed as prior conversation context');
-assert.match(ui,/talk\|speak\|switch/,'voice commands for Helen/Athena must switch the selected persona');
+assert.ok(!ui.includes("selectLivePersona('ATHENA')"),'Live Talk must not switch to the unavailable Athena persona');
 assert.match(live,/connection\?\.endSession\?\.\(\)/,'exiting or pausing Live Talk must close the Realtime session');
 assert.match(ui,/Reconnect Realtime/,'Realtime failure must expose an explicit reconnect action');
 assert.match(live,/function describeLiveDisconnect\(details\)/,'Realtime disconnects must format the SDK diagnostic details');
