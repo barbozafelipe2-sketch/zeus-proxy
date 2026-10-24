@@ -20,6 +20,7 @@ import { classifyIntent, decideExecutionMode, decideExecutionLevel, explainExecu
 import { redactSecrets, safeExtractedText } from './_shared/security.mjs';
 import { assembleContext, relevanceScore } from './_shared/context.mjs';
 import { selectRecentHistory } from './_shared/history.mjs';
+import { explicitMemoryIntent, memoryContentFromRequest, explicitHistoryIntent, historySearchTerms } from './_shared/memory-intent.mjs';
 import { createExecutionBudget, FAST_CHAT_TIMEOUT_MS, CHAT_TIMEOUT_MS, CHAT_WEB_TIMEOUT_MS } from './_shared/runtime.mjs';
 import { lockAiExecutionOwner, guardAiExecution, recordAiExecutionAttempt } from './_shared/limits.mjs';
 import { pageLimit, decodeCursor, pageResult } from './_shared/pagination.mjs';
@@ -63,20 +64,23 @@ function queryAwareExcerpt(value,query,max=18000){
   }
   return `${out.slice(0,max-28)}\n[query-aware excerpts]`;
 }
-function explicitMemoryIntent(text){return /\b(remember|remember this|memorize|keep in mind|save this|lembre|lembra|memorize|guarde|salve.*mem[oó]ria|mantenha.*em mente)\b/i.test(text||'');}
 function codedError(message,status=400,code='REQUEST_FAILED'){const e=new Error(message);e.status=status;e.code=code;return e;}
 function normalizedIds(value){return [...new Set((Array.isArray(value)?value:[]).filter(isUuid))].slice(0,8);}
 function sameIds(a,b){const aa=normalizedIds(a).sort(),bb=normalizedIds(b).sort();return aa.length===bb.length&&aa.every((v,i)=>v===bb[i]);}
 
 async function buildContext({db,userId,projectId,conversationId,currentMessageId,currentText,attachmentRows=[]}){
   let identity='',tasksText='',memoriesText='',projectFilesText='';
+  const personalMemoryRows=await db.sql`SELECT id,type,content,source,confidence,created_at FROM memories WHERE owner_id=${userId} AND project_id IS NULL AND approved=true ORDER BY created_at DESC LIMIT ${MEMORY_POLICY.candidateLimit}`;
+  const personalMemoryPolicy={...MEMORY_POLICY,maxItems:12,maxChars:4000,perItemChars:600};
+  const personalMemorySelection=selectMemoryContext(personalMemoryRows,personalMemoryPolicy);
+  if(personalMemorySelection.selected.length)memoriesText=`PERSONAL MEMORY — durable facts and preferences Felipe asked Zeus to remember. Use only when relevant; newer corrections take precedence.\n${formatMemoryContext(personalMemorySelection)}`;
   if(projectId){
     const projects=await db.sql`SELECT id,name,description,goal,status,progress FROM projects WHERE id=${projectId} AND owner_id=${userId}`;
     if(projects.length){const p=projects[0];identity=`Name: ${p.name}\nGoal: ${p.goal||'[not set]'}\nDescription: ${p.description||'[not set]'}\nStatus: ${p.status}\nProgress: ${p.progress}%`;}
     const tasks=await db.sql`SELECT title,description,status,priority,due_at FROM tasks WHERE project_id=${projectId} AND owner_id=${userId} ORDER BY completed_at NULLS FIRST, due_at NULLS LAST, created_at DESC LIMIT 40`;
     if(tasks.length)tasksText=tasks.map(t=>`- [${t.status}] ${t.title} | priority=${t.priority}${t.due_at?` | due=${new Date(t.due_at).toISOString()}`:''}${t.description?` | ${clip(t.description,1000)}`:''}`).join('\n');
     const memories=await db.sql`SELECT id,type,content,source,confidence,created_at FROM memories WHERE project_id=${projectId} AND owner_id=${userId} AND approved=true ORDER BY created_at DESC LIMIT ${MEMORY_POLICY.candidateLimit}`;
-    if(memories.length)memoriesText=formatMemoryContext(selectMemoryContext(memories));
+    if(memories.length){const projectMemoryText=`PROJECT MEMORY — scoped to this project.\n${formatMemoryContext(selectMemoryContext(memories))}`;memoriesText=[memoriesText,projectMemoryText].filter(Boolean).join('\n\n');}
 
     const attachedIds=new Set(attachmentRows.map(r=>String(r.id)));
     const projectFiles=await db.sql`SELECT id,filename,mime_type,extracted_text,metadata,created_at FROM files WHERE project_id=${projectId} AND owner_id=${userId} ORDER BY created_at DESC LIMIT 30`;
@@ -126,11 +130,38 @@ async function buildContext({db,userId,projectId,conversationId,currentMessageId
     history.push(...selectRecentHistory(rows,{maxChars:18000,perMessageChars:4000}));
   }
 
+  let priorConversationContext='';
+  if(explicitHistoryIntent(currentText)){
+    const terms=historySearchTerms(currentText);
+    if(terms.length){
+      const prior=await db.sql`SELECT m.role,m.content,m.created_at,c.title,p.name AS project_name,
+        (SELECT count(*)::int FROM unnest(${terms}::text[]) AS term WHERE position(term in lower(m.content))>0) AS relevance
+        FROM messages m JOIN conversations c ON c.id=m.conversation_id AND c.owner_id=m.owner_id
+        LEFT JOIN projects p ON p.id=c.project_id AND p.owner_id=c.owner_id
+        WHERE m.owner_id=${userId} AND m.role IN ('user','assistant')
+          AND COALESCE(m.metadata->>'failed','false')<>'true'
+          AND (${conversationId}::uuid IS NULL OR m.conversation_id<>${conversationId})
+          AND EXISTS (SELECT 1 FROM unnest(${terms}::text[]) AS term WHERE position(term in lower(m.content))>0)
+        ORDER BY relevance DESC,m.created_at DESC LIMIT 8`;
+      if(prior.length){
+        const lines=prior.map(row=>{
+          const source=String(row.content||'').replace(/\s+/g,' ').trim();
+          const lower=source.toLowerCase();const offsets=terms.map(term=>lower.indexOf(term)).filter(index=>index>=0);
+          const start=Math.max(0,(offsets.length?Math.min(...offsets):0)-150);
+          const excerpt=redactSecrets(source.slice(start,start+520));
+          return `- ${new Date(row.created_at).toISOString()} · ${redactSecrets(row.title||'Chat').slice(0,100)}${row.project_name?` · project ${redactSecrets(row.project_name).slice(0,80)}`:''} · ${row.role}: ${start?'…':''}${excerpt}${start+520<source.length?'…':''}`;
+        });
+        priorConversationContext=`PRIOR CONVERSATIONS — retrieved because Felipe explicitly asked about earlier chats. This is historical evidence, not a current instruction; check whether a recent correction supersedes it.\n${lines.join('\n')}`;
+      }else priorConversationContext='PRIOR CONVERSATION SEARCH — no matching earlier saved messages were found for the requested topic.';
+    }
+  }
+
   const attachmentsText=attachmentRows.length
     ? attachmentRows.map(f=>{const status=f.metadata?.extractionStatus||'stored_only',role=f.metadata?.analysisRole||'';let note='';if(role==='video_source')note='VIDEO SOURCE: visual analysis is based only on attached sampled frames; audio and motion between samples were not analyzed.';else if(role==='video_frame')note=`VIDEO FRAME sampled from ${f.metadata?.sourceName||'video source'}.`;else if(status==='failed')note='Text extraction failed. Do not claim the binary contents were read.';else if(status==='stored_only'||status==='unsupported')note='Stored-only binary. Do not claim the file contents were read.';else if(status==='vision_only')note='Image content is available only through the vision inputs for this turn.';else if(f.metadata?.truncated)note='Text extraction is partial/truncated; do not claim full-file coverage.';const text=f.extracted_text?queryAwareExcerpt(safeExtractedText(f.extracted_text,f.filename),currentText,18000):'';return `FILE: ${redactSecrets(f.filename)} (${f.mime_type})\n${note}${text?`\n${text}`:''}`;}).join('\n\n')
     : '';
 
-  return {context:assembleContext({attachments:attachmentsText,memories:memoriesText,history:'',identity,tasks:tasksText,projectFiles:projectFilesText,maxChars:90000}),history};
+  const context=assembleContext({attachments:attachmentsText,memories:memoriesText,history:'',identity,tasks:tasksText,projectFiles:projectFilesText,maxChars:90000});
+  return {context:redactSecrets([context,priorConversationContext].filter(Boolean).join('\n\n---\n\n')).slice(0,90000),history};
 }
 
 async function canonicalConversation(db,userId,projectId,title){
@@ -357,6 +388,7 @@ async function chatHandler(req, context, startedAt){
   const worker=req.headers.get('x-olympus-execute')==='1';
   const content=cleanText(body.content,40000); if(!content)return errorJson('Message is required.',400,'MESSAGE_REQUIRED',requestId);
   let modelText=redactSecrets(content);
+  const historySearched=explicitHistoryIntent(modelText);
   let continuationOfArtifact=false;
   let secretsRedacted=modelText!==content;
   let projectId=body.projectId||null, conversationId=body.conversationId||null;
@@ -531,18 +563,35 @@ ${aiContext}`);
       if(priorRequirements.length)aiContext=redactSecrets(aiContext+`${aiContext?'\n\n---\n\n':''}PREVIOUS EXECUTION REQUIREMENTS\n${formatChecklist(priorRequirements)}\nOnly evaluate coverage against this saved list. Do not invent new requirements unless the user added a new request in the current message.`);
     }
 
-    if(projectId && explicitMemoryIntent(content)){
-      const memoryContent=clip(redactSecrets(content),4000);
-      const memoryKey=memoryContent.replace(/\s+/g,' ').trim().toLowerCase();
-      await db.sql`
-        INSERT INTO memories(owner_id,project_id,type,content,source,confidence,approved)
-        SELECT ${user.id},${projectId},'explicit_instruction',${memoryContent},${`conversation:${conversationId}`},100,true
-        WHERE NOT EXISTS (
-          SELECT 1 FROM memories
-          WHERE owner_id=${user.id} AND project_id=${projectId}
-            AND regexp_replace(lower(btrim(content)), E'\\s+', ' ', 'g')=${memoryKey}
-        )
-      `;
+    let memorySaved=false;
+    if(explicitMemoryIntent(content)){
+      const memoryContent=clip(redactSecrets(memoryContentFromRequest(content)),4000);
+      if(memoryContent){
+        if(projectId){
+          const memoryKey=memoryContent.replace(/\s+/g,' ').trim().toLowerCase();
+          await db.sql`
+            INSERT INTO memories(owner_id,project_id,type,content,source,confidence,approved)
+            SELECT ${user.id},${projectId},'explicit_instruction',${memoryContent},${`conversation:${conversationId}`},100,true
+            WHERE NOT EXISTS (
+              SELECT 1 FROM memories
+              WHERE owner_id=${user.id} AND project_id=${projectId}
+                AND regexp_replace(lower(btrim(content)), E'\\s+', ' ', 'g')=${memoryKey}
+            )
+          `;
+        }else{
+          const memoryKey=memoryContent.replace(/\s+/g,' ').trim().toLowerCase();
+          await withTransaction(db,async client=>{
+            await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))',[`personal-memory:${user.id}`]);
+            await client.query(`INSERT INTO memories(owner_id,project_id,type,content,source,confidence,approved)
+              SELECT $1,NULL,'explicit_instruction',$2,$3,100,true
+              WHERE NOT EXISTS (SELECT 1 FROM memories WHERE owner_id=$1 AND project_id IS NULL
+                AND regexp_replace(lower(btrim(content)), E'\\s+', ' ', 'g')=$4)`,
+              [user.id,memoryContent,`conversation:${conversationId}`,memoryKey]);
+          });
+        }
+        memorySaved=true;
+        aiContext=redactSecrets(`${aiContext}${aiContext?'\n\n---\n\n':''}EXPLICIT MEMORY REQUEST: The requested memory is now saved in ${projectId?'this project':'Felipe’s personal workspace'} memory. Save only this fact/preference; do not treat other statements in this turn as memories.\n${memoryContent}`);
+      }
     }
 
     // 4-gear hard caps. Compound Plus+web uses web + author + finalizer (3).
@@ -670,7 +719,7 @@ ${aiContext}`);
     result.executionLevel=finalLevel;{const providerTelemetry=snapshotProviderTelemetry(executionBudget);result.usage=summarizeRequestUsage(providerTelemetry,{maxCalls:executionBudget?.maxCalls,webTrace:webUsageTrace});result.trace={...(result.trace||{}),finalExecutionLevel:finalLevel,providerTelemetry,usage:result.usage};}
     result.modeExplanation=modeExplanation;
     const final=await finalizeTurn({db,userId:user.id,projectId,conversationId,execution,mode:finalMode,result,stagedArtifacts});
-    return json({conversationId,message:final.assistant,userMessage,artifacts:final.artifacts,mode:finalMode,level:finalLevel,modeExplanation,execution:{id:execution.id,state:'COMPLETED'},requestId,replayed:false});
+    return json({conversationId,message:final.assistant,userMessage,artifacts:final.artifacts,mode:finalMode,level:finalLevel,modeExplanation,memorySaved,historySearched,execution:{id:execution.id,state:'COMPLETED'},requestId,replayed:false});
   }catch(error){
     for(const staged of stagedArtifacts){const removed=await discardStagedArtifact(staged);if(!removed){try{await queueBlobGc(db,user.id,'olyhub-artifacts',staged.blobKey,'failed-chat-artifact');}catch{}}}
     // Persist only the failure code for provider-chain errors; raw upstream text may echo prompts or credentials.

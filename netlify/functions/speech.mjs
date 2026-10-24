@@ -88,7 +88,7 @@ async function callElevenLabs(route,text,signal,fetchImpl,voiceId=route.voiceId)
 async function callOpenAI(route,text,voice,signal,fetchImpl){
   const response=await fetchImpl(openaiSpeechUrl(route.base),{
     method:'POST',signal,headers:{Authorization:`Bearer ${route.key}`,'Content-Type':'application/json'},
-    body:JSON.stringify({model:env('OPENAI_SPEECH_MODEL')||'gpt-4o-mini-tts',input:text,voice:openaiVoice(voice),instructions:'Speak naturally and warmly in the same language as the text. Use clear, conversational pacing and natural intonation.',response_format:'mp3'})
+    body:JSON.stringify({model:env('OPENAI_SPEECH_MODEL')||'gpt-4o-mini-tts',input:text,voice:openaiVoice(voice),instructions:'Speak calmly and naturally in the same language as the text. Use relaxed, conversational pacing and restrained warmth. Avoid exaggerated excitement, praise, or theatrical emphasis.',response_format:'mp3'})
   });
   return readAudioResponse(response);
 }
@@ -98,7 +98,7 @@ async function callGemini(route,text,signal,fetchImpl){
     method:'POST',signal,headers:{'x-goog-api-key':route.key,'Content-Type':'application/json'},
     body:JSON.stringify({
       model,
-      input:[{type:'user_input',content:[{type:'text',text,annotations:[{type:'speech_metadata',style:'Natural, warm, conversational Brazilian Portuguese when the input is Portuguese. Use clear articulation and relaxed pacing.'}]}]}],
+      input:[{type:'user_input',content:[{type:'text',text,annotations:[{type:'speech_metadata',style:'Natural, calm, conversational Brazilian Portuguese when the input is Portuguese. Use clear articulation, relaxed pacing, and restrained warmth; avoid exaggerated enthusiasm.'}]}]}],
       response_format:{type:'audio'},
       generation_config:{speech_config:[{voice:env('GEMINI_SPEECH_VOICE')||'Kore'}]}
     })

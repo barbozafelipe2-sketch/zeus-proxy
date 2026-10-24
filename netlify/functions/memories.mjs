@@ -2,12 +2,17 @@ import { requireUser } from './_shared/auth.mjs';
 import { json, readJson, cleanText, isUuid, getRequestId, errorJson } from './_shared/http.mjs';
 import { MEMORY_POLICY } from './_shared/memory.mjs';
 import { withTransaction } from './_shared/db.mjs';
+import { redactSecrets } from './_shared/security.mjs';
 
 async function handler(req,context){
   const requestId=getRequestId(req,context,null);
   const auth=await requireUser(req,requestId);if(auth.error)return auth.error;
   const {user,db}=auth;const url=new URL(req.url);
   if(req.method==='GET'){
+    if(url.searchParams.get('scope')==='personal'){
+      const memories=await db.sql`SELECT id,project_id,type,content,source,confidence,approved,created_at FROM memories WHERE owner_id=${user.id} AND project_id IS NULL AND approved=true ORDER BY created_at DESC LIMIT 200`;
+      return json({memories,policy:{candidateLimit:MEMORY_POLICY.candidateLimit,maxItems:12,maxChars:4000,scope:'personal'},requestId});
+    }
     const projectId=url.searchParams.get('projectId');
     if(!isUuid(projectId))return errorJson('Valid project id required.',400,'INVALID_PROJECT_ID',requestId);
     const project=await db.sql`SELECT id FROM projects WHERE id=${projectId} AND owner_id=${user.id}`;
@@ -17,10 +22,18 @@ async function handler(req,context){
   }
   const body=await readJson(req);if(!body)return errorJson('Invalid JSON.',400,'INVALID_JSON',requestId);
   if(req.method==='POST'){
-    if(!isUuid(body.projectId))return errorJson('Valid project id required.',400,'INVALID_PROJECT_ID',requestId);
-    const content=cleanText(body.content,5000);if(!content)return errorJson('Memory content is required.',400,'MEMORY_CONTENT_REQUIRED',requestId);
+    const personal=body.scope==='personal';
+    if(!personal&&!isUuid(body.projectId))return errorJson('Valid project id required.',400,'INVALID_PROJECT_ID',requestId);
+    const content=cleanText(redactSecrets(body.content),personal?2000:5000);if(!content)return errorJson('Memory content is required.',400,'MEMORY_CONTENT_REQUIRED',requestId);
     const memoryKey=content.replace(/\s+/g,' ').trim().toLowerCase();
     const saved=await withTransaction(db,async client=>{
+      if(personal){
+        await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))',[`personal-memory:${user.id}`]);
+        const existing=(await client.query(`SELECT id FROM memories WHERE owner_id=$1 AND project_id IS NULL AND regexp_replace(lower(btrim(content)), E'\\s+', ' ', 'g')=$2 LIMIT 1`,[user.id,memoryKey])).rows[0];
+        if(existing)return {duplicate:true,memoryId:existing.id};
+        const memory=(await client.query(`INSERT INTO memories(owner_id,project_id,type,content,source,confidence,approved) VALUES($1,NULL,'manual_note',$2,'manual',100,true) RETURNING id,project_id,type,content,source,confidence,approved,created_at`,[user.id,content])).rows[0];
+        return {memory};
+      }
       const project=(await client.query(`SELECT id FROM projects WHERE id=$1 AND owner_id=$2 FOR UPDATE`,[body.projectId,user.id])).rows[0];
       if(!project)return {missing:true};
       const existing=(await client.query(`SELECT id FROM memories WHERE owner_id=$1 AND project_id=$2 AND regexp_replace(lower(btrim(content)), E'\\s+', ' ', 'g')=$3 LIMIT 1`,[user.id,body.projectId,memoryKey])).rows[0];

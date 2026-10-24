@@ -11,7 +11,7 @@ const state = {
   conversations:[], currentConversation:null, messages:[], chatArtifacts:[], sending:false, execStatus:'', error:'', bootstrapFailures:[],
   attachedFiles:[], projects:[], projectFilter:'ALL', currentProject:null, tasks:[],
   files:[], artifacts:[], health:null, recording:false,
-  projectSection:'CHAT', projectMemories:[], projectSources:[], memoryPolicy:null,
+  projectSection:'CHAT', projectMemories:[], personalMemories:[], projectSources:[], memoryPolicy:null,
   messagePage:{hasMore:false,nextCursor:null}, filesPage:{scope:'global',hasMore:false,nextCursor:null}, artifactsPage:{scope:'global',hasMore:false,nextCursor:null}, chatRestore:null,
   voiceBusy:false, voiceRecorder:null, voiceStream:null, voiceChunks:[], voiceStopTimer:null, voiceBytes:0, voiceHitSizeLimit:false, voiceSubmitRequested:false,
   liveTalk:false, liveTalkMinimized:false, liveTalkStopRequested:false, liveMuted:false, livePersona:'ZEUS', liveFailureKind:null, liveAgentConversation:null, liveAgentConversationId:'', liveAgentPartial:'', liveTextDraft:'', liveTextStatus:'', liveAgentPermissionStream:null, liveAgentLogQueue:Promise.resolve(), liveAgentLoggedEvents:new Map(), liveGeneration:0, liveRetryCount:0, liveStage:'idle', liveLocale:'auto', voiceId:'marin', elevenLabsVoiceId:'', voiceStatus:null, voiceTesting:false, liveSpeechCache:null, voiceReplyAudio:null, liveAudioUrl:null, liveSpeechController:null, liveAudioUnlocked:false, liveSpeechUnlocked:false,
@@ -147,6 +147,7 @@ async function bootstrapApp(){
     ['Artifacts',loadArtifacts()],
     ['Runtime diagnostics',loadHealth()],
     ['Personalization',loadPreferences()],
+    ['Personal memory',loadPersonalMemories()],
   ];
   const settled=await Promise.allSettled(jobs.map(([,promise])=>promise));
   settled.forEach((result,index)=>{if(result.status==='rejected'){const name=jobs[index][0],message=String(result.reason?.message||'').slice(0,180);state.bootstrapFailures.push({name,message});console.warn(`OlyHub bootstrap ${name} failed`,result.reason);}});
@@ -717,7 +718,7 @@ function projectMemoryView(){
   const policy=state.memoryPolicy;const policyText=policy?`At most ${Number(policy.maxItems||40)} approved memories are selected for each turn within a ${Math.round(Number(policy.maxChars||15000)/1000)}k-character memory budget. Explicit instructions and high-confidence items rank first, then recency.`:'Approved memory is selected deterministically by priority and recency within the AI context budget.';
   return `<div class="project-single-column"><div class="panel"><div class="panel-head"><div><h2>Permanent project memory</h2><p class="muted tiny">Saved here means durable project memory. ${esc(policyText)}</p></div><span class="eyebrow">${state.projectMemories.length} SAVED</span></div><form id="memory-form" class="memory-create"><textarea id="memory-content" rows="2" aria-label="New project memory" maxlength="5000" placeholder="Add a durable fact, preference, rule, or decision for this project…" required></textarea><button class="primary compact">Save memory</button></form><div class="memory-list">${state.projectMemories.length?state.projectMemories.map(memoryItem).join(''):`<div class="empty-mini">No permanent memories yet. You can add one here or tell Zeus “remember this…” inside the project chat.</div>`}</div></div></div>`;
 }
-function memoryItem(m){return `<article class="memory-item"><div class="memory-icon">${icon('memory')}</div><div><strong>${esc(m.type==='manual_note'?'Project memory':String(m.type||'Memory').replaceAll('_',' '))}</strong><p>${esc(m.content)}</p><small>${fmtDate(m.created_at)} · ${esc(m.source||'manual')}</small></div><button class="ghost danger memory-delete" data-memory-delete="${m.id}" title="Delete memory" aria-label="Delete this memory">${icon('close')}</button></article>`}
+function memoryItem(m){const scope=m.project_id?'project':'personal';return `<article class="memory-item"><div class="memory-icon">${icon('memory')}</div><div><strong>${esc(m.type==='manual_note'?(scope==='personal'?'Personal memory':'Project memory'):String(m.type||'Memory').replaceAll('_',' '))}</strong><p>${esc(m.content)}</p><small>${fmtDate(m.created_at)} · ${esc(m.source||'manual')}</small></div><button class="ghost danger memory-delete" data-memory-delete="${m.id}" data-memory-scope="${scope}" title="Delete memory" aria-label="Delete this memory">${icon('close')}</button></article>`}
 function taskHtml(t){const status=String(t.status||'TODO');const next=status==='TODO'?'IN_PROGRESS':status==='IN_PROGRESS'?'DONE':'TODO';const label=status==='TODO'?'Start task':status==='IN_PROGRESS'?'Mark task done':'Reopen task';const mark=status==='DONE'?icon('check'):status==='IN_PROGRESS'?'<span class="task-state-dot" aria-hidden="true"></span>':'';return `<div class="task-item"><button class="task-check ${status==='DONE'?'done':status==='IN_PROGRESS'?'in-progress':''}" data-task="${t.id}" data-status="${status}" data-next-status="${next}" aria-label="${label}: ${esc(t.title)}" title="${label}">${mark}</button><div><strong style="font-size:13px">${esc(t.title)}</strong><div class="muted tiny">${esc(status.replaceAll('_',' '))}${t.due_at?` · ${fmtDate(t.due_at)}`:''}</div></div><span class="priority ${esc(t.priority)}">${esc(t.priority)}</span></div>`}
 
 function capabilityState(key,fallbackReady=false){const raw=state.health?.capabilityReadiness?.[key];if(raw==='observed_healthy')return {enabled:true,label:'READY'};if(raw==='configured_unverified')return {enabled:true,label:'CONFIGURED'};if(raw==='degraded'||raw==='recent_failure')return {enabled:false,label:'DEGRADED'};return {enabled:Boolean(fallbackReady),label:fallbackReady?'READY':'UNAVAILABLE'};}
@@ -819,6 +820,7 @@ async function loadPreferences(){
   state.preferences={personality:data.personality||'balanced',instructions:data.instructions||''};
   state.preferencesLoaded=true;
 }
+async function loadPersonalMemories(){const d=await api('/api/memories?scope=personal');state.personalMemories=d.memories||[];}
 function preferencesSettings(){
   const prefs=state.preferences||{};
   return `<article class="card settings-card">
@@ -836,6 +838,10 @@ function preferencesSettings(){
     </form>
   </article>`;
 }
+function personalMemorySettings(){
+  const memories=state.personalMemories||[];
+  return `<article class="card settings-card personal-memory-settings"><h3>Personal memory</h3><p class="muted tiny">Save durable facts or preferences for future chats and Live Talk. Zeus saves them when you ask it to remember something, and you can review or delete them here.</p><form id="personal-memory-form" class="memory-create"><textarea id="personal-memory-content" rows="2" maxlength="2000" aria-label="Add personal memory" placeholder="A preference, fact, or standing instruction to remember…" required></textarea><button class="primary compact" type="submit">Save memory</button></form><div class="memory-list">${memories.length?memories.map(memoryItem).join(''):'<div class="empty-mini">No personal memories saved yet. You can say “remember that…” in chat or Live Talk.</div>'}</div></article>`;
+}
 
 function settingsView(){const providers=state.health?.providerReadiness||{};const statusLabel=(v)=>String(v||'not_configured').toUpperCase().replaceAll('_',' ');const statusGood=(v)=>v==='observed_healthy';return `<section class="page"><div class="page-head"><div><div class="eyebrow">Settings</div><h1>Workspace settings</h1><p>Account and advanced runtime diagnostics.</p></div></div>${errorBanner('page-alert')}<div class="settings-grid"><article class="card settings-card"><h3>Account</h3><div class="user-chip"><div class="avatar">${esc(initials())}</div><div><strong>${esc(state.user?.user_metadata?.full_name||'Felipe')}</strong><div class="muted tiny">${esc(state.user?.email||'Personal owner')}</div></div></div><p class="muted tiny" style="margin-top:12px">This app uses one personal workspace.</p></article><article class="card settings-card"><h3>Monthly cost monitor</h3>
   <p class="muted tiny">One shared $60 testing target for text, images, videos, audio and tools. This is an alert only; nothing is disabled when the target is reached.</p>
@@ -844,7 +850,7 @@ function settingsView(){const providers=state.health?.providerReadiness||{};cons
   <div class="diag-row"><span>Media usage</span><strong>Not yet metered</strong></div></div>
   <p class="muted tiny">Actual spending may be higher than shown. Reconcile Netlify and external provider billing before treating this as an accurate total.</p>
   ${state.health?.monthlyBudget?.targetReached?'<p class="status-warn">Target reached in known estimates. Services remain available.</p>':''}
-</article>${preferencesSettings()}${googleIntegrationSettings()}<article class="card settings-card"><h3>Voice settings</h3>
+</article>${preferencesSettings()}${personalMemorySettings()}${googleIntegrationSettings()}<article class="card settings-card"><h3>Voice settings</h3>
 <p class="muted tiny">Live Talk speaks with ElevenLabs. If no voice is saved in this browser, the server default voice is used. The browser’s system voice is not used as a silent fallback.</p>
 <div class="field"><label for="elevenlabs-voice-preset">Choose an ElevenLabs voice from your account</label><select id="elevenlabs-voice-preset">
 <option value="">${state.elevenLabsVoicesLoading?'Loading ElevenLabs voices…':state.elevenLabsVoicesLoaded&&!state.elevenLabsVoices.length?'No voices found':'Choose a voice'}</option>
@@ -1150,7 +1156,7 @@ function bind(){
   $('#edit-project')?.addEventListener('click',projectEditModal);
   $('#back-projects')?.addEventListener('click',async()=>{state.currentProject=null;state.currentConversation=null;state.messages=[];state.chatArtifacts=[];state.attachedFiles=[];state.activeMode=null;state.projectMemories=[];state.memoryPolicy=null;state.projectSection='CHAT';state.messagePage={hasMore:false,nextCursor:null};state.tasks=[];state.error='';history.replaceState({},'',location.pathname);refreshLiveTalkContext();render()});
   $('#task-form')?.addEventListener('submit',createTask); $$('[data-task]').forEach(b=>b.addEventListener('click',()=>{if(b.disabled)return;b.disabled=true;b.setAttribute('aria-busy','true');toggleTask(b.dataset.task,b.dataset.status);}));
-  $('#memory-form')?.addEventListener('submit',createMemory); $$('[data-memory-delete]').forEach(b=>b.addEventListener('click',()=>deleteMemory(b.dataset.memoryDelete)));
+  $('#memory-form')?.addEventListener('submit',createMemory); $('#personal-memory-form')?.addEventListener('submit',createPersonalMemory); $$('[data-memory-delete]').forEach(b=>b.addEventListener('click',()=>deleteMemory(b.dataset.memoryDelete,b.dataset.memoryScope)));
   $$('[data-delete-output]').forEach(b=>b.addEventListener('click',()=>deleteOutput(b.dataset.deleteOutput,b.dataset.outputId)));
   $('#delete-project')?.addEventListener('click',deleteCurrentProject);
   $('#upload-project-file')?.addEventListener('click',()=>$('#global-file-input').click());
@@ -1381,7 +1387,7 @@ async function sendText(text,pendingAttachments=[],requestId=crypto.randomUUID()
     state.execStatus='Completed';
     await Promise.allSettled([loadConversations(),loadProjects()]);
     setTimeout(()=>{if(state.execStatus==='Completed'&&!state.sending){state.execStatus='';state.execTitle='';render();}},900);
-    if(voiceCommand)return assistant?JSON.stringify({ok:true,mode:assistant.mode||state.activeMode||mode,level:assistant.metadata?.executionLevel||state.activeLevel||null,reply:String(assistant.content||'')}):JSON.stringify({ok:false,error:'OlyHub finished without returning an answer.'});
+    if(voiceCommand)return assistant?JSON.stringify({ok:true,mode:assistant.mode||state.activeMode||mode,level:assistant.metadata?.executionLevel||state.activeLevel||null,memorySaved:Boolean(d.memorySaved),historySearched:Boolean(d.historySearched),reply:String(assistant.content||'')}):JSON.stringify({ok:false,error:'OlyHub finished without returning an answer.'});
   }catch(err){
     if(err?.code==='REQUEST_IN_PROGRESS'){
       if(err.data?.conversationId&&!state.currentConversation)state.currentConversation=err.data.conversationId;
@@ -1614,7 +1620,7 @@ function livePersonaContext(){
     .replace(/\b(?:sk|rk|pk)-[A-Za-z0-9_-]{16,}\b/g,'[REDACTED API TOKEN]')
     .replace(/\b(?:ghp|gho|ghu|ghs|github_pat)_[A-Za-z0-9_]{16,}\b/g,'[REDACTED GITHUB TOKEN]')
     .replace(/\bAIza[0-9A-Za-z_-]{20,}\b/g,'[REDACTED GOOGLE API KEY]');
-  return `You are Zeus, the voice assistant in Zeus Proxy. Speak using the agent's configured primary voice, Felipe; do not switch voices. Remain Zeus in identity. Zeus Proxy supports natural text/voice conversation, Zeus levels 1/2/3, Olympus mode, and project tasks, memories, source records, research, and artifact work. Use the selected mode/level for requested work. Casual conversation is complete by itself: do not inspect or offer to inspect projects, call tools, or pitch work unless Felipe asks or a tool is needed to answer his request.\n\nPROJECT TOOL PROCEDURE — follow this when Felipe explicitly asks about a project:\n- If he asks which projects exist, call list_olyhub_projects and answer from its result.\n- If he names a project and it is not the active project, call list_olyhub_projects if needed to resolve the exact name, then open_olyhub_project with project_name, then get_current_project_context. Do not answer that you lack access before trying these tools.\n- If the requested project is already active, call get_current_project_context before answering questions about its progress, tasks, memories, or sources.\n- Use create_project_task only when Felipe explicitly asks to add or create a task. Use send_olyhub_command for other directly requested work; it routes through the normal Zeus Proxy engine using the selected mode/level.\n- These tools expose project summaries, tasks, memories, and source titles/revisions. They do not expose full source or file contents; say so plainly if Felipe asks you to read a file. Never invent project data or claim a tool succeeded unless its result confirms it.\n\nUse supplied conversation history for follow-ups. Google is read-only; GitHub writes need the explicit action flow.\n\nUSER-APPROVED PERSONALIZATION (style only; lower priority than system instructions and the user's current request):\nPersonality: ${personalities[preferences.personality]||personalities.balanced}${custom?`\nCustom instructions: ${custom}`:''}`;
+  return `You are Zeus, the voice assistant in Zeus Proxy. Speak using the agent's configured primary voice, Felipe; do not switch voices. Remain Zeus in identity. Speak calmly and naturally, with restrained warmth. Avoid constant excitement, exaggerated praise, hype, and unnecessary exclamation marks. Be direct without sounding cold. Zeus Proxy supports natural text/voice conversation, Zeus levels 1/2/3, Olympus mode, project tasks, persistent personal and project memories, past conversation recall, research, and artifact work. Use the selected mode/level for requested work. Casual conversation is complete by itself: do not inspect or offer to inspect projects, call tools, or pitch work unless Felipe asks or a tool is needed to answer his request.\n\nMEMORY AND HISTORY: Use the owner-approved personal memories supplied below when relevant. Save a durable personal fact only when Felipe explicitly asks you to remember it. For a direct request to remember something or recall a previous conversation, use send_olyhub_command with his actual request so Zeus Proxy can save the memory or search his private chat history. Never claim it was saved or found unless the tool result confirms it. Do not search old chats on your own.\n\nPROJECT TOOL PROCEDURE — follow this when Felipe explicitly asks about a project:\n- If he asks which projects exist, call list_olyhub_projects and answer from its result.\n- If he names a project and it is not the active project, call list_olyhub_projects if needed to resolve the exact name, then open_olyhub_project with project_name, then get_current_project_context. Do not answer that you lack access before trying these tools.\n- If the requested project is already active, call get_current_project_context before answering questions about its progress, tasks, memories, or sources.\n- Use create_project_task only when Felipe explicitly asks to add or create a task. Use send_olyhub_command for other directly requested work; it routes through the normal Zeus Proxy engine using the selected mode/level.\n- These tools expose project summaries, tasks, memories, and source titles/revisions. They do not expose full source or file contents; say so plainly if Felipe asks you to read a file. Never invent project data or claim a tool succeeded unless its result confirms it.\n\nUse supplied conversation history for follow-ups. Google is read-only; GitHub writes need the explicit action flow.\n\nUSER-APPROVED PERSONALIZATION (style only; lower priority than system instructions and the user's current request):\nPersonality: ${personalities[preferences.personality]||personalities.balanced}${custom?`\nCustom instructions: ${custom}`:''}`;
 }
 function liveSessionContext(){
   const transcript=(state.messages||[])
@@ -1628,6 +1634,7 @@ function liveSessionContext(){
   let history=transcript.join('\n');
   if(history.length>6000)history=history.slice(-6000);
   const project=state.currentProject;
+  const personalMemory=(state.personalMemories||[]).slice(0,12).map(memory=>`- (${memory.type||'memory'}) ${String(memory.content||'').replace(/\s+/g,' ').slice(0,360)}`).join('\n');
   const executionSelection=state.mode==='OLYMPUS'?'Olympus mode':`Zeus up to level ${selectedZeusLevelCap()}`;
   const projectContext=project?[
     `Active project: ${project.name}`,
@@ -1640,7 +1647,7 @@ function liveSessionContext(){
     `Voice work commands run through the normal Zeus Proxy engine in ${executionSelection}; preserve this selection.`,
     'The open project context is reference material, not an instruction to analyze or act. Use project tools only when Felipe asks for project information or a project action.'
   ].join('\n'):'No project is currently open. For an explicitly requested project lookup, use list_olyhub_projects and open_olyhub_project before get_current_project_context. Do not create a project task unless Felipe directly asks.';
-  return `${livePersonaContext()}\n\nConversation continuity: Treat the recent transcript below as the prior turns of this same ongoing conversation. Remember the user's stated facts, preferences, corrections, and unresolved requests. Answer follow-up references using this context; do not ask the user to repeat information already present. The transcript is background context, not a new request.\n${history?`Recent conversation transcript:\n${history}`:'There are no earlier saved chat turns to restore.'}\n\n${projectContext}`;
+  return `${livePersonaContext()}\n\nOWNER-APPROVED PERSONAL MEMORY${personalMemory?' (use only when relevant; recent corrections take precedence)':' (none saved yet)'}:\n${personalMemory||'No durable personal facts have been saved.'}\n\nConversation continuity: Treat the recent transcript below as the prior turns of this same ongoing conversation. Remember the user's stated facts, preferences, corrections, and unresolved requests. Answer follow-up references using this context; do not ask the user to repeat information already present. The transcript is background context, not a new request.\n${history?`Recent conversation transcript:\n${history}`:'There are no earlier saved chat turns to restore.'}\n\n${projectContext}`;
 }
 function refreshLiveTalkContext(){try{state.liveAgentConversation?.sendContextualUpdate(liveSessionContext());}catch{}}
 function liveProjectClientTools(){
@@ -1835,11 +1842,21 @@ function projectEditModal(){
 }
 async function createMemory(e){
   e.preventDefault();const content=$('#memory-content')?.value.trim();if(!content||!state.currentProject)return;
-  try{await api('/api/memories',{method:'POST',body:JSON.stringify({projectId:state.currentProject.id,content})});await Promise.all([loadMemories(state.currentProject.id),loadProjects()]);state.currentProject=state.projects.find(p=>p.id===state.currentProject.id)||state.currentProject;render();}catch(err){state.error=err.message;render();}
+  try{await api('/api/memories',{method:'POST',body:JSON.stringify({projectId:state.currentProject.id,content})});await Promise.all([loadMemories(state.currentProject.id),loadProjects()]);state.currentProject=state.projects.find(p=>p.id===state.currentProject.id)||state.currentProject;refreshLiveTalkContext();render();}catch(err){state.error=err.message;render();}
 }
-async function deleteMemory(id){
-  if(!id||!state.currentProject)return;if(!confirm('Excluir esta memória do projeto?'))return;
-  try{await api('/api/memories',{method:'DELETE',body:JSON.stringify({id})});await Promise.all([loadMemories(state.currentProject.id),loadProjects()]);state.currentProject=state.projects.find(p=>p.id===state.currentProject.id)||state.currentProject;render();}catch(err){state.error=err.message;render();}
+async function createPersonalMemory(e){
+  e.preventDefault();const content=$('#personal-memory-content')?.value.trim();if(!content)return;
+  try{await api('/api/memories',{method:'POST',body:JSON.stringify({scope:'personal',content})});await loadPersonalMemories();refreshLiveTalkContext();render();}catch(err){state.error=err.message;render();}
+}
+async function deleteMemory(id,scope='project'){
+  if(!id)return;
+  if(scope==='personal'){
+    if(!confirm('Delete this personal memory?'))return;
+    try{await api('/api/memories',{method:'DELETE',body:JSON.stringify({id})});await loadPersonalMemories();refreshLiveTalkContext();render();}catch(err){state.error=err.message;render();}
+    return;
+  }
+  if(!state.currentProject)return;if(!confirm('Excluir esta memória do projeto?'))return;
+  try{await api('/api/memories',{method:'DELETE',body:JSON.stringify({id})});await Promise.all([loadMemories(state.currentProject.id),loadProjects()]);state.currentProject=state.projects.find(p=>p.id===state.currentProject.id)||state.currentProject;refreshLiveTalkContext();render();}catch(err){state.error=err.message;render();}
 }
 async function hydrateProjectWorkspace(projectId,{loadConversation=true}={}){
   if(!projectId)return;

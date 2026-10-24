@@ -51,7 +51,7 @@ assert.match(ui,/state\.preferences\|\|\{\}/,'Live Talk must use the same saved 
 assert.match(ui,/USER-APPROVED PERSONALIZATION/,'Live Talk personalization must remain subordinate to system and current-request instructions');
 assert.match(ui,/REDACTED API TOKEN/,'Live Talk must redact common API tokens from custom personalization before sending it to ElevenLabs');
 assert.match(ui,/api\[_-\]\?key\|access\[_-\]\?token/,'Live Talk must redact credential fields from custom personalization');
-assert.match(ui,/livePersonaContext\(\)\}\\n\\nConversation continuity/,'Live Talk context builder must run with the Zeus-only persona');
+assert.match(ui,/livePersonaContext\(\)\}\\n\\nOWNER-APPROVED PERSONAL MEMORY/,'Live Talk context builder must include owner-approved persistent memories');
 assert.match(ui,/sendContextualUpdate\(context\)/,'opening a project during Live Talk must update the active agent with its project context');
 assert.match(ui,/clientTools:liveProjectClientTools\(\)/,'Live Talk must register scoped project tools with the ElevenLabs SDK');
 assert.match(ui,/send_olyhub_command:async/,'the voice agent must be able to route spoken work to the normal OlyHub engine');
