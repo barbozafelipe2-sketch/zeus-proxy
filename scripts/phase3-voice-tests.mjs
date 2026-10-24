@@ -15,6 +15,9 @@ assert.match(live,/Conversation\.startSession\(\{/,'Live Talk must connect to th
 assert.match(live,/connectionType:'websocket'/,'iOS Realtime agent must use the supported WebSocket transport');
 assert.match(live,/connectionType:'webrtc'/,'non-iOS Realtime agent must retain the lower-latency WebRTC transport');
 assert.match(live,/signedUrl:issued\.signedUrl/,'iOS WebSocket transport must receive its server-issued signed URL');
+assert.match(live,/rawAudioProcessor:'\/assets\/elevenlabs-worklets\/raw-audio-processor\.js'/,'Live Talk must self-host the raw input AudioWorklet under the strict CSP');
+assert.match(live,/audioConcatProcessor:'\/assets\/elevenlabs-worklets\/audio-concat-processor\.js'/,'Live Talk must self-host the output AudioWorklet under the strict CSP');
+assert.match(live,/libsampleratePath:'\/assets\/elevenlabs-worklets\/libsamplerate\.worklet\.js'/,'Live Talk must self-host the iOS resampler worklet under the strict CSP');
 assert.match(live,/connection\.setMicMuted\(state\.liveMuted\)/,'Live Talk must mute and unmute the agent microphone');
 assert.match(liveView,/data-live-persona="ZEUS"/,'Live Talk must offer Zeus');
 assert.match(liveView,/data-live-persona="ATHENA"/,'Live Talk must offer Athena');

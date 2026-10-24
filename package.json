@@ -30,6 +30,7 @@
     }
   },
   "devDependencies": {
+    "@alexanderolsen/libsamplerate-js": "2.1.2",
     "@elevenlabs/client": "1.30.0",
     "esbuild": "0.28.2"
   }

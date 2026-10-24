@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync, statSync } from 'node:fs';
 import { elevenLabsRealtimeAgentConfigured, createElevenLabsRealtimeConversationToken, createElevenLabsRealtimeSignedUrl, DEFAULT_ELEVENLABS_AGENT_ID } from '../netlify/functions/_shared/elevenlabs-agent.mjs';
 
 const old={key:process.env.ELEVENLABS_API_KEY,legacy:process.env.ELEVEN_LABS_API_KEY,id:process.env.ELEVENLABS_AGENT_ID};
@@ -32,6 +33,15 @@ try{
   await assert.rejects(createElevenLabsRealtimeConversationToken({fetchImpl:async()=>new Response('{}',{status:401})}),e=>e.status===502&&e.code==='ELEVENLABS_AGENT_UNAVAILABLE');
   await assert.rejects(createElevenLabsRealtimeConversationToken({fetchImpl:async()=>new Response('{}',{status:429})}),e=>e.status===429&&e.code==='ELEVENLABS_RATE_LIMITED');
   await assert.rejects(createElevenLabsRealtimeConversationToken({fetchImpl:async()=>new Response(JSON.stringify({token:''}),{status:200})}),e=>e.status===502&&e.code==='ELEVENLABS_TOKEN_INVALID');
+  const workletDir=new URL('../public/assets/elevenlabs-worklets/',import.meta.url);
+  const raw=readFileSync(new URL('raw-audio-processor.js',workletDir),'utf8');
+  const concat=readFileSync(new URL('audio-concat-processor.js',workletDir),'utf8');
+  const resampler=readFileSync(new URL('libsamplerate.worklet.js',workletDir),'utf8');
+  assert.match(raw,/registerProcessor\("rawAudioProcessor"/,'build must self-host the SDK raw-audio worklet');
+  assert.match(concat,/registerProcessor\("audioConcatProcessor"/,'build must self-host the SDK audio-concat worklet');
+  assert.match(resampler,/LibSampleRate/,'build must self-host the SDK-required iOS resampler worklet');
+  assert.ok(statSync(new URL('LICENSE.elevenlabs.txt',workletDir)).size>0,'self-hosted ElevenLabs worklets must include their license notice');
+  assert.ok(statSync(new URL('LICENSE.libsamplerate.md',workletDir)).size>0,'self-hosted resampler must include its license notice');
 }finally{
   for(const [name,value] of [['ELEVENLABS_API_KEY',old.key],['ELEVEN_LABS_API_KEY',old.legacy],['ELEVENLABS_AGENT_ID',old.id]])if(value===undefined)delete process.env[name];else process.env[name]=value;
 }

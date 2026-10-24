@@ -1,6 +1,7 @@
 node_modules
 .netlify
 /public/assets/elevenlabs-agent.js
+/public/assets/elevenlabs-worklets/
 .DS_Store
 
 # Local settings / private credentials

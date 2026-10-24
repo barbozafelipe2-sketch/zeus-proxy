@@ -1482,6 +1482,11 @@ async function connectLiveTalkAgent(){
     };
     const conversation=await Conversation.startSession({
       ...(isIosWebKit?{signedUrl:issued.signedUrl,connectionType:'websocket'}:{conversationToken:issued.token,connectionType:'webrtc'}),
+      workletPaths:{
+        rawAudioProcessor:'/assets/elevenlabs-worklets/raw-audio-processor.js',
+        audioConcatProcessor:'/assets/elevenlabs-worklets/audio-concat-processor.js',
+      },
+      libsampleratePath:'/assets/elevenlabs-worklets/libsamplerate.worklet.js',
       ...(Object.keys(overrides).length?{overrides}:{}),
       onConnect:({conversationId})=>{
         if(!state.liveTalk||generation!==state.liveGeneration)return;
