@@ -14,7 +14,7 @@ const state = {
   projectSection:'CHAT', projectMemories:[], projectSources:[], memoryPolicy:null,
   messagePage:{hasMore:false,nextCursor:null}, filesPage:{scope:'global',hasMore:false,nextCursor:null}, artifactsPage:{scope:'global',hasMore:false,nextCursor:null}, chatRestore:null,
   voiceBusy:false, voiceRecorder:null, voiceStream:null, voiceChunks:[], voiceStopTimer:null, voiceRecognition:null, voiceBytes:0, voiceHitSizeLimit:false,
-  liveTalk:false, liveTalkStopRequested:false, liveMuted:false, livePersona:'ZEUS', liveFailureKind:null, liveAgentConversation:null, liveAgentConversationId:'', liveAgentPartial:'', liveAgentPermissionStream:null, liveAgentLogQueue:Promise.resolve(), liveAgentLoggedEvents:new Map(), liveGeneration:0, liveRetryCount:0, liveStage:'idle', liveLocale:'auto', voiceId:'marin', elevenLabsVoiceId:'', voiceStatus:null, voiceTesting:false, liveSpeechCache:null, voiceReplyAudio:null, liveAudioUrl:null, liveSpeechController:null, liveAudioUnlocked:false, liveSpeechUnlocked:false,
+  liveTalk:false, liveTalkStopRequested:false, liveMuted:false, livePersona:'ZEUS', liveFailureKind:null, liveAgentConversation:null, liveAgentConversationId:'', liveAgentPartial:'', liveTextDraft:'', liveTextStatus:'', liveAgentPermissionStream:null, liveAgentLogQueue:Promise.resolve(), liveAgentLoggedEvents:new Map(), liveGeneration:0, liveRetryCount:0, liveStage:'idle', liveLocale:'auto', voiceId:'marin', elevenLabsVoiceId:'', voiceStatus:null, voiceTesting:false, liveSpeechCache:null, voiceReplyAudio:null, liveAudioUrl:null, liveSpeechController:null, liveAudioUnlocked:false, liveSpeechUnlocked:false,
   voiceAvatar:'lightning', elevenLabsVoices:[], elevenLabsVoicesLoaded:false, elevenLabsVoicesLoading:false, elevenLabsVoicesError:'', elevenLabsVoicePageToken:'', elevenLabsVoiceHasMore:false,
   preferences:{personality:'balanced',instructions:''}, preferencesLoaded:false,
   googleSearchResults:{}, googleSearchQueries:{}, googleSearchBusy:null,
@@ -436,84 +436,10 @@ function speechLocale(text=''){
  return navigator.language||'en-US';
 }
 
-function startPlasmaOrb(){
-  const canvas=document.querySelector('.zeus-plasma-canvas');
-  if(!canvas||canvas.dataset.started)return;
-  canvas.dataset.started='1';
-  const ctx=canvas.getContext('2d',{alpha:true});
-  if(!ctx)return;
-  const reduced=window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
-  const W=256,C=128,R=94,scale=Math.min(2,Math.max(1,window.devicePixelRatio||1));
-  canvas.width=Math.round(W*scale);canvas.height=Math.round(W*scale);ctx.scale(scale,scale);
-  let frame=0,last=0,paintCount=0;
-  function lightning(x1,y1,x2,y2,depth,alpha){
-    const spread=depth>1?10:3;
-    const dx=x2-x1,dy=y2-y1;
-    const midX=(x1+x2)/2+(Math.random()-.5)*spread,midY=(y1+y2)/2+(Math.random()-.5)*spread;
-    if(depth>0){lightning(x1,y1,midX,midY,depth-1,alpha);lightning(midX,midY,x2,y2,depth-1,alpha);return;}
-    ctx.strokeStyle='rgba(255,225,157,'+alpha+')';ctx.lineWidth=.5+alpha*.8;
-    ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();
-  }
-  function paint(){
-    paintCount++;
-    ctx.clearRect(0,0,W,W);
-    // The glow, ring and flash stay inside the same fixed-diameter canvas.
-    const halo=ctx.createRadialGradient(C,C,15,C,C,126);
-    halo.addColorStop(0,'rgba(255,205,105,.32)');
-    halo.addColorStop(.68,'rgba(194,123,28,.20)');
-    halo.addColorStop(1,'rgba(194,123,28,0)');
-    ctx.fillStyle=halo;ctx.fillRect(0,0,W,W);
-    ctx.save();ctx.shadowColor='#f3bd54';ctx.shadowBlur=18;
-    ctx.strokeStyle='#a87528';ctx.lineWidth=8;
-    ctx.beginPath();ctx.arc(C,C,R,0,Math.PI*2);ctx.stroke();
-    ctx.strokeStyle='#ffe3a0';ctx.lineWidth=2.8;
-    ctx.beginPath();ctx.arc(C,C,R-1,0,Math.PI*2);ctx.stroke();
-    ctx.restore();
-    ctx.save();ctx.beginPath();ctx.arc(C,C,R-2,0,Math.PI*2);ctx.clip();
-    const glass=ctx.createRadialGradient(C-27,C-32,4,C,C,R);
-    glass.addColorStop(0,'rgba(255,246,218,.17)');glass.addColorStop(.2,'rgba(205,155,70,.12)');glass.addColorStop(.58,'rgba(56,37,10,.19)');glass.addColorStop(1,'rgba(4,4,3,.83)');
-    ctx.fillStyle=glass;ctx.fillRect(C-R,C-R,R*2,R*2);
-    ctx.save();ctx.strokeStyle='rgba(255,224,155,.15)';ctx.lineWidth=.8;
-    for(const radius of [R*.42,R*.66,R*.82]){ctx.beginPath();ctx.arc(C,C,radius,0,Math.PI*2);ctx.stroke();}
-    ctx.restore();
-    const intensity=state.liveStage==='speaking'?1:state.liveStage==='processing'?.83:.65;
-    ctx.shadowColor='#ffce69';ctx.shadowBlur=9;
-    for(let i=0;i<24;i++){
-      const angle=i*Math.PI*2/24+Math.sin(paintCount*.23+i*2.4)*.025;
-      const radius=R*(.66+((Math.sin(i*17.3)+1)*.12));
-      const x=C+Math.cos(angle)*radius,y=C+Math.sin(angle)*radius;
-      lightning(C,C,x,y,3,(.3+((Math.sin(i*8.1)+1)*.19))*intensity);
-      if(i%3===0){
-        const forkAngle=angle+(.12+((Math.sin(i*4.7)+1)*.16))*(i%2?1:-1);
-        lightning(C+Math.cos(angle)*27,C+Math.sin(angle)*27,C+Math.cos(forkAngle)*(radius*.84),C+Math.sin(forkAngle)*(radius*.84),2,.27*intensity);
-      }
-    }
-    ctx.restore();
-    ctx.save();ctx.translate(C,C);ctx.rotate(-.18);ctx.shadowColor='#f1ce83';ctx.shadowBlur=11;
-    ctx.strokeStyle='rgba(255,226,166,.35)';ctx.lineWidth=1.15;ctx.beginPath();ctx.ellipse(0,0,R*1.04,R*.3,0,0,Math.PI*2);ctx.stroke();ctx.restore();
-    ctx.save();ctx.fillStyle='#ffe9b0';ctx.shadowColor='#ffd46d';ctx.shadowBlur=8;
-    for(const [x,y,r] of [[55,91,1.5],[196,78,1.2],[208,159,1.5],[75,190,1.1],[157,47,1]]){ctx.beginPath();ctx.arc(x,y,r,0,Math.PI*2);ctx.fill();}
-    ctx.restore();
-    ctx.save();ctx.shadowColor='#fff0c5';ctx.shadowBlur=22;
-    const core=ctx.createRadialGradient(C,C,1,C,C,28);
-    core.addColorStop(0,'#fffdf6');core.addColorStop(.34,'rgba(255,245,215,.99)');
-    core.addColorStop(.7,'rgba(244,191,93,.68)');core.addColorStop(1,'rgba(143,78,10,0)');
-    ctx.fillStyle=core;ctx.beginPath();ctx.arc(C,C,28,0,Math.PI*2);ctx.fill();
-    ctx.restore();
-  }
-  function tick(now){
-    if(!canvas.isConnected||!state.liveTalk)return;
-    if(now-last>=75){last=now;paint();}
-    frame=requestAnimationFrame(tick);
-  }
-  paint();
-  if(!reduced&&state.liveTalk)frame=requestAnimationFrame(tick);
-}
-
 function voiceAvatarMarkup(){
  const kind=VOICE_AVATARS.has(state.voiceAvatar)?state.voiceAvatar:'lightning';
  return kind==='lightning'
- ? `<div class="zeus-voice-presence lightning ${state.liveTalk?'active':''}" aria-hidden="true"><canvas class="zeus-plasma-canvas" width="256" height="256"></canvas></div>`
+ ? `<div class="zeus-voice-presence lightning ${state.liveTalk?'active':''} ${state.liveStage==='speaking'?'is-speaking':''}" aria-hidden="true"><img class="zeus-plasma-image" src="/zeus-plasma-orb-v1.webp" alt="" draggable="false"></div>`
  : `<div class="zeus-voice-presence ${kind} ${state.liveTalk?'active':''}" aria-hidden="true"><div class="zeus-voice-core"><span class="zeus-voice-symbol">●</span></div></div>`;
 }
 function discardLiveAudio({keepElement=false}={}){try{state.voiceReplyAudio?.pause()}catch{}if(!keepElement)state.voiceReplyAudio=null;
@@ -984,6 +910,7 @@ function liveTalkExperience(){
       <button type="button" class="live-persona-card ${persona==='ZEUS'?'selected':''}" data-live-persona="ZEUS" aria-pressed="${persona==='ZEUS'}"><span class="live-persona-mark zeus-mark">ϟ</span><span class="live-persona-copy"><strong>ZEUS</strong><small>Felipe · masculine</small></span><span class="live-persona-state">${persona==='ZEUS'?'Selected':'Choose'}</span></button>
       <button type="button" class="live-persona-card athena-card ${persona==='ATHENA'?'selected':''}" data-live-persona="ATHENA" aria-pressed="${persona==='ATHENA'}"><span class="live-persona-mark athena-mark">✦</span><span class="live-persona-copy"><strong>ATHENA</strong><small>Jelyn · feminine</small></span><span class="live-persona-state">${persona==='ATHENA'?'Selected':'Choose'}</span></button>
     </div>
+    <form class="live-talk-text-form" id="live-talk-text-form" aria-label="Send a typed message to the live agent"><label class="sr-only" for="live-talk-text">Type a message if voice recognition misunderstood</label><input id="live-talk-text" name="message" type="text" maxlength="4000" autocomplete="off" enterkeyhint="send" placeholder="Miscommunication? Type your message…" value="${esc(state.liveTextDraft)}"><button type="submit" aria-label="Send typed message" title="Send typed message" ${state.sending?'disabled':''}>${icon('send')}</button><span class="sr-only" id="live-talk-text-status" aria-live="polite">${esc(state.liveTextStatus)}</span></form>
     <footer class="live-talk-controls"><div class="live-control-hint"><span class="live-mic-dot"></span>${state.liveMuted?'Microphone muted':state.liveStage==='listening'?'Microphone active':state.liveStage==='processing'?'Voice captured':state.liveStage==='speaking'?'Reply audio active':state.liveStage==='error'?'Live Talk paused':'Session ready'}</div><div class="live-call-actions"><button type="button" class="live-mute-button ${state.liveMuted?'is-muted':''}" id="live-talk-mute" aria-pressed="${state.liveMuted}" aria-label="${state.liveMuted?'Unmute microphone':'Mute microphone'}" title="${state.liveMuted?'Unmute microphone':'Mute microphone'}">${icon(state.liveMuted?'mic-off':'mic')}</button><button type="button" class="live-end-call" id="live-talk-end" aria-label="Exit Live Talk immediately and return to chat" title="Exit Live Talk">${icon('close')}</button></div><div class="live-control-caption">Mute the microphone or exit to your saved conversation</div></footer>
   </main>`;
 }
@@ -1137,7 +1064,7 @@ function bind(){
     render();requestAnimationFrame(()=>$('#composer-text')?.focus());
   }));
   $$('[data-github-commit]').forEach(b=>b.addEventListener('click',()=>githubCommitModal(b.dataset.githubCommit,b.dataset.sourceId,b.dataset.sourceName)));
-  hydratePrivateImages();startPlasmaOrb();
+  hydratePrivateImages();
   $$('[data-conv]').forEach(b=>b.addEventListener('click',()=>openConversation(b.dataset.conv)));
   $$('.quick-prompts button').forEach(b=>b.addEventListener('click',()=>{const t=$('#composer-text');if(!t)return;t.value=b.dataset.prompt;t.dispatchEvent(new Event('input',{bubbles:true}));t.focus()}));
   $('#composer')?.addEventListener('submit',sendMessage); const composerText=$('#composer-text');const sizeComposer=()=>{if(!composerText)return;composerText.style.height='auto';composerText.style.height=`${Math.min(160,Math.max(26,composerText.scrollHeight))}px`;};composerText?.addEventListener('input',()=>{state.draft=composerText.value;sizeComposer();});composerText?.addEventListener('keydown',e=>{if(e.key==='Enter'&&(e.metaKey||e.ctrlKey)){e.preventDefault();$('#composer')?.requestSubmit();}});if(composerText?.value)sizeComposer();
@@ -1152,6 +1079,8 @@ function bind(){
   $('#live-talk')?.addEventListener('click',toggleLiveTalk);
   $$('#live-talk-return,#live-talk-end').forEach(button=>button.addEventListener('click',finishLiveTalkSession));
   $('#live-talk-mute')?.addEventListener('click',toggleLiveTalkMute);
+  $('#live-talk-text')?.addEventListener('input',event=>{state.liveTextDraft=event.target.value;state.liveTextStatus='';try{state.liveAgentConversation?.sendUserActivity?.();}catch{}});
+  $('#live-talk-text-form')?.addEventListener('submit',sendLiveTalkText);
   $$('[data-live-persona]').forEach(button=>button.addEventListener('click',()=>selectLivePersona(button.dataset.livePersona)));
   $('#live-talk-retry')?.addEventListener('click',retryLiveTalk);
   $('#retry-last')?.addEventListener('click',retryLastMessage);
@@ -1371,6 +1300,17 @@ async function sendText(text,pendingAttachments=[],requestId=crypto.randomUUID()
       const deliveredArtifacts=d.artifacts||assistant.artifacts||[];
       state.messages.push({...assistant,artifacts:deliveredArtifacts});
       if(deliveredArtifacts.length){state.chatArtifacts=mergeById(state.chatArtifacts,deliveredArtifacts);state.artifacts=mergeById(state.artifacts,deliveredArtifacts);}
+      if(liveTalkTurn&&state.liveTalk){
+        try{
+          state.liveStage='speaking';state.error='';render();
+          const {blob}=await requestSpeechAudio(assistant.content||'',{elevenLabsVoiceId:state.elevenLabsVoiceId||storedElevenLabsVoiceId()});
+          if(!state.liveTalk)return;
+          const audio=state.voiceReplyAudio||new Audio();state.voiceReplyAudio=audio;
+          if(state.liveAudioUrl)URL.revokeObjectURL(state.liveAudioUrl);
+          state.liveAudioUrl=URL.createObjectURL(blob);audio.src=state.liveAudioUrl;audio.muted=false;audio.volume=1;audio.playsInline=true;
+          await audio.play();audio.onended=()=>{if(state.liveTalk){state.liveStage=state.liveAgentConversation?'listening':'error';render();}};
+        }catch(error){state.liveStage=state.liveAgentConversation?'listening':'error';state.error=`Text reply arrived, but voice playback failed: ${error?.message||'tap the screen and retry'}`;}
+      }
     }
     if(compareType)state.compareType=null;
     state.execStatus='Completed';
@@ -1458,7 +1398,12 @@ function finishLiveTalkSession(){
 }
 function pauseLiveTalkOnError(message,kind='agent'){
   if(!state.liveTalk)return;
-  state.error=message||'ElevenLabs Realtime could not complete this voice session.';
+  const detail=String(message||'ElevenLabs Realtime could not complete this voice session.');
+  state.error=/operation is insecure|securityerror|secure context/i.test(detail)
+    ? `${window.isSecureContext===false?'This page is not in a secure context. Open the HTTPS site directly in Safari.':'Safari blocked microphone setup for this page. Check Safari microphone permission for this site, reload, and reconnect.'} You can still type below; Zeus will answer by voice.`
+    : /notallowederror|permission denied|microphone.*denied/i.test(detail)
+      ? 'Microphone permission is off for this site. Allow it in Safari settings and reconnect. You can still type below; Zeus will answer by voice.'
+      : detail;
   state.liveStage='error';state.liveFailureKind=kind;clearTimeout(state.liveRetryTimer);state.liveRetryTimer=null;
   releaseLiveAgentPermissionStream();
   const connection=state.liveAgentConversation;state.liveAgentConversation=null;state.liveAgentPartial='';
@@ -1523,6 +1468,7 @@ async function connectLiveTalkAgent(){
     const {Conversation}=await import('/assets/elevenlabs-agent.js');
     const selectedLanguage=state.liveLocale==='auto'?'':({pt:'pt',en:'en',es:'es'}[state.liveLocale]||'');
     const selectedVoice=state.elevenLabsVoiceId||storedElevenLabsVoiceId();
+    const isIosWebKit=/iPad|iPhone|iPod/i.test(navigator.userAgent)||(/MacIntel/.test(navigator.platform||'')&&navigator.maxTouchPoints>1);
     const overrides={
       ...(selectedLanguage?{agent:{language:selectedLanguage}}:{}),
       ...(selectedVoice?{tts:{voiceId:selectedVoice}}:{}),
@@ -1530,6 +1476,9 @@ async function connectLiveTalkAgent(){
     const conversation=await Conversation.startSession({
       conversationToken:issued.token,
       connectionType:'webrtc',
+      // iOS Safari can reject LiveKit's newer single-peer mic timing; the SDK
+      // exposes this legacy negotiation mode specifically for that platform.
+      ...(isIosWebKit?{webRtc:{singlePeerConnection:false}}:{}),
       ...(Object.keys(overrides).length?{overrides}:{}),
       onConnect:({conversationId})=>{
         if(!state.liveTalk||generation!==state.liveGeneration)return;
@@ -1595,6 +1544,20 @@ function selectLivePersona(persona){
   try{state.liveAgentConversation?.sendContextualUpdate(livePersonaContext(next));}
   catch(error){state.error=error?.message||'Could not change the Live Talk persona.';}
   render();
+}
+function sendLiveTalkText(event){
+  event.preventDefault();
+  if(state.sending)return;
+  const input=$('#live-talk-text');const text=String(input?.value||'').trim();
+  if(!text)return;
+  const connection=state.liveAgentConversation;
+  if(!connection){state.liveTextDraft='';state.liveTextStatus='Sending your typed message through Zeus…';void sendText(text,[],undefined,'ZEUS',null,null,{liveTalk:true});return;}
+  try{
+    connection.sendUserMessage(text);
+    state.liveTextDraft='';state.liveTextStatus='Message sent to the live agent.';state.error='';
+    if(input)input.value='';
+    const status=$('#live-talk-text-status');if(status)status.textContent=state.liveTextStatus;
+  }catch{state.liveTextDraft='';state.liveTextStatus='Sending your typed message through Zeus…';void sendText(text,[],undefined,'ZEUS',null,null,{liveTalk:true});}
 }
 async function retryLiveTalk(){
   if(!state.liveTalk)return;

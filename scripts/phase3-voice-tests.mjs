@@ -12,6 +12,7 @@ assert.ok(live.indexOf('await navigator.mediaDevices.getUserMedia({audio:true})'
 assert.match(live,/operation is insecure\|secure context/,'insecure-context errors must explain that HTTPS is required');
 assert.match(live,/Conversation\.startSession\(\{/,'Live Talk must connect to the ElevenLabs Realtime agent');
 assert.match(live,/connectionType:'webrtc'/,'Realtime agent must use WebRTC');
+assert.match(live,/webRtc:\{singlePeerConnection:false\}/,'iOS Safari must use ElevenLabs dual-peer setup so microphone capture is requested in the permitted gesture context');
 assert.match(live,/connection\.setMicMuted\(state\.liveMuted\)/,'Live Talk must mute and unmute the agent microphone');
 assert.match(liveView,/data-live-persona="ZEUS"/,'Live Talk must offer Zeus');
 assert.match(liveView,/data-live-persona="ATHENA"/,'Live Talk must offer Athena');
@@ -22,6 +23,14 @@ assert.match(live,/connection\?\.endSession\?\.\(\)/,'exiting or pausing Live Ta
 assert.match(ui,/Reconnect Realtime/,'Realtime failure must expose an explicit reconnect action');
 assert.ok(!/Scribe\.connect|SpeechRecognition|webkitSpeechRecognition|MediaRecorder|listenServerLiveTalk/.test(live),'Live Talk must not fall back to browser or batch transcription');
 assert.match(ui,/id="live-talk-mute"/,'Live Talk must provide an explicit microphone mute control');
+assert.match(liveView,/id="live-talk-text-form"/,'Live Talk must provide a typed-message fallback');
+assert.match(liveView,/id="live-talk-text"[^>]*type="text"/,'typed fallback must be a text input');
+assert.match(ui,/connection\.sendUserMessage\(text\)/,'typed fallback must send through the active Realtime conversation');
+assert.match(ui,/sendUserActivity\?\.\(\)/,'typing should signal activity so the voice agent does not interrupt the correction');
+assert.match(ui,/sendText\(text,\[\],undefined,'ZEUS',null,null,\{liveTalk:true\}\)/,'typed fallback must still reach Zeus and speak when the realtime microphone session is unavailable');
+assert.match(ui,/requestSpeechAudio\(assistant\.content\|\|''/,'manual Live Talk replies must be spoken aloud');
+assert.match(ui,/You can still type below; Zeus will answer by voice/,'a microphone security failure must preserve the typed voice-response path');
+assert.match(ui,/\$\('#live-talk-text-form'\)\?\.addEventListener\('submit',sendLiveTalkText\)/,'typed fallback must be wired to submit');
 assert.match(ui,/aria-label="Exit Live Talk immediately and return to chat"/,'Live Talk exit must be immediate and accessible');
 assert.match(transcribe,/createElevenLabsRealtimeConversationToken/,'server creates temporary ElevenLabs Realtime conversation credentials');
 assert.match(transcribe,/elevenlabs_realtime_token/,'token mint endpoint must be rate-limited');
