@@ -3,7 +3,7 @@ import { transcribeAudio, serverTranscriptionConfigured } from './_shared/models
 import { json, getRequestId, errorJson } from './_shared/http.mjs';
 import { createExecutionBudget } from './_shared/runtime.mjs';
 import { consumeEndpointRate } from './_shared/limits.mjs';
-import { createElevenLabsRealtimeConversationToken } from './_shared/elevenlabs-agent.mjs';
+import { createElevenLabsRealtimeConversationToken, createElevenLabsRealtimeSignedUrl } from './_shared/elevenlabs-agent.mjs';
 
 async function handler(req, context, requestId) {
   const startedAt=Date.now();
@@ -20,6 +20,17 @@ async function handler(req, context, requestId) {
     }catch(error){
       const status=error?.code==='AI_RATE_LIMIT'?429:Number(error?.status)||503;
       return errorJson(error?.message||'Could not start ElevenLabs Realtime.',status,error?.code||'ELEVENLABS_TOKEN_FAILED',requestId,error?.retryAfter?{retryAfter:error.retryAfter}:{});
+    }
+  }
+  if(url.pathname==='/api/voice/realtime-signed-url'){
+    if(req.method!=='POST')return errorJson('Method not allowed.',405,'METHOD_NOT_ALLOWED',requestId);
+    try{
+      await consumeEndpointRate(db,user.id,'elevenlabs_realtime_signed_url',requestId,30);
+      const session=await createElevenLabsRealtimeSignedUrl();
+      return json({...session,requestId});
+    }catch(error){
+      const status=error?.code==='AI_RATE_LIMIT'?429:Number(error?.status)||503;
+      return errorJson(error?.message||'Could not start ElevenLabs Realtime over WebSocket.',status,error?.code||'ELEVENLABS_SIGNED_URL_FAILED',requestId,error?.retryAfter?{retryAfter:error.retryAfter}:{});
     }
   }
   if (req.method !== 'POST') return errorJson('Method not allowed.', 405, 'METHOD_NOT_ALLOWED', requestId);
@@ -54,4 +65,4 @@ export default async (req, context) => {
   }
 };
 
-export const config = { path: ['/api/transcribe','/api/voice/realtime-token'] };
+export const config = { path: ['/api/transcribe','/api/voice/realtime-token','/api/voice/realtime-signed-url'] };

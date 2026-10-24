@@ -8,11 +8,13 @@ assert.match(ui,/function toggleLiveTalk\(\)/);assert.match(ui,/function saveLiv
 const live=ui.slice(ui.indexOf('function finishLiveTalkSession(){'),ui.indexOf('\nasync function startVoice(){'));
 const liveView=ui.slice(ui.indexOf('function liveTalkExperience(){'),ui.indexOf('\nfunction appView(){'));
 assert.ok(live.includes("'/api/voice/realtime-token'"),'Live Talk must request a short-lived ElevenLabs agent token');
-assert.ok(live.indexOf('await navigator.mediaDevices.getUserMedia({audio:true})')<live.indexOf("api('/api/voice/realtime-token'"),'request microphone permission on the start tap before awaiting the token endpoint');
+assert.ok(live.includes("'/api/voice/realtime-signed-url'"),'iOS Live Talk must request an authenticated WebSocket signed URL');
+assert.ok(live.indexOf('await navigator.mediaDevices.getUserMedia({audio:true})')<live.indexOf("isIosWebKit?'/api/voice/realtime-signed-url'"),'request microphone permission on the start tap before awaiting either transport credential');
 assert.match(live,/operation is insecure\|secure context/,'insecure-context errors must explain that HTTPS is required');
 assert.match(live,/Conversation\.startSession\(\{/,'Live Talk must connect to the ElevenLabs Realtime agent');
-assert.match(live,/connectionType=isIosWebKit\?'websocket':'webrtc'/,'iOS WebKit must prefer WebSocket; other platforms keep WebRTC');
-assert.match(live,/connectionType==='webrtc'&&isIosWebKit\?\{webRtc:\{singlePeerConnection:false\}\}/,'WebRTC dual-peer option remains available when WebRTC is selected');
+assert.match(live,/connectionType:'websocket'/,'iOS Realtime agent must use the supported WebSocket transport');
+assert.match(live,/connectionType:'webrtc'/,'non-iOS Realtime agent must retain the lower-latency WebRTC transport');
+assert.match(live,/signedUrl:issued\.signedUrl/,'iOS WebSocket transport must receive its server-issued signed URL');
 assert.match(live,/connection\.setMicMuted\(state\.liveMuted\)/,'Live Talk must mute and unmute the agent microphone');
 assert.match(liveView,/data-live-persona="ZEUS"/,'Live Talk must offer Zeus');
 assert.match(liveView,/data-live-persona="ATHENA"/,'Live Talk must offer Athena');
@@ -37,7 +39,7 @@ assert.match(ui,/\$\('#live-talk-text-form'\)\?\.addEventListener\('submit',send
 assert.match(ui,/aria-label="Exit Live Talk immediately and return to chat"/,'Live Talk exit must be immediate and accessible');
 assert.match(transcribe,/createElevenLabsRealtimeConversationToken/,'server creates temporary ElevenLabs Realtime conversation credentials');
 assert.match(transcribe,/elevenlabs_realtime_token/,'token mint endpoint must be rate-limited');
-assert.match(transcribe,/path: \['\/api\/transcribe','\/api\/voice\/realtime-token'\]/,'Netlify must route the token endpoint');
+assert.match(transcribe,/path: \['\/api\/transcribe','\/api\/voice\/realtime-token','\/api\/voice\/realtime-signed-url'\]/,'Netlify must route both Realtime credential endpoints');
 const log=readFileSync('netlify/functions/voice-log.mjs','utf8');
 assert.match(log,/requireUser/,'transcript persistence must require authentication');
 assert.match(log,/resolveOwnedScope/,'transcript persistence must verify conversation or project ownership');
