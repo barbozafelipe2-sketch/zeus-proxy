@@ -1,14 +1,14 @@
 // Presentation-only localization. API enums, selectors and stored user content
 // retain their original values; only interface text and labels are translated.
 const translations = new Map(Object.entries({
-  'Home':'Início', 'Projects':'Agentes', 'Agents':'Agentes', 'Manager':'Gestor', 'Tools':'Ferramentas', 'Files':'Arquivos', 'Settings':'Configurações',
-  'New agent':'Novo agente', '＋ New agent':'＋ Novo agente', 'All agents':'Todos os agentes', 'All Agents':'Todos os agentes', 'WORKSPACE MANAGER':'GESTÃO DO ESPAÇO', 'AGENT WORKSPACES':'ESPAÇOS DOS AGENTES',
-  'Choose an agent to continue its dedicated work.':'Escolha um agente para continuar o trabalho dedicado.',
-  'No agents yet. Create one to give a workstream its own chat, memory and files.':'Ainda não há agentes. Crie um para ter conversa, memória e arquivos próprios.',
-  'No agents yet':'Ainda não há agentes', 'Create your first dedicated workspace.':'Crie seu primeiro espaço de trabalho dedicado.',
-  'Each agent has a dedicated conversation, tasks, files, artifacts and memory.':'Cada agente tem conversa, tarefas, arquivos, resultados e memória próprios.',
-  'Each agent keeps its own permanent chat, tasks, files, artifacts and memory.':'Cada agente mantém sua conversa, tarefas, arquivos, resultados e memória permanentes.',
-  'Your agents':'Seus agentes', 'All agents ›':'Todos os agentes ›', 'Workspace Manager':'Gestor do espaço',
+  'Home':'Início', 'Projects':'Projetos', 'Agents':'Projetos', 'Manager':'Projetos', 'Tools':'Ferramentas', 'Files':'Arquivos', 'Settings':'Configurações',
+  'New agent':'Novo projeto', '＋ New agent':'＋ Novo projeto', 'New project':'Novo projeto', '＋ New project':'＋ Novo projeto', 'All agents':'Todos os projetos', 'All Agents':'Todos os projetos', 'All Projects':'Todos os projetos', 'WORKSPACE MANAGER':'PROJETOS', 'AGENT WORKSPACES':'PROJETOS',
+  'Choose an agent to continue its dedicated work.':'Abra um projeto para continuar o trabalho.',
+  'Open project':'Abrir projeto', 'No projects yet. Create one to give a workstream its own chat, memory and files.':'Ainda não há projetos. Crie um para ter conversa, memória e arquivos próprios.',
+  'No projects yet':'Ainda não há projetos', 'Create your first project.':'Crie seu primeiro projeto.',
+  'Each project has its own conversation, tasks, files, artifacts and memory.':'Cada projeto tem conversa, tarefas, arquivos, resultados e memória próprios.',
+  'Each project keeps its own permanent chat, tasks, files, artifacts and memory.':'Cada projeto mantém sua conversa, tarefas, arquivos, resultados e memória permanentes.',
+  'Your projects':'Seus projetos', 'All projects ›':'Todos os projetos ›', 'Workspace Manager':'Projetos',
   'New chat':'Nova conversa', 'Start a clean execution':'Comece uma nova conversa', 'Search chats':'Buscar conversas',
   'Recent chats':'Conversas recentes', 'Conversation':'Conversa', 'WORKSPACE':'ESPAÇO DE TRABALHO', 'PROJECT':'PROJETO',
   'Workspace navigation':'Navegação', 'Primary':'Principal', 'Current workspace':'Espaço atual', 'Open navigation':'Abrir navegação',
@@ -48,6 +48,7 @@ const translations = new Map(Object.entries({
   'Voice input':'Entrada por voz', 'Stop recording':'Parar gravação', 'Transcribing…':'Transcrevendo…', 'Transcribing voice':'Transcrevendo áudio', 'Remove attachment':'Remover anexo',
   'YOU':'VOCÊ', 'Sources':'Fontes', 'Execution details':'Detalhes da execução', 'Load older messages':'Ver mensagens anteriores',
   'Live execution status — no simulated timings.':'Acompanhamento da execução em tempo real.', 'Zeus is working':'Zeus está trabalhando',
+  'Zeus level':'Nível Zeus', 'Maximum Zeus level':'Nível máximo do Zeus', '1 · Specialist':'1 · Especialista', '2 · Specialist + director':'2 · Especialista + diretor', '3 · Full Zeus':'3 · Zeus completo', 'Auto Olympus':'Olympus automático',
   'Retry':'Tentar novamente', 'Dismiss message':'Fechar mensagem', 'Open':'Abrir', 'Download':'Baixar', 'Commit':'Enviar ao GitHub',
   'Tools & Capabilities':'Ferramentas', 'REAL CAPABILITIES. REAL OUTPUTS.':'ESCOLHA O QUE VOCÊ QUER FAZER.', 'Explore All >':'Ver arquivos →',
   'Web Search':'Pesquisa na web', 'Current web retrieval with sources':'Pesquise informações atuais com fontes',
@@ -189,7 +190,7 @@ export function translateInterfaceText(value) {
   if (translations.has(trimmed)) return value.replace(trimmed,translations.get(trimmed));
   return value
     .replace(/^Uploading (.+)…$/,'Enviando $1…')
-    .replace(/^Open agent (.+)$/,'Abrir agente $1')
+    .replace(/^Open project (.+)$/,'Abrir projeto $1')
     .replace(/^Voice saved in this browser: (.+)$/,'Voz salva neste navegador: $1')
     .replace(/^Voice saved: (.+)$/,'Voz salva: $1')
     .replace(/^Voice test failed: (.+)$/,'Falha no teste de voz: $1')

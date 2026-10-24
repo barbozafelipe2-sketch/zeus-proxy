@@ -13,9 +13,11 @@ assert.ok(app.includes('data-mode="ZEUS"')&&app.includes('data-mode="OLYMPUS"')&
 assert.ok(!app.includes('${homeAgentPanel()}')&&!app.includes('${homeContextPanel()}')&&!app.includes('${homeMobileArtifacts()}'),'conversation view must stay focused on messages');
 assert.ok(!app.includes('${mobileNav()}')&&app.includes('id="hamburger"'),'mobile navigation should use the existing side drawer');
 assert.ok(!/data-mode=["'](?:OPENAI|CLAUDE|GEMINI|GOOGLE)/i.test(app),'direct provider mode leaked into UI');
-assert.ok(app.includes('id="hamburger" aria-label="Open navigation" title="Navigation">${icon(\'menu\')}</button>')&&app.includes("['Projects','projects','Agents']"),'simplified menu navigation with Agents missing');
-assert.ok(app.includes('function managerAgentStrip()')&&app.includes('id="manager-title">Manager</h1>')&&app.includes('class="manager-agent-chip"'),'Home Manager must expose clickable agent shortcuts');
+assert.ok(app.includes('id="hamburger" aria-label="Open navigation" title="Navigation">${icon(\'menu\')}</button>')&&app.includes("['Projects','projects','Projects']"),'simplified menu navigation with Projects missing');
+assert.ok(app.includes('function managerAgentStrip()')&&app.includes('id="manager-title">Projects</h1>')&&app.includes('class="manager-agent-chip"'),'Home must expose clickable Project shortcuts');
 assert.ok(app.includes('PERMANENT PROJECT CHAT'),'permanent Project chat missing');
+assert.match(app,/function projectChatView\(\)[\s\S]*?\$\{modeStrip\(\)\}/,'Project chat must reuse the main chat mode selector');
+assert.match(app,/id="zeus-level-cap"[\s\S]*?id="olympus-auto"/,'shared mode selector must expose Zeus level cap and automatic Olympus controls');
 assert.ok(app.includes('Permanent project memory')&&app.includes('memory-form'),'Project memory missing');
 assert.ok(app.includes('task-form')&&app.includes('upload-project-file'),'Project tasks/files missing');
 assert.ok(app.includes('attach-media')&&app.includes('attach-camera')&&app.includes('attach-file'),'plus attachment chooser missing');
