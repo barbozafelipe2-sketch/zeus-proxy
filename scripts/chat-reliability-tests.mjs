@@ -176,5 +176,5 @@ try{
   assert.equal(ownRepo.trace?.latestCommit,true,'latest commit was retrieved');
   assert.match(ownRepo.context,/LATEST VERIFIED COMMIT: latest-sha/);
   assert.match(ownRepo.context,/Route attached-person image requests to editing/);
-  assert.match(ownRepo.context,/netlify\\/functions\\/_shared\\/intent\\.mjs/);
+  assert.ok(ownRepo.context.includes('netlify/functions/_shared/intent.mjs'));
 }finally{globalThis.fetch=oldFetch;}
