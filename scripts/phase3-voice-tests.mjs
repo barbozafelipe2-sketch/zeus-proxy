@@ -24,6 +24,12 @@ assert.match(liveView,/data-live-persona="ATHENA"/,'Live Talk must offer Athena'
 assert.ok(!liveView.includes('HERMES'),'Live Talk must not offer Hermes');
 assert.match(ui,/sendContextualUpdate\(liveSessionContext\(\)\)/,'Realtime reconnects must restore the recent chat context together with the selected persona');
 assert.match(ui,/function liveSessionContext\(/,'Live Talk must build a context restoration update from saved conversation turns');
+assert.match(ui,/clientTools:liveProjectClientTools\(\)/,'Live Talk must register scoped project tools with the ElevenLabs SDK');
+assert.match(ui,/get_current_project_context:async/,'the voice agent must be able to query the active project context');
+assert.match(ui,/create_project_task:async/,'the voice agent must be able to create a task in the active project');
+assert.match(ui,/projectId:project\.id,title,description:/,'voice task creation must use the app-selected project id rather than an agent-supplied id');
+assert.match(ui,/No project is currently open/,'project tools must refuse to operate without an active project');
+assert.match(ui,/Active project: \$\{project\.name\}/,'the voice context must identify the currently open project');
 assert.match(ui,/slice\(-18\)/,'Live Talk context restoration must stay bounded to a recent transcript window');
 assert.match(ui,/Treat the recent transcript below as the prior turns of this same ongoing conversation/,'restored history must be clearly framed as prior conversation context');
 assert.match(ui,/talk\|speak\|switch/,'voice commands for Helen/Athena must switch the selected persona');
