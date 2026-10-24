@@ -9,7 +9,7 @@ globalThis.Netlify = { env: { get: (k) => envVars[k] } };
 const models = await import('../netlify/functions/_shared/models.mjs');
 const runtime = await import('../netlify/functions/_shared/runtime.mjs');
 const { filesFromModelText, looksLikeFilePath, stripStructuredZipManifest } = await import('../netlify/functions/_shared/zip-output.mjs');
-const { parseGitHubRepoUrl, hasGitHubRepoUrl } = await import('../netlify/functions/_shared/github-context.mjs');
+const { parseGitHubRepoUrl, hasGitHubRepoUrl, shouldReadSystemRepository, shouldReadLatestSystemCommit, loadGitHubContext } = await import('../netlify/functions/_shared/github-context.mjs');
 const read = (p) => readFileSync(new URL(`../${p}`, import.meta.url), 'utf8');
 const zipCode = (fn) => { try { fn(); return null; } catch (e) { return e.code; } };
 const paths = (text) => filesFromModelText('App', text).map((f) => f.path);
@@ -155,3 +155,26 @@ assert.ok(chat.includes("Mode must be ZEUS or OLYMPUS."),'server must reject inv
 assert.ok(modelsSource.includes("'olympus_compound_plus_author_critic_gpt'")&&modelsSource.includes("'olympus_compound_plus_web_author_finisher'"),'Compound Plus regular and live-web routes missing');
 assert.ok(modelsSource.includes('olympusCriticCandidates'),'Olympus independent critic selector missing');
 assert.ok(chat.includes("level==='COMPOUND_PLUS'"),'chat does not dispatch the Compound Plus pipeline');
+
+const ownCommitRequest='Ele deveria poder ler seu próprio commit no GitHub.';
+assert.equal(shouldReadSystemRepository(ownCommitRequest),true,'questions about Zeus Proxy must resolve to its own repository without requiring a pasted URL');
+assert.equal(shouldReadLatestSystemCommit(ownCommitRequest),true,'explicit own-commit questions must fetch current commit evidence');
+assert.equal(hasGitHubRepoUrl(ownCommitRequest),true,'system-repository requests must trigger the existing read-only GitHub path');
+const oldFetch=globalThis.fetch;
+globalThis.fetch=async input=>{
+  const url=new URL(input);
+  if(url.pathname==='/repos/barbozafelipe2-sketch/zeus-proxy')return Response.json({default_branch:'main'});
+  if(url.pathname.endsWith('/git/trees/main'))return Response.json({tree:[{type:'blob',path:'README.md'},{type:'blob',path:'netlify/functions/_shared/intent.mjs'}]});
+  if(url.pathname.includes('/contents/'))return new Response('export function classifyIntent() {}');
+  if(url.pathname==='/repos/barbozafelipe2-sketch/zeus-proxy/commits')return Response.json([{sha:'latest-sha',commit:{message:'Route attached-person image requests to editing',committer:{date:'2026-10-24T12:00:00Z'}}}]);
+  if(url.pathname.endsWith('/commits/latest-sha'))return Response.json({files:[{filename:'netlify/functions/_shared/intent.mjs',status:'modified',additions:7,deletions:1,patch:'@@ -1 +1,7 @@\\n+ route image intent'}]});
+  throw new Error('Unexpected GitHub test URL: '+url.href);
+};
+try{
+  const ownRepo=await loadGitHubContext(ownCommitRequest,{timeoutMs:1000,maxFiles:2,maxChars:5000});
+  assert.equal(ownRepo.trace?.systemRepository,true,'own repository was retrieved');
+  assert.equal(ownRepo.trace?.latestCommit,true,'latest commit was retrieved');
+  assert.match(ownRepo.context,/LATEST VERIFIED COMMIT: latest-sha/);
+  assert.match(ownRepo.context,/Route attached-person image requests to editing/);
+  assert.match(ownRepo.context,/netlify\\/functions\\/_shared\\/intent\\.mjs/);
+}finally{globalThis.fetch=oldFetch;}

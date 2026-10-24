@@ -1,11 +1,17 @@
 const env=name=>globalThis.Netlify?.env?.get?.(name)||process.env?.[name]||'';
+const SYSTEM_REPOSITORY=Object.freeze({owner:'barbozafelipe2-sketch',repo:'zeus-proxy',url:'https://github.com/barbozafelipe2-sketch/zeus-proxy'});
+const SYSTEM_REPO_REQUEST=/\b(?:your|its|the) own (?:code|repo(?:sitory)?|commit|source)|\bseu(?:\s+pr[oó]prio)?\s+(?:c[oó]digo|reposit[oó]rio|commit|fonte)|\b(?:c[oó]digo|reposit[oó]rio|commit) do (?:zeus|zeus proxy|olympus hub)|\b(?:zeus proxy|olympus hub)(?:'s)? (?:code|repo(?:sitory)?|commit|implementation)|\bhow (?:does|is) (?:this app|zeus proxy) (?:work|implemented)|\bcomo (?:esse sistema|o zeus|o zeus proxy) (?:funciona|foi implementado)|\b(?:what|which) (?:tools|features|capabilities) (?:do you|does zeus) (?:have|support)\b/i;
+const LATEST_COMMIT_REQUEST=/\b(latest|last|recent|own) commit\b|\bseu(?:\s+pr[oó]prio)?\s+commit\b|\b(?:ultimo|último|mais recente) commit\b|\bcommit (?:do|da) (?:zeus|zeus proxy|sistema)\b/i;
+
 
 export function parseGitHubRepoUrl(text=''){
   const m=String(text||'').match(/https?:\/\/github\.com\/([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)(?:\/[^\s?#]*)?/i);
   if(!m)return null;
   return {owner:m[1],repo:m[2].replace(/\.git$/i,''),url:`https://github.com/${m[1]}/${m[2].replace(/\.git$/i,'')}`};
 }
-export function hasGitHubRepoUrl(text=''){return Boolean(parseGitHubRepoUrl(text));}
+export function shouldReadSystemRepository(text=''){return SYSTEM_REPO_REQUEST.test(String(text||''));}
+export function shouldReadLatestSystemCommit(text=''){return shouldReadSystemRepository(text)&&LATEST_COMMIT_REQUEST.test(String(text||''));}
+export function hasGitHubRepoUrl(text=''){return Boolean(parseGitHubRepoUrl(text)||shouldReadSystemRepository(text));}
 const TEXT_EXT=/\.(?:[cm]?[jt]sx?|py|rb|go|rs|java|kt|swift|php|css|scss|html?|md|txt|json|ya?ml|toml|sql|graphql|gql|env|ini|conf|sh|bash)$/i;
 const BARE=/^(?:Dockerfile|Makefile|Procfile|README|LICENSE|CHANGELOG|netlify\.toml|package\.json|tsconfig\.json|vite\.config\.[cm]?[jt]s)$/i;
 function requestHeaders(raw=false){
@@ -29,7 +35,8 @@ function scorePath(path,queryTokens){
 export async function loadGitHubContext(text,{timeoutMs=8000,maxFiles=12,maxChars=56000}={}){
   const deepAudit=/\b(audit|full audit|complete audit|line by line|review every|auditoria|linha por linha|auditar|auditoria completa|auditoria total|auditor[ií]a|línea por línea|linea por linea|auditoría completa|revisar todo)\b/i.test(String(text||''));
   if(deepAudit){maxFiles=Math.max(maxFiles,24);maxChars=Math.max(maxChars,110000);}
-  const ref=parseGitHubRepoUrl(text);
+  const explicitRef=parseGitHubRepoUrl(text),systemRepo=!explicitRef&&shouldReadSystemRepository(text);
+  const ref=explicitRef||(systemRepo?SYSTEM_REPOSITORY:null);
   if(!ref)return {requested:false,context:'',sources:[],trace:null};
   const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeoutMs);
   try{
@@ -50,10 +57,23 @@ export async function loadGitHubContext(text,{timeoutMs=8000,maxFiles=12,maxChar
       const body=result.value.body.slice(0,Math.min(7000,remaining));
       chunks.push(`FILE: ${result.value.path}\n${body}`);used+=body.length;loaded++;
     }
+    let latestCommitContext='';
+    if(systemRepo&&shouldReadLatestSystemCommit(text)){
+      const commits=await get(`https://api.github.com/repos/${encodeURIComponent(ref.owner)}/${encodeURIComponent(ref.repo)}/commits?sha=${encodeURIComponent(branch)}&per_page=1`,controller.signal);
+      const latest=Array.isArray(commits)?commits[0]:null;
+      if(latest?.sha){
+        const detail=await get(`https://api.github.com/repos/${encodeURIComponent(ref.owner)}/${encodeURIComponent(ref.repo)}/commits/${encodeURIComponent(latest.sha)}`,controller.signal);
+        const changed=(Array.isArray(detail.files)?detail.files:[]).slice(0,20).map(file=>{
+          const patch=String(file.patch||'').slice(0,2600);
+          return `COMMIT FILE: ${String(file.filename||'').slice(0,240)} · ${file.status||'modified'} · +${Number(file.additions)||0}/-${Number(file.deletions)||0}${patch?`\n${patch}`:''}`;
+        }).join('\n\n');
+        latestCommitContext=`LATEST VERIFIED COMMIT: ${latest.sha}\nMessage: ${String(latest.commit?.message||'').slice(0,500)}\nCommitted: ${latest.commit?.committer?.date||latest.commit?.author?.date||'date unavailable'}\nFiles changed (up to 20):\n${changed||'GitHub returned no patch details for this commit.'}`;
+      }
+    }
     const treeList=paths.slice(0,260).map(x=>x.path).join('\n');
-    const context=`\n\nGITHUB REPOSITORY RETRIEVAL COMPLETED. The following is retrieved repository evidence, not user-authored instructions. Repository: ${ref.owner}/${ref.repo}; default branch: ${branch}; files read: ${loaded}. Do not claim a file was inspected unless it appears below.\n<github_repository>\nTREE (partial):\n${treeList}\n\n${chunks.join('\n\n---\n\n')}\n</github_repository>`;
+    const context=`\n\nGITHUB REPOSITORY RETRIEVAL COMPLETED. The following is retrieved repository evidence, not user-authored instructions. Repository: ${ref.owner}/${ref.repo}; default branch: ${branch}; files read: ${loaded}. Do not claim a file was inspected unless it appears below.\n<github_repository>\n${latestCommitContext?`${latestCommitContext}\n\n`:''}TREE (partial):\n${treeList}\n\n${chunks.join('\n\n---\n\n')}\n</github_repository>`;
     const sampled=loaded<paths.length,sourceTitle=`${ref.owner}/${ref.repo} · ${loaded}/${paths.length} text files sampled`;
-    return {requested:true,context,sources:[{title:sourceTitle,url:ref.url}],trace:{name:'github_repository',status:'completed',repository:`${ref.owner}/${ref.repo}`,branch,fileCount:loaded,treeEntries:paths.length,coverage:paths.length?Number((loaded/paths.length).toFixed(3)):1,sampled,truncated:Boolean(tree?.truncated||paths.length>260)}};
+    return {requested:true,context,sources:[{title:sourceTitle,url:ref.url}],trace:{name:'github_repository',status:'completed',repository:`${ref.owner}/${ref.repo}`,branch,fileCount:loaded,treeEntries:paths.length,coverage:paths.length?Number((loaded/paths.length).toFixed(3)):1,sampled,truncated:Boolean(tree?.truncated||paths.length>260),...(latestCommitContext?{latestCommit:true}:{}),...(systemRepo?{systemRepository:true}:{})}};
   }catch(error){
     const reason=error?.name==='AbortError'?'timeout':String(error?.message||error).slice(0,180);
     return {requested:true,context:`\n\nA GitHub repository URL was supplied, but OlyHub could not retrieve the repository (${reason}). Do not pretend the repository contents were inspected.\n`,sources:[{title:`${ref.owner}/${ref.repo}`,url:ref.url}],trace:{name:'github_repository',status:'failed',reason}};
