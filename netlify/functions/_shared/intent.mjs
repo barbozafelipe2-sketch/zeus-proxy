@@ -4,6 +4,9 @@ const ANALYZE = /\b(analy[sz]e|analysis|review|inspect|explain|summari[sz]e|read
 const CREATE = /\b(create|generate|make|build|produce|prepare|export|save|draw|design|crie|criar|cria|gere|gerar|gera|faca|fazer|fa\u00e7a|produza|produzir|prepare|preparar|exporte|exportar|salve|salvar|desenhe|desenhar|monte|montar|crea|crear|genera|generar|haz|hacer|construye|construir|produce|producir|prepara|preparar|exporta|exportar|guarda|guardar|dibuja|dibujar|dise\u00f1a|dise\u00f1ar)\b/i;
 const EDIT = /\b(edit|change|remove|replace|improve|enhance|transform|restyle|erase|add|crop|retouch|edite|editar|mude|mudar|remova|remover|substitua|substituir|melhore|melhorar|aprimore|aprimorar|transforme|transformar|adicione|adicionar|recorte|retocar|edita|cambia|cambiar|elimina|eliminar|reemplaza|reemplazar|mejora|mejorar|transforma|transformar|agrega|agregar|recorta|recortar|retoca)\b/i;
 const IMAGE = /\b(image|picture|photo|logo|illustration|poster|graphic|artwork|screenshot|imagem|foto|logotipo|ilustracao|poster|grafico|arte|captura de tela|imagen|foto|logotipo|ilustracion|grafico|captura de pantalla)\b/i;
+const IMAGE_SUBJECT = /\b(this|that|attached|her|him|she|he|person|woman|man|ela|ele|dela|dele|nela|nele|pessoa|mulher|homem|essa|este|esta|a foto|na foto|nessa foto|nesta foto)\b/i;
+const VISUAL_TRANSFORM = /\b(costume|outfit|clothes|dress|makeup|hairstyle|appearance|look|style|halloween|fantasia|roupa|vestido|maquiagem|cabelo|aparencia|visual|estilo|pareca|parecida|parecer)\b/i;
+const EXPLICIT_NEW_IMAGE = /\b(new image|different image|separate image|without using (?:this|the|attached) photo|nova imagem|outra imagem|imagem separada|sem usar (?:esta|essa|a) foto)\b/i;
 
 const ARTIFACTS = [
   ['pdf', /\bpdf\b/i],
@@ -32,7 +35,15 @@ export function classifyIntent(text = '', { hasImage = false, hasFiles = false }
   const artifactTypes = artifactTypesFromText(t);
   const artifactType = artifactTypes[0]||null;
 
-  if (hasImage && edit && (imageMention || /\b(this|that|attached|essa|esta|imagem|foto)\b/i.test(t))) {
+  const imageSubject=IMAGE_SUBJECT.test(t);
+  // When an image is attached, requests to dress/style/transform the depicted
+  // person often omit the words "edit this photo". Treat that visual request
+  // as an edit so it reaches the image-edit provider instead of a chat model.
+  if (hasImage && !analysis && !EXPLICIT_NEW_IMAGE.test(t) && (
+    (edit && (imageMention || imageSubject)) ||
+    (create && (imageMention || imageSubject)) ||
+    (imageSubject && VISUAL_TRANSFORM.test(t))
+  )) {
     return { action: 'IMAGE_EDIT', artifactType: null, reason: 'explicit_image_edit' };
   }
 

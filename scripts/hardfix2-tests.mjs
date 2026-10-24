@@ -8,6 +8,8 @@ assert.deepEqual(classifyIntent('Analise este ZIP e me diga os problemas', { has
 assert.equal(classifyIntent('Crie uma imagem de Zeus').action, 'IMAGE_CREATE');
 assert.equal(classifyIntent('Cria uma logo para meu app').action, 'IMAGE_CREATE');
 assert.equal(classifyIntent('Edite essa imagem e melhore o fundo', { hasImage:true, hasFiles:true }).action, 'IMAGE_EDIT');
+assert.equal(classifyIntent('Faz uma fantasia de Halloween nela, parecida com a Nico Robin do Chapéu de Palha', { hasImage:true, hasFiles:true }).action, 'IMAGE_EDIT', 'attached-person styling requests must reach the image editor even when they do not say "edit"');
+assert.equal(classifyIntent('Create a new image of Nico Robin without using the attached photo', { hasImage:true, hasFiles:true }).action, 'IMAGE_CREATE', 'an explicit new-image request must remain image generation');
 assert.equal(classifyIntent('O que tem no background desta imagem?', { hasImage:true, hasFiles:true }).action, 'ANALYZE');
 assert.equal(classifyIntent('Crie uma apresentação para investidores').artifactType, 'pptx');
 assert.equal(classifyIntent('Analise esse ZIP e crie um relatório PDF', { hasFiles:true }).artifactType, 'pdf');
