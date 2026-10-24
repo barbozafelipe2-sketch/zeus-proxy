@@ -4,7 +4,7 @@ import { summarizeTransportEvidence } from './_shared/provider-observability.mjs
 import { json, getRequestId, errorJson } from './_shared/http.mjs';
 import { opportunisticDrainBlobGc } from './_shared/storage.mjs';
 import { githubWriteConfigured } from './_shared/github-write.mjs';
-import { elevenLabsRealtimeTranscriptionConfigured } from './_shared/elevenlabs-scribe.mjs';
+import { elevenLabsRealtimeAgentConfigured } from './_shared/elevenlabs-agent.mjs';
 
 const PROVIDERS=['openai','anthropic','gemini','openrouter'];
 
@@ -141,7 +141,7 @@ async function handler(req,context){
       imageEditing:providers.openai?(runtime.openai?.circuitOpen?'degraded':'configured_unverified'):'unavailable',
       imageUnderstanding:availableModels({vision:true,ignoreCircuit:true}).length?(availableModels({vision:true}).length?'configured_unverified':'degraded'):'unavailable',
       serverTranscription:serverTranscriptionConfigured()?'configured_unverified':'unavailable',
-      elevenLabsRealtimeTranscription:elevenLabsRealtimeTranscriptionConfigured()?'configured_unverified':'unavailable',
+      elevenLabsRealtimeAgent:elevenLabsRealtimeAgentConfigured()?'configured_unverified':'unavailable',
       webSearch:providers.openai?(runtime.openai?.circuitOpen?'degraded':'configured_unverified'):'unavailable',
       githubCommit:githubWrite?'configured_unverified':'unavailable',
     },
@@ -154,9 +154,9 @@ async function handler(req,context){
       imageEditing:Boolean(providers.openai&&!runtime.openai?.circuitOpen),
       imageUnderstanding:availableModels({vision:true}).length>0,
       webSearch:Boolean(providers.openai&&!runtime.openai?.circuitOpen),
-      voiceInput:elevenLabsRealtimeTranscriptionConfigured()?'elevenlabs_scribe_realtime':'unavailable',
+      voiceInput:elevenLabsRealtimeAgentConfigured()?'elevenlabs_realtime_agent':'unavailable',
       serverTranscription:serverTranscriptionConfigured(),
-      elevenLabsRealtimeTranscription:elevenLabsRealtimeTranscriptionConfigured(),
+      elevenLabsRealtimeAgent:elevenLabsRealtimeAgentConfigured(),
       paginatedHistory:true,
       archiveSafety:true,
       storageMaintenance:true,

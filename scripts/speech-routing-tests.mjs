@@ -106,18 +106,15 @@ try{
 
   const app=readFileSync(new URL('../public/app.js',import.meta.url),'utf8');
   assert.ok(!app.includes('fallbackLiveSpeech'),'browser speech synthesis cannot silently mask TTS failures');
-  const play=app.slice(app.indexOf('async function sayZeusReply('),app.indexOf('function stopLiveCapture('));
   const describe=app.slice(app.indexOf('function describeSpeechFailure('),app.indexOf('async function requestSpeechAudio('));
   assert.match(describe,/failure\?\.error/,'Live Talk shows the safe server error instead of replacing it with a generic message');
   assert.match(describe,/failure\?\.providerFailures/,'Live Talk includes safe provider status diagnostics');
   assert.match(describe,/item\.detail/,'ElevenLabs detail is shown');
-  assert.match(play,/requestSpeechAudio\(/);assert.match(play,/NotAllowedError/,'autoplay rejection is distinguished from a failed fetch');
-  assert.match(play,/liveSpeechCache/,'a blocked playback is retried from cache without another server call');
-  assert.match(play,/Natural voice audio is unavailable/);
+  assert.match(app,/async function requestSpeechAudio\(/,'standalone voice preview retains its server TTS route');
   assert.match(app,/id="test-voice"/,'settings expose a Test voice button');assert.match(app,/id="voice-save-status"/,'voice save status is visible inline');
   assert.match(app,/id="elevenlabs-voice-id"/,'settings expose a custom ElevenLabs Voice ID field');
   assert.match(app,/id="elevenlabs-voice-preset"/,'settings expose an account voice picker');
-  assert.match(play,/elevenLabsVoiceId/,'Live Talk sends the selected ElevenLabs Voice ID to the server');
+  assert.match(app,/tts:\{voiceId:selectedVoice\}/,'Live Talk applies the selected ElevenLabs voice to the Realtime agent');
   assert.match(app,/zeus-elevenlabs-voice-id/,'the selected ElevenLabs Voice ID is persisted locally');
   assert.match(app,/\/api\/speech\/voices/,'settings load the selectable ElevenLabs account voice catalog');
   console.log('ElevenLabs → OpenAI Gateway → Gemini TTS routing and visible failure handling: PASS');

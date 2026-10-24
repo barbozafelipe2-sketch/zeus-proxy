@@ -14,8 +14,8 @@ const state = {
   projectSection:'CHAT', projectMemories:[], projectSources:[], memoryPolicy:null,
   messagePage:{hasMore:false,nextCursor:null}, filesPage:{scope:'global',hasMore:false,nextCursor:null}, artifactsPage:{scope:'global',hasMore:false,nextCursor:null}, chatRestore:null,
   voiceBusy:false, voiceRecorder:null, voiceStream:null, voiceChunks:[], voiceStopTimer:null, voiceRecognition:null, voiceBytes:0, voiceHitSizeLimit:false,
-  liveTalk:false, liveTalkStopRequested:false, liveMuted:false, liveStageBeforeMute:'idle', liveFailureKind:null, liveScribe:null, liveScribePartial:'', liveScribeBusy:false, liveQueuedTranscript:'', liveGeneration:0, liveRetryTimer:null, liveRetryCount:0, liveStage:'idle', liveSensitivity:0.4, liveSilenceMs:1200, liveLastSpokenText:'', voiceId:'marin', elevenLabsVoiceId:'', voiceStatus:null, voiceTesting:false, liveSpeechCache:null, voiceReplyAudio:null, liveAudioUrl:null, liveSpeechController:null, liveAudioUnlocked:false, liveSpeechUnlocked:false,
-  liveLocale:'auto', voiceAvatar:'lightning', elevenLabsVoices:[], elevenLabsVoicesLoaded:false, elevenLabsVoicesLoading:false, elevenLabsVoicesError:'', elevenLabsVoicePageToken:'', elevenLabsVoiceHasMore:false,
+  liveTalk:false, liveTalkStopRequested:false, liveMuted:false, liveFailureKind:null, liveAgentConversation:null, liveAgentConversationId:'', liveAgentPartial:'', liveAgentLogQueue:Promise.resolve(), liveAgentLoggedEvents:new Map(), liveGeneration:0, liveRetryCount:0, liveStage:'idle', liveLocale:'auto', voiceId:'marin', elevenLabsVoiceId:'', voiceStatus:null, voiceTesting:false, liveSpeechCache:null, voiceReplyAudio:null, liveAudioUrl:null, liveSpeechController:null, liveAudioUnlocked:false, liveSpeechUnlocked:false,
+  voiceAvatar:'lightning', elevenLabsVoices:[], elevenLabsVoicesLoaded:false, elevenLabsVoicesLoading:false, elevenLabsVoicesError:'', elevenLabsVoicePageToken:'', elevenLabsVoiceHasMore:false,
   preferences:{personality:'balanced',instructions:''}, preferencesLoaded:false,
   googleSearchResults:{}, googleSearchQueries:{}, googleSearchBusy:null,
   draft:'', offline:typeof navigator!=='undefined'&&navigator.onLine===false,
@@ -337,8 +337,6 @@ const VOICE_AVATARS=new Set(['lightning','classic','olympus','liquid']);
 function initVoicePrefs(){
  try{const l=localStorage.getItem('zeus-live-locale');state.liveLocale=Object.prototype.hasOwnProperty.call(LIVE_LOCALES,l)?l:'auto';
  const a=localStorage.getItem('zeus-voice-avatar');state.voiceAvatar=VOICE_AVATARS.has(a)?a:'lightning';
- const sensitivity=Number(localStorage.getItem('zeus-live-sensitivity'));state.liveSensitivity=Number.isFinite(sensitivity)&&sensitivity>=0.1&&sensitivity<=0.9?sensitivity:0.4;
- const silence=Number(localStorage.getItem('zeus-live-silence-ms'));state.liveSilenceMs=Number.isFinite(silence)&&silence>=300&&silence<=3000?silence:1200;
  const savedVoice=String(localStorage.getItem('zeus-voice-id')||'marin').toLowerCase();
  state.voiceId=['alloy','ash','ballad','coral','echo','fable','nova','onyx','sage','shimmer','verse','marin','cedar'].includes(savedVoice)?savedVoice:'marin';
  const customVoice=String(localStorage.getItem('zeus-elevenlabs-voice-id')||'').trim();state.elevenLabsVoiceId=/^[A-Za-z0-9_-]{2,120}$/.test(customVoice)?customVoice:'';}catch{}
@@ -868,14 +866,12 @@ ${state.elevenLabsVoicesError?`<p class="status-warn" role="status">${esc(state.
 ${['marin','cedar','coral','alloy','ash','ballad','echo','fable','nova','onyx','sage','shimmer','verse'].map(v=>`<option value="${v}" ${(state.voiceId||'marin')===v?'selected':''}>${v[0].toUpperCase()+v.slice(1)}</option>`).join('')}
 </select>
 <p class="muted tiny">Find the ID in ElevenLabs under Voices. Your Voice ID is saved in this browser; the ElevenLabs API key stays on the server in Netlify.</p>
-<div class="field"><label for="live-language">Scribe language</label><select id="live-language">
-${[['auto','Auto (device locale in browser)'],['pt','Português (Brasil)'],['en','English (US)'],['es','Español']].map(([v,label])=>`<option value="${v}" ${state.liveLocale===v?'selected':''}>${label}</option>`).join('')}
+<div class="field"><label for="live-language">Live Talk language</label><select id="live-language">
+${[['auto','Automatic (agent detects language)'],['pt','Português (Brasil)'],['en','English (US)'],['es','Español']].map(([v,label])=>`<option value="${v}" ${state.liveLocale===v?'selected':''}>${label}</option>`).join('')}
 </select></div><div class="field"><label for="voice-avatar">Live Talk avatar</label><select id="voice-avatar">
 ${[['lightning','Lightning plasma'],['classic','Classic orb'],['olympus','Olympus'],['liquid','Liquid metal']].map(([v,label])=>`<option value="${v}" ${state.voiceAvatar===v?'selected':''}>${label}</option>`).join('')}</select></div>
-<div class="field"><label for="live-sensitivity">Scribe mic sensitivity (lower detects quieter speech) <output id="live-sensitivity-value">${state.liveSensitivity.toFixed(2)}</output></label><input id="live-sensitivity" type="range" min="0.1" max="0.9" step="0.05" value="${state.liveSensitivity}" aria-describedby="live-audio-controls-note"></div>
-<div class="field"><label for="live-silence">Pause before sending <output id="live-silence-value">${(state.liveSilenceMs/1000).toFixed(1)} s</output></label><input id="live-silence" type="range" min="300" max="3000" step="100" value="${state.liveSilenceMs}" aria-describedby="live-audio-controls-note"></div>
-<p class="muted tiny" id="live-audio-controls-note">${state.health?.capabilities?.elevenLabsRealtimeTranscription?'Lower the Scribe threshold to detect quieter speech. The pause slider controls how long Scribe waits before committing your turn. Changes apply to the next Live Talk session.':'Set ELEVENLABS_API_KEY in Netlify Functions to enable Scribe Realtime and these controls. Live Talk will not switch to browser or another transcription provider.'}</p>
-<p class="muted tiny">Live Talk always uses Scribe Realtime. Voice Message is a separate feature and uses server language detection when available.</p>
+<p class="muted tiny" id="live-audio-controls-note">Live Talk connects directly to the ElevenLabs Realtime agent. Microphone sensitivity, turn timing, and interruptions are controlled in that agent’s settings. If Realtime fails, OlyHub shows an error and does not switch to another speech provider.</p>
+<p class="muted tiny">Automatic language switching requires Portuguese, English, and Spanish to be enabled on the agent with its language-detection tool.</p>
 <p class="muted tiny" id="voice-saved-line">${storedElevenLabsVoiceId()?esc(`Voice saved in this browser: ${elevenLabsVoiceLabel(storedElevenLabsVoiceId())}`):'No voice saved in this browser; the server default voice is used.'}</p>
 <div class="row"><button type="button" class="secondary compact" id="save-voice-id">Save voice</button><button type="button" class="secondary compact" id="test-voice" ${state.voiceTesting?'disabled':''}>${state.voiceTesting?'Testing voice…':'Test voice'}</button></div>
 <p class="${state.voiceStatus?.kind==='error'?'status-warn':state.voiceStatus?.kind==='warn'?'status-warn':'status-good'}" id="voice-save-status" role="status" aria-live="polite">${state.voiceStatus?esc(state.voiceStatus.text):''}</p>
@@ -944,7 +940,7 @@ function githubCommitModal(sourceKind,sourceId,sourceName='project.zip'){
 }
 
 function liveTalkExperience(){
-  const stage=state.liveTalkStopRequested?'Finishing your turn':state.liveMuted?'Microphone muted':state.liveStage==='error'?'Live Talk paused':state.liveStage==='speaking'?'Zeus is speaking':state.liveStage==='processing'?'Preparing your reply':state.liveStage==='connecting'?'Connecting to Scribe':state.liveStage==='listening'?'Listening':'Live Talk connected';
+  const stage=state.liveTalkStopRequested?'Finishing your turn':state.liveMuted?'Microphone muted':state.liveStage==='error'?'Live Talk paused':state.liveStage==='speaking'?'Zeus is speaking':state.liveStage==='processing'?'Preparing your reply':state.liveStage==='connecting'?'Connecting to ElevenLabs Realtime':state.liveStage==='listening'?'Listening':'Live Talk connected';
   const latest=[...(state.messages||[])].reverse().find(m=>['assistant','user'].includes(m.role));
   const excerpt=latest?String(latest.content||'').replace(/\s+/g,' ').trim().slice(0,220):'';
   const bars=Array.from({length:41},(_,i)=>`<i style="--wave:${12+((i*17)%39)}%;--delay:${(i%13)*-0.09}s"></i>`).join('');
@@ -960,10 +956,10 @@ function liveTalkExperience(){
       <p class="live-talk-status ${state.liveStage==='speaking'?'is-speaking':''}">${state.liveStage==='speaking'?'<span class="zeus-speaking-bolt" aria-hidden="true">⚡</span>':''}${esc(stage)}</p>
       <div class="live-talk-orb-wrap">${voiceAvatarMarkup()}<span class="live-talk-orbit live-talk-orbit-a"></span><span class="live-talk-orbit live-talk-orbit-b"></span></div>
       <div class="live-talk-waveform ${state.liveStage==='speaking'?'is-speaking':''}" aria-hidden="true">${bars}</div>
-      <p class="live-talk-latest">${state.liveScribePartial?`<span class="muted">Hearing:</span> ${esc(state.liveScribePartial)}`:excerpt?esc(excerpt):'Fale naturalmente. Sua conversa será salva no chat.'}</p>
-      <div class="live-talk-mode"><span class="live-mode-dot"></span>${esc(liveMode()==='OLYMPUS'?'OLYMPUS':'ZEUS')} <span>·</span> ${esc(state.liveLocale==='auto'?'AUTO LANGUAGE':state.liveLocale.toUpperCase())}</div>
+      <p class="live-talk-latest">${state.liveAgentPartial?`<span class="muted">You:</span> ${esc(state.liveAgentPartial)}`:excerpt?esc(excerpt):'Fale naturalmente. Sua conversa será salva no chat.'}</p>
+      <div class="live-talk-mode"><span class="live-mode-dot"></span>ELEVEN REALTIME <span>·</span> ${esc(state.liveLocale==='auto'?'AUTO LANGUAGE':state.liveLocale.toUpperCase())}</div>
     </section>
-    ${state.error?`<div class="live-talk-error" role="alert">${esc(state.error)}${state.liveStage==='error'?`<button type="button" id="live-talk-retry">${state.liveFailureKind==='scribe'?'Reconnect Scribe':state.liveFailureKind==='playback_blocked'?'Tap to resume':'Try again'}</button>`:''}</div>`:''}
+    ${state.error?`<div class="live-talk-error" role="alert">${esc(state.error)}${state.liveStage==='error'?`<button type="button" id="live-talk-retry">${state.liveFailureKind==='playback_blocked'?'Tap to resume':'Reconnect Realtime'}</button>`:''}</div>`:''}
     <footer class="live-talk-controls"><div class="live-control-hint"><span class="live-mic-dot"></span>${state.liveMuted?'Microphone muted':state.liveStage==='listening'?'Microphone active':state.liveStage==='processing'?'Voice captured':state.liveStage==='speaking'?'Reply audio active':state.liveStage==='error'?'Live Talk paused':'Session ready'}</div><div class="live-call-actions"><button type="button" class="live-mute-button ${state.liveMuted?'is-muted':''}" id="live-talk-mute" aria-pressed="${state.liveMuted}" aria-label="${state.liveMuted?'Unmute microphone':'Mute microphone'}" title="${state.liveMuted?'Unmute microphone':'Mute microphone'}">${icon(state.liveMuted?'mic-off':'mic')}</button><button type="button" class="live-end-call" id="live-talk-end" aria-label="Exit Live Talk immediately and return to chat" title="Exit Live Talk">${icon('close')}</button></div><div class="live-control-caption">Mute the microphone or exit to your saved conversation</div></footer>
   </main>`;
 }
@@ -1045,8 +1041,6 @@ function bind(){
   });
   $('#voice-avatar')?.addEventListener('change',e=>{const v=e.target.value;if(VOICE_AVATARS.has(v)){state.voiceAvatar=v;localStorage.setItem('zeus-voice-avatar',v);render();}});
   $('#live-language')?.addEventListener('change',e=>{const v=e.target.value;if(Object.prototype.hasOwnProperty.call(LIVE_LOCALES,v)){state.liveLocale=v;localStorage.setItem('zeus-live-locale',v);render();}});
-  $('#live-sensitivity')?.addEventListener('input',e=>{const value=Number(e.target.value);if(!Number.isFinite(value))return;state.liveSensitivity=Math.max(0.1,Math.min(0.9,value));try{localStorage.setItem('zeus-live-sensitivity',String(state.liveSensitivity));}catch{}const output=$('#live-sensitivity-value');if(output)output.value=state.liveSensitivity.toFixed(2);});
-  $('#live-silence')?.addEventListener('input',e=>{const value=Number(e.target.value);if(!Number.isFinite(value))return;state.liveSilenceMs=Math.max(300,Math.min(3000,value));try{localStorage.setItem('zeus-live-silence-ms',String(state.liveSilenceMs));}catch{}const output=$('#live-silence-value');if(output)output.value=`${(state.liveSilenceMs/1000).toFixed(1)} s`;});
   $('#elevenlabs-voice-preset')?.addEventListener('change',e=>{const value=String(e.target.value||'');if(value){const input=$('#elevenlabs-voice-id');if(input)input.value=value;saveVoiceSettings({elevenLabsVoiceId:value,source:'preset'});}});
   $('#reload-elevenlabs-voices')?.addEventListener('click',()=>loadElevenLabsVoices());
   $('#load-more-elevenlabs-voices')?.addEventListener('click',()=>loadElevenLabsVoices({append:true}));
@@ -1431,161 +1425,125 @@ async function uploadFile(file,{analysisRole='',sourceName='',attach=true}={}){
 function finishLiveTalkSession(){
   state.liveTalk=false;state.liveTalkStopRequested=false;state.liveMuted=false;state.liveStage='idle';state.liveGeneration++;
   clearTimeout(state.liveRetryTimer);state.liveRetryTimer=null;
-  const connection=state.liveScribe;state.liveScribe=null;state.liveScribePartial='';state.liveScribeBusy=false;state.liveQueuedTranscript='';
-  try{connection?.close()}catch{}
+  const connection=state.liveAgentConversation;state.liveAgentConversation=null;state.liveAgentConversationId='';state.liveAgentPartial='';
+  try{void connection?.endSession?.()}catch{}
   try{state.liveSpeechController?.abort()}catch{}
   state.liveSpeechController=null;discardLiveAudio();try{window.speechSynthesis?.cancel()}catch{}render();
 }
-function continueLiveTalkAfterTurn(){
+function pauseLiveTalkOnError(message,kind='agent'){
   if(!state.liveTalk)return;
-  if(state.liveTalkStopRequested){finishLiveTalkSession();return;}
-  if(state.liveMuted){state.liveStage='muted';state.liveStageBeforeMute='muted';render();return;}
-  const queued=state.liveQueuedTranscript;state.liveQueuedTranscript='';
-  if(queued){void handleLiveScribeTranscript(queued,state.liveGeneration);return;}
-  if(!state.liveScribe){if(state.liveStage==='error'&&state.error)return;listenLiveTalk();return;}
-  state.liveStage='listening';render();
-}
-function normalizedLiveWords(value){return String(value||'').toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu,' ').trim();}
-function isLiveSpeechEcho(value){const heard=normalizedLiveWords(value),spoken=normalizedLiveWords(state.liveLastSpokenText);return Boolean(heard.length>=8&&spoken&&(spoken.includes(heard)||heard.startsWith(spoken.slice(0,Math.min(24,spoken.length)))));}
-function interruptLiveSpeech(){
-  state.liveSpeechCache=null;
-  try{state.voiceReplyAudio?.pause()}catch{}
-  try{state.liveSpeechController?.abort()}catch{}
-  discardLiveAudio({keepElement:true});state.liveStage='listening';render();
-}
-async function handleLiveScribeTranscript(words,generation){
-  const line=String(words||'').trim();if(!line||!state.liveTalk||generation!==state.liveGeneration||state.liveMuted)return;
-  if(state.liveScribeBusy){state.liveQueuedTranscript=line;return;}
-  state.liveQueuedTranscript='';
-  const echo=state.liveStage==='speaking'&&isLiveSpeechEcho(line);
-  if(state.liveStage==='speaking'&&!echo)interruptLiveSpeech();
-  if(echo)return;
-  state.liveScribeBusy=true;state.liveScribePartial='';state.liveStage='processing';state.liveRetryCount=0;render();
-  try{
-    await sendText(line,[],crypto.randomUUID(),'ZEUS',null,null,{liveTalk:true});
-    if(!state.liveTalk||generation!==state.liveGeneration)return;
-    if(state.lastFailedText){pauseLiveTalkOnError(state.error||'Zeus could not complete that voice request. Try again.','chat');return;}
-    const latest=[...state.messages].reverse().find(m=>m.role==='assistant');
-    state.liveScribeBusy=false;
-    if(latest)await sayZeusReply(latest.content);else continueLiveTalkAfterTurn();
-  }catch(error){
-    if(state.liveTalk&&generation===state.liveGeneration)pauseLiveTalkOnError(error?.message||'Zeus could not complete that voice request.','chat');
-  }finally{if(generation===state.liveGeneration)state.liveScribeBusy=false;}
-}
-function pauseLiveTalkOnError(message,kind='scribe'){
-  if(!state.liveTalk)return;
-  state.error=message||state.error||'Live Talk could not complete this turn. Try again or exit.';
-  state.liveStage='error';clearTimeout(state.liveRetryTimer);state.liveRetryTimer=null;state.liveFailureKind=kind;
-  const connection=state.liveScribe;state.liveScribe=null;state.liveScribePartial='';state.liveScribeBusy=false;state.liveQueuedTranscript='';
-  try{connection?.close()}catch{}
+  state.error=message||'ElevenLabs Realtime could not complete this voice session.';
+  state.liveStage='error';state.liveFailureKind=kind;clearTimeout(state.liveRetryTimer);state.liveRetryTimer=null;
+  const connection=state.liveAgentConversation;state.liveAgentConversation=null;state.liveAgentPartial='';
+  try{void connection?.endSession?.()}catch{}
   try{state.liveSpeechController?.abort()}catch{}
   discardLiveAudio({keepElement:true});try{window.speechSynthesis?.cancel()}catch{}render();
 }
-function scribeErrorMessage(payload){
-  const code=String(payload?.code||payload?.type||payload?.error||'').toLowerCase();
-  if(code.includes('auth')||code.includes('token'))return 'ElevenLabs Scribe rejected the temporary session token. Check the API key and Scribe access in Netlify.';
-  if(code.includes('quota')||code.includes('rate'))return 'ElevenLabs Scribe quota or rate limit reached. Check the ElevenLabs plan, then reconnect.';
-  if(code.includes('term'))return 'Accept the required ElevenLabs terms for Scribe, then reconnect.';
-  return String(payload?.message||payload?.error||'ElevenLabs Scribe realtime transcription failed.').slice(0,360);
-}
-async function sayZeusReply(text){
-  if(!state.liveTalk||!text)return;
-  state.liveStage='speaking';render();
-  const line=String(text).slice(0,1800);state.liveLastSpokenText=line;
-  const elevenLabsVoiceId=state.elevenLabsVoiceId||storedElevenLabsVoiceId();
-  try{state.liveSpeechController?.abort()}catch{}
-  const speechController=new AbortController();state.liveSpeechController=speechController;
-  const speechTimeout=setTimeout(()=>speechController.abort(),40000);
-  try{
-    let blob=null;
-    if(state.liveSpeechCache&&state.liveSpeechCache.line===line)blob=state.liveSpeechCache.blob;
-    else{state.liveSpeechCache=null;const result=await requestSpeechAudio(line,{elevenLabsVoiceId,signal:speechController.signal});blob=result.blob;if(result.voiceFallback)announce('The saved voice was rejected by ElevenLabs; the default voice was used.');}
-    if(!state.liveTalk||speechController.signal.aborted){clearTimeout(speechTimeout);return;}
-    const url=URL.createObjectURL(blob),audio=state.voiceReplyAudio||new Audio();
-    discardLiveAudio({keepElement:true});audio.src=url;audio.muted=false;audio.volume=1;audio.playsInline=true;state.voiceReplyAudio=audio;state.liveAudioUrl=url;
-    audio.onended=()=>{clearTimeout(speechTimeout);state.liveSpeechCache=null;discardLiveAudio({keepElement:true});continueLiveTalkAfterTurn();};
-    audio.onerror=()=>{clearTimeout(speechTimeout);state.liveSpeechCache=null;discardLiveAudio({keepElement:true});pauseLiveTalkOnError('Zeus replied in chat, but the generated voice audio could not be played.','speech');};
-    try{await audio.play();}
-    catch(playError){if(playError?.name!=='NotAllowedError')throw playError;clearTimeout(speechTimeout);state.liveSpeechCache={line,blob};discardLiveAudio({keepElement:true});if(!state.liveTalk||state.liveStage==='error')return;pauseLiveTalkOnError('The voice audio is ready, but the browser blocked playback (iOS autoplay). Tap to resume the reply.','playback_blocked');return;}
-    state.liveSpeechCache=null;
-  }catch(error){
-    clearTimeout(speechTimeout);discardLiveAudio({keepElement:true});
-    if(!state.liveTalk||state.liveStage==='error')return;
-    const reason=error?.name==='AbortError'?'Natural voice audio timed out. Check the voice provider and retry.':String(error?.message||'Natural voice audio is unavailable. Check the ElevenLabs voice and Netlify settings, then try again.').slice(0,420);
-    pauseLiveTalkOnError(reason,'speech');
+function saveLiveAgentMessage(payload,generation,providerConversationId){
+  const content=String(payload?.message||'').trim(),eventId=String(payload?.event_id??'');
+  if(!content||!eventId||!state.liveTalk||generation!==state.liveGeneration)return;
+  const role=payload?.role==='user'||payload?.source==='user'?'user':'assistant';
+  const key=`${role}:${eventId}`;
+  let local=state.liveAgentLoggedEvents.get(key);
+  if(local){local.content=content;}
+  else{
+    local={id:`eleven-${generation}-${key}`,role,mode:'ZEUS',content,artifacts:[],attachments:[],metadata:{source:'elevenlabs_realtime'}};
+    state.liveAgentLoggedEvents.set(key,local);state.messages.push(local);
   }
+  if(role==='user')state.liveAgentPartial=content;
+  else state.liveAgentPartial='';
+  if(role==='assistant')state.liveStage='speaking';
+  render();
+  state.liveAgentLogQueue=state.liveAgentLogQueue.then(async()=>{
+    if(!state.liveTalk&&generation!==state.liveGeneration)return;
+    const saved=await api('/api/voice-log',{method:'POST',body:JSON.stringify({
+      conversationId:state.currentConversation||null,
+      projectId:state.currentProject?.id||null,
+      providerConversationId,
+      eventId,
+      role,
+      content,
+    })});
+    if(generation!==state.liveGeneration)return;
+    state.currentConversation=saved.conversationId;
+    const index=state.messages.findIndex(message=>message.id===local.id);
+    if(index>=0)state.messages[index]={...saved.message,artifacts:[],attachments:[]};
+    history.replaceState({},'',state.currentProject?.id?`/?project=${encodeURIComponent(state.currentProject.id)}`:`/?conversation=${encodeURIComponent(saved.conversationId)}`);
+    void Promise.allSettled([loadConversations(),loadProjects()]);render();
+  }).catch(error=>{
+    if(generation!==state.liveGeneration)return;
+    state.error=`Live Talk is connected, but its transcript could not be saved in OlyHub: ${error?.message||'save failed'}`;render();
+  });
 }
-function listenLiveTalk(){
+async function connectLiveTalkAgent(){
   clearTimeout(state.liveRetryTimer);state.liveRetryTimer=null;
-  if(!state.liveTalk||state.liveMuted||state.liveTalkStopRequested)return;
-  const generation=state.liveGeneration;state.liveStage='connecting';state.liveScribePartial='';render();
-  void (async()=>{
-    try{
-      const issued=await api('/api/transcribe/realtime-token',{method:'POST',body:'{}'});
-      if(!state.liveTalk||generation!==state.liveGeneration)return;
-      const {Scribe,CommitStrategy,RealtimeEvents}=await import('/assets/elevenlabs-scribe.js');
-      const language=state.liveLocale==='auto'?undefined:state.liveLocale;
-      const connection=Scribe.connect({token:issued.token,modelId:'scribe_v2_realtime',commitStrategy:CommitStrategy.VAD,vadThreshold:state.liveSensitivity,vadSilenceThresholdSecs:state.liveSilenceMs/1000,minSpeechDurationMs:100,languageCode:language,microphone:{echoCancellation:true,noiseSuppression:true,autoGainControl:true,workletPaths:{scribeAudioProcessor:'/vendor/elevenlabs/scribeAudioProcessor.js'}}});
-      if(!state.liveTalk||generation!==state.liveGeneration){connection.close();return;}
-      state.liveScribe=connection;
-      connection.on(RealtimeEvents.SESSION_STARTED,()=>{if(state.liveScribe===connection&&state.liveTalk&&generation===state.liveGeneration){state.liveStage=state.liveMuted?'muted':'listening';state.error='';render();}});
-      connection.on(RealtimeEvents.PARTIAL_TRANSCRIPT,event=>{
-        if(state.liveScribe!==connection||!state.liveTalk||generation!==state.liveGeneration)return;
-        const partial=String(event?.transcript||'').trim();state.liveScribePartial=partial;
-        if(partial&&state.liveStage==='speaking'&&!isLiveSpeechEcho(partial))interruptLiveSpeech();
-        if(!state.liveMuted&&state.liveStage!=='processing'&&state.liveStage!=='speaking')state.liveStage='listening';render();
-      });
-      connection.on(RealtimeEvents.COMMITTED_TRANSCRIPT,event=>{
-        if(state.liveScribe!==connection||!state.liveTalk||generation!==state.liveGeneration)return;
-        const words=String(event?.transcript||'').trim();state.liveScribePartial='';if(!words)return;
-        if(state.liveStage==='speaking'&&!isLiveSpeechEcho(words))interruptLiveSpeech();
-        if(!isLiveSpeechEcho(words))void handleLiveScribeTranscript(words,generation);
-      });
-      connection.on(RealtimeEvents.AUTH_ERROR,event=>{if(state.liveScribe===connection)pauseLiveTalkOnError(scribeErrorMessage(event),'scribe');});
-      connection.on(RealtimeEvents.ERROR,event=>{if(state.liveScribe===connection)pauseLiveTalkOnError(scribeErrorMessage(event),'scribe');});
-      connection.on(RealtimeEvents.CLOSE,event=>{if(state.liveScribe===connection&&state.liveTalk&&!state.liveMuted)pauseLiveTalkOnError(scribeErrorMessage(event)||'ElevenLabs Scribe connection closed. Reconnect to continue.','scribe');});
-    }catch(error){
-      if(!state.liveTalk||generation!==state.liveGeneration)return;
-      const message=error?.status===501?'ElevenLabs Scribe Realtime is not configured. Add ELEVENLABS_API_KEY to Netlify Functions and redeploy.':error?.message||'Could not connect to ElevenLabs Scribe. Check the API key, Scribe access, and microphone permission.';
-      pauseLiveTalkOnError(message,'scribe');
-    }
-  })();
+  if(!state.liveTalk||state.liveTalkStopRequested)return;
+  const generation=state.liveGeneration;state.liveStage='connecting';state.liveAgentPartial='';render();
+  try{
+    const issued=await api('/api/voice/realtime-token',{method:'POST',body:'{}'});
+    if(!state.liveTalk||generation!==state.liveGeneration)return;
+    const {Conversation}=await import('/assets/elevenlabs-agent.js');
+    const selectedLanguage=state.liveLocale==='auto'?'':({pt:'pt',en:'en',es:'es'}[state.liveLocale]||'');
+    const selectedVoice=state.elevenLabsVoiceId||storedElevenLabsVoiceId();
+    const overrides={
+      ...(selectedLanguage?{agent:{language:selectedLanguage}}:{}),
+      ...(selectedVoice?{tts:{voiceId:selectedVoice}}:{}),
+    };
+    const conversation=await Conversation.startSession({
+      conversationToken:issued.token,
+      connectionType:'webrtc',
+      ...(Object.keys(overrides).length?{overrides}:{}),
+      onConnect:({conversationId})=>{
+        if(!state.liveTalk||generation!==state.liveGeneration)return;
+        state.liveAgentConversationId=conversationId||issued.conversationId||'';state.liveStage=state.liveMuted?'muted':'listening';state.error='';render();
+      },
+      onStatusChange:({status})=>{
+        if(!state.liveTalk||generation!==state.liveGeneration)return;
+        if(status==='connected'&&state.liveStage==='connecting'){state.liveStage='listening';render();}
+      },
+      onModeChange:({mode})=>{
+        if(!state.liveTalk||generation!==state.liveGeneration)return;
+        state.liveStage=mode==='speaking'?'speaking':state.liveMuted?'muted':'listening';render();
+      },
+      onMessage:message=>saveLiveAgentMessage(message,generation,state.liveAgentConversationId||issued.conversationId||''),
+      onError:(message)=>{if(state.liveTalk&&generation===state.liveGeneration)pauseLiveTalkOnError(String(message||'ElevenLabs Realtime encountered an error.'),'agent');},
+      onDisconnect:details=>{
+        if(state.liveTalk&&generation===state.liveGeneration){
+          const reason=details?.message||details?.closeReason||'The ElevenLabs Realtime session disconnected.';
+          pauseLiveTalkOnError(reason,'agent');
+        }
+      },
+    });
+    if(!state.liveTalk||generation!==state.liveGeneration){await conversation.endSession();return;}
+    state.liveAgentConversation=conversation;
+    state.liveAgentConversationId=conversation.getId?.()||state.liveAgentConversationId||issued.conversationId||'';
+    state.liveStage=state.liveMuted?'muted':'listening';state.error='';render();
+  }catch(error){
+    if(!state.liveTalk||generation!==state.liveGeneration)return;
+    if(error?.name==='NotAllowedError'||/microphone|permission/i.test(String(error?.message||'')))pauseLiveTalkOnError('Microphone permission was denied. Allow microphone access for this site and reconnect.','agent');
+    else pauseLiveTalkOnError(error?.message||'Could not connect to the ElevenLabs Realtime agent. Check that the agent is published and the server API key has access.','agent');
+  }
 }
 function toggleLiveTalk(){
   if(state.liveTalk){finishLiveTalkSession();return;}
   if(state.sending){state.error='Wait for Zeus to finish the current reply before starting Live Talk.';render();return;}
   if(!liveTalkSupported()){state.error='Live Talk requires microphone access, audio playback, and a supported browser.';render();return;}
   state.voiceId=localStorage.getItem('zeus-voice-id')||'marin';unlockLiveAudioFromGesture();
-  state.error='';state.liveMuted=false;state.liveFailureKind=null;state.liveRetryCount=0;state.liveTalkStopRequested=false;state.liveScribePartial='';state.liveTalk=true;state.liveStage='connecting';state.liveGeneration++;render();listenLiveTalk();
+  state.error='';state.liveMuted=false;state.liveFailureKind=null;state.liveRetryCount=0;state.liveTalkStopRequested=false;state.liveAgentPartial='';state.liveTalk=true;state.liveStage='connecting';state.liveGeneration++;state.liveAgentLoggedEvents=new Map();state.liveAgentLogQueue=Promise.resolve();render();connectLiveTalkAgent();
 }
 function toggleLiveTalkMute(){
   if(!state.liveTalk)return;
-  const connection=state.liveScribe;
-  if(!connection){state.error='Scribe is not connected. Reconnect before changing microphone state.';render();return;}
+  const connection=state.liveAgentConversation;
+  if(!connection){state.error='ElevenLabs Realtime is not connected. Reconnect before changing microphone state.';render();return;}
   try{
-    if(state.liveMuted){connection.unmute();state.liveMuted=false;state.liveStage='listening';state.error='';}
-    else{connection.mute();state.liveMuted=true;state.liveStage='muted';state.liveScribePartial='';}
-    render();
-  }catch(error){pauseLiveTalkOnError(error?.message||'Scribe could not change microphone state. Reconnect Live Talk.','scribe');}
+    state.liveMuted=!state.liveMuted;connection.setMicMuted(state.liveMuted);
+    state.liveStage=state.liveMuted?'muted':'listening';state.error='';render();
+  }catch(error){pauseLiveTalkOnError(error?.message||'ElevenLabs Realtime could not change microphone state. Reconnect.','agent');}
 }
 async function retryLiveTalk(){
   if(!state.liveTalk)return;
-  state.error='';state.liveRetryCount=0;
-  const failureKind=state.liveFailureKind;state.liveFailureKind=null;
-  if(failureKind==='chat'&&state.lastFailedText){
-    state.liveStage='processing';render();
-    await retryLastMessage({liveTalk:true});
-    if(!state.liveTalk)return;
-    if(state.lastFailedText){pauseLiveTalkOnError(state.error||'Zeus could not complete that voice request.');return;}
-    const latest=[...state.messages].reverse().find(m=>m.role==='assistant');
-    if(latest){state.liveScribeBusy=false;await sayZeusReply(latest.content);}else listenLiveTalk();
-    return;
-  }
-  if(failureKind==='speech'||failureKind==='playback_blocked'){
-    const latest=[...state.messages].reverse().find(m=>m.role==='assistant');
-    if(latest){await sayZeusReply(latest.content);return;}
-  }
-  listenLiveTalk();
+  state.error='';state.liveRetryCount=0;state.liveFailureKind=null;
+  await connectLiveTalkAgent();
 }
 
 async function startVoice(){

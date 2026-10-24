@@ -11,7 +11,7 @@ assert.ok(stopRec.includes('getTracks')&&stopRec.includes('t.stop()'),'stopping 
 assert.ok(stopRec.includes('_zeusWatchdog')&&stopRec.includes('onstop'),'stop needs a watchdog when onstop never fires');
 assert.ok(app.includes('if(recorder._zeusFinalized)return;'),'onstop must not finalize twice');
 const live=app.slice(app.indexOf('function finishLiveTalkSession(){'),app.indexOf('async function startVoice(){'));
-assert.ok(live.includes("modelId:'scribe_v2_realtime'")&&!/SpeechRecognition|webkitSpeechRecognition/.test(live),'Live Talk uses Scribe realtime directly with no browser STT fallback');
+assert.ok(live.includes('Conversation.startSession')&&live.includes("connectionType:'webrtc'")&&!/Scribe\.connect|SpeechRecognition|webkitSpeechRecognition/.test(live),'Live Talk uses the ElevenLabs Realtime agent with no browser STT fallback');
 assert.ok(app.includes('live-talk-trigger')&&app.includes('>⚡</button>'),'Live Talk must use the lightning control beside the microphone');
 assert.ok(!app.includes("'Live Talk microphone is unavailable. Voice Message remains available.'"),'generic Live Talk error replaced by real error');
 console.log('voice capture tests: PASS');

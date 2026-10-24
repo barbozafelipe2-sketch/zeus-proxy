@@ -3,7 +3,7 @@ import { transcribeAudio, serverTranscriptionConfigured } from './_shared/models
 import { json, getRequestId, errorJson } from './_shared/http.mjs';
 import { createExecutionBudget } from './_shared/runtime.mjs';
 import { consumeEndpointRate } from './_shared/limits.mjs';
-import { createElevenLabsRealtimeToken } from './_shared/elevenlabs-scribe.mjs';
+import { createElevenLabsRealtimeConversationToken } from './_shared/elevenlabs-agent.mjs';
 
 async function handler(req, context, requestId) {
   const startedAt=Date.now();
@@ -11,15 +11,15 @@ async function handler(req, context, requestId) {
   if (auth.error) return auth.error;
   const {user,db}=auth;
   const url=new URL(req.url);
-  if(url.pathname==='/api/transcribe/realtime-token'){
+  if(url.pathname==='/api/voice/realtime-token'){
     if(req.method!=='POST')return errorJson('Method not allowed.',405,'METHOD_NOT_ALLOWED',requestId);
     try{
-      await consumeEndpointRate(db,user.id,'scribe-realtime-token',requestId,30);
-      const token=await createElevenLabsRealtimeToken();
-      return json({token,model:'scribe_v2_realtime',requestId});
+      await consumeEndpointRate(db,user.id,'elevenlabs_realtime_token',requestId,30);
+      const session=await createElevenLabsRealtimeConversationToken();
+      return json({...session,requestId});
     }catch(error){
       const status=error?.code==='AI_RATE_LIMIT'?429:Number(error?.status)||503;
-      return errorJson(error?.message||'Could not open realtime transcription.',status,error?.code||'SCRIBE_TOKEN_FAILED',requestId,error?.retryAfter?{retryAfter:error.retryAfter}:{});
+      return errorJson(error?.message||'Could not start ElevenLabs Realtime.',status,error?.code||'ELEVENLABS_TOKEN_FAILED',requestId,error?.retryAfter?{retryAfter:error.retryAfter}:{});
     }
   }
   if (req.method !== 'POST') return errorJson('Method not allowed.', 405, 'METHOD_NOT_ALLOWED', requestId);
@@ -54,4 +54,4 @@ export default async (req, context) => {
   }
 };
 
-export const config = { path: ['/api/transcribe','/api/transcribe/realtime-token'] };
+export const config = { path: ['/api/transcribe','/api/voice/realtime-token'] };
