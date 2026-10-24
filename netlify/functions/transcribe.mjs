@@ -3,12 +3,25 @@ import { transcribeAudio, serverTranscriptionConfigured } from './_shared/models
 import { json, getRequestId, errorJson } from './_shared/http.mjs';
 import { createExecutionBudget } from './_shared/runtime.mjs';
 import { consumeEndpointRate } from './_shared/limits.mjs';
+import { createElevenLabsRealtimeToken } from './_shared/elevenlabs-scribe.mjs';
 
 async function handler(req, context, requestId) {
   const startedAt=Date.now();
   const auth = await requireUser(req,requestId);
   if (auth.error) return auth.error;
   const {user,db}=auth;
+  const url=new URL(req.url);
+  if(url.pathname==='/api/transcribe/realtime-token'){
+    if(req.method!=='POST')return errorJson('Method not allowed.',405,'METHOD_NOT_ALLOWED',requestId);
+    try{
+      await consumeEndpointRate(db,user.id,'scribe-realtime-token',requestId,30);
+      const token=await createElevenLabsRealtimeToken();
+      return json({token,model:'scribe_v2_realtime',requestId});
+    }catch(error){
+      const status=error?.code==='AI_RATE_LIMIT'?429:Number(error?.status)||503;
+      return errorJson(error?.message||'Could not open realtime transcription.',status,error?.code||'SCRIBE_TOKEN_FAILED',requestId,error?.retryAfter?{retryAfter:error.retryAfter}:{});
+    }
+  }
   if (req.method !== 'POST') return errorJson('Method not allowed.', 405, 'METHOD_NOT_ALLOWED', requestId);
   if(!serverTranscriptionConfigured())return errorJson('Server transcription is not configured. Browser-native voice remains the default.',501,'TRANSCRIPTION_NOT_CONFIGURED',requestId);
 
@@ -41,4 +54,4 @@ export default async (req, context) => {
   }
 };
 
-export const config = { path: '/api/transcribe' };
+export const config = { path: ['/api/transcribe','/api/transcribe/realtime-token'] };

@@ -1,5 +1,7 @@
 node_modules
 .netlify
+/public/assets/elevenlabs-scribe.js
+/public/vendor/elevenlabs/scribeAudioProcessor.js
 .DS_Store
 
 # Local settings / private credentials
