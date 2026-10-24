@@ -70,6 +70,7 @@ delete env.OLYHUB_ZEUS_CONCURRENCY;
 const chat=readFileSync('netlify/functions/chat.mjs','utf8');
 const limits=readFileSync('netlify/functions/_shared/limits.mjs','utf8');
 const migration=readFileSync('netlify/database/migrations/20261014043000_ai_execution_attempt_ledger/migration.sql','utf8');
+const cleanupMigration=readFileSync('netlify/database/migrations/20261024093000_remove_unused_execution_attempt_index/migration.sql','utf8');
 assert.ok(chat.includes('await lockAiExecutionOwner(client,userId)'));
 assert.ok(chat.includes("recordAiExecutionAttempt(client,userId,mode,execution.id,'initial')"));
 assert.ok(chat.includes("recordAiExecutionAttempt(client,userId,mode,existing.id,'retry')"));
@@ -80,4 +81,5 @@ assert.ok(!limits.includes('FROM executions WHERE owner_id=$1 AND mode=$2 AND st
 assert.equal((migration.match(/CREATE TABLE IF NOT EXISTS execution_attempts/g)||[]).length,1);
 assert.ok(migration.includes("attempt_kind IN ('initial','retry')"));
 assert.ok(migration.includes('REFERENCES executions(id) ON DELETE CASCADE'));
+assert.ok(cleanupMigration.includes('DROP INDEX IF EXISTS execution_attempts_hourly_idx'));
 console.log('Phase 2/7: unlimited hourly executions, audit ledger, concurrency, rollback and worker handoff: PASS');

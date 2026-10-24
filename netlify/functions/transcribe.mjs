@@ -18,7 +18,7 @@ async function handler(req, context, requestId) {
       const session=await createElevenLabsRealtimeConversationToken();
       return json({...session,requestId});
     }catch(error){
-      const status=error?.code==='AI_RATE_LIMIT'?429:Number(error?.status)||503;
+      const status=Number(error?.status)||503;
       return errorJson(error?.message||'Could not start ElevenLabs Realtime.',status,error?.code||'ELEVENLABS_TOKEN_FAILED',requestId,error?.retryAfter?{retryAfter:error.retryAfter}:{});
     }
   }
@@ -29,7 +29,7 @@ async function handler(req, context, requestId) {
       const session=await createElevenLabsRealtimeSignedUrl();
       return json({...session,requestId});
     }catch(error){
-      const status=error?.code==='AI_RATE_LIMIT'?429:Number(error?.status)||503;
+      const status=Number(error?.status)||503;
       return errorJson(error?.message||'Could not start ElevenLabs Realtime over WebSocket.',status,error?.code||'ELEVENLABS_SIGNED_URL_FAILED',requestId,error?.retryAfter?{retryAfter:error.retryAfter}:{});
     }
   }

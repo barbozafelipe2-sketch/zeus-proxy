@@ -36,7 +36,7 @@ console.log('Artifact Engine multi-file validation and continuation: PASS');
   if(!threw)throw new Error('uppercase TODO marker must still be rejected');
   threw=false;try{m.parseArtifactDelivery('Vou criar os arquivos. '+doc,['pdf'],{requestText:'x'});}catch(x){threw=true;}
   if(!threw)throw new Error('leading promise must still be rejected');
-  for(const code of ['ARTIFACT_INCOMPLETE','AI_RATE_LIMIT','OLYMPUS_CREATOR_UNAVAILABLE']){
+  for(const code of ['ARTIFACT_INCOMPLETE','OLYMPUS_CREATOR_UNAVAILABLE']){
     const f=e.publicExecutionFailure(Object.assign(new Error('raw secret \x73k-xyz'),{code,status:422}));
     if(/Zeus could not complete/.test(f.message)||/\x73k-xyz/.test(f.message))throw new Error('generic/leaky message for '+code);
   }

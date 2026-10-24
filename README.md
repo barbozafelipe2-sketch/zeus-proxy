@@ -19,11 +19,15 @@ The app is a single-owner personal workspace and does not use a shared API acces
 
 **Compare & Evolve** (Tools) and the **Like** button on replies record preferred model families per task type (`familyPreferences`).
 
-## Agents + Manager
+## Projects + Manager
 
-UI renames **Projects → Agents**. Each agent keeps an isolated permanent chat, memory, sources and artifacts. **Home** is the Manager with an agent chip strip. API routes remain `/api/projects` for compatibility.
+The interface calls these workspaces **Projects**. Each project keeps its own permanent chat, memory, sources, tasks and artifacts. **Home** includes project shortcuts and a project list. API routes use `/api/projects`.
 
-A deterministic zero-token router chooses Zeus Level 1 / 2 / 3; Olympus is a single multi-specialist mode. Provider keys stay on Netlify AI Gateway.
+A deterministic zero-token router chooses Zeus Level 1 / 2 / 3; Olympus is a multi-specialist mode. There is no hourly execution cap; bounded concurrency, provider quotas, explicit Olympus budget reservations and required action approvals remain. Provider keys stay server-side.
+
+## Chat and voice behavior
+
+Text chat, voice messages and Live Talk follow the same OlyHub procedures and selected user personalization. Ordinary conversation does not trigger project inspection, tools or unsolicited work offers. Direct work requests use the selected Zeus level or Olympus mode; project tools are reserved for project requests. Live Talk restores a bounded recent transcript and only a small, relevant slice of the open project's context to control prompt cost. Google integrations are read-only; GitHub changes require the dedicated explicit action flow.
 
 ## Google read-only integrations
 

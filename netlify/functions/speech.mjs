@@ -198,7 +198,7 @@ export default async function(req,context){
         const voices=await listElevenLabsVoices({search:url.searchParams.get('search')||'',nextPageToken:url.searchParams.get('nextPageToken')||''});
         return Response.json(voices,{headers:{'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
       }catch(error){
-        const status=error?.code==='AI_RATE_LIMIT'?429:Number(error?.status)||502;
+        const status=Number(error?.status)||502;
         console.warn('ElevenLabs voice list failed',requestId,status);
         const message=status===501?'Configure ELEVENLABS_API_KEY in Netlify to list voices.':status===429?'ElevenLabs rate limited voice listing. Try again shortly.':status===401||status===403?'ElevenLabs rejected the API key or it lacks permission to list voices.':'Could not load ElevenLabs voices. Check the API key and try again.';
         return errorJson(message,status===429?429:status===501?501:status===400?400:502,'ELEVENLABS_VOICE_LIST_FAILED',requestId);
@@ -214,9 +214,9 @@ export default async function(req,context){
     const audio=await generateSpeech(text,{voice:body?.voiceId,elevenLabsVoiceId,onProviderError:(provider,status,detail)=>console.error('Speech provider failed',requestId,provider,status,detail||'')});
     return new Response(audio.bytes,{status:200,headers:{'Content-Type':audio.contentType,'Cache-Control':'no-store','X-Content-Type-Options':'nosniff','X-Zeus-Voice-Route':audio.route,...(audio.voiceFallback?{'X-Zeus-Voice-Fallback':'1'}:{}),...(audio.voiceId?{'X-Zeus-Voice-Used':audio.voiceId}:{})}});
   }catch(error){
-    const status=error?.code==='AI_RATE_LIMIT'?429:error?.status||503;
+    const status=error?.status||503;
     const code=error?.code||'SPEECH_FAILED';
-    const message=error?.code==='AI_RATE_LIMIT'?'Speech rate limit reached.':error?.code==='INVALID_ELEVENLABS_VOICE_ID'?'The ElevenLabs Voice ID is invalid. Check it in Voice settings and try again.':(error?.elevenLabs?`ElevenLabs ${error.elevenLabs.status}${error.elevenLabs.detail?`: ${error.elevenLabs.detail}`:''}`:'Zeus replied in chat, but speech audio is unavailable. Check the server voice configuration and try again.');
+    const message=error?.code==='INVALID_ELEVENLABS_VOICE_ID'?'The ElevenLabs Voice ID is invalid. Check it in Voice settings and try again.':(error?.elevenLabs?`ElevenLabs ${error.elevenLabs.status}${error.elevenLabs.detail?`: ${error.elevenLabs.detail}`:''}`:'Zeus replied in chat, but speech audio is unavailable. Check the server voice configuration and try again.');
     return errorJson(message,status,code,requestId,{providerFailures:Array.isArray(error?.providerFailures)?error.providerFailures:[],...(error?.elevenLabs?{elevenLabs:error.elevenLabs}:{})});
   }
 }

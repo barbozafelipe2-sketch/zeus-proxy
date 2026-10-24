@@ -10,6 +10,7 @@ globalThis.Netlify={env:{get:key=>variables[key]||''}};
 try{
  assert.equal(aiLimits('ZEUS').concurrent,2);assert.equal(aiLimits('OLYMPUS').concurrent,1);
  assert.equal('hourly' in aiLimits('ZEUS'),false);assert.equal('hourly' in aiLimits('OLYMPUS'),false);
+ for(const file of ['netlify/functions/chat.mjs','netlify/functions/transcribe.mjs','netlify/functions/speech.mjs','netlify/functions/_shared/execution-error.mjs'])assert.ok(!readFileSync(file,'utf8').includes('AI_RATE_LIMIT'),`${file} must not retain obsolete AI hourly-limit handling`);
  variables.OLYHUB_ZEUS_CONCURRENCY='4';assert.equal(aiLimits('ZEUS').concurrent,4);delete variables.OLYHUB_ZEUS_CONCURRENCY;
  function fakeDb(state='new'){
   return {async query(q){

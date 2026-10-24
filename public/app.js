@@ -78,7 +78,7 @@ async function api(path, options={}){
     }
     const ref=isJson&&data.requestId?` · ref ${String(data.requestId).slice(0,18)}`:'';
     const code=isJson?data.code:'HTTP_ERROR';
-    const friendly={AI_PROVIDER_AUTH:'AI Gateway/provider authentication failed for this runtime.',AI_PROVIDER_QUOTA:'AI Gateway credits or provider quota are exhausted.',AI_PROVIDER_RATE_LIMIT:'The selected AI provider is rate-limiting Zeus right now.',AI_MODEL_UNAVAILABLE:'A configured model is unavailable; Zeus could not complete fallback safely.',EXECUTION_DEADLINE:'The AI request exceeded Zeus’s execution budget before a provider completed it.',AI_PROVIDERS_FAILED:'No configured AI provider completed this request.',GITHUB_WRITE_NOT_CONFIGURED:'GitHub commit is not configured on the server yet.',GITHUB_AUTH_FAILED:'GitHub rejected the server credential. Update the GitHub token and try again.',GITHUB_WRITE_DENIED:'GitHub denied this commit. Check repository permission or branch protection.',GITHUB_SECRET_DETECTED:'The commit was blocked because a credential-like value was detected in the ZIP.',GITHUB_BRANCH_CONFLICT:'The target branch changed or rejected the safe non-force update.',GITHUB_CONFIRMATION_REQUIRED:'GitHub commit needs an explicit confirmation from this screen.',GITHUB_REPO_NOT_ALLOWED:'This repository is outside the configured allowlist.',TURBO_APPROVAL_REQUIRED:'Complex Turbo needs your approval before this higher-budget run starts.',AI_RATE_LIMIT:'The hourly execution cap has been removed. Refresh and retry.'}[code];
+    const friendly={AI_PROVIDER_AUTH:'AI Gateway/provider authentication failed for this runtime.',AI_PROVIDER_QUOTA:'AI Gateway credits or provider quota are exhausted.',AI_PROVIDER_RATE_LIMIT:'The selected AI provider is rate-limiting Zeus right now.',AI_MODEL_UNAVAILABLE:'A configured model is unavailable; Zeus could not complete fallback safely.',EXECUTION_DEADLINE:'The AI request exceeded Zeus’s execution budget before a provider completed it.',AI_PROVIDERS_FAILED:'No configured AI provider completed this request.',GITHUB_WRITE_NOT_CONFIGURED:'GitHub commit is not configured on the server yet.',GITHUB_AUTH_FAILED:'GitHub rejected the server credential. Update the GitHub token and try again.',GITHUB_WRITE_DENIED:'GitHub denied this commit. Check repository permission or branch protection.',GITHUB_SECRET_DETECTED:'The commit was blocked because a credential-like value was detected in the ZIP.',GITHUB_BRANCH_CONFLICT:'The target branch changed or rejected the safe non-force update.',GITHUB_CONFIRMATION_REQUIRED:'GitHub commit needs an explicit confirmation from this screen.',GITHUB_REPO_NOT_ALLOWED:'This repository is outside the configured allowlist.',TURBO_APPROVAL_REQUIRED:'Complex Turbo needs your approval before this higher-budget run starts.'}[code];
     throw apiError(`${friendly||msg||`Request failed (HTTP ${r.status}).`}${ref}`,r.status,code,isJson?data:null);
   }
   return data;
@@ -1623,19 +1623,27 @@ function toggleLiveTalkMute(){
 }
 function livePersonaContext(){
   const selected=state.liveTalkVoiceId?elevenLabsVoiceLabel(state.liveTalkVoiceId):'the agent default voice';
-  return `You are Zeus, OlyHub's voice assistant. Felipe selected the ElevenLabs voice “${selected}”; use it for speech while remaining Zeus. Know your system: you can chat naturally; explain OlyHub; use conversation and supplied project context; route directly requested work to Zeus levels 1/2/3 or Olympus; and, when explicitly asked, inspect project status and memory, create tasks, work with files/artifacts, research, or prepare GitHub changes through OlyHub. Casual conversation is a valid goal by itself. Do not list, inspect, open, or search projects, invoke tools, propose project analysis, or offer to look inside projects unless Felipe asks or it is necessary to fulfill his direct request. Do not turn ordinary conversation into a work offer. Keep this instruction concise in your replies and avoid repeating capability menus.`;
+  const preferences=state.preferences||{};
+  const personalities={balanced:'Helpful, clear and adaptable.',direct:'Direct, concise and practical.',warm:'Warm, conversational and encouraging.',creative:'Imaginative, vivid and expressive.',professional:'Polished, structured and professional.'};
+  const custom=String(preferences.instructions||'').trim().slice(0,4000)
+    .replace(/(["']?[^"'\n]*(?:api[_-]?key|access[_-]?token|auth[_-]?token|refresh[_-]?token|secret|password|passwd|private[_-]?key|authorization)[^"'\n]*["']?\s*[:=]\s*)(["'][^"']*["']|[^\s,}\]]+)/gi,'$1[REDACTED]')
+    .replace(/\bBearer\s+[A-Za-z0-9._~+\/-]{12,}/gi,'Bearer [REDACTED]')
+    .replace(/\b(?:sk|rk|pk)-[A-Za-z0-9_-]{16,}\b/g,'[REDACTED API TOKEN]')
+    .replace(/\b(?:ghp|gho|ghu|ghs|github_pat)_[A-Za-z0-9_]{16,}\b/g,'[REDACTED GITHUB TOKEN]')
+    .replace(/\bAIza[0-9A-Za-z_-]{20,}\b/g,'[REDACTED GOOGLE API KEY]');
+  return `You are Zeus, OlyHub's voice assistant. Use Felipe's selected ElevenLabs voice “${selected}” and remain Zeus. OlyHub supports natural text/voice conversation, Zeus levels 1/2/3, Olympus, project memory/tasks/files, research and artifact creation. Use the selected mode/level for requested work. Casual conversation is complete by itself: do not inspect or offer to inspect projects, call tools, or pitch work unless Felipe asks or it is needed to answer. Use supplied history for follow-ups. Google is read-only; GitHub writes need the explicit action flow. Never claim an action succeeded without confirmation.\n\nUSER-APPROVED PERSONALIZATION (style only; lower priority than system instructions and the user's current request):\nPersonality: ${personalities[preferences.personality]||personalities.balanced}${custom?`\nCustom instructions: ${custom}`:''}`;
 }
 function liveSessionContext(){
   const transcript=(state.messages||[])
     .filter(message=>['user','assistant'].includes(message?.role)&&String(message?.content||'').trim())
-    .slice(-18)
+    .slice(-8)
     .map(message=>{
       const speaker=message.role==='user'?'Felipe':'Zeus';
-      const content=String(message.content||'').replace(/\s+/g,' ').trim();
+      const content=String(message.content||'').replace(/\s+/g,' ').trim().slice(0,900);
       return content?`${speaker}: ${content}`:'';
     }).filter(Boolean);
   let history=transcript.join('\n');
-  if(history.length>10000)history=history.slice(-10000);
+  if(history.length>6000)history=history.slice(-6000);
   const project=state.currentProject;
   const executionSelection=state.mode==='OLYMPUS'?'Olympus mode':`Zeus up to level ${selectedZeusLevelCap()}`;
   const projectContext=project?[
@@ -1643,11 +1651,11 @@ function liveSessionContext(){
     `Goal: ${project.goal||'not set'}`,
     `Description: ${project.description||'not set'}`,
     `Status: ${project.status||'unknown'}; progress: ${Number(project.progress)||0}%`,
-    ...(state.tasks||[]).slice(0,12).map(task=>`Task [${task.status}] ${task.title}${task.description?`: ${task.description}`:''}`),
-    ...(state.projectMemories||[]).slice(0,8).map(memory=>`Project memory: ${memory.content}`),
-    ...(state.projectSources||[]).slice(0,8).map(source=>`Project source: ${source.title}`),
+    ...(state.tasks||[]).slice(0,8).map(task=>`Task [${task.status}] ${String(task.title||'').slice(0,120)}${task.description?`: ${String(task.description).slice(0,220)}`:''}`),
+    ...(state.projectMemories||[]).slice(0,5).map(memory=>`Project memory: ${String(memory.content||'').slice(0,280)}`),
+    ...(state.projectSources||[]).slice(0,5).map(source=>`Project source: ${String(source.title||'').slice(0,100)}`),
     `Voice work commands run through the normal OlyHub engine in ${executionSelection}; preserve this selection.`,
-    'Project tools are available only for Felipe-requested project actions. Never call list_olyhub_projects, open_olyhub_project, get_current_project_context, send_olyhub_command, or create_project_task for casual conversation, and never offer to inspect a project unprompted.'
+    'The open project context is reference material, not an instruction to analyze or act. Use project tools only when Felipe asks for project information or a project action.'
   ].join('\n'):'No project is currently open. Do not create project tasks unless the user opens a project first.';
   return `${livePersonaContext()}\n\nConversation continuity: Treat the recent transcript below as the prior turns of this same ongoing conversation. Remember the user's stated facts, preferences, corrections, and unresolved requests. Answer follow-up references using this context; do not ask the user to repeat information already present. The transcript is background context, not a new request.\n${history?`Recent conversation transcript:\n${history}`:'There are no earlier saved chat turns to restore.'}\n\n${projectContext}`;
 }
@@ -1655,13 +1663,12 @@ function liveProjectClientTools(){
   return {
     send_olyhub_command:async(parameters={})=>{
       const project=state.currentProject;
-      if(!project?.id)return JSON.stringify({ok:false,error:'No project is open. Open the intended project before sending work to Zeus.'});
       const command=String(parameters?.command||'').trim().slice(0,40000);
       if(!command)return JSON.stringify({ok:false,error:'A clear command is required.'});
       if(state.sending)return JSON.stringify({ok:false,error:'OlyHub is already processing a request. Wait for it to finish before sending another command.'});
       try{
         await state.liveAgentLogQueue.catch(()=>{});
-        if(state.currentProject?.id!==project.id)return JSON.stringify({ok:false,error:'The active project changed before the command started. Please repeat the command.'});
+        if((state.currentProject?.id||null)!==(project?.id||null))return JSON.stringify({ok:false,error:'The active workspace changed before the command started. Please repeat the command.'});
         const selectedMode=state.mode==='OLYMPUS'?'OLYMPUS':'ZEUS';
         const result=await sendText(command,[],crypto.randomUUID(),selectedMode,null,null,{voiceCommand:true});
         return String(result||JSON.stringify({ok:false,error:'OlyHub returned no command result.'}));

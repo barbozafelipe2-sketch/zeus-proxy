@@ -23,7 +23,6 @@ const authored={
   COMPARE_FAMILIES_UNAVAILABLE:'Compare & Evolve needs two configured independent model families. No artifact was created.',
   COMPARE_FORMAT_UNSUPPORTED:'Independent A/B generation supports PDF, DOCX, XLSX, PPTX, CSV and HTML right now.',
   COMPARE_LIVE_RESEARCH_UNSUPPORTED:'Run live research first, then ask for an A/B pair using the saved sources.',
-  AI_RATE_LIMIT:'The hourly execution cap has been removed. Refresh and retry.',
   AI_CONCURRENCY_LIMIT:'Another execution is still running. Wait for it to finish, then retry.',
   RATE_LIMIT:'Request safety limit reached. Try again later.',
   DATABASE_UNAVAILABLE:'Zeus workspace database is temporarily unavailable. Please retry shortly.'

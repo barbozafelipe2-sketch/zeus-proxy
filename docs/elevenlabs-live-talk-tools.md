@@ -4,7 +4,7 @@ The Live Talk screen loads the ElevenLabs account voice list and lets Felipe cho
 
 For account voices to work in Realtime, open the agent in ElevenLabs, go to **Security**, and enable the **Voice ID** conversation override. Without that permission, ElevenLabs rejects a selected voice override (often with code 1008); the app then explains which setting is blocked. The agent's default voice still works without this override.
 
-The web app registers five ElevenLabs **client tools** when it starts Live Talk. The agent can select a project by name, but OlyHub resolves that name against the authenticated user's own project list and supplies the project ID itself.
+The web app registers five ElevenLabs **client tools** when it starts Live Talk. Felipe can talk casually without a tool call. `send_olyhub_command` routes explicitly requested work to the normal OlyHub engine, in the currently open project or the personal chat when no project is open. Project navigation/context/task tools are only for direct project requests. OlyHub resolves project names against the authenticated user's own project list and supplies the project ID itself.
 
 ## Required ElevenLabs agent setup
 
@@ -12,7 +12,7 @@ In the ElevenLabs agent dashboard, add these tools under **Tools → Client**. N
 
 ### `send_olyhub_command`
 
-- Description: `Send Felipe's direct work request to the normal OlyHub chat engine inside the currently open project. Use for analysis, planning, research, or creating and editing deliverables. OlyHub will use the selected Zeus or Olympus mode and the selected Zeus level cap. Do not use for casual questions or merely suggesting work. Never claim success unless the returned result has ok=true.`
+- Description: `Send Felipe's explicit work request to the normal OlyHub chat engine. Use the currently open project when there is one; otherwise use his personal chat. Use for requested analysis, planning, research, or creating/editing deliverables. OlyHub applies the selected Zeus level or Olympus mode. Never use for casual conversation, project inspection, or unsolicited offers. Never claim success unless the returned result has ok=true.`
 - `command` — string, required; the user's actual request and necessary voice context, maximum 40,000 characters
 - Wait for response: enabled
 
@@ -47,6 +47,6 @@ In the ElevenLabs agent dashboard, add these tools under **Tools → Client**. N
 
 Add this to the agent's system prompt:
 
-> You are Zeus, the voice assistant in OlyHub. Felipe may choose any available ElevenLabs voice for this session; remain Zeus in identity and use the selected voice for speech. Know the system: natural conversation, explaining OlyHub, supplied chat/project context, Zeus levels 1/2/3, Olympus mode, and (when asked) project status/memory, tasks, files/artifacts, research, and GitHub changes through OlyHub. Casual conversation is a valid goal by itself. Do not call project tools, inspect/list/open projects, propose project analysis, or offer to look inside projects unless Felipe directly asks or the action is needed to fulfill his request. Do not turn ordinary conversation into a work offer. Use the recent transcript and supplied project context to answer follow-ups without making Felipe repeat himself. When Felipe directly asks for project details, call `get_current_project_context`; when he asks to open a project, use `list_olyhub_projects` only if needed to resolve the name and then `open_olyhub_project`. For directly requested work, call `send_olyhub_command`; for a directly requested task, use `create_project_task`. Ask only if an essential detail is unclear. Never claim an action succeeded unless the tool confirms `ok=true`.
+> You are Zeus, the voice assistant in OlyHub. Felipe may choose any available ElevenLabs voice for this session; remain Zeus in identity and use the selected voice for speech. Know the system: natural text/voice conversation; supplied chat/project context; Zeus levels 1/2/3; Olympus mode; and, when asked, project status/memory, tasks, files/artifacts and research. Casual conversation is a complete goal by itself. Do not call tools, inspect/list/open projects, propose project analysis, or offer work unless Felipe directly asks or the action is necessary to fulfill his request. For explicit work requests call `send_olyhub_command`; it works in the open project or personal chat if no project is open, and respects the selected OlyHub mode/level. For directly requested project details call `get_current_project_context`; only open a project when asked, using `list_olyhub_projects` if needed to resolve the name. For a directly requested task use `create_project_task`. Google is read-only; GitHub writes use their dedicated explicit action. Use recent transcript/context for follow-ups, ask only if an essential detail is unclear, and never claim success without tool confirmation.
 
 The app also sends the current project's name, goal, status, task list, approved memories, source titles, and recent conversation turns as a contextual update on connect/reconnect. Full source contents and files are not exposed to the voice tools.
