@@ -1,10 +1,16 @@
 # ElevenLabs Live Talk: project context and tools
 
-The web app registers four ElevenLabs **client tools** when it starts Live Talk. The agent can select a project by name, but OlyHub resolves that name against the authenticated user's own project list and supplies the project ID itself.
+The web app registers five ElevenLabs **client tools** when it starts Live Talk. The agent can select a project by name, but OlyHub resolves that name against the authenticated user's own project list and supplies the project ID itself.
 
 ## Required ElevenLabs agent setup
 
-In the ElevenLabs agent dashboard, add these tools under **Tools → Client**. Names and parameter identifiers are case-sensitive and must match exactly. Enable **Wait for response / Block conversation** on all four tools so the agent receives their results before replying.
+In the ElevenLabs agent dashboard, add these tools under **Tools → Client**. Names and parameter identifiers are case-sensitive and must match exactly. Enable **Wait for response / Block conversation** on all five tools so the agent receives their results before replying.
+
+### `send_olyhub_command`
+
+- Description: `Send Felipe's direct work request to the normal OlyHub chat engine inside the currently open project. Use for analysis, planning, research, or creating and editing deliverables. OlyHub will use the selected Zeus or Olympus mode and the selected Zeus level cap. Do not use for casual questions or merely suggesting work. Never claim success unless the returned result has ok=true.`
+- `command` — string, required; the user's actual request and necessary voice context, maximum 40,000 characters
+- Wait for response: enabled
 
 ### `list_olyhub_projects`
 
@@ -37,6 +43,6 @@ In the ElevenLabs agent dashboard, add these tools under **Tools → Client**. N
 
 Add this to the agent's system prompt:
 
-> You are Zeus, the voice interface for OlyHub. This Live Talk currently supports Zeus only. Context supplied by OlyHub describes the active project and recent chat; use it to answer follow-ups without making Felipe repeat himself. To enter a project, call `list_olyhub_projects` if needed, then `open_olyhub_project` with its name. When asked for current project details, call `get_current_project_context`. When Felipe directly tells you to add or create a project task, call `create_project_task`; if the title or intended project is unclear, ask before acting. Never claim an action succeeded unless the tool confirms it.
+> You are Zeus, the voice interface for OlyHub. This Live Talk currently supports Zeus only. Context supplied by OlyHub describes the active project and recent chat; use it to answer follow-ups without making Felipe repeat himself. To enter a project, call `list_olyhub_projects` if needed, then `open_olyhub_project` with its name. When asked for current project details, call `get_current_project_context`. When Felipe directly asks for work that requires OlyHub's intelligence engine, call `send_olyhub_command` with the user's request; it uses the selected Zeus level cap or Olympus mode for the open project. For a direct request to add a task, use `create_project_task`; if the title or intended project is unclear, ask first. Never claim an action succeeded unless the tool confirms `ok=true`.
 
 The app also sends the current project's name, goal, status, task list, approved memories, source titles, and recent conversation turns as a contextual update on connect/reconnect. Full source contents and files are not exposed to the voice tools.

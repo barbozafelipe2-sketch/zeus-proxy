@@ -1288,8 +1288,9 @@ async function pollForReply(conversationId, executionId){
   throw apiError('Olympus is still working. Wait a moment, then tap Retry to collect the reply.',503,'REQUEST_IN_PROGRESS');
 }
 async function sendText(text,pendingAttachments=[],requestId=crypto.randomUUID(),requestedMode=state.mode,turboApproval=null,resumeExecutionId=null,options={}){
-  if(!text||state.sending)return;
-  const pending=[...(pendingAttachments||[])],liveTalkTurn=options?.liveTalk===true,mode=liveTalkTurn?'ZEUS':requestedMode==='OLYMPUS'?'OLYMPUS':'ZEUS',compareType=liveTalkTurn?null:state.compareType;
+  const voiceCommand=options?.voiceCommand===true;
+  if(!text||state.sending)return voiceCommand?JSON.stringify({ok:false,error:'Another OlyHub request is already running.'}):undefined;
+  const pending=[...(pendingAttachments||[])],liveTalkTurn=options?.liveTalk===true,mode=liveTalkTurn?'ZEUS':requestedMode==='OLYMPUS'?'OLYMPUS':'ZEUS',compareType=liveTalkTurn||voiceCommand?null:state.compareType;
   const optimistic={id:crypto.randomUUID(),role:'user',mode,content:text,artifacts:[],attachments:pending};
   state.messages.push(optimistic);
   state.attachedFiles=[];state.draft='';
@@ -1370,6 +1371,7 @@ async function sendText(text,pendingAttachments=[],requestId=crypto.randomUUID()
     state.execStatus='Completed';
     await Promise.allSettled([loadConversations(),loadProjects()]);
     setTimeout(()=>{if(state.execStatus==='Completed'&&!state.sending){state.execStatus='';state.execTitle='';render();}},900);
+    if(voiceCommand)return assistant?JSON.stringify({ok:true,mode:assistant.mode||state.activeMode||mode,level:assistant.metadata?.executionLevel||state.activeLevel||null,reply:String(assistant.content||'')}):JSON.stringify({ok:false,error:'OlyHub finished without returning an answer.'});
   }catch(err){
     if(err?.code==='REQUEST_IN_PROGRESS'){
       if(err.data?.conversationId&&!state.currentConversation)state.currentConversation=err.data.conversationId;
@@ -1383,6 +1385,7 @@ async function sendText(text,pendingAttachments=[],requestId=crypto.randomUUID()
     state.lastFailedCompareType=compareType;
     state.lastFailedBudgetExecutionId=err?.code==='OLYMPUS_APPROVAL_REQUIRED'?err?.data?.executionId||null:null;
     state.lastFailedResumeExecutionId=mode==='ZEUS'?err?.data?.executionId||null:null;
+    if(voiceCommand)return JSON.stringify({ok:false,error:String(err?.message||'OlyHub could not complete the command.')});
   }finally{clearTimeout(timer);state.sending=false;render();}
 }
 async function approveNextOlympusFive(){
@@ -1606,6 +1609,7 @@ function liveSessionContext(){
   let history=transcript.join('\n');
   if(history.length>10000)history=history.slice(-10000);
   const project=state.currentProject;
+  const executionSelection=state.mode==='OLYMPUS'?'Olympus mode':`Zeus up to level ${selectedZeusLevelCap()}`;
   const projectContext=project?[
     `Active project: ${project.name}`,
     `Goal: ${project.goal||'not set'}`,
@@ -1614,12 +1618,27 @@ function liveSessionContext(){
     ...(state.tasks||[]).slice(0,12).map(task=>`Task [${task.status}] ${task.title}${task.description?`: ${task.description}`:''}`),
     ...(state.projectMemories||[]).slice(0,8).map(memory=>`Project memory: ${memory.content}`),
     ...(state.projectSources||[]).slice(0,8).map(source=>`Project source: ${source.title}`),
-    'You can list projects with list_olyhub_projects, open a named project with open_olyhub_project, query the open project with get_current_project_context, and create a task with create_project_task when Felipe directly asks, if those tools are enabled for this agent.'
+    `Voice work commands run through the normal OlyHub engine in ${executionSelection}; preserve this selection.`,
+    'You can list projects with list_olyhub_projects, open a named project with open_olyhub_project, query the open project with get_current_project_context, send work requests through send_olyhub_command, and create a task with create_project_task when Felipe directly asks, if those tools are enabled for this agent.'
   ].join('\n'):'No project is currently open. Do not create project tasks unless the user opens a project first.';
   return `${livePersonaContext()}\n\nConversation continuity: Treat the recent transcript below as the prior turns of this same ongoing conversation. Remember the user's stated facts, preferences, corrections, and unresolved requests. Answer follow-up references using this context; do not ask the user to repeat information already present. The transcript is background context, not a new request.\n${history?`Recent conversation transcript:\n${history}`:'There are no earlier saved chat turns to restore.'}\n\n${projectContext}`;
 }
 function liveProjectClientTools(){
   return {
+    send_olyhub_command:async(parameters={})=>{
+      const project=state.currentProject;
+      if(!project?.id)return JSON.stringify({ok:false,error:'No project is open. Open the intended project before sending work to Zeus.'});
+      const command=String(parameters?.command||'').trim().slice(0,40000);
+      if(!command)return JSON.stringify({ok:false,error:'A clear command is required.'});
+      if(state.sending)return JSON.stringify({ok:false,error:'OlyHub is already processing a request. Wait for it to finish before sending another command.'});
+      try{
+        await state.liveAgentLogQueue.catch(()=>{});
+        if(state.currentProject?.id!==project.id)return JSON.stringify({ok:false,error:'The active project changed before the command started. Please repeat the command.'});
+        const selectedMode=state.mode==='OLYMPUS'?'OLYMPUS':'ZEUS';
+        const result=await sendText(command,[],crypto.randomUUID(),selectedMode,null,null,{voiceCommand:true});
+        return String(result||JSON.stringify({ok:false,error:'OlyHub returned no command result.'}));
+      }catch(error){return JSON.stringify({ok:false,error:String(error?.message||'OlyHub command failed.').slice(0,300)});}
+    },
     list_olyhub_projects:async()=>{
       try{
         await loadProjects();

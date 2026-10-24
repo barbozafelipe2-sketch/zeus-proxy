@@ -29,6 +29,11 @@ assert.match(ui,/function liveSessionContext\(/,'Live Talk must build a context 
 assert.match(ui,/livePersonaContext\(\)\}\\n\\nConversation continuity/,'Live Talk context builder must run with the Zeus-only persona');
 assert.match(ui,/sendContextualUpdate\(context\)/,'opening a project during Live Talk must update the active agent with its project context');
 assert.match(ui,/clientTools:liveProjectClientTools\(\)/,'Live Talk must register scoped project tools with the ElevenLabs SDK');
+assert.match(ui,/send_olyhub_command:async/,'the voice agent must be able to route spoken work to the normal OlyHub engine');
+assert.match(ui,/\{voiceCommand:true\}/,'spoken OlyHub work must avoid the fast Live Talk-only execution path');
+assert.match(ui,/liveTalkTurn\?false:automaticOlympus\(\)/,'voice commands must respect the selected automatic Olympus setting');
+assert.match(ui,/liveTalkTurn\?1:selectedZeusLevelCap\(\)/,'voice commands must respect the selected Zeus level cap');
+assert.match(ui,/assistant\.content\|\|''/,'the agent must receive the OlyHub engine reply to speak aloud');
 assert.match(ui,/get_current_project_context:async/,'the voice agent must be able to query the active project context');
 assert.match(ui,/create_project_task:async/,'the voice agent must be able to create a task in the active project');
 assert.match(ui,/projectId:project\.id,title,description:/,'voice task creation must use the app-selected project id rather than an agent-supplied id');
