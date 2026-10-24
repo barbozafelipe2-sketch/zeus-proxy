@@ -7,6 +7,8 @@ assert.match(css,/prefers-reduced-motion/);assert.match(css,/width:108px;height:
 assert.match(ui,/function toggleLiveTalk\(\)/);assert.match(ui,/function saveLiveAgentMessage/);
 const live=ui.slice(ui.indexOf('function finishLiveTalkSession(){'),ui.indexOf('\nasync function startVoice(){'));
 assert.ok(live.includes("'/api/voice/realtime-token'"),'Live Talk must request a short-lived ElevenLabs agent token');
+assert.ok(live.indexOf('await navigator.mediaDevices.getUserMedia({audio:true})')<live.indexOf("api('/api/voice/realtime-token'"),'request microphone permission on the start tap before awaiting the token endpoint');
+assert.match(live,/operation is insecure\|secure context/,'insecure-context errors must explain that HTTPS is required');
 assert.match(live,/Conversation\.startSession\(\{/,'Live Talk must connect to the ElevenLabs Realtime agent');
 assert.match(live,/connectionType:'webrtc'/,'Realtime agent must use WebRTC');
 assert.match(live,/connection\.setMicMuted\(state\.liveMuted\)/,'Live Talk must mute and unmute the agent microphone');

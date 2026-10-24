@@ -14,7 +14,7 @@ const state = {
   projectSection:'CHAT', projectMemories:[], projectSources:[], memoryPolicy:null,
   messagePage:{hasMore:false,nextCursor:null}, filesPage:{scope:'global',hasMore:false,nextCursor:null}, artifactsPage:{scope:'global',hasMore:false,nextCursor:null}, chatRestore:null,
   voiceBusy:false, voiceRecorder:null, voiceStream:null, voiceChunks:[], voiceStopTimer:null, voiceRecognition:null, voiceBytes:0, voiceHitSizeLimit:false,
-  liveTalk:false, liveTalkStopRequested:false, liveMuted:false, liveFailureKind:null, liveAgentConversation:null, liveAgentConversationId:'', liveAgentPartial:'', liveAgentLogQueue:Promise.resolve(), liveAgentLoggedEvents:new Map(), liveGeneration:0, liveRetryCount:0, liveStage:'idle', liveLocale:'auto', voiceId:'marin', elevenLabsVoiceId:'', voiceStatus:null, voiceTesting:false, liveSpeechCache:null, voiceReplyAudio:null, liveAudioUrl:null, liveSpeechController:null, liveAudioUnlocked:false, liveSpeechUnlocked:false,
+  liveTalk:false, liveTalkStopRequested:false, liveMuted:false, liveFailureKind:null, liveAgentConversation:null, liveAgentConversationId:'', liveAgentPartial:'', liveAgentPermissionStream:null, liveAgentLogQueue:Promise.resolve(), liveAgentLoggedEvents:new Map(), liveGeneration:0, liveRetryCount:0, liveStage:'idle', liveLocale:'auto', voiceId:'marin', elevenLabsVoiceId:'', voiceStatus:null, voiceTesting:false, liveSpeechCache:null, voiceReplyAudio:null, liveAudioUrl:null, liveSpeechController:null, liveAudioUnlocked:false, liveSpeechUnlocked:false,
   voiceAvatar:'lightning', elevenLabsVoices:[], elevenLabsVoicesLoaded:false, elevenLabsVoicesLoading:false, elevenLabsVoicesError:'', elevenLabsVoicePageToken:'', elevenLabsVoiceHasMore:false,
   preferences:{personality:'balanced',instructions:''}, preferencesLoaded:false,
   googleSearchResults:{}, googleSearchQueries:{}, googleSearchBusy:null,
@@ -528,6 +528,11 @@ function unlockLiveAudioFromGesture(){
 }
 initVoicePrefs();
 function liveTalkSupported(){return Boolean(navigator.mediaDevices?.getUserMedia&&(window.AudioContext||window.webkitAudioContext))}
+function releaseLiveAgentPermissionStream(stream=state.liveAgentPermissionStream){
+  if(!stream)return;
+  for(const track of stream.getTracks())try{track.stop()}catch{}
+  if(state.liveAgentPermissionStream===stream)state.liveAgentPermissionStream=null;
+}
 function voiceSupported(){
   return Boolean(window.SpeechRecognition||window.webkitSpeechRecognition||(navigator.mediaDevices&&window.MediaRecorder));
 }
@@ -1425,6 +1430,7 @@ async function uploadFile(file,{analysisRole='',sourceName='',attach=true}={}){
 function finishLiveTalkSession(){
   state.liveTalk=false;state.liveTalkStopRequested=false;state.liveMuted=false;state.liveStage='idle';state.liveGeneration++;
   clearTimeout(state.liveRetryTimer);state.liveRetryTimer=null;
+  releaseLiveAgentPermissionStream();
   const connection=state.liveAgentConversation;state.liveAgentConversation=null;state.liveAgentConversationId='';state.liveAgentPartial='';
   try{void connection?.endSession?.()}catch{}
   try{state.liveSpeechController?.abort()}catch{}
@@ -1434,6 +1440,7 @@ function pauseLiveTalkOnError(message,kind='agent'){
   if(!state.liveTalk)return;
   state.error=message||'ElevenLabs Realtime could not complete this voice session.';
   state.liveStage='error';state.liveFailureKind=kind;clearTimeout(state.liveRetryTimer);state.liveRetryTimer=null;
+  releaseLiveAgentPermissionStream();
   const connection=state.liveAgentConversation;state.liveAgentConversation=null;state.liveAgentPartial='';
   try{void connection?.endSession?.()}catch{}
   try{state.liveSpeechController?.abort()}catch{}
@@ -1479,7 +1486,13 @@ async function connectLiveTalkAgent(){
   clearTimeout(state.liveRetryTimer);state.liveRetryTimer=null;
   if(!state.liveTalk||state.liveTalkStopRequested)return;
   const generation=state.liveGeneration;state.liveStage='connecting';state.liveAgentPartial='';render();
+  let permissionStream=null;
   try{
+    // Ask for microphone access immediately from the Start/Retry tap. Safari on
+    // iOS can reject getUserMedia if the first request happens after an API await.
+    permissionStream=await navigator.mediaDevices.getUserMedia({audio:true});
+    if(!state.liveTalk||generation!==state.liveGeneration){releaseLiveAgentPermissionStream(permissionStream);for(const track of permissionStream.getTracks())try{track.stop()}catch{}return;}
+    state.liveAgentPermissionStream=permissionStream;
     const issued=await api('/api/voice/realtime-token',{method:'POST',body:'{}'});
     if(!state.liveTalk||generation!==state.liveGeneration)return;
     const {Conversation}=await import('/assets/elevenlabs-agent.js');
@@ -1514,19 +1527,23 @@ async function connectLiveTalkAgent(){
         }
       },
     });
-    if(!state.liveTalk||generation!==state.liveGeneration){await conversation.endSession();return;}
+    if(!state.liveTalk||generation!==state.liveGeneration){await conversation.endSession();releaseLiveAgentPermissionStream(permissionStream);permissionStream=null;return;}
     state.liveAgentConversation=conversation;
     state.liveAgentConversationId=conversation.getId?.()||state.liveAgentConversationId||issued.conversationId||'';
+    releaseLiveAgentPermissionStream(permissionStream);permissionStream=null;
     state.liveStage=state.liveMuted?'muted':'listening';state.error='';render();
   }catch(error){
+    if(permissionStream)releaseLiveAgentPermissionStream(permissionStream);
     if(!state.liveTalk||generation!==state.liveGeneration)return;
     if(error?.name==='NotAllowedError'||/microphone|permission/i.test(String(error?.message||'')))pauseLiveTalkOnError('Microphone permission was denied. Allow microphone access for this site and reconnect.','agent');
+    else if(error?.name==='SecurityError'||/operation is insecure|secure context/i.test(String(error?.message||'')))pauseLiveTalkOnError('Safari blocked microphone access because this page is not in a secure context. Open OlyHub using its HTTPS address, then reconnect.','agent');
     else pauseLiveTalkOnError(error?.message||'Could not connect to the ElevenLabs Realtime agent. Check that the agent is published and the server API key has access.','agent');
   }
 }
 function toggleLiveTalk(){
   if(state.liveTalk){finishLiveTalkSession();return;}
   if(state.sending){state.error='Wait for Zeus to finish the current reply before starting Live Talk.';render();return;}
+  if(window.isSecureContext===false){state.error='Live Talk requires a secure HTTPS page. Open OlyHub using its HTTPS address and reconnect.';render();return;}
   if(!liveTalkSupported()){state.error='Live Talk requires microphone access, audio playback, and a supported browser.';render();return;}
   state.voiceId=localStorage.getItem('zeus-voice-id')||'marin';unlockLiveAudioFromGesture();
   state.error='';state.liveMuted=false;state.liveFailureKind=null;state.liveRetryCount=0;state.liveTalkStopRequested=false;state.liveAgentPartial='';state.liveTalk=true;state.liveStage='connecting';state.liveGeneration++;state.liveAgentLoggedEvents=new Map();state.liveAgentLogQueue=Promise.resolve();render();connectLiveTalkAgent();
