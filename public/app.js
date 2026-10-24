@@ -15,6 +15,7 @@ const state = {
   messagePage:{hasMore:false,nextCursor:null}, filesPage:{scope:'global',hasMore:false,nextCursor:null}, artifactsPage:{scope:'global',hasMore:false,nextCursor:null}, chatRestore:null,
   voiceBusy:false, voiceRecorder:null, voiceStream:null, voiceChunks:[], voiceStopTimer:null, voiceRecognition:null, voiceBytes:0, voiceHitSizeLimit:false, voiceSubmitRequested:false,
   liveTalk:false, liveTalkStopRequested:false, liveMuted:false, livePersona:'ZEUS', liveFailureKind:null, liveAgentConversation:null, liveAgentConversationId:'', liveAgentPartial:'', liveTextDraft:'', liveTextStatus:'', liveAgentPermissionStream:null, liveAgentLogQueue:Promise.resolve(), liveAgentLoggedEvents:new Map(), liveGeneration:0, liveRetryCount:0, liveStage:'idle', liveLocale:'auto', voiceId:'marin', elevenLabsVoiceId:'', voiceStatus:null, voiceTesting:false, liveSpeechCache:null, voiceReplyAudio:null, liveAudioUrl:null, liveSpeechController:null, liveAudioUnlocked:false, liveSpeechUnlocked:false,
+  messageFeedback:{}, messageAudioId:'', messageAudioBusyId:'', messageAudioUrl:null,
   voiceAvatar:'lightning', elevenLabsVoices:[], elevenLabsVoicesLoaded:false, elevenLabsVoicesLoading:false, elevenLabsVoicesError:'', elevenLabsVoicePageToken:'', elevenLabsVoiceHasMore:false,
   preferences:{personality:'balanced',instructions:''}, preferencesLoaded:false,
   googleSearchResults:{}, googleSearchQueries:{}, googleSearchBusy:null,
@@ -205,6 +206,10 @@ function icon(name){
     close:svg('<path d="M6 6l12 12M18 6 6 18"/>'),
     back:svg('<path d="m15 18-6-6 6-6M9 12h12"/>'),
     check:svg('<path d="m5 12 5 5 9-10"/>'),
+    like:svg('<path d="M7 10v10H4a1 1 0 0 1-1-1v-8a1 1 0 0 1 1-1h3ZM7 10l5-7c2 0 3 1 2 4l-1 3h6a2 2 0 0 1 2 2l-1 6a2 2 0 0 1-2 2H7"/>'),
+    dislike:svg('<path d="M7 14V4H4a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h3ZM7 14l5 7c2 0 3-1 2-4l-1-3h6a2 2 0 0 0 2-2l-1-6a2 2 0 0 0-2-2H7"/>'),
+    speaker:svg('<path d="M4 10v4h4l5 4V6l-5 4H4Z"/><path d="M16 9a5 5 0 0 1 0 6M18.5 6.5a9 9 0 0 1 0 11"/>'),
+    pause:svg('<path d="M8 5v14M16 5v14"/>'),
     folder:svg('<path d="M4 7h6l2 2h8v10H4z"/>'),
     memory:svg('<rect x="5" y="7" width="14" height="10" rx="2"/><path d="M8 7V5M16 7V5M8 19v-2M16 19v-2"/>'),
   };
@@ -329,7 +334,12 @@ function messageHtml(m){
   const usageNote=u?[`Calls ${fmt(u.callsUsed)}${u.maxCalls!=null?`/${fmt(u.maxCalls)}`:''}`,`Tokens in ${fmt(u.inputTokens)} · out ${fmt(u.outputTokens)} · total ${fmt(u.totalTokens)}`,...(Array.isArray(u.byRole)?u.byRole.slice(0,8).map(r=>`${String(r.role||'').replaceAll('_',' ')}: ${fmt(r.inputTokens)}/${fmt(r.outputTokens)}${r.outcome==='failure'?' (failed)':''}`):[]),costNote].join(' · '):'';
   const note=[level,m.metadata?.modeExplanation,m.metadata?.pipelineLabel,phaseNote,lead,m.metadata?.fallback?'fallback':'',m.metadata?.verificationLabel,visionNote,...capabilityNotes,usageNote].filter(Boolean).join(' · ');
   const speaker=m.role==='user'?'YOU':String(m.mode||'ZEUS').toUpperCase();
-  return `<article class="message ${m.role==='user'?'user':'assistant'}"><div class="message-label">${m.role==='user'?'':`<span class="message-bolt" aria-hidden="true">⚡</span>`}<span>${esc(speaker)}</span></div><div class="message-body ${m.role==='assistant'?'markdown-body':''}">${m.role==='assistant'?renderMarkdown(m.content||''):esc(m.content||'')}</div>${note?`<details class="message-debug"><summary>Execution details</summary><div class="message-model">${esc(note)}</div></details>`:''}${sourceHtml}${attached?`<div class="attachments in-message">${attached}</div>`:''}${artifacts?`<div class="artifact-row">${artifacts}</div>`:''}${compareControls}</article>`;
+  const messageId=String(m.id||m.execution_id||'');
+  const reaction=state.messageFeedback[messageId]||'';
+  const activeMessageAudio=state.messageAudioId===messageId;
+  const audioBusy=state.messageAudioBusyId===messageId;
+  const messageActions=m.role==='assistant'&&messageId?`<div class="message-actions" aria-label="Rate or listen to this Zeus reply"><button type="button" class="message-action ${reaction==='up'?'selected':''}" data-message-feedback="up" data-message-id="${esc(messageId)}" aria-label="Approve this answer" aria-pressed="${reaction==='up'}" title="Useful"><span>${icon('like')}</span></button><button type="button" class="message-action ${reaction==='down'?'selected':''}" data-message-feedback="down" data-message-id="${esc(messageId)}" aria-label="Disapprove this answer" aria-pressed="${reaction==='down'}" title="Not useful"><span>${icon('dislike')}</span></button><button type="button" class="message-action message-speak ${activeMessageAudio?'selected':''}" data-message-speak="${esc(messageId)}" aria-label="${audioBusy?'Generating speech':activeMessageAudio?'Pause or resume reading':'Read answer aloud'}" title="${audioBusy?'Preparing voice…':activeMessageAudio?'Pause / resume':'Read aloud'}" ${audioBusy?'disabled':''}><span>${icon(audioBusy?'auto':activeMessageAudio&&state.messageAudioPlaying?'pause':'speaker')}</span></button>${audioBusy?'<span class="message-audio-status" role="status">Preparing voice…</span>':''}</div>`:'';
+  return `<article class="message ${m.role==='user'?'user':'assistant'}"><div class="message-label">${m.role==='user'?'':`<span class="message-bolt" aria-hidden="true">⚡</span>`}<span>${esc(speaker)}</span></div><div class="message-body ${m.role==='assistant'?'markdown-body':''}">${m.role==='assistant'?renderMarkdown(m.content||''):esc(m.content||'')}</div>${messageActions}${note?`<details class="message-debug"><summary>Execution details</summary><div class="message-model">${esc(note)}</div></details>`:''}${sourceHtml}${attached?`<div class="attachments in-message">${attached}</div>`:''}${artifacts?`<div class="artifact-row">${artifacts}</div>`:''}${compareControls}</article>`;
 }
 function artifactCard(a){const tag=esc((a.type||'FILE').toUpperCase().slice(0,4)),url=esc(a.downloadUrl||''),name=esc(a.filename||'Zeus Proxy output'),mime=esc(a.mime_type||a.type||'application/octet-stream'),isImage=String(a.mime_type||'').startsWith('image/'),isZip=a.type==='zip'||/zip/i.test(a.mime_type||'')||String(a.filename||'').toLowerCase().endsWith('.zip'),git=Boolean(state.health?.capabilities?.githubCommit);return `<div class="artifact-card">${isImage?`<button type="button" class="artifact-thumb-wrap" data-open-output="${url}" data-output-name="${name}" data-output-mime="${mime}" aria-label="Open ${name}"><img class="artifact-thumb" data-private-image="${url}" alt=""></button>`:`<div class="out-badge">${tag}</div>`}<div><strong>${name}</strong><small>${fmtSize(a.size)} · ${mime}</small></div><div class="artifact-actions"><button type="button" data-open-output="${url}" data-output-name="${name}" data-output-mime="${mime}">Open</button><button type="button" class="ghost-a" data-download-output="${url}" data-output-name="${name}">Download</button>${isZip&&git?`<button type="button" class="ghost-a" data-github-commit="artifact" data-source-id="${esc(a.id)}" data-source-name="${name}">Commit</button>`:''}</div></div>`}
 const LIVE_LOCALES={auto:'auto',pt:'pt-BR',en:'en-US',es:'es-ES'};
@@ -341,6 +351,7 @@ function initVoicePrefs(){
  const savedVoice=String(localStorage.getItem('zeus-voice-id')||'marin').toLowerCase();
  state.voiceId=['alloy','ash','ballad','coral','echo','fable','nova','onyx','sage','shimmer','verse','marin','cedar'].includes(savedVoice)?savedVoice:'marin';
  const customVoice=String(localStorage.getItem('zeus-elevenlabs-voice-id')||'').trim();state.elevenLabsVoiceId=/^[A-Za-z0-9_-]{2,120}$/.test(customVoice)?customVoice:'';}catch{}
+ try{const saved=JSON.parse(localStorage.getItem('zeus-message-feedback.v1')||'{}');if(saved&&typeof saved==='object'&&!Array.isArray(saved))state.messageFeedback=Object.fromEntries(Object.entries(saved).filter(([,v])=>v==='up'||v==='down').slice(-200));}catch{}
 }
 const ELEVENLABS_VOICE_PATTERN=/^[A-Za-z0-9_-]{2,120}$/;
 const OPENAI_VOICE_NAMES=['alloy','ash','ballad','coral','echo','fable','nova','onyx','sage','shimmer','verse','marin','cedar'];
@@ -394,6 +405,41 @@ async function requestSpeechAudio(text,{elevenLabsVoiceId='',signal}={}){
   const blob=await res.blob();
   if(!blob.size){const failed=new Error('Voice provider returned empty audio.');failed.stage='fetch';throw failed;}
   return {blob,voiceFallback:res.headers.get('X-Zeus-Voice-Fallback')==='1'};
+}
+function setMessageFeedback(messageId,value){
+  const next=state.messageFeedback[messageId]===value?'':value;
+  if(next)state.messageFeedback[messageId]=next;else delete state.messageFeedback[messageId];
+  try{localStorage.setItem('zeus-message-feedback.v1',JSON.stringify(Object.fromEntries(Object.entries(state.messageFeedback).slice(-200))));}catch{}
+  render();
+}
+async function toggleMessageSpeech(messageId){
+  const message=state.messages.find(item=>String(item.id||item.execution_id||'')===messageId&&item.role==='assistant');
+  if(!message)return;
+  if(state.liveTalk){state.error='Finish Live Talk before playing a separate reply aloud.';render();return;}
+  const audio=state.voiceReplyAudio;
+  if(state.messageAudioBusyId===messageId)return;
+  if(state.messageAudioId===messageId&&audio){
+    if(audio.paused){try{await audio.play();state.messageAudioPlaying=true;}catch(error){state.error=`Playback was blocked: ${error?.message||'tap the speaker again'}`;}}
+    else{audio.pause();state.messageAudioPlaying=false;}
+    render();return;
+  }
+  try{audio?.pause()}catch{}
+  if(state.messageAudioUrl){URL.revokeObjectURL(state.messageAudioUrl);state.messageAudioUrl=null;}
+  const replyAudio=audio||new Audio();state.voiceReplyAudio=replyAudio;
+  state.messageAudioId='';state.messageAudioPlaying=false;state.messageAudioBusyId=messageId;state.error='';
+  unlockLiveAudioFromGesture();render();
+  try{
+    const {blob}=await requestSpeechAudio(message.content||'',{elevenLabsVoiceId:state.elevenLabsVoiceId||storedElevenLabsVoiceId()});
+    if(state.messageAudioBusyId!==messageId)return;
+    state.messageAudioUrl=URL.createObjectURL(blob);replyAudio.src=state.messageAudioUrl;replyAudio.muted=false;replyAudio.volume=1;replyAudio.playsInline=true;
+    replyAudio.onended=()=>{if(state.messageAudioId===messageId){state.messageAudioId='';state.messageAudioPlaying=false;if(state.messageAudioUrl)URL.revokeObjectURL(state.messageAudioUrl);state.messageAudioUrl=null;render();}};
+    replyAudio.onerror=()=>{if(state.messageAudioId===messageId){state.messageAudioId='';state.messageAudioPlaying=false;state.error='Zeus voice audio could not be played. Try the speaker again.';render();}};
+    state.messageAudioBusyId='';state.messageAudioId=messageId;
+    await replyAudio.play();state.messageAudioPlaying=true;render();
+  }catch(error){
+    state.messageAudioBusyId='';state.messageAudioId='';state.messageAudioPlaying=false;
+    state.error=`Could not read this answer aloud: ${error?.message||'voice service unavailable'}`;render();
+  }
 }
 async function testElevenLabsVoice(){
   if(state.voiceTesting)return;
@@ -937,6 +983,8 @@ function render(){
 
 function bind(){
   $('#hamburger')?.addEventListener('click',()=>{state.drawer=!state.drawer;render();if(state.drawer)requestAnimationFrame(()=>$('.sidebar .side-nav button.active,.sidebar .side-nav button')?.focus())}); $('#scrim')?.addEventListener('click',()=>{state.drawer=false;render();$('#hamburger')?.focus()});
+  $$('[data-message-feedback]').forEach(button=>button.addEventListener('click',()=>setMessageFeedback(button.dataset.messageId,button.dataset.messageFeedback)));
+  $$('[data-message-speak]').forEach(button=>button.addEventListener('click',()=>toggleMessageSpeech(button.dataset.messageSpeak)));
   $('#close-navigation')?.addEventListener('click',()=>{state.drawer=false;render();$('#hamburger')?.focus()});
   $$('.copy-code').forEach(button=>button.addEventListener('click',async()=>{
     const code=button.parentElement.querySelector('code')?.textContent||'';

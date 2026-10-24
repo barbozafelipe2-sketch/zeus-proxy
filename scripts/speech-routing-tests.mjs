@@ -119,6 +119,12 @@ try{
   assert.match(app,/JSON\.stringify\(\{text,voiceId:state\.voiceId\|\|storageGet\('zeus-voice-id'\)\|\|'marin',elevenLabsVoiceId\}\)/,'standalone TTS still accepts a selected ElevenLabs voice');
   assert.match(app,/zeus-elevenlabs-voice-id/,'the selected ElevenLabs Voice ID is persisted locally');
   assert.match(app,/\/api\/speech\/voices/,'settings load the selectable ElevenLabs account voice catalog');
+  assert.match(app,/data-message-feedback="up"/,'assistant replies expose an approve action');
+  assert.match(app,/data-message-feedback="down"/,'assistant replies expose a disapprove action');
+  assert.match(app,/data-message-speak=/,'assistant replies expose a compact read-aloud action');
+  assert.match(app,/toggleMessageSpeech\(messageId\)/,'read-aloud uses the existing speech generation route');
+  assert.match(app,/elevenLabsVoiceId:state\.elevenLabsVoiceId\|\|storedElevenLabsVoiceId\(\)/,'read-aloud uses the saved ElevenLabs voice ID');
+  assert.match(app,/zeus-message-feedback\.v1/,'answer reactions persist locally between renders');
   console.log('ElevenLabs → OpenAI Gateway → Gemini TTS routing and visible failure handling: PASS');
 }finally{
   if(previousNetlify===undefined)delete globalThis.Netlify;else globalThis.Netlify=previousNetlify;

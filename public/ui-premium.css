@@ -1340,6 +1340,15 @@ body .message.assistant .message-body h1,body .message.assistant .message-body h
 body .message.assistant .message-body a{color:#e7c66f;text-underline-offset:3px}
 body .message.assistant .message-body blockquote{margin:10px 0;padding:9px 13px;border-left:2px solid #cda851;border-radius:0 10px 10px 0;background:#cda8510c;color:#c9c3b6}
 body .message.user .message-body{border-color:#d4b66e55!important;background:linear-gradient(135deg,#d5b86f,#b89046)!important;color:#16130d!important;box-shadow:inset 0 1px #ffffff8a,0 9px 25px #0004!important}
+.message-actions{display:flex;align-items:center;gap:5px;margin:11px 0 0 1px;min-height:30px}
+.message-action{display:grid;place-items:center;width:31px;height:30px;padding:0;border:1px solid transparent;border-radius:9px;background:transparent;color:#9b978d;cursor:pointer;transition:color .16s ease,border-color .16s ease,background .16s ease,transform .16s ease}
+.message-action:hover{color:#e8d39b;border-color:#cda85135;background:#cda8510d;transform:translateY(-1px)}
+.message-action .ico{width:16px;height:16px}
+.message-action.selected{color:#f0ce77;border-color:#cda85155;background:linear-gradient(145deg,#b887341f,#fff9e908);box-shadow:inset 0 1px #ffffff12}
+.message-action:disabled{opacity:.52;cursor:wait}
+.message-speak{margin-left:1px}
+.message-audio-status{margin-left:3px;color:#c7b374;font-size:10px;letter-spacing:.02em}
+@media(prefers-reduced-motion:reduce){.message-action{transition:none}}
 .message.assistant .message-debug{margin-top:11px;padding-top:9px;border-top:1px solid #ffffff12}
 .message.assistant .message-debug summary{color:#b5a174;font-size:10px;letter-spacing:.04em}
 .message.assistant .message-model{color:#a8a398}
