@@ -14,7 +14,7 @@ const state = {
   projectSection:'CHAT', projectMemories:[], projectSources:[], memoryPolicy:null,
   messagePage:{hasMore:false,nextCursor:null}, filesPage:{scope:'global',hasMore:false,nextCursor:null}, artifactsPage:{scope:'global',hasMore:false,nextCursor:null}, chatRestore:null,
   voiceBusy:false, voiceRecorder:null, voiceStream:null, voiceChunks:[], voiceStopTimer:null, voiceRecognition:null, voiceBytes:0, voiceHitSizeLimit:false,
-  liveTalk:false, liveTalkStopRequested:false, liveMuted:false, liveFailureKind:null, liveAgentConversation:null, liveAgentConversationId:'', liveAgentPartial:'', liveAgentPermissionStream:null, liveAgentLogQueue:Promise.resolve(), liveAgentLoggedEvents:new Map(), liveGeneration:0, liveRetryCount:0, liveStage:'idle', liveLocale:'auto', voiceId:'marin', elevenLabsVoiceId:'', voiceStatus:null, voiceTesting:false, liveSpeechCache:null, voiceReplyAudio:null, liveAudioUrl:null, liveSpeechController:null, liveAudioUnlocked:false, liveSpeechUnlocked:false,
+  liveTalk:false, liveTalkStopRequested:false, liveMuted:false, livePersona:'ZEUS', liveFailureKind:null, liveAgentConversation:null, liveAgentConversationId:'', liveAgentPartial:'', liveAgentPermissionStream:null, liveAgentLogQueue:Promise.resolve(), liveAgentLoggedEvents:new Map(), liveGeneration:0, liveRetryCount:0, liveStage:'idle', liveLocale:'auto', voiceId:'marin', elevenLabsVoiceId:'', voiceStatus:null, voiceTesting:false, liveSpeechCache:null, voiceReplyAudio:null, liveAudioUrl:null, liveSpeechController:null, liveAudioUnlocked:false, liveSpeechUnlocked:false,
   voiceAvatar:'lightning', elevenLabsVoices:[], elevenLabsVoicesLoaded:false, elevenLabsVoicesLoading:false, elevenLabsVoicesError:'', elevenLabsVoicePageToken:'', elevenLabsVoiceHasMore:false,
   preferences:{personality:'balanced',instructions:''}, preferencesLoaded:false,
   googleSearchResults:{}, googleSearchQueries:{}, googleSearchBusy:null,
@@ -336,6 +336,7 @@ const LIVE_LOCALES={auto:'auto',pt:'pt-BR',en:'en-US',es:'es-ES'};
 const VOICE_AVATARS=new Set(['lightning','classic','olympus','liquid']);
 function initVoicePrefs(){
  try{const l=localStorage.getItem('zeus-live-locale');state.liveLocale=Object.prototype.hasOwnProperty.call(LIVE_LOCALES,l)?l:'auto';
+ const persona=String(localStorage.getItem('zeus-live-persona')||'ZEUS').toUpperCase();state.livePersona=persona==='ATHENA'?'ATHENA':'ZEUS';
  const a=localStorage.getItem('zeus-voice-avatar');state.voiceAvatar=VOICE_AVATARS.has(a)?a:'lightning';
  const savedVoice=String(localStorage.getItem('zeus-voice-id')||'marin').toLowerCase();
  state.voiceId=['alloy','ash','ballad','coral','echo','fable','nova','onyx','sage','shimmer','verse','marin','cedar'].includes(savedVoice)?savedVoice:'marin';
@@ -442,8 +443,9 @@ function startPlasmaOrb(){
   const ctx=canvas.getContext('2d',{alpha:true});
   if(!ctx)return;
   const reduced=window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
-  const W=256,C=128,R=94;
-  let frame=0,last=0;
+  const W=256,C=128,R=94,scale=Math.min(2,Math.max(1,window.devicePixelRatio||1));
+  canvas.width=Math.round(W*scale);canvas.height=Math.round(W*scale);ctx.scale(scale,scale);
+  let frame=0,last=0,paintCount=0;
   function lightning(x1,y1,x2,y2,depth,alpha){
     const spread=depth>1?10:3;
     const dx=x2-x1,dy=y2-y1;
@@ -453,6 +455,7 @@ function startPlasmaOrb(){
     ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();
   }
   function paint(){
+    paintCount++;
     ctx.clearRect(0,0,W,W);
     // The glow, ring and flash stay inside the same fixed-diameter canvas.
     const halo=ctx.createRadialGradient(C,C,15,C,C,126);
@@ -467,18 +470,29 @@ function startPlasmaOrb(){
     ctx.beginPath();ctx.arc(C,C,R-1,0,Math.PI*2);ctx.stroke();
     ctx.restore();
     ctx.save();ctx.beginPath();ctx.arc(C,C,R-2,0,Math.PI*2);ctx.clip();
+    const glass=ctx.createRadialGradient(C-27,C-32,4,C,C,R);
+    glass.addColorStop(0,'rgba(255,246,218,.17)');glass.addColorStop(.2,'rgba(205,155,70,.12)');glass.addColorStop(.58,'rgba(56,37,10,.19)');glass.addColorStop(1,'rgba(4,4,3,.83)');
+    ctx.fillStyle=glass;ctx.fillRect(C-R,C-R,R*2,R*2);
+    ctx.save();ctx.strokeStyle='rgba(255,224,155,.15)';ctx.lineWidth=.8;
+    for(const radius of [R*.42,R*.66,R*.82]){ctx.beginPath();ctx.arc(C,C,radius,0,Math.PI*2);ctx.stroke();}
+    ctx.restore();
     const intensity=state.liveStage==='speaking'?1:state.liveStage==='processing'?.83:.65;
     ctx.shadowColor='#ffce69';ctx.shadowBlur=9;
-    for(let i=0;i<32;i++){
-      const angle=i*Math.PI*2/32+(Math.random()-.5)*.45;
-      const radius=R*(.68+Math.random()*.28);
+    for(let i=0;i<24;i++){
+      const angle=i*Math.PI*2/24+Math.sin(paintCount*.23+i*2.4)*.025;
+      const radius=R*(.66+((Math.sin(i*17.3)+1)*.12));
       const x=C+Math.cos(angle)*radius,y=C+Math.sin(angle)*radius;
-      lightning(C,C,x,y,4,(.35+Math.random()*.6)*intensity);
+      lightning(C,C,x,y,3,(.3+((Math.sin(i*8.1)+1)*.19))*intensity);
       if(i%3===0){
-        const forkAngle=angle+(.1+Math.random()*.48)*(i%2?1:-1);
-        lightning(C+Math.cos(angle)*30,C+Math.sin(angle)*30,C+Math.cos(forkAngle)*(radius*.83),C+Math.sin(forkAngle)*(radius*.83),3,.24*intensity);
+        const forkAngle=angle+(.12+((Math.sin(i*4.7)+1)*.16))*(i%2?1:-1);
+        lightning(C+Math.cos(angle)*27,C+Math.sin(angle)*27,C+Math.cos(forkAngle)*(radius*.84),C+Math.sin(forkAngle)*(radius*.84),2,.27*intensity);
       }
     }
+    ctx.restore();
+    ctx.save();ctx.translate(C,C);ctx.rotate(-.18);ctx.shadowColor='#f1ce83';ctx.shadowBlur=11;
+    ctx.strokeStyle='rgba(255,226,166,.35)';ctx.lineWidth=1.15;ctx.beginPath();ctx.ellipse(0,0,R*1.04,R*.3,0,0,Math.PI*2);ctx.stroke();ctx.restore();
+    ctx.save();ctx.fillStyle='#ffe9b0';ctx.shadowColor='#ffd46d';ctx.shadowBlur=8;
+    for(const [x,y,r] of [[55,91,1.5],[196,78,1.2],[208,159,1.5],[75,190,1.1],[157,47,1]]){ctx.beginPath();ctx.arc(x,y,r,0,Math.PI*2);ctx.fill();}
     ctx.restore();
     ctx.save();ctx.shadowColor='#fff0c5';ctx.shadowBlur=22;
     const core=ctx.createRadialGradient(C,C,1,C,C,28);
@@ -945,19 +959,20 @@ function githubCommitModal(sourceKind,sourceId,sourceName='project.zip'){
 }
 
 function liveTalkExperience(){
-  const stage=state.liveTalkStopRequested?'Finishing your turn':state.liveMuted?'Microphone muted':state.liveStage==='error'?'Live Talk paused':state.liveStage==='speaking'?'Zeus is speaking':state.liveStage==='processing'?'Preparing your reply':state.liveStage==='connecting'?'Connecting to ElevenLabs Realtime':state.liveStage==='listening'?'Listening':'Live Talk connected';
+  const persona=state.livePersona==='ATHENA'?'ATHENA':'ZEUS';
+  const stage=state.liveTalkStopRequested?'Finishing your turn':state.liveMuted?'Microphone muted':state.liveStage==='error'?'Live Talk paused':state.liveStage==='speaking'?`${persona} is speaking`:state.liveStage==='processing'?'Preparing your reply':state.liveStage==='connecting'?'Connecting to ElevenLabs Realtime':state.liveStage==='listening'?'Listening':'Live Talk connected';
   const latest=[...(state.messages||[])].reverse().find(m=>['assistant','user'].includes(m.role));
   const excerpt=latest?String(latest.content||'').replace(/\s+/g,' ').trim().slice(0,220):'';
   const bars=Array.from({length:41},(_,i)=>`<i style="--wave:${12+((i*17)%39)}%;--delay:${(i%13)*-0.09}s"></i>`).join('');
-  return `<main class="live-talk-experience" id="main-content" tabindex="-1" aria-label="Zeus Live Talk">
+  return `<main class="live-talk-experience" id="main-content" tabindex="-1" aria-label="${persona} Live Talk">
     <div class="live-talk-scene" aria-hidden="true"></div>
     <header class="live-talk-header">
       <button type="button" class="live-glass-button" id="live-talk-return" aria-label="Finish Live Talk and return to chat" title="Return to chat">${icon('back')}</button>
-      <div class="live-talk-brand"><span class="personal-bolt">ϟ</span><span><strong class="logo-word">OLYMPUS HUB</strong><small class="logo-sub">PERSONAL · ZEUS</small></span></div>
+      <div class="live-talk-brand"><span class="personal-bolt">ϟ</span><span><strong class="logo-word">OLYMPUS HUB</strong><small class="logo-sub">PERSONAL · ${persona}</small></span></div>
       <div class="live-pill"><i></i>LIVE</div>
     </header>
     <section class="live-talk-center" aria-live="polite">
-      <div class="live-talk-heading"><span>ZEUS</span><h1>AI <b>VOICE</b></h1></div>
+      <div class="live-talk-heading"><span>${persona}</span><h1>AI <b>VOICE</b></h1></div>
       <p class="live-talk-status ${state.liveStage==='speaking'?'is-speaking':''}">${state.liveStage==='speaking'?'<span class="zeus-speaking-bolt" aria-hidden="true">⚡</span>':''}${esc(stage)}</p>
       <div class="live-talk-orb-wrap">${voiceAvatarMarkup()}<span class="live-talk-orbit live-talk-orbit-a"></span><span class="live-talk-orbit live-talk-orbit-b"></span></div>
       <div class="live-talk-waveform ${state.liveStage==='speaking'?'is-speaking':''}" aria-hidden="true">${bars}</div>
@@ -965,6 +980,10 @@ function liveTalkExperience(){
       <div class="live-talk-mode"><span class="live-mode-dot"></span>ELEVEN REALTIME <span>·</span> ${esc(state.liveLocale==='auto'?'AUTO LANGUAGE':state.liveLocale.toUpperCase())}</div>
     </section>
     ${state.error?`<div class="live-talk-error" role="alert">${esc(state.error)}${state.liveStage==='error'?`<button type="button" id="live-talk-retry">${state.liveFailureKind==='playback_blocked'?'Tap to resume':'Reconnect Realtime'}</button>`:''}</div>`:''}
+    <div class="live-talk-personas" role="group" aria-label="Choose voice persona">
+      <button type="button" class="live-persona-card ${persona==='ZEUS'?'selected':''}" data-live-persona="ZEUS" aria-pressed="${persona==='ZEUS'}"><span class="live-persona-mark zeus-mark">ϟ</span><span class="live-persona-copy"><strong>ZEUS</strong><small>Felipe · masculine</small></span><span class="live-persona-state">${persona==='ZEUS'?'Selected':'Choose'}</span></button>
+      <button type="button" class="live-persona-card athena-card ${persona==='ATHENA'?'selected':''}" data-live-persona="ATHENA" aria-pressed="${persona==='ATHENA'}"><span class="live-persona-mark athena-mark">✦</span><span class="live-persona-copy"><strong>ATHENA</strong><small>Jelyn · feminine</small></span><span class="live-persona-state">${persona==='ATHENA'?'Selected':'Choose'}</span></button>
+    </div>
     <footer class="live-talk-controls"><div class="live-control-hint"><span class="live-mic-dot"></span>${state.liveMuted?'Microphone muted':state.liveStage==='listening'?'Microphone active':state.liveStage==='processing'?'Voice captured':state.liveStage==='speaking'?'Reply audio active':state.liveStage==='error'?'Live Talk paused':'Session ready'}</div><div class="live-call-actions"><button type="button" class="live-mute-button ${state.liveMuted?'is-muted':''}" id="live-talk-mute" aria-pressed="${state.liveMuted}" aria-label="${state.liveMuted?'Unmute microphone':'Mute microphone'}" title="${state.liveMuted?'Unmute microphone':'Mute microphone'}">${icon(state.liveMuted?'mic-off':'mic')}</button><button type="button" class="live-end-call" id="live-talk-end" aria-label="Exit Live Talk immediately and return to chat" title="Exit Live Talk">${icon('close')}</button></div><div class="live-control-caption">Mute the microphone or exit to your saved conversation</div></footer>
   </main>`;
 }
@@ -1133,6 +1152,7 @@ function bind(){
   $('#live-talk')?.addEventListener('click',toggleLiveTalk);
   $$('#live-talk-return,#live-talk-end').forEach(button=>button.addEventListener('click',finishLiveTalkSession));
   $('#live-talk-mute')?.addEventListener('click',toggleLiveTalkMute);
+  $$('[data-live-persona]').forEach(button=>button.addEventListener('click',()=>selectLivePersona(button.dataset.livePersona)));
   $('#live-talk-retry')?.addEventListener('click',retryLiveTalk);
   $('#retry-last')?.addEventListener('click',retryLastMessage);
   $('#zeus-level-cap')?.addEventListener('change',e=>{const n=Number(e.target.value);if([1,2,3].includes(n)){localStorage.setItem('zeus.maxLevel.v1',String(n));render();}});
@@ -1447,7 +1467,7 @@ function pauseLiveTalkOnError(message,kind='agent'){
   discardLiveAudio({keepElement:true});try{window.speechSynthesis?.cancel()}catch{}render();
 }
 function saveLiveAgentMessage(payload,generation,providerConversationId){
-  const content=String(payload?.message||'').trim(),eventId=String(payload?.event_id??'');
+  const content=String(payload?.message||'').replace(/<\/?Athena>/gi,'').trim(),eventId=String(payload?.event_id??'');
   if(!content||!eventId||!state.liveTalk||generation!==state.liveGeneration)return;
   const role=payload?.role==='user'||payload?.source==='user'?'user':'assistant';
   const key=`${role}:${eventId}`;
@@ -1459,6 +1479,11 @@ function saveLiveAgentMessage(payload,generation,providerConversationId){
   }
   if(role==='user')state.liveAgentPartial=content;
   else state.liveAgentPartial='';
+  if(role==='user'){
+    const text=content.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+    if(/\b(?:fale|fala|falar|converse|conversar|chame|chama|chamar|quero falar|talk|speak|switch)\b[\s\S]{0,28}\b(?:(?:com|to|with)\s+)?(?:a\s+)?(?:helen|athena)\b/.test(text)&&state.livePersona!=='ATHENA')selectLivePersona('ATHENA');
+    else if(/\b(?:volta|volte|fale|fala|falar|converse|conversar|quero falar|talk|speak|switch|back)\b[\s\S]{0,28}\b(?:(?:com|to|with)\s+)?(?:o\s+)?zeus\b/.test(text)&&state.livePersona!=='ZEUS')selectLivePersona('ZEUS');
+  }
   if(role==='assistant')state.liveStage='speaking';
   render();
   state.liveAgentLogQueue=state.liveAgentLogQueue.then(async()=>{
@@ -1530,6 +1555,7 @@ async function connectLiveTalkAgent(){
     if(!state.liveTalk||generation!==state.liveGeneration){await conversation.endSession();releaseLiveAgentPermissionStream(permissionStream);permissionStream=null;return;}
     state.liveAgentConversation=conversation;
     state.liveAgentConversationId=conversation.getId?.()||state.liveAgentConversationId||issued.conversationId||'';
+    try{conversation.sendContextualUpdate(livePersonaContext());}catch{}
     releaseLiveAgentPermissionStream(permissionStream);permissionStream=null;
     state.liveStage=state.liveMuted?'muted':'listening';state.error='';render();
   }catch(error){
@@ -1556,6 +1582,19 @@ function toggleLiveTalkMute(){
     state.liveMuted=!state.liveMuted;connection.setMicMuted(state.liveMuted);
     state.liveStage=state.liveMuted?'muted':'listening';state.error='';render();
   }catch(error){pauseLiveTalkOnError(error?.message||'ElevenLabs Realtime could not change microphone state. Reconnect.','agent');}
+}
+function livePersonaContext(persona=state.livePersona){
+  return persona==='ATHENA'
+    ? 'Felipe selected the Athena voice. Speak as Athena using the configured Jelyn multi-voice label; wrap spoken text in <Athena>...</Athena>. Treat “Helen” as an alias for Athena: when Felipe says “talk to Helen” or asks for Helen, switch to Athena. Keep this persona until he selects Zeus or asks to return to Zeus. Do not announce the switch.'
+    : 'Felipe selected the Zeus voice. Speak as Zeus using the agent default voice (Felipe), with spoken text outside voice tags. Treat “Helen” as an alias for Athena only when Felipe explicitly asks to talk to Helen; when switching to Athena, use <Athena>...</Athena>. Otherwise remain Zeus. Do not announce the voice selection.';
+}
+function selectLivePersona(persona){
+  const next=persona==='ATHENA'?'ATHENA':'ZEUS';
+  if(state.livePersona===next)return;
+  state.livePersona=next;try{localStorage.setItem('zeus-live-persona',next)}catch{}
+  try{state.liveAgentConversation?.sendContextualUpdate(livePersonaContext(next));}
+  catch(error){state.error=error?.message||'Could not change the Live Talk persona.';}
+  render();
 }
 async function retryLiveTalk(){
   if(!state.liveTalk)return;

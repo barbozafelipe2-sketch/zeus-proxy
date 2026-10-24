@@ -6,12 +6,18 @@ assert.match(ui,/discardLiveAudio/);assert.match(ui,/zeus-live-stage/);assert.ma
 assert.match(css,/prefers-reduced-motion/);assert.match(css,/width:108px;height:108px/);
 assert.match(ui,/function toggleLiveTalk\(\)/);assert.match(ui,/function saveLiveAgentMessage/);
 const live=ui.slice(ui.indexOf('function finishLiveTalkSession(){'),ui.indexOf('\nasync function startVoice(){'));
+const liveView=ui.slice(ui.indexOf('function liveTalkExperience(){'),ui.indexOf('\nfunction appView(){'));
 assert.ok(live.includes("'/api/voice/realtime-token'"),'Live Talk must request a short-lived ElevenLabs agent token');
 assert.ok(live.indexOf('await navigator.mediaDevices.getUserMedia({audio:true})')<live.indexOf("api('/api/voice/realtime-token'"),'request microphone permission on the start tap before awaiting the token endpoint');
 assert.match(live,/operation is insecure\|secure context/,'insecure-context errors must explain that HTTPS is required');
 assert.match(live,/Conversation\.startSession\(\{/,'Live Talk must connect to the ElevenLabs Realtime agent');
 assert.match(live,/connectionType:'webrtc'/,'Realtime agent must use WebRTC');
 assert.match(live,/connection\.setMicMuted\(state\.liveMuted\)/,'Live Talk must mute and unmute the agent microphone');
+assert.match(liveView,/data-live-persona="ZEUS"/,'Live Talk must offer Zeus');
+assert.match(liveView,/data-live-persona="ATHENA"/,'Live Talk must offer Athena');
+assert.ok(!liveView.includes('HERMES'),'Live Talk must not offer Hermes');
+assert.match(ui,/sendContextualUpdate\(livePersonaContext\(\)\)/,'the selected persona must be sent as context to the Realtime agent');
+assert.match(ui,/talk\|speak\|switch/,'voice commands for Helen/Athena must switch the selected persona');
 assert.match(live,/connection\?\.endSession\?\.\(\)/,'exiting or pausing Live Talk must close the Realtime session');
 assert.match(ui,/Reconnect Realtime/,'Realtime failure must expose an explicit reconnect action');
 assert.ok(!/Scribe\.connect|SpeechRecognition|webkitSpeechRecognition|MediaRecorder|listenServerLiveTalk/.test(live),'Live Talk must not fall back to browser or batch transcription');
