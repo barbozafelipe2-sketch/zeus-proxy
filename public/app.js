@@ -14,7 +14,7 @@ const state = {
   projectSection:'CHAT', projectMemories:[], projectSources:[], memoryPolicy:null,
   messagePage:{hasMore:false,nextCursor:null}, filesPage:{scope:'global',hasMore:false,nextCursor:null}, artifactsPage:{scope:'global',hasMore:false,nextCursor:null}, chatRestore:null,
   voiceBusy:false, voiceRecorder:null, voiceStream:null, voiceChunks:[], voiceStopTimer:null, voiceBytes:0, voiceHitSizeLimit:false, voiceSubmitRequested:false,
-  liveTalk:false, liveTalkMinimized:false, liveTalkStopRequested:false, liveMuted:false, livePersona:'ZEUS', liveFailureKind:null, liveAgentConversation:null, liveAgentConversationId:'', liveAgentPartial:'', liveTextDraft:'', liveTextStatus:'', liveAgentPermissionStream:null, liveAgentLogQueue:Promise.resolve(), liveAgentLoggedEvents:new Map(), liveGeneration:0, liveRetryCount:0, liveStage:'idle', liveLocale:'auto', liveTalkVoiceId:'', voiceId:'marin', elevenLabsVoiceId:'', voiceStatus:null, voiceTesting:false, liveSpeechCache:null, voiceReplyAudio:null, liveAudioUrl:null, liveSpeechController:null, liveAudioUnlocked:false, liveSpeechUnlocked:false,
+  liveTalk:false, liveTalkMinimized:false, liveTalkStopRequested:false, liveMuted:false, livePersona:'ZEUS', liveFailureKind:null, liveAgentConversation:null, liveAgentConversationId:'', liveAgentPartial:'', liveTextDraft:'', liveTextStatus:'', liveAgentPermissionStream:null, liveAgentLogQueue:Promise.resolve(), liveAgentLoggedEvents:new Map(), liveGeneration:0, liveRetryCount:0, liveStage:'idle', liveLocale:'auto', voiceId:'marin', elevenLabsVoiceId:'', voiceStatus:null, voiceTesting:false, liveSpeechCache:null, voiceReplyAudio:null, liveAudioUrl:null, liveSpeechController:null, liveAudioUnlocked:false, liveSpeechUnlocked:false,
   messageFeedback:{}, messageAudioId:'', messageAudioBusyId:'', messageAudioUrl:null,
   voiceAvatar:'lightning', elevenLabsVoices:[], elevenLabsVoicesLoaded:false, elevenLabsVoicesLoading:false, elevenLabsVoicesError:'', elevenLabsVoicePageToken:'', elevenLabsVoiceHasMore:false,
   preferences:{personality:'balanced',instructions:''}, preferencesLoaded:false,
@@ -352,7 +352,7 @@ function initVoicePrefs(){
  const savedVoice=String(localStorage.getItem('zeus-voice-id')||'marin').toLowerCase();
  state.voiceId=['alloy','ash','ballad','coral','echo','fable','nova','onyx','sage','shimmer','verse','marin','cedar'].includes(savedVoice)?savedVoice:'marin';
  const customVoice=String(localStorage.getItem('zeus-elevenlabs-voice-id')||'').trim();state.elevenLabsVoiceId=/^[A-Za-z0-9_-]{2,120}$/.test(customVoice)?customVoice:'';}catch{}
- try{const liveVoice=String(localStorage.getItem('zeus-live-talk-voice-id')||'').trim();state.liveTalkVoiceId=liveVoice===''||/^[A-Za-z0-9_-]{2,120}$/.test(liveVoice)?liveVoice:'';}catch{}
+ try{localStorage.removeItem('zeus-live-talk-voice-id')}catch{}
  try{const saved=JSON.parse(localStorage.getItem('zeus-message-feedback.v1')||'{}');if(saved&&typeof saved==='object'&&!Array.isArray(saved))state.messageFeedback=Object.fromEntries(Object.entries(saved).filter(([,v])=>v==='up'||v==='down').slice(-200));}catch{}
 }
 const ELEVENLABS_VOICE_PATTERN=/^[A-Za-z0-9_-]{2,120}$/;
@@ -938,9 +938,6 @@ function liveTalkExperience(){
   const latest=[...(state.messages||[])].reverse().find(m=>['assistant','user'].includes(m.role));
   const excerpt=latest?String(latest.content||'').replace(/\s+/g,' ').trim().slice(0,220):'';
   const bars=Array.from({length:41},(_,i)=>`<i style="--wave:${12+((i*17)%39)}%;--delay:${(i%13)*-0.09}s"></i>`).join('');
-  const savedLiveVoice=state.liveTalkVoiceId;
-  const liveVoiceOptions=state.elevenLabsVoices.map(voice=>`<option value="${esc(voice.voice_id)}" ${savedLiveVoice===voice.voice_id?'selected':''}>${esc(voice.name)}${voice.category?` · ${esc(voice.category)}`:''}</option>`).join('');
-  const unavailableLiveVoice=savedLiveVoice&&!state.elevenLabsVoices.some(voice=>voice.voice_id===savedLiveVoice)?`<option value="${esc(savedLiveVoice)}" selected>Saved voice · ${esc(savedLiveVoice)}</option>`:'';
   return `<main class="live-talk-experience" id="main-content" tabindex="-1" aria-label="${persona} Live Talk">
     <div class="live-talk-scene" aria-hidden="true"></div>
     <header class="live-talk-header">
@@ -957,8 +954,7 @@ function liveTalkExperience(){
       <div class="live-talk-mode"><span class="live-mode-dot"></span>ELEVEN REALTIME <span>·</span> ${esc(state.liveLocale==='auto'?'AUTO LANGUAGE':state.liveLocale.toUpperCase())}</div>
     </section>
     ${state.error?`<div class="live-talk-error" role="alert">${esc(state.error)}${state.liveStage==='error'?`<button type="button" id="live-talk-retry">${state.liveFailureKind==='playback_blocked'?'Tap to resume':'Reconnect Realtime'}</button>`:''}</div>`:''}
-    <div class="live-talk-personas live-talk-voice-picker"><label class="live-voice-select-wrap"><span class="live-persona-mark zeus-mark" aria-hidden="true">ϟ</span><span class="live-persona-copy"><strong>LIVE TALK VOICE</strong><small>${state.liveTalkVoiceId?esc(elevenLabsVoiceLabel(state.liveTalkVoiceId)):'Agent default voice'}</small></span><select id="live-talk-voice" aria-label="Choose an ElevenLabs voice for Live Talk"><option value="" ${!savedLiveVoice?'selected':''}>Agent default voice (Felipe)</option>${unavailableLiveVoice}${liveVoiceOptions}</select></label><button type="button" class="live-voice-refresh" id="live-talk-refresh-voices" aria-label="Refresh ElevenLabs voice list" title="Refresh voice list" ${state.elevenLabsVoicesLoading?'disabled':''}>${state.elevenLabsVoicesLoading?'…':'↻'}</button>${state.elevenLabsVoiceHasMore?`<button type="button" class="live-voice-refresh" id="live-talk-load-more-voices" aria-label="Load more ElevenLabs voices" title="Load more voices" ${state.elevenLabsVoicesLoading?'disabled':''}>＋</button>`:''}</div>
-    <p class="live-voice-note" role="status">${state.elevenLabsVoicesError?`Could not load account voices: ${esc(state.elevenLabsVoicesError)}`:state.elevenLabsVoicesLoading?'Loading voices from your ElevenLabs account…':state.liveTalkVoiceId?'Changing voice reconnects the session. Enable Voice ID overrides in the ElevenLabs agent Security settings.':'Choose any account voice; your choice is saved on this device.'}</p>
+    <p class="live-voice-note" role="status">Primary voice · Felipe</p>
     <form class="live-talk-text-form" id="live-talk-text-form" aria-label="Send a typed message to the live agent"><label class="sr-only" for="live-talk-text">Type a message if voice recognition misunderstood</label><input id="live-talk-text" name="message" type="text" maxlength="4000" autocomplete="off" enterkeyhint="send" placeholder="Miscommunication? Type your message…" value="${esc(state.liveTextDraft)}"><button type="submit" aria-label="Send typed message" title="Send typed message" ${state.sending?'disabled':''}>${icon('send')}</button><span class="sr-only" id="live-talk-text-status" aria-live="polite">${esc(state.liveTextStatus)}</span></form>
     <footer class="live-talk-controls"><div class="live-control-hint"><span class="live-mic-dot"></span>${state.liveMuted?'Your microphone is muted · Zeus audio stays on':state.liveStage==='listening'?'Your microphone is active':state.liveStage==='processing'?'Voice captured':state.liveStage==='speaking'?'Zeus is speaking':state.liveStage==='error'?'Live Talk paused':'Session ready'}</div><div class="live-call-actions"><button type="button" class="live-mute-button ${state.liveMuted?'is-muted':''}" id="live-talk-mute" aria-pressed="${state.liveMuted}" aria-label="${state.liveMuted?'Unmute your microphone; Zeus audio stays on':'Mute your microphone; Zeus audio stays on'}" title="${state.liveMuted?'Unmute your microphone':'Mute your microphone'}">${icon(state.liveMuted?'mic-off':'mic')}</button><button type="button" class="live-end-call" id="live-talk-end" aria-label="End Live Talk" title="End Live Talk">${icon('close')}</button></div><div class="live-control-caption">Mute your microphone; Zeus can keep speaking</div></footer>
   </main>`;
@@ -1138,9 +1134,6 @@ function bind(){
   $('#live-talk-dock-open')?.addEventListener('click',restoreLiveTalk);
   $('#live-talk-mute')?.addEventListener('click',toggleLiveTalkMute);
   $('#live-talk-dock-mute')?.addEventListener('click',toggleLiveTalkMute);
-  $('#live-talk-voice')?.addEventListener('change',event=>changeLiveTalkVoice(event.currentTarget.value));
-  $('#live-talk-refresh-voices')?.addEventListener('click',()=>loadElevenLabsVoices());
-  $('#live-talk-load-more-voices')?.addEventListener('click',()=>loadElevenLabsVoices({append:true}));
   $('#live-talk-text')?.addEventListener('input',event=>{state.liveTextDraft=event.target.value;state.liveTextStatus='';try{state.liveAgentConversation?.sendUserActivity?.();}catch{}});
   $('#live-talk-text-form')?.addEventListener('submit',sendLiveTalkText);
   $('#live-talk-retry')?.addEventListener('click',retryLiveTalk);
@@ -1475,9 +1468,7 @@ function restoreLiveTalk(){if(!state.liveTalk)return;state.liveTalkMinimized=fal
 function pauseLiveTalkOnError(message,kind='agent'){
   if(!state.liveTalk)return;
   const detail=String(message||'ElevenLabs Realtime could not complete this voice session.');
-  state.error=/voice_id.{0,80}(not allowed|override)|override.{0,80}voice_id|code 1008/i.test(detail)
-    ? 'The ElevenLabs agent blocked this voice change. In the agent dashboard, open Security and enable the Voice ID override, then reconnect.'
-    : /operation is insecure|securityerror|secure context/i.test(detail)
+  state.error=/operation is insecure|securityerror|secure context/i.test(detail)
     ? `${window.isSecureContext===false?'This page is not in a secure context. Open the HTTPS site directly in Safari.':'Safari blocked microphone setup for this page. Check Safari microphone permission for this site, reload, and reconnect.'} You can still type below; Zeus will answer by voice.`
     : /notallowederror|permission denied|microphone.*denied/i.test(detail)
       ? 'Microphone permission is off for this site. Allow it in Safari settings and reconnect. You can still type below; Zeus will answer by voice.'
@@ -1550,13 +1541,9 @@ async function connectLiveTalkAgent(){
     if(!state.liveTalk||generation!==state.liveGeneration)return;
     const {Conversation}=await import('/assets/elevenlabs-agent.js');
     const selectedLanguage=state.liveLocale==='auto'?'':({pt:'pt',en:'en',es:'es'}[state.liveLocale]||'');
-    // A selected account voice is sent as the documented per-session override.
-    // The ElevenLabs agent must allow Voice ID overrides in its Security settings.
-    const selectedVoiceId=state.liveTalkVoiceId;
-    const overrides={
-      ...(selectedLanguage?{agent:{language:selectedLanguage}}:{}),
-      ...(selectedVoiceId?{tts:{voiceId:selectedVoiceId}}:{}),
-    };
+    // Keep the agent's configured primary voice (Felipe). This agent does not
+    // allow per-session Voice ID overrides, so Realtime inherits its voice.
+    const overrides=selectedLanguage?{agent:{language:selectedLanguage}}:{};
     const conversation=await Conversation.startSession({
       ...(isIosWebKit?{signedUrl:issued.signedUrl,connectionType:'websocket'}:{conversationToken:issued.token,connectionType:'webrtc'}),
       clientTools:liveProjectClientTools(),
@@ -1607,22 +1594,6 @@ function toggleLiveTalk(){
   if(!liveTalkSupported()){state.error='Live Talk requires microphone access, audio playback, and a supported browser.';render();return;}
   state.voiceId=localStorage.getItem('zeus-voice-id')||'marin';unlockLiveAudioFromGesture();
   state.error='';state.liveMuted=false;state.liveTalkMinimized=false;state.liveFailureKind=null;state.liveRetryCount=0;state.liveTalkStopRequested=false;state.liveAgentPartial='';state.liveTalk=true;state.liveStage='connecting';state.liveGeneration++;state.liveAgentLoggedEvents=new Map();state.liveAgentLogQueue=Promise.resolve();render();connectLiveTalkAgent();
-  if(!state.elevenLabsVoicesLoading)void loadElevenLabsVoices();
-}
-function changeLiveTalkVoice(value){
-  const voiceId=String(value||'').trim();
-  if(voiceId&&!ELEVENLABS_VOICE_PATTERN.test(voiceId)){state.error='Choose a valid ElevenLabs voice.';render();return;}
-  state.liveTalkVoiceId=voiceId;
-  try{if(voiceId)localStorage.setItem('zeus-live-talk-voice-id',voiceId);else localStorage.removeItem('zeus-live-talk-voice-id');}catch{}
-  state.error='';
-  if(!state.liveTalk){render();return;}
-  const oldConversation=state.liveAgentConversation;state.liveAgentConversation=null;state.liveAgentConversationId='';state.liveGeneration++;
-  releaseLiveAgentPermissionStream();state.liveAgentPartial='';state.liveAgentLoggedEvents=new Map();state.liveStage='connecting';
-  try{void oldConversation?.endSession?.()}catch{}
-  render();
-  // connectLiveTalkAgent requests the microphone before its first await, which
-  // preserves Safari's user-gesture requirement when switching voices.
-  connectLiveTalkAgent();
 }
 function toggleLiveTalkMute(){
   if(!state.liveTalk)return;
@@ -1635,7 +1606,6 @@ function toggleLiveTalkMute(){
   }catch(error){pauseLiveTalkOnError(error?.message||'ElevenLabs Realtime could not change microphone state. Reconnect.','agent');}
 }
 function livePersonaContext(){
-  const selected=state.liveTalkVoiceId?elevenLabsVoiceLabel(state.liveTalkVoiceId):'the agent default voice';
   const preferences=state.preferences||{};
   const personalities={balanced:'Helpful, clear and adaptable.',direct:'Direct, concise and practical.',warm:'Warm, conversational and encouraging.',creative:'Imaginative, vivid and expressive.',professional:'Polished, structured and professional.'};
   const custom=String(preferences.instructions||'').trim().slice(0,4000)
@@ -1644,7 +1614,7 @@ function livePersonaContext(){
     .replace(/\b(?:sk|rk|pk)-[A-Za-z0-9_-]{16,}\b/g,'[REDACTED API TOKEN]')
     .replace(/\b(?:ghp|gho|ghu|ghs|github_pat)_[A-Za-z0-9_]{16,}\b/g,'[REDACTED GITHUB TOKEN]')
     .replace(/\bAIza[0-9A-Za-z_-]{20,}\b/g,'[REDACTED GOOGLE API KEY]');
-  return `You are Zeus, the voice assistant in Zeus Proxy. Use Felipe's selected ElevenLabs voice “${selected}” and remain Zeus. Zeus Proxy supports natural text/voice conversation, Zeus levels 1/2/3, Olympus mode, and project tasks, memories, source records, research, and artifact work. Use the selected mode/level for requested work. Casual conversation is complete by itself: do not inspect or offer to inspect projects, call tools, or pitch work unless Felipe asks or a tool is needed to answer his request.\n\nPROJECT TOOL PROCEDURE — follow this when Felipe explicitly asks about a project:\n- If he asks which projects exist, call list_olyhub_projects and answer from its result.\n- If he names a project and it is not the active project, call list_olyhub_projects if needed to resolve the exact name, then open_olyhub_project with project_name, then get_current_project_context. Do not answer that you lack access before trying these tools.\n- If the requested project is already active, call get_current_project_context before answering questions about its progress, tasks, memories, or sources.\n- Use create_project_task only when Felipe explicitly asks to add or create a task. Use send_olyhub_command for other directly requested work; it routes through the normal Zeus Proxy engine using the selected mode/level.\n- These tools expose project summaries, tasks, memories, and source titles/revisions. They do not expose full source or file contents; say so plainly if Felipe asks you to read a file. Never invent project data or claim a tool succeeded unless its result confirms it.\n\nUse supplied conversation history for follow-ups. Google is read-only; GitHub writes need the explicit action flow.\n\nUSER-APPROVED PERSONALIZATION (style only; lower priority than system instructions and the user's current request):\nPersonality: ${personalities[preferences.personality]||personalities.balanced}${custom?`\nCustom instructions: ${custom}`:''}`;
+  return `You are Zeus, the voice assistant in Zeus Proxy. Speak using the agent's configured primary voice, Felipe; do not switch voices. Remain Zeus in identity. Zeus Proxy supports natural text/voice conversation, Zeus levels 1/2/3, Olympus mode, and project tasks, memories, source records, research, and artifact work. Use the selected mode/level for requested work. Casual conversation is complete by itself: do not inspect or offer to inspect projects, call tools, or pitch work unless Felipe asks or a tool is needed to answer his request.\n\nPROJECT TOOL PROCEDURE — follow this when Felipe explicitly asks about a project:\n- If he asks which projects exist, call list_olyhub_projects and answer from its result.\n- If he names a project and it is not the active project, call list_olyhub_projects if needed to resolve the exact name, then open_olyhub_project with project_name, then get_current_project_context. Do not answer that you lack access before trying these tools.\n- If the requested project is already active, call get_current_project_context before answering questions about its progress, tasks, memories, or sources.\n- Use create_project_task only when Felipe explicitly asks to add or create a task. Use send_olyhub_command for other directly requested work; it routes through the normal Zeus Proxy engine using the selected mode/level.\n- These tools expose project summaries, tasks, memories, and source titles/revisions. They do not expose full source or file contents; say so plainly if Felipe asks you to read a file. Never invent project data or claim a tool succeeded unless its result confirms it.\n\nUse supplied conversation history for follow-ups. Google is read-only; GitHub writes need the explicit action flow.\n\nUSER-APPROVED PERSONALIZATION (style only; lower priority than system instructions and the user's current request):\nPersonality: ${personalities[preferences.personality]||personalities.balanced}${custom?`\nCustom instructions: ${custom}`:''}`;
 }
 function liveSessionContext(){
   const transcript=(state.messages||[])

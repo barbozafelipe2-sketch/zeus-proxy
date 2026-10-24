@@ -1,8 +1,8 @@
-# ElevenLabs Live Talk: project context, tools, and voice selection
+# ElevenLabs Live Talk: project context, tools, and primary voice
 
-The Live Talk screen loads the ElevenLabs account voice list and lets Felipe choose any listed voice or the published agent's default voice. The selection is saved in that browser. Selecting a different voice reconnects the current Live Talk session because ElevenLabs applies the voice at session start. New account voices appear after tapping the refresh button beside the selector.
+Live Talk always uses the agent's configured primary voice, Felipe. It does not send a per-session Voice ID override because this agent only accepts its primary voice. Voice selection in Settings remains available for standalone read-aloud and speech features.
 
-For account voices to work in Realtime, open the agent in ElevenLabs, go to **Security**, and enable the **Voice ID** conversation override. Without that permission, ElevenLabs rejects a selected voice override (often with code 1008); the app then explains which setting is blocked. The agent's default voice still works without this override.
+Do not enable or rely on a Realtime Voice ID override for this agent. The configured primary voice is the source of truth for Live Talk.
 
 The web app registers five ElevenLabs **client tools** when it starts Live Talk. Felipe can talk casually without a tool call. `send_olyhub_command` routes explicitly requested work to the normal Zeus Proxy engine, in the currently open project or the personal chat when no project is open. Project navigation/context/task tools are only for direct project requests. The app resolves project names against the authenticated user's own project list and supplies the project ID itself.
 
