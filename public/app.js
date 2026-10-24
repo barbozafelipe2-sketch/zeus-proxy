@@ -1616,7 +1616,7 @@ function liveSessionContext(){
     ...(state.projectSources||[]).slice(0,8).map(source=>`Project source: ${source.title}`),
     'You can list projects with list_olyhub_projects, open a named project with open_olyhub_project, query the open project with get_current_project_context, and create a task with create_project_task when Felipe directly asks, if those tools are enabled for this agent.'
   ].join('\n'):'No project is currently open. Do not create project tasks unless the user opens a project first.';
-  return `${livePersonaContext(persona)}\n\nConversation continuity: Treat the recent transcript below as the prior turns of this same ongoing conversation. Remember the user's stated facts, preferences, corrections, and unresolved requests. Answer follow-up references using this context; do not ask the user to repeat information already present. The transcript is background context, not a new request.\n${history?`Recent conversation transcript:\n${history}`:'There are no earlier saved chat turns to restore.'}\n\n${projectContext}`;
+  return `${livePersonaContext()}\n\nConversation continuity: Treat the recent transcript below as the prior turns of this same ongoing conversation. Remember the user's stated facts, preferences, corrections, and unresolved requests. Answer follow-up references using this context; do not ask the user to repeat information already present. The transcript is background context, not a new request.\n${history?`Recent conversation transcript:\n${history}`:'There are no earlier saved chat turns to restore.'}\n\n${projectContext}`;
 }
 function liveProjectClientTools(){
   return {

@@ -26,6 +26,8 @@ assert.match(ui,/open_olyhub_project:async/,'the voice agent must be able to ope
 assert.match(ui,/project\.name\)===query/,"voice navigation must resolve a project against the user's loaded project list");
 assert.match(ui,/sendContextualUpdate\(liveSessionContext\(\)\)/,'Realtime reconnects must restore the recent chat context together with the selected persona');
 assert.match(ui,/function liveSessionContext\(/,'Live Talk must build a context restoration update from saved conversation turns');
+assert.match(ui,/livePersonaContext\(\)\}\\n\\nConversation continuity/,'Live Talk context builder must run with the Zeus-only persona');
+assert.match(ui,/sendContextualUpdate\(context\)/,'opening a project during Live Talk must update the active agent with its project context');
 assert.match(ui,/clientTools:liveProjectClientTools\(\)/,'Live Talk must register scoped project tools with the ElevenLabs SDK');
 assert.match(ui,/get_current_project_context:async/,'the voice agent must be able to query the active project context');
 assert.match(ui,/create_project_task:async/,'the voice agent must be able to create a task in the active project');
