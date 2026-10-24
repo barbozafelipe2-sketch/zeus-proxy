@@ -19,8 +19,14 @@ assert.match(live,/rawAudioProcessor:'\/assets\/elevenlabs-worklets\/raw-audio-p
 assert.match(live,/audioConcatProcessor:'\/assets\/elevenlabs-worklets\/audio-concat-processor\.js'/,'Live Talk must self-host the output AudioWorklet under the strict CSP');
 assert.match(live,/libsampleratePath:'\/assets\/elevenlabs-worklets\/libsamplerate\.worklet\.js'/,'Live Talk must self-host the iOS resampler worklet under the strict CSP');
 assert.match(live,/connection\.setMicMuted\(state\.liveMuted\)/,'Live Talk must mute and unmute the agent microphone');
-assert.match(liveView,/class="live-persona-card selected"/,'Live Talk must show the selected Zeus voice');
-assert.ok(!liveView.includes('ATHENA')&&!liveView.includes('data-live-persona'),'Live Talk must temporarily hide Athena and voice switching');
+assert.match(liveView,/id="live-talk-voice"/,'Live Talk must let the user choose an account voice');
+assert.match(liveView,/state\.elevenLabsVoices\.map\(voice/,'Live Talk voice choices must come from the authenticated ElevenLabs account list');
+assert.match(liveView,/Agent default voice \(Felipe\)/,'Live Talk must retain an option to use the configured default voice');
+assert.ok(!liveView.includes('ATHENA')&&!liveView.includes('data-live-persona'),'Live Talk must not expose Athena as a separate agent persona');
+assert.match(live,/tts:\{voiceId:selectedVoiceId\}/,'selected Live Talk account voice must use ElevenLabs TTS voice override');
+assert.match(live,/function changeLiveTalkVoice\(/,'changing the Live Talk voice must reconnect with the chosen voice');
+assert.match(live,/zeus-live-talk-voice-id/,'the Live Talk voice choice must persist on the device');
+assert.match(live,/enable the Voice ID override/i,'a blocked voice override must show the ElevenLabs Security setting needed to enable it');
 assert.match(ui,/list_olyhub_projects:async/,"the voice agent must be able to list the authenticated user's projects");
 assert.match(ui,/open_olyhub_project:async/,'the voice agent must be able to open a project by name');
 assert.match(ui,/project\.name\)===query/,"voice navigation must resolve a project against the user's loaded project list");

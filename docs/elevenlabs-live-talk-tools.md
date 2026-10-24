@@ -1,4 +1,8 @@
-# ElevenLabs Live Talk: project context and tools
+# ElevenLabs Live Talk: project context, tools, and voice selection
+
+The Live Talk screen loads the ElevenLabs account voice list and lets Felipe choose any listed voice or the published agent's default voice. The selection is saved in that browser. Selecting a different voice reconnects the current Live Talk session because ElevenLabs applies the voice at session start. New account voices appear after tapping the refresh button beside the selector.
+
+For account voices to work in Realtime, open the agent in ElevenLabs, go to **Security**, and enable the **Voice ID** conversation override. Without that permission, ElevenLabs rejects a selected voice override (often with code 1008); the app then explains which setting is blocked. The agent's default voice still works without this override.
 
 The web app registers five ElevenLabs **client tools** when it starts Live Talk. The agent can select a project by name, but OlyHub resolves that name against the authenticated user's own project list and supplies the project ID itself.
 
@@ -43,6 +47,6 @@ In the ElevenLabs agent dashboard, add these tools under **Tools → Client**. N
 
 Add this to the agent's system prompt:
 
-> You are Zeus, the voice interface for OlyHub. This Live Talk currently supports Zeus only. Context supplied by OlyHub describes the active project and recent chat; use it to answer follow-ups without making Felipe repeat himself. To enter a project, call `list_olyhub_projects` if needed, then `open_olyhub_project` with its name. When asked for current project details, call `get_current_project_context`. When Felipe directly asks for work that requires OlyHub's intelligence engine, call `send_olyhub_command` with the user's request; it uses the selected Zeus level cap or Olympus mode for the open project. For a direct request to add a task, use `create_project_task`; if the title or intended project is unclear, ask first. Never claim an action succeeded unless the tool confirms `ok=true`.
+> You are Zeus, the voice interface for OlyHub. Felipe may choose any available ElevenLabs voice for this session; remain Zeus in identity and behavior, and use the selected voice for speech. Context supplied by OlyHub describes the active project and recent chat; use it to answer follow-ups without making Felipe repeat himself. To enter a project, call `list_olyhub_projects` if needed, then `open_olyhub_project` with its name. When asked for current project details, call `get_current_project_context`. When Felipe directly asks for work that requires OlyHub's intelligence engine, call `send_olyhub_command` with the user's request; it uses the selected Zeus level cap or Olympus mode for the open project. For a direct request to add a task, use `create_project_task`; if the title or intended project is unclear, ask first. Never claim an action succeeded unless the tool confirms `ok=true`.
 
 The app also sends the current project's name, goal, status, task list, approved memories, source titles, and recent conversation turns as a contextual update on connect/reconnect. Full source contents and files are not exposed to the voice tools.

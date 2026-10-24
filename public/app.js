@@ -14,7 +14,7 @@ const state = {
   projectSection:'CHAT', projectMemories:[], projectSources:[], memoryPolicy:null,
   messagePage:{hasMore:false,nextCursor:null}, filesPage:{scope:'global',hasMore:false,nextCursor:null}, artifactsPage:{scope:'global',hasMore:false,nextCursor:null}, chatRestore:null,
   voiceBusy:false, voiceRecorder:null, voiceStream:null, voiceChunks:[], voiceStopTimer:null, voiceBytes:0, voiceHitSizeLimit:false, voiceSubmitRequested:false,
-  liveTalk:false, liveTalkStopRequested:false, liveMuted:false, livePersona:'ZEUS', liveFailureKind:null, liveAgentConversation:null, liveAgentConversationId:'', liveAgentPartial:'', liveTextDraft:'', liveTextStatus:'', liveAgentPermissionStream:null, liveAgentLogQueue:Promise.resolve(), liveAgentLoggedEvents:new Map(), liveGeneration:0, liveRetryCount:0, liveStage:'idle', liveLocale:'auto', voiceId:'marin', elevenLabsVoiceId:'', voiceStatus:null, voiceTesting:false, liveSpeechCache:null, voiceReplyAudio:null, liveAudioUrl:null, liveSpeechController:null, liveAudioUnlocked:false, liveSpeechUnlocked:false,
+  liveTalk:false, liveTalkStopRequested:false, liveMuted:false, livePersona:'ZEUS', liveFailureKind:null, liveAgentConversation:null, liveAgentConversationId:'', liveAgentPartial:'', liveTextDraft:'', liveTextStatus:'', liveAgentPermissionStream:null, liveAgentLogQueue:Promise.resolve(), liveAgentLoggedEvents:new Map(), liveGeneration:0, liveRetryCount:0, liveStage:'idle', liveLocale:'auto', liveTalkVoiceId:'', voiceId:'marin', elevenLabsVoiceId:'', voiceStatus:null, voiceTesting:false, liveSpeechCache:null, voiceReplyAudio:null, liveAudioUrl:null, liveSpeechController:null, liveAudioUnlocked:false, liveSpeechUnlocked:false,
   messageFeedback:{}, messageAudioId:'', messageAudioBusyId:'', messageAudioUrl:null,
   voiceAvatar:'lightning', elevenLabsVoices:[], elevenLabsVoicesLoaded:false, elevenLabsVoicesLoading:false, elevenLabsVoicesError:'', elevenLabsVoicePageToken:'', elevenLabsVoiceHasMore:false,
   preferences:{personality:'balanced',instructions:''}, preferencesLoaded:false,
@@ -351,6 +351,7 @@ function initVoicePrefs(){
  const savedVoice=String(localStorage.getItem('zeus-voice-id')||'marin').toLowerCase();
  state.voiceId=['alloy','ash','ballad','coral','echo','fable','nova','onyx','sage','shimmer','verse','marin','cedar'].includes(savedVoice)?savedVoice:'marin';
  const customVoice=String(localStorage.getItem('zeus-elevenlabs-voice-id')||'').trim();state.elevenLabsVoiceId=/^[A-Za-z0-9_-]{2,120}$/.test(customVoice)?customVoice:'';}catch{}
+ try{const liveVoice=String(localStorage.getItem('zeus-live-talk-voice-id')||'').trim();state.liveTalkVoiceId=liveVoice===''||/^[A-Za-z0-9_-]{2,120}$/.test(liveVoice)?liveVoice:'';}catch{}
  try{const saved=JSON.parse(localStorage.getItem('zeus-message-feedback.v1')||'{}');if(saved&&typeof saved==='object'&&!Array.isArray(saved))state.messageFeedback=Object.fromEntries(Object.entries(saved).filter(([,v])=>v==='up'||v==='down').slice(-200));}catch{}
 }
 const ELEVENLABS_VOICE_PATTERN=/^[A-Za-z0-9_-]{2,120}$/;
@@ -936,6 +937,9 @@ function liveTalkExperience(){
   const latest=[...(state.messages||[])].reverse().find(m=>['assistant','user'].includes(m.role));
   const excerpt=latest?String(latest.content||'').replace(/\s+/g,' ').trim().slice(0,220):'';
   const bars=Array.from({length:41},(_,i)=>`<i style="--wave:${12+((i*17)%39)}%;--delay:${(i%13)*-0.09}s"></i>`).join('');
+  const savedLiveVoice=state.liveTalkVoiceId;
+  const liveVoiceOptions=state.elevenLabsVoices.map(voice=>`<option value="${esc(voice.voice_id)}" ${savedLiveVoice===voice.voice_id?'selected':''}>${esc(voice.name)}${voice.category?` · ${esc(voice.category)}`:''}</option>`).join('');
+  const unavailableLiveVoice=savedLiveVoice&&!state.elevenLabsVoices.some(voice=>voice.voice_id===savedLiveVoice)?`<option value="${esc(savedLiveVoice)}" selected>Saved voice · ${esc(savedLiveVoice)}</option>`:'';
   return `<main class="live-talk-experience" id="main-content" tabindex="-1" aria-label="${persona} Live Talk">
     <div class="live-talk-scene" aria-hidden="true"></div>
     <header class="live-talk-header">
@@ -952,7 +956,8 @@ function liveTalkExperience(){
       <div class="live-talk-mode"><span class="live-mode-dot"></span>ELEVEN REALTIME <span>·</span> ${esc(state.liveLocale==='auto'?'AUTO LANGUAGE':state.liveLocale.toUpperCase())}</div>
     </section>
     ${state.error?`<div class="live-talk-error" role="alert">${esc(state.error)}${state.liveStage==='error'?`<button type="button" id="live-talk-retry">${state.liveFailureKind==='playback_blocked'?'Tap to resume':'Reconnect Realtime'}</button>`:''}</div>`:''}
-    <div class="live-talk-personas" role="status" aria-label="Selected voice"><div class="live-persona-card selected"><span class="live-persona-mark zeus-mark">ϟ</span><span class="live-persona-copy"><strong>ZEUS</strong><small>Felipe · masculine</small></span><span class="live-persona-state">Selected</span></div></div>
+    <div class="live-talk-personas live-talk-voice-picker"><label class="live-voice-select-wrap"><span class="live-persona-mark zeus-mark" aria-hidden="true">ϟ</span><span class="live-persona-copy"><strong>LIVE TALK VOICE</strong><small>${state.liveTalkVoiceId?esc(elevenLabsVoiceLabel(state.liveTalkVoiceId)):'Agent default voice'}</small></span><select id="live-talk-voice" aria-label="Choose an ElevenLabs voice for Live Talk"><option value="" ${!savedLiveVoice?'selected':''}>Agent default voice (Felipe)</option>${unavailableLiveVoice}${liveVoiceOptions}</select></label><button type="button" class="live-voice-refresh" id="live-talk-refresh-voices" aria-label="Refresh ElevenLabs voice list" title="Refresh voice list" ${state.elevenLabsVoicesLoading?'disabled':''}>${state.elevenLabsVoicesLoading?'…':'↻'}</button>${state.elevenLabsVoiceHasMore?`<button type="button" class="live-voice-refresh" id="live-talk-load-more-voices" aria-label="Load more ElevenLabs voices" title="Load more voices" ${state.elevenLabsVoicesLoading?'disabled':''}>＋</button>`:''}</div>
+    <p class="live-voice-note" role="status">${state.elevenLabsVoicesError?`Could not load account voices: ${esc(state.elevenLabsVoicesError)}`:state.elevenLabsVoicesLoading?'Loading voices from your ElevenLabs account…':state.liveTalkVoiceId?'Changing voice reconnects the session. Enable Voice ID overrides in the ElevenLabs agent Security settings.':'Choose any account voice; your choice is saved on this device.'}</p>
     <form class="live-talk-text-form" id="live-talk-text-form" aria-label="Send a typed message to the live agent"><label class="sr-only" for="live-talk-text">Type a message if voice recognition misunderstood</label><input id="live-talk-text" name="message" type="text" maxlength="4000" autocomplete="off" enterkeyhint="send" placeholder="Miscommunication? Type your message…" value="${esc(state.liveTextDraft)}"><button type="submit" aria-label="Send typed message" title="Send typed message" ${state.sending?'disabled':''}>${icon('send')}</button><span class="sr-only" id="live-talk-text-status" aria-live="polite">${esc(state.liveTextStatus)}</span></form>
     <footer class="live-talk-controls"><div class="live-control-hint"><span class="live-mic-dot"></span>${state.liveMuted?'Microphone muted':state.liveStage==='listening'?'Microphone active':state.liveStage==='processing'?'Voice captured':state.liveStage==='speaking'?'Reply audio active':state.liveStage==='error'?'Live Talk paused':'Session ready'}</div><div class="live-call-actions"><button type="button" class="live-mute-button ${state.liveMuted?'is-muted':''}" id="live-talk-mute" aria-pressed="${state.liveMuted}" aria-label="${state.liveMuted?'Unmute microphone':'Mute microphone'}" title="${state.liveMuted?'Unmute microphone':'Mute microphone'}">${icon(state.liveMuted?'mic-off':'mic')}</button><button type="button" class="live-end-call" id="live-talk-end" aria-label="Exit Live Talk immediately and return to chat" title="Exit Live Talk">${icon('close')}</button></div><div class="live-control-caption">Mute the microphone or exit to your saved conversation</div></footer>
   </main>`;
@@ -1124,6 +1129,9 @@ function bind(){
   $('#live-talk')?.addEventListener('click',toggleLiveTalk);
   $$('#live-talk-return,#live-talk-end').forEach(button=>button.addEventListener('click',finishLiveTalkSession));
   $('#live-talk-mute')?.addEventListener('click',toggleLiveTalkMute);
+  $('#live-talk-voice')?.addEventListener('change',event=>changeLiveTalkVoice(event.currentTarget.value));
+  $('#live-talk-refresh-voices')?.addEventListener('click',()=>loadElevenLabsVoices());
+  $('#live-talk-load-more-voices')?.addEventListener('click',()=>loadElevenLabsVoices({append:true}));
   $('#live-talk-text')?.addEventListener('input',event=>{state.liveTextDraft=event.target.value;state.liveTextStatus='';try{state.liveAgentConversation?.sendUserActivity?.();}catch{}});
   $('#live-talk-text-form')?.addEventListener('submit',sendLiveTalkText);
   $('#live-talk-retry')?.addEventListener('click',retryLiveTalk);
@@ -1456,7 +1464,9 @@ function finishLiveTalkSession(){
 function pauseLiveTalkOnError(message,kind='agent'){
   if(!state.liveTalk)return;
   const detail=String(message||'ElevenLabs Realtime could not complete this voice session.');
-  state.error=/operation is insecure|securityerror|secure context/i.test(detail)
+  state.error=/voice_id.{0,80}(not allowed|override)|override.{0,80}voice_id|code 1008/i.test(detail)
+    ? 'The ElevenLabs agent blocked this voice change. In the agent dashboard, open Security and enable the Voice ID override, then reconnect.'
+    : /operation is insecure|securityerror|secure context/i.test(detail)
     ? `${window.isSecureContext===false?'This page is not in a secure context. Open the HTTPS site directly in Safari.':'Safari blocked microphone setup for this page. Check Safari microphone permission for this site, reload, and reconnect.'} You can still type below; Zeus will answer by voice.`
     : /notallowederror|permission denied|microphone.*denied/i.test(detail)
       ? 'Microphone permission is off for this site. Allow it in Safari settings and reconnect. You can still type below; Zeus will answer by voice.'
@@ -1527,12 +1537,12 @@ async function connectLiveTalkAgent(){
     if(!state.liveTalk||generation!==state.liveGeneration)return;
     const {Conversation}=await import('/assets/elevenlabs-agent.js');
     const selectedLanguage=state.liveLocale==='auto'?'':({pt:'pt',en:'en',es:'es'}[state.liveLocale]||'');
-    // Keep the Realtime voice owned by the published agent configuration. This
-    // agent does not allow `voice_id` overrides, and ElevenLabs closes the
-    // session with code 1008 when the SDK sends one. Custom voices remain
-    // available to the standalone TTS route.
+    // A selected account voice is sent as the documented per-session override.
+    // The ElevenLabs agent must allow Voice ID overrides in its Security settings.
+    const selectedVoiceId=state.liveTalkVoiceId;
     const overrides={
       ...(selectedLanguage?{agent:{language:selectedLanguage}}:{}),
+      ...(selectedVoiceId?{tts:{voiceId:selectedVoiceId}}:{}),
     };
     const conversation=await Conversation.startSession({
       ...(isIosWebKit?{signedUrl:issued.signedUrl,connectionType:'websocket'}:{conversationToken:issued.token,connectionType:'webrtc'}),
@@ -1584,6 +1594,22 @@ function toggleLiveTalk(){
   if(!liveTalkSupported()){state.error='Live Talk requires microphone access, audio playback, and a supported browser.';render();return;}
   state.voiceId=localStorage.getItem('zeus-voice-id')||'marin';unlockLiveAudioFromGesture();
   state.error='';state.liveMuted=false;state.liveFailureKind=null;state.liveRetryCount=0;state.liveTalkStopRequested=false;state.liveAgentPartial='';state.liveTalk=true;state.liveStage='connecting';state.liveGeneration++;state.liveAgentLoggedEvents=new Map();state.liveAgentLogQueue=Promise.resolve();render();connectLiveTalkAgent();
+  if(!state.elevenLabsVoicesLoading)void loadElevenLabsVoices();
+}
+function changeLiveTalkVoice(value){
+  const voiceId=String(value||'').trim();
+  if(voiceId&&!ELEVENLABS_VOICE_PATTERN.test(voiceId)){state.error='Choose a valid ElevenLabs voice.';render();return;}
+  state.liveTalkVoiceId=voiceId;
+  try{if(voiceId)localStorage.setItem('zeus-live-talk-voice-id',voiceId);else localStorage.removeItem('zeus-live-talk-voice-id');}catch{}
+  state.error='';
+  if(!state.liveTalk){render();return;}
+  const oldConversation=state.liveAgentConversation;state.liveAgentConversation=null;state.liveAgentConversationId='';state.liveGeneration++;
+  releaseLiveAgentPermissionStream();state.liveAgentPartial='';state.liveAgentLoggedEvents=new Map();state.liveStage='connecting';
+  try{void oldConversation?.endSession?.()}catch{}
+  render();
+  // connectLiveTalkAgent requests the microphone before its first await, which
+  // preserves Safari's user-gesture requirement when switching voices.
+  connectLiveTalkAgent();
 }
 function toggleLiveTalkMute(){
   if(!state.liveTalk)return;
@@ -1595,7 +1621,8 @@ function toggleLiveTalkMute(){
   }catch(error){pauseLiveTalkOnError(error?.message||'ElevenLabs Realtime could not change microphone state. Reconnect.','agent');}
 }
 function livePersonaContext(){
-  return 'Felipe selected the Zeus voice. Speak as Zeus using the agent default voice (Felipe), with spoken text outside voice tags. This Live Talk supports Zeus only.';
+  const selected=state.liveTalkVoiceId?elevenLabsVoiceLabel(state.liveTalkVoiceId):'the agent default voice';
+  return `Felipe selected the ElevenLabs voice “${selected}”. Speak as Zeus using the selected voice, with spoken text outside voice tags. This is one Zeus agent; only the voice changes.`;
 }
 function liveSessionContext(){
   const transcript=(state.messages||[])
