@@ -5,6 +5,8 @@ assert.match(ui,/voiceId:'marin'/);assert.match(ui,/voiceAvatar:'lightning'/);as
 assert.match(ui,/discardLiveAudio/);assert.match(ui,/zeus-live-stage/);assert.match(ui,/id="voice-avatar"/);assert.match(ui,/id="live-language"/);
 assert.match(css,/prefers-reduced-motion/);assert.match(css,/width:108px;height:108px/);
 assert.match(ui,/function toggleLiveTalk\(\)/);assert.match(ui,/function saveLiveAgentMessage/);
+assert.ok(ui.includes('replace(/<\\/?(?:Athena|Zeus)\\s*>/gi'),'Live Talk must remove agent speaker wrapper tags before showing or saving transcript messages');
+assert.match(ui,/A conexão Realtime com o ElevenLabs caiu\. O Safari não informou a causa exata\./,'Live Talk socket errors must be explained in Portuguese without inventing a root cause');
 const live=ui.slice(ui.indexOf('function finishLiveTalkSession(){'),ui.indexOf('\nasync function startVoice(){'));
 const liveView=ui.slice(ui.indexOf('function liveTalkExperience(){'),ui.indexOf('\nfunction appView(){'));
 assert.ok(live.includes("'/api/voice/realtime-token'"),'Live Talk must request a short-lived ElevenLabs agent token');

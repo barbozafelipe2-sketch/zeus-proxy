@@ -1471,6 +1471,8 @@ function pauseLiveTalkOnError(message,kind='agent'){
     ? `${window.isSecureContext===false?'This page is not in a secure context. Open the HTTPS site directly in Safari.':'Safari blocked microphone setup for this page. Check Safari microphone permission for this site, reload, and reconnect.'} You can still type below; Zeus will answer by voice.`
     : /notallowederror|permission denied|microphone.*denied/i.test(detail)
       ? 'Microphone permission is off for this site. Allow it in Safari settings and reconnect. You can still type below; Zeus will answer by voice.'
+      : /The connection was closed due to a socket error|Realtime transport failed/i.test(detail)
+        ? 'A conexão Realtime com o ElevenLabs caiu. O Safari não informou a causa exata. Toque em Reconectar; se persistir, precisamos conferir o diagnóstico da conexão.'
       : detail;
   state.liveStage='error';state.liveFailureKind=kind;clearTimeout(state.liveRetryTimer);state.liveRetryTimer=null;
   releaseLiveAgentPermissionStream();
@@ -1487,7 +1489,7 @@ function describeLiveDisconnect(details){
   return diagnostic?`${category}: ${diagnostic}`:`${category}. The SDK did not provide a close reason.`;
 }
 function saveLiveAgentMessage(payload,generation,providerConversationId){
-  const content=String(payload?.message||'').replace(/<\/?Athena>/gi,'').trim(),eventId=String(payload?.event_id??'');
+  const content=String(payload?.message||'').replace(/<\/?(?:Athena|Zeus)\s*>/gi,'').trim(),eventId=String(payload?.event_id??'');
   if(!content||!eventId||!state.liveTalk||generation!==state.liveGeneration)return;
   const role=payload?.role==='user'||payload?.source==='user'?'user':'assistant';
   const key=`${role}:${eventId}`;
