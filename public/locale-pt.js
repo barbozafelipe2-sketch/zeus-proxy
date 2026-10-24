@@ -179,7 +179,7 @@ const translations = new Map(Object.entries({
   'GitHub commit needs an explicit confirmation from this screen.':'Confirme o envio ao GitHub nesta tela antes de continuar.',
   'This repository is outside the configured GitHub allowlist.':'Este repositório não está na lista de destinos autorizados.',
   'Complex Turbo needs your approval before this higher-budget run starts.':'Autorize a execução avançada antes de iniciar esta tarefa.',
-  'Hourly execution limit reached (Olympus 3/h, Zeus 15/h by default). Wait for the window to reset.':'O limite de execuções por hora foi atingido. Aguarde a renovação do limite. Por padrão: Olympus 3/h e Zeus 15/h.',
+  'The hourly execution cap has been removed. Refresh and retry.':'O limite por hora foi removido. Atualize a página e tente novamente.',
 }));
 
 export function translateInterfaceText(value) {

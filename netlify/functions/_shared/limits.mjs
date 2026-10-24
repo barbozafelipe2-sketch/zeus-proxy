@@ -4,12 +4,13 @@ function envInt(name, fallback, min=1, max=10000) {
   return Number.isFinite(n) ? Math.max(min, Math.min(max, n)) : fallback;
 }
 
-// Counts user executions, not billable model calls or dollars. Enforce spend caps with providers.
-export const DEFAULT_AI_HOURLY_LIMITS=Object.freeze({ZEUS:15,OLYMPUS:3});
+// Concurrency prevents overlapping executions from racing on one workspace.
+// There is intentionally no per-hour execution cap; provider/billing quotas and
+// explicit budget reservations remain the spend controls.
 export function aiLimits(mode='ZEUS') {
   return mode === 'OLYMPUS'
-    ? { hourly: envInt('OLYHUB_OLYMPUS_HOURLY_LIMIT', DEFAULT_AI_HOURLY_LIMITS.OLYMPUS, 1, 500), concurrent: envInt('OLYHUB_OLYMPUS_CONCURRENCY', 1, 1, 5) }
-    : { hourly: envInt('OLYHUB_ZEUS_HOURLY_LIMIT', DEFAULT_AI_HOURLY_LIMITS.ZEUS, 1, 1000), concurrent: envInt('OLYHUB_ZEUS_CONCURRENCY', 2, 1, 10) };
+    ? { concurrent: envInt('OLYHUB_OLYMPUS_CONCURRENCY', 1, 1, 5) }
+    : { concurrent: envInt('OLYHUB_ZEUS_CONCURRENCY', 2, 1, 10) };
 }
 
 export function endpointLimit(kind) {
@@ -38,8 +39,8 @@ export async function lockAiExecutionOwner(client,ownerId){
 export async function guardAiExecution(client,ownerId,mode,requestId,{excludeExecutionId=null}={}){
   const limits=aiLimits(mode);
   // The $60 monthly test budget is informational, not an admission block.
-  // All model/tool requests continue to use existing per-hour and concurrency gates.
-  // The spending dashboard reports known estimates and unknown charges.
+  // Provider quotas and bounded concurrent work are enforced elsewhere; the
+  // spending dashboard reports known estimates and unknown charges.
   const active=(await client.query(
     `SELECT
        count(*) FILTER (WHERE mode='ZEUS' AND started_at > now() - interval '90 seconds')::int AS zeus,
@@ -54,12 +55,6 @@ export async function guardAiExecution(client,ownerId,mode,requestId,{excludeExe
     throw limitError('An Olympus execution is already running. Wait for it to finish before starting another.','AI_CONCURRENCY_LIMIT',15);
   if(mode!=='OLYMPUS'&&Number(active.zeus||0)>=limits.concurrent)
     throw limitError('Too many Zeus executions are already running. Wait a moment and try again.','AI_CONCURRENCY_LIMIT',10);
-  const recent=(await client.query(
-    `SELECT count(*)::int AS total FROM execution_attempts WHERE owner_id=$1 AND mode=$2 AND created_at>now()-interval '1 hour'`,
-    [ownerId,mode]
-  )).rows[0];
-  if(Number(recent?.total||0)>=limits.hourly)
-    throw limitError(`${mode==='OLYMPUS'?'Olympus':'Zeus'} hourly safety budget reached. Try again later.`,'AI_RATE_LIMIT',300);
   return {admitted:true};
 }
 

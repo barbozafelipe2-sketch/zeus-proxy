@@ -8,21 +8,20 @@ const variables={};
 const prev=globalThis.Netlify,oldFetch=globalThis.fetch;
 globalThis.Netlify={env:{get:key=>variables[key]||''}};
 try{
- assert.equal(aiLimits('ZEUS').hourly,15);assert.equal(aiLimits('OLYMPUS').hourly,3);
- variables.OLYHUB_ZEUS_HOURLY_LIMIT='7';assert.equal(aiLimits('ZEUS').hourly,7);delete variables.OLYHUB_ZEUS_HOURLY_LIMIT;
- function fakeDb(state='new',recent=0){
+ assert.equal(aiLimits('ZEUS').concurrent,2);assert.equal(aiLimits('OLYMPUS').concurrent,1);
+ assert.equal('hourly' in aiLimits('ZEUS'),false);assert.equal('hourly' in aiLimits('OLYMPUS'),false);
+ variables.OLYHUB_ZEUS_CONCURRENCY='4';assert.equal(aiLimits('ZEUS').concurrent,4);delete variables.OLYHUB_ZEUS_CONCURRENCY;
+ function fakeDb(state='new'){
   return {async query(q){
    if(q.includes('request_id=$2'))return {rows:state==='new'?[]:[{id:'exec',state}]};
    if(q.includes('pg_advisory_xact_lock'))return {rows:[]};
    if(q.includes('FILTER'))return {rows:[{zeus:0,olympus:0}]};
-   if(q.includes("interval '1 hour'"))return {rows:[{total:recent}]};
+   if(q.includes('FROM execution_attempts WHERE owner_id=$1 AND mode=$2'))throw new Error('Hourly cap query must not run.');
    return {rows:[]};
   }};
  }
- await assert.rejects(()=>guardAiExecution(fakeDb('new',15),'one','ZEUS','r'),e=>e.code==='AI_RATE_LIMIT');
- await assert.rejects(()=>guardAiExecution(fakeDb('FAILED',15),'one','ZEUS','r'),e=>e.code==='AI_RATE_LIMIT');
- await guardAiExecution(fakeDb('FAILED',14),'one','ZEUS','r');
- await assert.rejects(()=>guardAiExecution(fakeDb('COMPLETED',999),'one','ZEUS','r'),e=>e.code==='AI_RATE_LIMIT'); // Admission would charge; caller skips guard for a free completed replay.
+ for(let i=0;i<40;i++)await guardAiExecution(fakeDb('new'),'one','ZEUS',`z-${i}`);
+ for(let i=0;i<8;i++)await guardAiExecution(fakeDb('new'),'one','OLYMPUS',`o-${i}`);
  assert.deepEqual(githubRepoAllowlist(),[]);
  assert.throws(()=>assertGithubRepoAllowed('https://github.com/acme/demo'),e=>e.code==='GITHUB_ALLOWLIST_REQUIRED');
  variables.GITHUB_REPO_ALLOWLIST='acme/demo';

@@ -205,7 +205,7 @@ const mustContain = [
   [read('netlify/functions/artifacts.mjs'),"if(req.method==='DELETE')",'artifact deletion API'],
   [extract,"import ExcelJS from 'exceljs'",'single spreadsheet library'],
   [limits,'AI_CONCURRENCY_LIMIT','AI concurrency protection'],
-  [limits,'AI_RATE_LIMIT','AI hourly safety budget'],
+  [limits,'AI_CONCURRENCY_LIMIT','AI concurrent execution protection'],
   [limits,'request_rate_events','endpoint rate-event guard'],
   [storage,'blob_gc_queue','durable blob cleanup queue'],
   [storage,'queueProjectBlobs','project Blob cleanup queueing'],
@@ -408,7 +408,7 @@ const githubWrites=read('netlify/functions/_shared/github-write.mjs');
 const liveSmoke=read('.github/workflows/smoke-live.yml');
 if(!deliveryEngine.includes('parseArtifactDelivery')||!deliveryEngine.includes('validateWorkbook'))throw new Error('Artifact Engine contract missing.');
 if(!chat.includes('for(const file of bundle.artifacts)')||!artifact.includes('readback.xlsx.load(Buffer.from(bytes))'))throw new Error('Multi-file verification missing.');
-if(!securityLimits.includes('DEFAULT_AI_HOURLY_LIMITS')||!githubWrites.includes('GITHUB_ALLOWLIST_REQUIRED'))throw new Error('Cost/security controls missing.');
+if(securityLimits.includes('DEFAULT_AI_HOURLY_LIMITS')||!securityLimits.includes('OLYHUB_ZEUS_CONCURRENCY')||!githubWrites.includes('GITHUB_ALLOWLIST_REQUIRED'))throw new Error('Cost/security controls missing.');
 if(/^\s*schedule\s*:/m.test(liveSmoke))throw new Error('Scheduled paid AI smoke must be disabled.');
 
 
@@ -424,9 +424,9 @@ if(!chat.includes('selectRecentHistory(rows,{maxChars:18000,perMessageChars:4000
 const attemptMigration=read('netlify/database/migrations/20261014043000_ai_execution_attempt_ledger/migration.sql');
 if(!attemptMigration.includes('CREATE TABLE IF NOT EXISTS execution_attempts') ||
   !securityLimits.includes('INSERT INTO execution_attempts(') ||
-  !securityLimits.includes('FROM execution_attempts WHERE owner_id=$1') ||
+  securityLimits.includes('FROM execution_attempts WHERE owner_id=$1 AND mode=$2') ||
   !chat.includes("recordAiExecutionAttempt(client,userId,mode,existing.id,'retry')")){
-    throw new Error('Phase 2 attempt ledger or retry budget guard missing.');
+    throw new Error('Phase 2 audit ledger or retry budget guard missing.');
 }
 
 const endpointRateCode=read('netlify/functions/_shared/limits.mjs');

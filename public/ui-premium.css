@@ -632,8 +632,11 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,
   .brand-center .logo-word{font-size:12px}
   .topbar-actions{gap:7px}
   .topbar .avatar{width:30px;height:30px}
-  .projects-page .page-head,.files-page .page-head{align-items:flex-start}
-  .projects-page .page-head .primary,.files-page .page-head .primary{padding:9px 10px;font-size:9px}
+  .projects-page .page-head{display:grid;grid-template-columns:minmax(0,1fr);gap:12px;align-items:stretch}
+  .projects-page .page-head .primary{width:100%;min-height:46px;justify-content:center;gap:8px;padding:11px 14px;font-size:14px;border-radius:14px}
+  .projects-page .page-head .primary .ico{width:18px;height:18px}
+  .files-page .page-head{align-items:flex-start}
+  .files-page .page-head .primary{padding:9px 10px;font-size:9px}
   .project-tabs{width:100%}
   .project-tabs button{flex:1;padding:8px 6px}
   .project-workspace-page{padding:14px 10px 80px}
