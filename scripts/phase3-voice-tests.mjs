@@ -22,7 +22,10 @@ assert.match(live,/connection\.setMicMuted\(state\.liveMuted\)/,'Live Talk must 
 assert.match(liveView,/data-live-persona="ZEUS"/,'Live Talk must offer Zeus');
 assert.match(liveView,/data-live-persona="ATHENA"/,'Live Talk must offer Athena');
 assert.ok(!liveView.includes('HERMES'),'Live Talk must not offer Hermes');
-assert.match(ui,/sendContextualUpdate\(livePersonaContext\(\)\)/,'the selected persona must be sent as context to the Realtime agent');
+assert.match(ui,/sendContextualUpdate\(liveSessionContext\(\)\)/,'Realtime reconnects must restore the recent chat context together with the selected persona');
+assert.match(ui,/function liveSessionContext\(/,'Live Talk must build a context restoration update from saved conversation turns');
+assert.match(ui,/slice\(-18\)/,'Live Talk context restoration must stay bounded to a recent transcript window');
+assert.match(ui,/Treat the recent transcript below as the prior turns of this same ongoing conversation/,'restored history must be clearly framed as prior conversation context');
 assert.match(ui,/talk\|speak\|switch/,'voice commands for Helen/Athena must switch the selected persona');
 assert.match(live,/connection\?\.endSession\?\.\(\)/,'exiting or pausing Live Talk must close the Realtime session');
 assert.match(ui,/Reconnect Realtime/,'Realtime failure must expose an explicit reconnect action');
