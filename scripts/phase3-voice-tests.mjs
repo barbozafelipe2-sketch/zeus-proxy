@@ -21,6 +21,8 @@ assert.match(live,/rawAudioProcessor:'\/assets\/elevenlabs-worklets\/raw-audio-p
 assert.match(live,/audioConcatProcessor:'\/assets\/elevenlabs-worklets\/audio-concat-processor\.js'/,'Live Talk must self-host the output AudioWorklet under the strict CSP');
 assert.match(live,/libsampleratePath:'\/assets\/elevenlabs-worklets\/libsamplerate\.worklet\.js'/,'Live Talk must self-host the iOS resampler worklet under the strict CSP');
 assert.match(live,/connection\.setMicMuted\(state\.liveMuted\)/,'Live Talk must mute and unmute the agent microphone');
+assert.match(live,/if\(state\.liveMuted\)\{\s*try\{await conversation\.setMicMuted\(true\);\}/,'a reconnect must confirm the saved mute state before Live Talk resumes');
+assert.match(live,/Could not confirm microphone mute after reconnect/,'a failed mute restoration must pause instead of claiming the microphone is muted');
 assert.match(live,/setMicMuted mutes the input pipeline only; agent audio output stays audible/,'Live Talk mute must only suppress Felipe’s microphone input, not agent playback');
 assert.match(live,/function minimizeLiveTalk\(\)\{if\(!state\.liveTalk\)return;state\.liveTalkMinimized=true;render\(\);\}/,'returning from Live Talk must minimize the screen without ending the session');
 assert.match(live,/function restoreLiveTalk\(\)\{if\(!state\.liveTalk\)return;state\.liveTalkMinimized=false;render\(\);\}/,'the floating Live Talk control must restore the full session screen');

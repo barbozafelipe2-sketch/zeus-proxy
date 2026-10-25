@@ -6,6 +6,16 @@ assert.equal(explicitMemoryIntent('Zeus, remember that I prefer calm, concise an
 assert.equal(memoryContentFromRequest('Zeus, remember that I prefer calm, concise answers.'),'I prefer calm, concise answers.');
 assert.equal(memoryContentFromRequest('Lembre-se que minhas respostas devem ser diretas.'),'minhas respostas devem ser diretas.');
 assert.equal(explicitMemoryIntent('I like calm answers.'),false,'ordinary chat must not silently become a saved memory');
+for(const text of [
+  'What should I remember in Rome?','I cannot remember where I put my keys','Do you remember what we said about Vault?',
+  'lembra quando a gente falou do chess?','guarde esse arquivo no drive','remember when we built the vault?','salve isso','remember that?'
+])assert.equal(explicitMemoryIntent(text),false,`questions and incidental mentions must not save: ${text}`);
+for(const [text,saved] of [
+  ['lembre que eu odeio café','eu odeio café'],['guarde que meu café é sem açúcar','meu café é sem açúcar'],
+  ['remember: call mom on Sundays','call mom on Sundays'],['save this to memory: I live in North Miami','I live in North Miami'],
+  ['Please remember to answer in Portuguese','answer in Portuguese'],['salve isso na memória: prefiro respostas curtas','prefiro respostas curtas'],
+  ['guarde isso na memória: prefiro respostas curtas','prefiro respostas curtas']
+]){assert.equal(explicitMemoryIntent(text),true,`explicit save command must work: ${text}`);assert.equal(memoryContentFromRequest(text),saved);}
 assert.equal(explicitHistoryIntent('What did I tell you about the coffee shop?'),true);
 assert.equal(explicitHistoryIntent('Procura nas conversas anteriores o nome da cafeteria.'),true);
 assert.equal(explicitHistoryIntent('Tell me about coffee shops.'),false,'ordinary questions must not search old chats');

@@ -1581,6 +1581,17 @@ async function connectLiveTalkAgent(){
     });
     if(!state.liveTalk||generation!==state.liveGeneration){await conversation.endSession();releaseLiveAgentPermissionStream(permissionStream);permissionStream=null;return;}
     state.liveAgentConversation=conversation;
+    // A reconnect creates a fresh input pipeline; confirm mute before showing it as active.
+    if(state.liveMuted){
+      try{await conversation.setMicMuted(true);}
+      catch(error){
+        state.liveMuted=false;
+        releaseLiveAgentPermissionStream(permissionStream);
+        pauseLiveTalkOnError(`Could not confirm microphone mute after reconnect: ${String(error?.message||error)}`,'agent');
+        permissionStream=null;
+        return;
+      }
+    }
     state.liveAgentConversationId=conversation.getId?.()||state.liveAgentConversationId||issued.conversationId||'';
     try{conversation.sendContextualUpdate(liveSessionContext());}catch{}
     releaseLiveAgentPermissionStream(permissionStream);permissionStream=null;
