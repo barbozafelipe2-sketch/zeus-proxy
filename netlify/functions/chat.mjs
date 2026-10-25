@@ -4,6 +4,7 @@ import { requireUser } from './_shared/auth.mjs';
 import { json, readJson, cleanText, isUuid, getRequestId, errorJson } from './_shared/http.mjs';
 import { runZeus, runOlympus, runOlympusCompoundPlus, TURBO_LIMITS, generateImage, editImage, routeFor, roleCandidates, callModel } from './_shared/models.mjs';
 import { modelFamily } from './_shared/provider-routing.mjs';
+import { getToolWorkflow, toolConversationTitle } from './_shared/tool-workflows.mjs';
 import { runIndependentArtifactPair } from './_shared/compare-pair.mjs';
 import { detectGoogleServiceRequests, encryptionKeyFromHex, resolveGoogleAccessToken, searchGoogleService } from './_shared/google-service.mjs';
 import { consumeEndpointRate } from './_shared/limits.mjs';
@@ -208,7 +209,7 @@ async function loadVisionInputs(attachmentRows){
   return {images,skipped};
 }
 
-async function initializeTurn({db,userId,conversationId,projectId,mode,level,content,fileIds,requestId,worker=false,dispatchToken=null}){
+async function initializeTurn({db,userId,conversationId,projectId,mode,level,content,fileIds,requestId,toolId=null,worker=false,dispatchToken=null}){
   return withTransaction(db,async(client)=>{
     // Serialize admission, requestId collision handling and ledger writes in one transaction.
     await lockAiExecutionOwner(client,userId);
@@ -225,7 +226,7 @@ async function initializeTurn({db,userId,conversationId,projectId,mode,level,con
       await recordAiExecutionAttempt(client,userId,mode,execution.id,'initial');
       const userMessage=(await client.query(
         `INSERT INTO messages(owner_id,conversation_id,execution_id,role,mode,content,metadata) VALUES($1,$2,$3,'user',$4,$5,$6::jsonb) RETURNING id,execution_id,role,mode,content,metadata,created_at`,
-        [userId,conversationId,execution.id,mode,content,JSON.stringify({attachments:fileIds,requestId,executionLevel:level})]
+        [userId,conversationId,execution.id,mode,content,JSON.stringify({attachments:fileIds,requestId,executionLevel:level,...(toolId?{toolId}:{})})]
       )).rows[0];
       await client.query(`UPDATE conversations SET updated_at=now() WHERE id=$1 AND owner_id=$2`,[conversationId,userId]);
       return {kind:'new',execution,userMessage};
@@ -281,7 +282,7 @@ async function initializeTurn({db,userId,conversationId,projectId,mode,level,con
 async function replayCompleted(db,userId,conversationId,execution,userMessage,requestId){
   const assistantRows=await db.sql`SELECT id,execution_id,role,mode,content,metadata,created_at FROM messages WHERE owner_id=${userId} AND execution_id=${execution.id} AND role='assistant' ORDER BY created_at DESC LIMIT 1`;
   if(!assistantRows.length)throw codedError('Completed execution is missing its assistant message.',409,'INCOMPLETE_EXECUTION');
-  const artifactRows=await db.sql`SELECT id,project_id,conversation_id,type,mime_type,filename,size,version,metadata,created_at FROM artifacts WHERE owner_id=${userId} AND execution_id=${execution.id} ORDER BY created_at,id`;
+  const artifactRows=await db.sql`SELECT id,project_id,conversation_id,type,mime_type,filename,size,version,metadata,provenance,created_at FROM artifacts WHERE owner_id=${userId} AND execution_id=${execution.id} ORDER BY created_at,id`;
   const message=assistantRows[0];return json({conversationId,message,userMessage,artifacts:artifactRows.map(a=>({...a,downloadUrl:`/api/artifact-download?id=${a.id}`})),mode:message.mode,level:message.metadata?.executionLevel||null,modeExplanation:message.metadata?.modeExplanation||null,execution:{id:execution.id,state:execution.state},requestId,replayed:true});
 }
 
@@ -293,7 +294,7 @@ async function finalizeTurn({db,userId,projectId,conversationId,execution,mode,r
     const artifacts=[];
     for(const staged of stagedArtifacts){
       const row=(await client.query(
-        `INSERT INTO artifacts(owner_id,project_id,conversation_id,execution_id,type,mime_type,filename,blob_key,size,metadata,provenance) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11::jsonb) RETURNING id,project_id,conversation_id,type,mime_type,filename,size,version,metadata,created_at`,
+        `INSERT INTO artifacts(owner_id,project_id,conversation_id,execution_id,type,mime_type,filename,blob_key,size,metadata,provenance) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11::jsonb) RETURNING id,project_id,conversation_id,type,mime_type,filename,size,version,metadata,provenance,created_at`,
         [userId,projectId,conversationId,execution.id,staged.type,staged.mimeType,staged.filename,staged.blobKey,staged.size,JSON.stringify(staged.metadata||{}),JSON.stringify(staged.provenance||{})]
       )).rows[0];
       artifacts.push({...row,downloadUrl:`/api/artifact-download?id=${row.id}`});
@@ -301,7 +302,7 @@ async function finalizeTurn({db,userId,projectId,conversationId,execution,mode,r
     await client.query(`UPDATE executions SET state='SAVING',lead_model=$1,trace=$2::jsonb WHERE id=$3 AND owner_id=$4`,[result.leadModel||null,JSON.stringify(result.trace||{}),execution.id,userId]);
     const assistant=(await client.query(
       `INSERT INTO messages(owner_id,conversation_id,execution_id,role,mode,content,metadata) VALUES($1,$2,$3,'assistant',$4,$5,$6::jsonb) RETURNING id,execution_id,role,mode,content,metadata,created_at`,
-      [userId,conversationId,execution.id,mode,result.content,JSON.stringify({artifacts:artifacts.map(a=>a.id),sources:Array.isArray(result.sources)?result.sources.slice(0,12):[],capabilities:Array.isArray(result.capabilities)?result.capabilities:[],leadModel:result.leadModel||null,fallback:Array.isArray(result.trace?.fallbacks)&&result.trace.fallbacks.length>0,modeExplanation:result.modeExplanation||null,executionLevel:result.executionLevel||null,pipelineLabel:result.pipelineLabel||null,comparePair:Boolean(result.trace?.comparePair),compareType:result.trace?.comparePair?result.trace.compareType:null,phases:Array.isArray(result.trace?.roles)?result.trace.roles.slice(0,3).map(role=>({label:String(role.role||'').slice(0,32),model:String(role.provider||'')+':'+String(role.model||role.id||''),state:'COMPLETED',restored:Boolean(role.restored)})):[],verificationLabel:result.verificationLabel||null,visionSummary:result.visionSummary||null,usage:result.usage||null})]
+      [userId,conversationId,execution.id,mode,result.content,JSON.stringify({artifacts:artifacts.map(a=>a.id),sources:Array.isArray(result.sources)?result.sources.slice(0,12):[],capabilities:Array.isArray(result.capabilities)?result.capabilities:[],leadModel:result.leadModel||null,fallback:Array.isArray(result.trace?.fallbacks)&&result.trace.fallbacks.length>0,modeExplanation:result.modeExplanation||null,executionLevel:result.executionLevel||null,pipelineLabel:result.pipelineLabel||null,toolId:result.toolId||null,toolGod:result.trace?.toolGod||null,comparePair:Boolean(result.trace?.comparePair),compareType:result.trace?.comparePair?result.trace.compareType:null,phases:Array.isArray(result.trace?.roles)?result.trace.roles.slice(0,3).map(role=>({label:String(role.role||'').slice(0,32),model:String(role.provider||'')+':'+String(role.model||role.id||''),state:'COMPLETED',restored:Boolean(role.restored)})):[],verificationLabel:result.verificationLabel||null,visionSummary:result.visionSummary||null,usage:result.usage||null})]
     )).rows[0];
     await client.query(`UPDATE executions SET state='COMPLETED',completed_at=now(),lease_expires_at=NULL,dispatch_token=NULL,worker_token=NULL WHERE id=$1 AND owner_id=$2`,[execution.id,userId]);
     await client.query(`UPDATE conversations SET updated_at=now() WHERE id=$1 AND owner_id=$2`,[conversationId,userId]);
@@ -378,7 +379,7 @@ async function chatHandler(req, context, startedAt){
     const pageMessages=paged.page.slice().reverse();
     const artifactIds=[...new Set(pageMessages.flatMap(m=>Array.isArray(m.metadata?.artifacts)?m.metadata.artifacts:[]).filter(isUuid))];
     const attachmentIds=[...new Set(pageMessages.flatMap(m=>Array.isArray(m.metadata?.attachments)?m.metadata.attachments:[]).filter(isUuid))];
-    const artifacts=artifactIds.length?await db.sql`SELECT id,project_id,conversation_id,type,mime_type,filename,size,version,metadata,created_at FROM artifacts WHERE owner_id=${user.id} AND conversation_id=${id} AND id = ANY(${artifactIds}) ORDER BY created_at,id`:[];
+    const artifacts=artifactIds.length?await db.sql`SELECT id,project_id,conversation_id,type,mime_type,filename,size,version,metadata,provenance,created_at FROM artifacts WHERE owner_id=${user.id} AND conversation_id=${id} AND id = ANY(${artifactIds}) ORDER BY created_at,id`:[];
     const files=attachmentIds.length?await db.sql`SELECT id,project_id,conversation_id,filename,mime_type,size,status,metadata,created_at FROM files WHERE owner_id=${user.id} AND id = ANY(${attachmentIds})`:[];
     return json({conversation:conv[0],messages:pageMessages,artifacts:artifacts.map(a=>({...a,downloadUrl:`/api/artifact-download?id=${a.id}`})),files:files.map(f=>({...f,downloadUrl:`/api/file-download?id=${f.id}`})),page:{hasMore:paged.hasMore,nextCursor:paged.nextCursor},requestId:requestIdFromHeader});
   }
@@ -386,6 +387,8 @@ async function chatHandler(req, context, startedAt){
   const body=await readJson(req);if(!body)return errorJson('Invalid JSON.',400,'INVALID_JSON',requestIdFromHeader);
   const requestId=getRequestId(req,context,body.requestId);
   const worker=req.headers.get('x-olympus-execute')==='1';
+  if(body.toolId!==undefined&&body.toolId!==null&&!getToolWorkflow(body.toolId))return errorJson('Choose a supported OlyHub tool.',400,'INVALID_TOOL_ID',requestId);
+  const toolId=worker?null:(getToolWorkflow(body.toolId)?.id||null),toolWorkflow=getToolWorkflow(toolId);
   const content=cleanText(body.content,40000); if(!content)return errorJson('Message is required.',400,'MESSAGE_REQUIRED',requestId);
   let modelText=redactSecrets(content);
   const historySearched=explicitHistoryIntent(modelText);
@@ -442,7 +445,8 @@ async function chatHandler(req, context, startedAt){
   const levelDecision=liveTalkTurn
     ?{mode:'ZEUS',level:'SIMPLE',maxCalls:GEAR_CALL_CAPS.SIMPLE,workstreams:[],reason:'live_talk_fast_path'}
     :decideExecutionLevel(modelText,{mode:decision.mode,action:intent.action,route,hasFiles:attachmentRows.length>0,hasImage,requirementCount:requirementSpec.items.length,artifactType:intent.artifactType,requiresVerification:verificationSignal});
-  if(levelDecision.mode==='ZEUS'&&Number.isInteger(body.maxZeusLevel)&&body.maxZeusLevel>=1&&body.maxZeusLevel<=3){
+  if(toolWorkflow&&!liveTalkTurn){levelDecision.mode='ZEUS';levelDecision.level='ZEUS_DIRECTED';levelDecision.maxCalls=GEAR_CALL_CAPS.ZEUS_DIRECTED;levelDecision.reason='owner_tool_level_3';}
+  if(!toolWorkflow&&levelDecision.mode==='ZEUS'&&Number.isInteger(body.maxZeusLevel)&&body.maxZeusLevel>=1&&body.maxZeusLevel<=3){
     const allowed=['SIMPLE','COMPOUND','ZEUS_DIRECTED'];
     const requestedMaximum=body.maxZeusLevel-1;
     if(allowed.indexOf(levelDecision.level)>requestedMaximum){
@@ -469,7 +473,7 @@ async function chatHandler(req, context, startedAt){
       return errorJson('This Complex Turbo run crosses your approval threshold. Review the workload quote before it starts.',409,'TURBO_APPROVAL_REQUIRED',requestId,{quote:turboQuote,approvalFingerprint:approvedTurboFingerprint});
     }
   }
-  if(!conversationId){const c=await canonicalConversation(db,user.id,projectId,titleFrom(content));conversationId=c.id;}
+  if(!conversationId){const c=await canonicalConversation(db,user.id,projectId,toolWorkflow?toolConversationTitle(toolId):titleFrom(content));conversationId=c.id;}
 
   let resumeStages=[];
   if(body.resumeExecutionId){
@@ -495,7 +499,7 @@ async function chatHandler(req, context, startedAt){
   const googleRequests=detectGoogleServiceRequests(modelText);
   const googleCapabilities=[],googleSources=[];
   try{
-    init=await initializeTurn({db,userId:user.id,conversationId,projectId,mode,level,content,fileIds,requestId,worker,dispatchToken:body.dispatchToken});
+    init=await initializeTurn({db,userId:user.id,conversationId,projectId,mode,level,content,fileIds,requestId,toolId,worker,dispatchToken:body.dispatchToken});
     if(init.kind==='replay')return replayCompleted(db,user.id,conversationId,init.execution,init.userMessage,requestId);
     if(init.kind==='in_progress')return errorJson('This request is already running.',409,'REQUEST_IN_PROGRESS',requestId,{conversationId,executionId:init.execution.id});
     if(mode==='OLYMPUS'&&!worker){
@@ -526,7 +530,7 @@ async function chatHandler(req, context, startedAt){
     }
     // Same saved user preferences for regular chat, voice message, and Live Talk:
     // all three modes send turns through this authenticated chat endpoint.
-    const prefRows=await db.sql`SELECT personality,instructions FROM zeus_user_preferences WHERE owner_id=${user.id}`;
+    const prefRows=await db.sql`SELECT personality,instructions,family_preferences FROM zeus_user_preferences WHERE owner_id=${user.id}`;
     const prefs=prefRows[0];
     if(prefs){
       const personalities={balanced:'Helpful, clear and adaptable.',direct:'Direct, concise and practical.',warm:'Warm, conversational and encouraging.',creative:'Imaginative, vivid and expressive.',professional:'Polished, structured and professional.'};
@@ -612,7 +616,7 @@ ${aiContext}`);
     if(actualMode==='OLYMPUS')executionBudget.authorizeProviderCall=info=>authorizeOlympusModelCall(db,{ownerId:user.id,executionId:execution.id,...info});
     const vision=hasImage?await loadVisionInputs(attachmentRows):{images:[],skipped:[]};
     const sharedBlockedProviders=await loadSharedProviderBlocks(db,user.id);
-    const aiRouting=liveTalkTurn?{route:'fast',source:'live_talk_fast_path',model:null}:comparePair?{route,source:'owner_requested_compare',model:null}:isImageOp?{route,source:'rules_fallback',model:null}:await aiRouteFor(modelText,{budget:executionBudget,vision:hasImage,blockedProviders:sharedBlockedProviders});
+    const aiRouting=liveTalkTurn?{route:'fast',source:'live_talk_fast_path',model:null}:toolWorkflow?{route:toolWorkflow.route,source:'tool_workflow',model:null}:comparePair?{route,source:'owner_requested_compare',model:null}:isImageOp?{route,source:'rules_fallback',model:null}:await aiRouteFor(modelText,{budget:executionBudget,vision:hasImage,blockedProviders:sharedBlockedProviders});
     const web=webIntent?await runWebSearch(modelText,{budget:executionBudget,reserveAfterMs:actualMode==='OLYMPUS'?17000:12000}):{requested:false,context:'',sources:[],trace:null};
     webUsageTrace=web.trace||null;
     const compoundPlusWithWeb=actualMode==='OLYMPUS'&&level==='COMPOUND_PLUS'&&webIntent;
@@ -637,26 +641,28 @@ ${aiContext}`);
       const src=attachmentRows.find(r=>(r.mime_type||'').startsWith('image/'));
       if(!src)throw codedError('Attach an image before asking OlyHub to edit it.',400,'IMAGE_REQUIRED');
       const sourceBytes=await blobStore('olyhub-files').get(src.blob_key,{type:'arrayBuffer'});if(!sourceBytes)throw new Error('The source image could not be loaded.');
-      const img=await editImage(modelText,new Uint8Array(sourceBytes),src.filename,src.mime_type,{budget:executionBudget});
-      stagedArtifacts.push(await stageBinaryArtifact({ownerId:user.id,type:'image',mimeType:'image/png',filename:`OlyHub-Edited-${Date.now()}.png`,bytes:img.bytes,metadata:{prompt:modelText,sourceFileId:src.id},provenance:{model:img.model,operation:'edit'}}));
-      result={content:'Image edited and saved as a new OlyHub artifact. The original upload was preserved.',leadModel:`openai:${img.model}`,trace:{imageEdit:true,sourceFileId:src.id,budget:img.budget}};
+      const img=await editImage(modelText,new Uint8Array(sourceBytes),src.filename,src.mime_type,{budget:executionBudget,toolPreferences:prefRows?.[0]?.family_preferences||null});
+      const imageMime=img.mimeType||'image/png';
+      stagedArtifacts.push(await stageBinaryArtifact({ownerId:user.id,type:'image',mimeType:imageMime,filename:`OlyHub-Edited-${Date.now()}.${imageMime==='image/jpeg'?'jpg':imageMime==='image/webp'?'webp':'png'}`,bytes:img.bytes,metadata:{prompt:modelText,sourceFileId:src.id,toolId},provenance:{provider:img.provider||'openai',model:img.model,toolId,operation:'edit'}}));
+      result={content:'Image edited and saved as a new OlyHub artifact. The original upload was preserved.',leadModel:`${img.provider||'openai'}:${img.model}`,trace:{imageEdit:true,toolId,toolGod:toolWorkflow?.god||null,sourceFileId:src.id,roles:[{role:'Image editor',provider:img.provider||'openai',model:img.model}],budget:img.budget}};
     }else if(intent.action==='IMAGE_CREATE'){
       await db.sql`UPDATE executions SET state='RUNNING' WHERE id=${execution.id} AND owner_id=${user.id}`;
-      const img=await generateImage(modelText,{budget:executionBudget});
-      stagedArtifacts.push(await stageBinaryArtifact({ownerId:user.id,type:'image',mimeType:'image/png',filename:`OlyHub-${Date.now()}.png`,bytes:img.bytes,metadata:{prompt:modelText},provenance:{model:img.model}}));
-      result={content:'Image created and saved to your OlyHub Files.',leadModel:`openai:${img.model}`,trace:{image:true,budget:img.budget}};
+      const img=await generateImage(modelText,{budget:executionBudget,toolId,toolPreferences:prefRows?.[0]?.family_preferences||null});
+      const imageMime=img.mimeType||'image/png';
+      stagedArtifacts.push(await stageBinaryArtifact({ownerId:user.id,type:'image',mimeType:imageMime,filename:`OlyHub-${Date.now()}.${imageMime==='image/jpeg'?'jpg':imageMime==='image/webp'?'webp':'png'}`,bytes:img.bytes,metadata:{prompt:modelText,toolId},provenance:{provider:img.provider||'openai',model:img.model,toolId}}));
+      result={content:'Image created and saved to your OlyHub Files.',leadModel:`${img.provider||'openai'}:${img.model}`,trace:{image:true,toolId,toolGod:toolWorkflow?.god||null,roles:[{role:'Image generator',provider:img.provider||'openai',model:img.model}],budget:img.budget}};
     }else{
       await db.sql`UPDATE executions SET state='RUNNING' WHERE id=${execution.id} AND owner_id=${user.id}`;
       if(comparePair){
         const pair=await runIndependentArtifactPair({text:modelText,context:enrichedContext,type:compareType,contract:deliveryContract,images:vision.images,budget:executionBudget},{
-          candidates:(text,options)=>roleCandidates('CREATOR',text,{vision:options.vision,blockedProviders:sharedBlockedProviders,limit:4}),
+          candidates:(text,options)=>roleCandidates('CREATOR',text,{vision:options.vision,blockedProviders:sharedBlockedProviders,toolId,toolPreferences:prefRows?.[0]?.family_preferences||{},routeHint:toolWorkflow?.route,limit:6}),
           call:callModel,family:modelFamily,parse:parseArtifactDelivery
         });
         for(const variant of pair.variants){
           const file=variant.artifact,title=`${titleFrom(file.title||content)} ${variant.label}`;
           stagedArtifacts.push(await stageArtifact({ownerId:user.id,type:compareType,title,content:file.content||'',workbook:file.workbook||null,
-            metadata:{title,comparePair:true,variant:variant.label,validated:true},
-            provenance:{generator:'independent_compare',variant:variant.label,providerFamily:modelFamily(variant.model),model:variant.model.id}}));
+            metadata:{title,comparePair:true,variant:variant.label,toolId,validated:true},
+            provenance:{generator:'independent_compare',variant:variant.label,provider:variant.model.provider,providerFamily:modelFamily(variant.model),model:variant.model.id,toolId}}));
         }
         result={content:'Two independent alternatives were generated and saved as A and B. Open both files, then choose one, combine them into C, or try another pair.',
           leadModel:pair.variants.map(v=>`${v.model.provider}:${v.model.id}`).join(' + '),pipelineLabel:'Compare & Evolve · independent A/B',
@@ -673,7 +679,7 @@ ${aiContext}`);
           fallback.trace={...(fallback.trace||{}),olympusFallback:String(olympusError?.message||olympusError).slice(0,220)};
           result=fallback;
         }
-      }else result=await runZeus({text:modelText,context:enrichedContext,images:vision.images,history,requirements:requirementSpec,level:zeusLevel||'COMPOUND',deliveryContract,blockedProviders:sharedBlockedProviders,budget:executionBudget,routeHint:aiRouting.route,onStage:zeusLevel==='ZEUS_DIRECTED'?data=>savePhaseCheckpoint(db,{ownerId:user.id,executionId:execution.id,conversationId,projectId,...data}):null,resumeStages});
+      }else result=await runZeus({text:modelText,context:enrichedContext,images:vision.images,history,requirements:requirementSpec,level:zeusLevel||'COMPOUND',deliveryContract,blockedProviders:sharedBlockedProviders,budget:executionBudget,routeHint:aiRouting.route,toolId,toolPreferences:prefRows?.[0]?.family_preferences||{},onStage:zeusLevel==='ZEUS_DIRECTED'?data=>savePhaseCheckpoint(db,{ownerId:user.id,executionId:execution.id,conversationId,projectId,...data}):null,resumeStages});
       if(intent.action==='ARTIFACT_CREATE'&&intent.artifactType&&!comparePair){
         if(intent.artifactType==='zip'){
           // Preserve the existing structured ZIP package contract, with bounded structural validation.
@@ -703,7 +709,7 @@ ${aiContext}`);
     result.sources=[...(web.sources||[]),...(github.sources||[]),...googleSources].slice(0,12);
     result.capabilities=[web.trace,github.trace,...googleCapabilities].filter(Boolean);
     const visionSummary={attached:attachmentRows.filter(r=>(r.mime_type||'').startsWith('image/')).length,analyzed:vision.images.length,skipped:vision.skipped.length};
-    result.trace={...(result.trace||{}),intent,modeDecision:decision,levelDecision,executionLevel:level,route,aiRouting:{route:aiRouting.route,source:aiRouting.source,model:aiRouting.model},verificationSignal,zeusCompoundRequested:zeusCompound||olympusDispatchFallback,olympusDispatchFallback,turboQuote:turboQuote||null,turboApproved:Boolean(turboQuote?.approvalRequired&&approvedTurboFingerprint),externalActionPolicy:externalActions,secretsRedacted,visionSkipped:vision.skipped,visionSummary,sharedBlockedProviders,webSearch:web.trace||null,githubRepository:github.trace||null,googleServices:googleCapabilities};
+    result.trace={...(result.trace||{}),toolId,toolGod:toolWorkflow?.god||null,intent,modeDecision:decision,levelDecision,executionLevel:level,route,aiRouting:{route:aiRouting.route,source:aiRouting.source,model:aiRouting.model},verificationSignal,zeusCompoundRequested:zeusCompound||olympusDispatchFallback,olympusDispatchFallback,turboQuote:turboQuote||null,turboApproved:Boolean(turboQuote?.approvalRequired&&approvedTurboFingerprint),externalActionPolicy:externalActions,secretsRedacted,visionSkipped:vision.skipped,visionSummary,sharedBlockedProviders,webSearch:web.trace||null,githubRepository:github.trace||null,googleServices:googleCapabilities};
     result.visionSummary=visionSummary;
     const finalMode=result.effectiveMode||(olympusDispatchFallback?'ZEUS':mode);
     if(finalMode==='ZEUS'&&mode==='OLYMPUS'&&result.trace?.olympusDescended){
@@ -718,6 +724,7 @@ ${aiContext}`);
     if(finalMode==='OLYMPUS'&&level==='COMPLEX_TURBO'&&finalLevel==='COMPOUND_PLUS'&&result.trace?.olympusDescended){modeExplanation='Olympus Complex Turbo could not preserve its role-separation guarantees, so it safely downgraded to Compound Plus.';}
     result.executionLevel=finalLevel;{const providerTelemetry=snapshotProviderTelemetry(executionBudget);result.usage=summarizeRequestUsage(providerTelemetry,{maxCalls:executionBudget?.maxCalls,webTrace:webUsageTrace});result.trace={...(result.trace||{}),finalExecutionLevel:finalLevel,providerTelemetry,usage:result.usage};}
     result.modeExplanation=modeExplanation;
+    result.toolId=toolId;
     const final=await finalizeTurn({db,userId:user.id,projectId,conversationId,execution,mode:finalMode,result,stagedArtifacts});
     return json({conversationId,message:final.assistant,userMessage,artifacts:final.artifacts,mode:finalMode,level:finalLevel,modeExplanation,memorySaved,historySearched,execution:{id:execution.id,state:'COMPLETED'},requestId,replayed:false});
   }catch(error){

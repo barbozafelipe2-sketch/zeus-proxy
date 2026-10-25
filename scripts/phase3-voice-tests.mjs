@@ -61,7 +61,7 @@ const voiceToolBody=ui.slice(ui.indexOf('send_olyhub_command:async'),ui.indexOf(
 assert.ok(!voiceToolBody.includes('if(!project?.id)'), 'direct Live Talk work commands must also work in the personal chat outside projects');
 assert.match(ui,/\{voiceCommand:true\}/,'spoken OlyHub work must avoid the fast Live Talk-only execution path');
 assert.match(ui,/liveTalkTurn\?false:automaticOlympus\(\)/,'voice commands must respect the selected automatic Olympus setting');
-assert.match(ui,/liveTalkTurn\?1:selectedZeusLevelCap\(\)/,'voice commands must respect the selected Zeus level cap');
+assert.match(ui,/liveTalkTurn\?1:state\.currentToolId\?3:selectedZeusLevelCap\(\)/,'tool workflows force Zeus Level 3 while ordinary voice commands respect the selected cap');
 assert.match(ui,/assistant\.content\|\|''/,'the agent must receive the OlyHub engine reply to speak aloud');
 assert.match(ui,/get_current_project_context:async/,'the voice agent must be able to query the active project context');
 assert.match(ui,/create_project_task:async/,'the voice agent must be able to create a task in the active project');

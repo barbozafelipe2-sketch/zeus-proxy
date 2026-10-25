@@ -24,7 +24,7 @@ assert.match(ui,/data-compare-combine/);
 assert.match(ui,/preferred-\$\{b\.dataset\.compareType/);
 assert.match(chat,/runIndependentArtifactPair/);
 assert.match(chat,/providerFamily:modelFamily\(variant\.model\)/);
-assert.match(chat,/SELECT id,project_id,conversation_id,type,mime_type,filename,size,version,metadata,created_at FROM artifacts/);
+assert.match(chat,/SELECT id,project_id,conversation_id,type,mime_type,filename,size,version,metadata,provenance,created_at FROM artifacts/);
 assert.match(ui,/data-approve/);
 assert.match(ui,/const d=await api\('\/api\/artifact-attach'/);
 assert.match(ui,/await attachSavedArtifact\(a.id\)/);

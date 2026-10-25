@@ -4,8 +4,11 @@ import { redactSecrets } from './security.mjs';
 import { recordProviderAttempt, failureCategory } from './provider-observability.mjs';
 import { modelFamily, modelCircuitScope, modelTransport, buildTransportRoutes } from './provider-routing.mjs';
 import { formatChecklist, mergeClarifiedRequirements, splitRequirementScopes, structuralRewriteAllowed, validateAdversaryFindings } from './reliability.mjs';
+import { getToolWorkflow, pickToolCandidate, toolPreferenceScore } from './tool-workflows.mjs';
 
 const env = (name) => globalThis.Netlify?.env?.get?.(name) || process.env?.[name] || '';
+const openRouterImageKey = () => env('OPENROUTER_API_KEY') || env('OPENROUTER_DIRECT_API_KEY');
+const openRouterImageApi = () => env('OPENROUTER_BASE_URL') || 'https://openrouter.ai/api/v1';
 const MAX_SPECIALIST_CHARS = 24000;
 const CIRCUIT_FAILURE_THRESHOLD = 2;
 const CIRCUIT_COOLDOWN_MS = 60_000;
@@ -687,10 +690,10 @@ function patchPrompt(text,answer,checklist,findings,deliveryContract=''){return 
 function verificationLabel(text,reviewed=true){if(codeLikeRequest(text))return reviewed?'Static review only · not executed':'Static review unavailable · not executed';return reviewed?'Adversarial review completed':'Independent review unavailable';}
 function repairFailureLabel(text){return codeLikeRequest(text)?'Static review found a defect · repair failed · original draft returned · not executed':'Adversarial review found a defect · repair failed · original draft returned';}
 
-export async function runZeus({ text, context = '', images = [], history = [], requirements = { items: [], ambiguous: false }, level = 'SIMPLE', verify = false, deliveryContract = '', blockedProviders = [], budget = null, onStage = null, resumeStages = [], routeHint = null }) {
+export async function runZeus({ text, context = '', images = [], history = [], requirements = { items: [], ambiguous: false }, level = 'SIMPLE', verify = false, deliveryContract = '', blockedProviders = [], budget = null, onStage = null, resumeStages = [], routeHint = null, toolId=null,toolPreferences=null }) {
   if(String(level||'').toUpperCase()==='ZEUS_DIRECTED'){
     const localBudget=budget||createExecutionBudget({timeoutMs:120000,maxCalls:3,reserveMs:6500});
-    return runDirectedPipeline({text,context,images,history,requirements,deliveryContract,blockedProviders,budget:localBudget,onStage,resumeStages},{candidates:roleCandidates,call:callModel,family:modelFamily});
+    return runDirectedPipeline({text,context,images,history,requirements,deliveryContract,blockedProviders,budget:localBudget,onStage,resumeStages,routeHint,toolId,toolPreferences},{candidates:roleCandidates,call:callModel,family:modelFamily,pickCandidate:pickToolCandidate});
   }
   const requestedLevel=(String(level||'').toUpperCase()==='COMPOUND'||verify)?'COMPOUND':'SIMPLE';
   const localBudget=budget||createExecutionBudget({timeoutMs:52000,maxCalls:requestedLevel==='COMPOUND'?2:1});
@@ -938,7 +941,7 @@ export const TURBO_LIMITS=Object.freeze({
 
 const TURBO_SPECIALTIES=new Set(['implementation','security','architecture','interface','research','writing','testing','integration','general']);
 
-function roleScore(role,model,text=''){
+function roleScore(role,model,text='',routeHint=null){
   const roles=new Set(model.roles||[]),quality=Number(model.quality||0),reliability=Number(model.reliability||0),cost=Number(model.cost||99);
   let match=0,providerPreference=0,costWeight=1;
   if(role==='PLANNER'){
@@ -946,7 +949,7 @@ function roleScore(role,model,text=''){
     if(model.provider==='openai')providerPreference+=4; // preferred, never required
     costWeight=.7;
   }else if(role==='CREATOR'){
-    const route=routeFor(text,{vision:false});
+    const route=routeHint||routeFor(text,{vision:false});
     if(roles.has(route)||roles.has('implementation')||roles.has('coding')||roles.has('writing')||roles.has('research'))match+=6;
     // Cost tiering: specialists run on the cheap tier (mini/flash/economy).
     if(model.tier==='economy'||cost<=1)match+=10;else if(cost<=2)match+=6;
@@ -955,7 +958,7 @@ function roleScore(role,model,text=''){
   }else if(role==='DIRECTOR'){
     if(roles.has('director')||roles.has('integration')||roles.has('architecture')||roles.has('reasoning')||roles.has('review'))match+=9;
     // Reward same-domain professional review rather than generic finalization.
-    const domain=routeFor(text,{vision:false});
+    const domain=routeHint||routeFor(text,{vision:false});
     if(roles.has(domain))match+=10;
     if(/\b(ui|ux|visual|front.?end|design|layout|presentation)\b/i.test(text)&&(roles.has('vision')||roles.has('design')||roles.has('interface')))match+=8;
     // Manager runs on the mid/cheap tier; premium is reserved for the CEO.
@@ -971,11 +974,18 @@ function roleScore(role,model,text=''){
 }
 
 export function roleCandidates(role,text='',{
-  vision=false,blockedProviders=[],excludeProviders=[],exclude=new Set(),limit=4
+  vision=false,blockedProviders=[],excludeProviders=[],exclude=new Set(),limit=4,toolId=null,toolPreferences=null,routeHint=null
 }={}){
   const blocked=new Set(blockedProviders||[]),excludedProviders=new Set(excludeProviders||[]),skip=exclude instanceof Set?exclude:new Set(exclude||[]);
   const pool=availableModels({vision}).filter(m=>routeEligibleWhenGatewayBlocked(m,blocked)&&!excludedProviders.has(modelFamily(m))&&!skip.has(`${m.provider}:${m.id}`));
-  return uniqueModelOrder(pool.sort((a,b)=>roleScore(role,b,text)-roleScore(role,a,text))).slice(0,Math.max(1,Math.min(Number(limit)||4,4)));
+  const tool=getToolWorkflow(toolId),route=tool?.route||routeHint,preference=toolPreferences?.[toolId]||null;
+  return uniqueModelOrder(pool.sort((a,b)=>(roleScore(role,b,text,route)+toolPreferenceScore(b,preference))-(roleScore(role,a,text,route)+toolPreferenceScore(a,preference)))).slice(0,Math.max(1,Math.min(Number(limit)||4,6)));
+}
+
+export function toolModelCandidates(toolId,text='',options={}){
+  const tool=getToolWorkflow(toolId);if(!tool)return [];
+  const vision=options.vision===true||tool.vision===true;
+  return roleCandidates(tool.route==='writing'?'CREATOR':tool.route==='vision'?'DIRECTOR':'CREATOR',text,{...options,vision,toolId,routeHint:tool.route,limit:6}).slice(0,6);
 }
 
 function normalizeTurboSpecialty(value='general'){
@@ -1227,6 +1237,31 @@ export function imageModelCandidates() {
   const configured = env('OPENAI_IMAGE_MODEL').trim();
   return [...new Set([configured, 'gpt-image-2.5-flare', 'gpt-image-2', 'gpt-image-1'].filter(Boolean))];
 }
+let imageModelsCache={expiresAt:0,models:[]};
+export async function imageGeneratorCandidates({limit=6}={}){
+  const candidates=[];
+  if(openRouterImageKey()){
+    if(imageModelsCache.expiresAt<Date.now()){
+      try{
+        const response=await fetch(`${apiRoot(openRouterImageApi())}/images/models`,{headers:{Authorization:`Bearer ${openRouterImageKey()}`},signal:AbortSignal.timeout(3500)});
+        if(response.ok){const payload=await response.json();const list=Array.isArray(payload?.data)?payload.data:[];
+          const usable=list.filter(item=>Array.isArray(item?.architecture?.output_modalities)&&item.architecture.output_modalities.includes('image')&&typeof item.id==='string');
+          const priority=['qwen','bytedance-seed','black-forest-labs','tencent','recraft','ideogram','stability','luma','openai','google','meta'];
+          const ranked=usable.map(item=>({...item,family:String(item.id).split('/')[0]})).sort((a,b)=>{
+            const pa=priority.indexOf(a.family),pb=priority.indexOf(b.family);return (pa<0?99:pa)-(pb<0?99:pb)||String(a.id).localeCompare(String(b.id));
+          });
+          const diverse=[];const seen=new Set();for(const item of ranked){if(seen.has(item.family))continue;seen.add(item.family);diverse.push(item);}
+          imageModelsCache={expiresAt:Date.now()+5*60_000,models:(diverse.length>=6?diverse:ranked).slice(0,12)};
+        }else imageModelsCache={expiresAt:Date.now()+30_000,models:[]};
+      }catch{imageModelsCache={expiresAt:Date.now()+30_000,models:[]};}
+    }
+    candidates.push(...imageModelsCache.models.map(item=>({id:item.id,provider:'openrouter',family:item.family,name:item.name||item.id,description:String(item.description||'').slice(0,240),inputImage:Array.isArray(item.architecture?.input_modalities)&&item.architecture.input_modalities.includes('image')})));
+  }
+  if(providerStatus().openai){
+    candidates.push(...imageModelCandidates().map(id=>({id,provider:'openai',family:'openai',name:id,description:'OpenAI image generation and editing',inputImage:true})));
+  }
+  const seen=new Set();return candidates.filter(item=>{const key=`${item.provider}:${item.id}`;if(seen.has(key))return false;seen.add(key);return true;}).slice(0,Math.max(1,Math.min(6,Number(limit)||6)));
+}
 export function imageRequestFields(model) {
   return /^dall-e/i.test(model) ? { size: '1024x1024', response_format: 'b64_json' } : { size: '1024x1024' };
 }
@@ -1258,6 +1293,34 @@ function imageFailure(operation, attempts, last) {
   else if (!attempts.length) { status = 503; lead = `${operation} could not start within the execution budget.`; }
   return Object.assign(new Error(`${lead}${tail}`), { code, status, attempts });
 }
+function imagePromptFit(model,prompt=''){
+  const request=String(prompt).toLowerCase(),profile=`${model.name||''} ${model.description||''} ${model.id||''}`.toLowerCase();let score=0;
+  if(/\b(text|typography|lettering|logo|poster|label|infographic|diagram|sign|words|texto|logotipo|cartaz|folheto)\b/.test(request)&&/qwen|recraft|ideogram|text/.test(profile))score+=7;
+  if(/\b(photo|photoreal|realistic|product|portrait|skin|fotografia|realista|produto|retrato)\b/.test(request)&&/seedream|hy image|flux|photoreal|realism/.test(profile))score+=5;
+  if(/\b(vector|svg|icon|logo|vetor|ícone)\b/.test(request)&&/recraft|ideogram|vector/.test(profile))score+=6;
+  if(/\b(illustration|anime|fantasy|concept art|ilustração|fantasia)\b/.test(request)&&/flux|qwen|seedream/.test(profile))score+=3;
+  return score;
+}
+async function runOpenRouterImage(prompt,{budget,toolPreferences=null,reference=null,operation='Image generation'}={}){
+  const candidates=await imageGeneratorCandidates({limit:6});let pool=candidates.filter(model=>model.provider==='openrouter'&&(!reference||model.inputImage));
+  if(!pool.length)return null;
+  const preference=toolPreferences?.images,standard=preference?.standard;
+  pool.sort((a,b)=>(imagePromptFit(b,prompt)+toolPreferenceScore(b,preference))-(imagePromptFit(a,prompt)+toolPreferenceScore(a,preference)));
+  const preferred=standard&&Math.random()<0.7?pool.find(model=>`openrouter:${model.id}`===standard):null;
+  const first=preferred||(pool.length>1&&Math.random()<0.25?pool[Math.floor(Math.random()*pool.length)]:pool[0]);
+  const ordered=[first,...pool.filter(model=>model!==first)],attempts=[];let last;
+  for(const model of ordered){if(!budget.canCall(8000))break;
+    try{
+      budget.reserveCall(`image:openrouter:${model.id}`);
+      const inputReferences=reference?[{type:'image_url',image_url:{url:`data:${reference.mimeType};base64,${Buffer.from(reference.bytes).toString('base64')}`}}]:undefined;
+      const response=await fetch(`${apiRoot(openRouterImageApi())}/images`,{method:'POST',headers:{Authorization:`Bearer ${openRouterImageKey()}`,'Content-Type':'application/json'},signal:budget.signal(imageCallTimeout(budget)),body:JSON.stringify({model:model.id,prompt,n:1,...(inputReferences?{input_references:inputReferences}:{})})});
+      const data=await response.json().catch(()=>({}));if(!response.ok)throw providerError(data?.error?.message||`Image ${response.status}`,response.status);
+      const bytes=await imageBytesFromResponse(data,budget);return {bytes,model:model.id,provider:'openrouter',mimeType:data?.data?.[0]?.media_type||'image/png',attempts,budget:budget.snapshot()};
+    }catch(error){last=error;attempts.push({model:model.id,status:errorStatus(error)||null,code:isTimeoutFailure(error)?'PROVIDER_TIMEOUT':error?.code||null,error:redactProviderText(String(error?.message||error)).slice(0,160)});if([401,403,402].includes(errorStatus(error)))break;}
+  }
+  if(!attempts.length)return null;
+  throw imageFailure(operation,attempts,last);
+}
 async function runImageModels(operation, label, buildRequest, budget) {
   if (!providerStatus().openai) throw Object.assign(new Error(`${operation} is not configured (no OpenAI / AI Gateway image access).`), { code: 'AI_NOT_CONFIGURED', status: 503 });
   if (circuitOpen('openai')) throw Object.assign(new Error(`${operation} is briefly paused after repeated OpenAI credential/billing failures. Retry in a few minutes.`), { code: 'AI_PROVIDER_PAUSED', status: 503 });
@@ -1286,16 +1349,21 @@ async function runImageModels(operation, label, buildRequest, budget) {
   throw imageFailure(operation, attempts, last);
 }
 
-export async function generateImage(prompt, { budget = null } = {}) {
+export async function generateImage(prompt, { budget = null, toolId=null, toolPreferences=null } = {}) {
   const localBudget = budget || createExecutionBudget({ timeoutMs: 46000, maxCalls: 3 });
+  if(toolId==='images'){
+    try{const routed=await runOpenRouterImage(prompt,{budget:localBudget,toolPreferences});if(routed)return routed;}catch(error){if(!providerStatus().openai)throw error;}
+    if(imageModelsCache.models.length&&!providerStatus().openai)throw imageFailure('Image generation',[],null);
+  }
   return runImageModels('Image generation', 'image', (model) => ({
     path: '/images/generations',
     init: { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model, prompt, ...imageRequestFields(model) }) },
   }), localBudget);
 }
 
-export async function editImage(prompt, imageBytes, imageName = 'source.png', imageType = 'image/png', { budget = null } = {}) {
+export async function editImage(prompt, imageBytes, imageName = 'source.png', imageType = 'image/png', { budget = null,toolPreferences=null } = {}) {
   const localBudget = budget || createExecutionBudget({ timeoutMs: 46000, maxCalls: 3 });
+  try{const routed=await runOpenRouterImage(prompt,{budget:localBudget,toolPreferences,reference:{bytes:imageBytes,mimeType:imageType},operation:'Image editing'});if(routed)return routed;}catch(error){if(!providerStatus().openai)throw error;}
   return runImageModels('Image editing', 'image-edit', (model) => {
     const form = new FormData();
     form.append('model', model);

@@ -8,7 +8,7 @@ const app = $('#app');
 const state = {
   user:null, authReady:false, attachMenu:false,
   tab:'Home', mode:'ZEUS', olympusAuto:false, activeMode:null, activeLevel:null, drawer:false,
-  conversations:[], currentConversation:null, messages:[], chatArtifacts:[], sending:false, execStatus:'', error:'', bootstrapFailures:[],
+  conversations:[], currentConversation:null, currentToolId:null, toolModels:[], toolModelsLoaded:false, toolModelsError:'', messages:[], chatArtifacts:[], sending:false, execStatus:'', error:'', bootstrapFailures:[],
   attachedFiles:[], projects:[], projectFilter:'ALL', currentProject:null, tasks:[],
   files:[], artifacts:[], health:null, recording:false,
   projectSection:'CHAT', projectMemories:[], personalMemories:[], projectSources:[], memoryPolicy:null,
@@ -173,6 +173,7 @@ async function loadArtifacts(projectId=null,{append=false}={}){
   state.artifacts=append?mergeById(state.artifacts,incoming):incoming;state.artifactsPage={scope,hasMore:Boolean(d.page?.hasMore),nextCursor:d.page?.nextCursor||null};
 }
 async function loadHealth(){ try{state.health=await api('/api/health');state.healthError=false;}catch(error){state.healthError=true;throw error;} }
+async function loadToolModels(){try{const d=await api('/api/tool-models');state.toolModels=Array.isArray(d.tools)?d.tools:[];state.toolModelsError='';}catch(error){state.toolModelsError=error?.message||'Model discovery failed.';throw error;}finally{state.toolModelsLoaded=true;}}
 async function loadTasks(projectId){ const d=await api(`/api/tasks?projectId=${encodeURIComponent(projectId)}`);state.tasks=d.tasks||[]; }
 async function loadProjectSources(){
   if(!state.currentProject?.id){state.projectSources=[];return;}
@@ -254,7 +255,8 @@ function homeMobileArtifacts(){
   return `<section class="home-mobile-artifacts" aria-labelledby="mobile-artifacts-title"><div class="mobile-artifacts-heading"><div><span class="eyebrow">SAVED OUTPUTS</span><h2 id="mobile-artifacts-title">Artifacts</h2></div><button type="button" data-tab="Files">See all <span aria-hidden="true">›</span></button></div>${artifacts.length?`<div class="mobile-artifact-track">${artifacts.map(a=>{const image=String(a.mime_type||'').startsWith('image/');return `<button type="button" class="mobile-artifact-card" data-open-output="${esc(a.downloadUrl||'')}" data-output-name="${esc(a.filename||'Saved artifact')}" data-output-mime="${esc(a.mime_type||a.type||'application/octet-stream')}" ${a.downloadUrl?'':'disabled'}>${image?`<img data-private-image="${esc(a.downloadUrl||'')}" alt="">`:`<span class="mobile-artifact-glyph">${esc(String(a.type||'FILE').toUpperCase().slice(0,4))}</span>`}<span class="mobile-artifact-name">${esc(a.filename||'Saved artifact')}</span></button>`}).join('')}</div>`:`<div class="mobile-artifacts-empty">Saved outputs from this chat will appear here.</div>`}</section>`;
 }
 function topbar(){
-  const context=state.currentProject?.name||(state.tab==='Home'?(state.currentConversation?'Conversation':'Home'):state.tab);
+  const tool=state.toolModels?.find(item=>item.id===state.currentToolId);
+  const context=state.currentProject?.name||(state.tab==='Home'?(tool?`${tool.god} · ${tool.title}`:state.currentConversation?'Conversation':'Home'):state.tab);
   const hasHealth=Boolean(state.health);
   const chatReady=Boolean(state.health?.capabilities?.chat);
   const status=state.offline?'OFFLINE':chatReady?'READY':(hasHealth||state.healthError)?'LIMITED':'SYNCING';
@@ -276,23 +278,24 @@ function autoModeKey(){return 'zeus.olympusAuto.v1.'+(state.user?.id||'anonymous
 function automaticOlympus(){try{return localStorage.getItem(autoModeKey())==='true';}catch{return state.olympusAuto===true;}}
 function selectedZeusLevelCap(){try{const n=Number(localStorage.getItem('zeus.maxLevel.v1')||3);return [1,2,3].includes(n)?n:3;}catch{return 3;}}
 function modeStrip(){
-  const selected=liveMode();
-  const level=selectedZeusLevelCap();
+  const selected=state.currentToolId?'ZEUS':liveMode();
+  const level=state.currentToolId?3:selectedZeusLevelCap();
   return `<div class="mode-select-wrap"><div class="mode-strip" role="group" aria-label="Intelligence mode">
     <button type="button" class="mode-card zeus ${selected==='ZEUS'?'selected':''}" data-mode="ZEUS" aria-pressed="${selected==='ZEUS'}" ${state.sending?'disabled':''}><div class="mode-icon">${icon('auto')}</div><div><strong>Zeus</strong></div></button>
-    <button type="button" class="mode-card olympus ${selected==='OLYMPUS'?'selected':''}" data-mode="OLYMPUS" aria-pressed="${selected==='OLYMPUS'}" ${state.sending?'disabled':''}><div class="mode-icon">${icon('globe')}</div><div><strong>Olympus</strong></div></button>
-  </div><div class="mode-extra-controls"><label class="zeus-level-control" for="zeus-level-cap"><span>Zeus level</span><select id="zeus-level-cap" aria-label="Maximum Zeus level">${[[1,'1 · Specialist'],[2,'2 · Specialist + director'],[3,'3 · Full Zeus']].map(([n,label])=>`<option value="${n}" ${level===n?'selected':''}>${label}</option>`).join('')}</select></label><label class="olympus-auto-control" for="olympus-auto"><input type="checkbox" id="olympus-auto" ${automaticOlympus()?'checked':''}><span>Auto Olympus</span></label></div></div>`;
+    <button type="button" class="mode-card olympus ${selected==='OLYMPUS'?'selected':''}" data-mode="OLYMPUS" aria-pressed="${selected==='OLYMPUS'}" ${state.sending||state.currentToolId?'disabled':''}><div class="mode-icon">${icon('globe')}</div><div><strong>Olympus</strong></div></button>
+  </div><div class="mode-extra-controls"><label class="zeus-level-control" for="zeus-level-cap"><span>Zeus level</span><select id="zeus-level-cap" aria-label="Maximum Zeus level" ${state.currentToolId?'disabled':''}>${[[1,'1 · Specialist'],[2,'2 · Specialist + director'],[3,'3 · Full Zeus']].map(([n,label])=>`<option value="${n}" ${level===n?'selected':''}>${label}</option>`).join('')}</select></label><label class="olympus-auto-control" for="olympus-auto"><input type="checkbox" id="olympus-auto" ${automaticOlympus()?'checked':''} ${state.currentToolId?'disabled':''}><span>Auto Olympus</span></label></div></div>`;
 }
 
 function homeView(){
   const isEmpty=!state.messages.length;
+  const tool=state.toolModels?.find(item=>item.id===state.currentToolId);
   const msgs=state.messages.map(m=>messageHtml(m)).join('');
   const exec=state.execStatus?`<div class="exec-card live" aria-hidden="true"><div class="exec-head"><span class="exec-pulse"></span><div><strong>${esc(state.execTitle||'Zeus is working')}</strong><div class="muted tiny">${esc(state.execStatus)}</div></div></div><div class="exec-foot">Live execution status — no simulated timings.</div></div>`:'';
   return `<section class="page chat-page home-workspace">
     <div class="home-chat-column">
     ${modeStrip()}
     <div class="chat-scroll" id="chat-scroll">
-      ${isEmpty?`<div class="welcome"><div class="eyebrow">${state.currentProject?esc(state.currentProject.name):'ONE AI ENVIRONMENT. REAL RESULTS.'}</div><h1>Turn the request into a result.</h1><p>Tell Zeus what you need. Your work stays saved in this conversation.</p><div class="quick-prompts"><button data-prompt="Analyze the attached file and ground every important claim in the source. Call out anything the source does not support.">Review a source</button><button data-prompt="Create the next professional deliverable for this work and keep it connected to the conversation.">Create a deliverable</button><button data-prompt="Build this as runnable code. Include focused tests and tell me clearly which tests were not actually executed.">Build with tests</button><button data-prompt="Turn this goal into a project plan with clear tasks, risks, and milestones.">Plan a project</button></div></div>`:`${state.messagePage?.hasMore?'<div class="history-more"><button class="secondary compact" id="load-older-messages">Load older messages</button></div>':''}<div class="message-list">${msgs}</div>`}
+      ${isEmpty?`<div class="welcome"><div class="eyebrow">${tool?`${esc(tool.god)} · ZEUS LEVEL 3`:state.currentProject?esc(state.currentProject.name):'ONE AI ENVIRONMENT. REAL RESULTS.'}</div><h1>${tool?`What should ${esc(tool.god)} do?`:'Turn the request into a result.'}</h1><p>${tool?`This private ${esc(tool.title.toLowerCase())} conversation will adapt its model team to your prompt and saved preferences.`:'Tell Zeus what you need. Your work stays saved in this conversation.'}</p>${tool?'':`<div class="quick-prompts"><button data-prompt="Analyze the attached file and ground every important claim in the source. Call out anything the source does not support.">Review a source</button><button data-prompt="Create the next professional deliverable for this work and keep it connected to the conversation.">Create a deliverable</button><button data-prompt="Build this as runnable code. Include focused tests and tell me clearly which tests were not actually executed.">Build with tests</button><button data-prompt="Turn this goal into a project plan with clear tasks, risks, and milestones.">Plan a project</button></div>`}</div>`:`${state.messagePage?.hasMore?'<div class="history-more"><button class="secondary compact" id="load-older-messages">Load older messages</button></div>':''}<div class="message-list">${msgs}</div>`}
       ${exec}
       ${errorBanner()}
     </div>
@@ -409,10 +412,12 @@ async function requestSpeechAudio(text,{elevenLabsVoiceId='',signal}={}){
   if(!blob.size){const failed=new Error('Voice provider returned empty audio.');failed.stage='fetch';throw failed;}
   return {blob,voiceFallback:res.headers.get('X-Zeus-Voice-Fallback')==='1'};
 }
-function setMessageFeedback(messageId,value){
+async function setMessageFeedback(messageId,value){
   const next=state.messageFeedback[messageId]===value?'':value;
   if(next)state.messageFeedback[messageId]=next;else delete state.messageFeedback[messageId];
   try{localStorage.setItem('zeus-message-feedback.v1',JSON.stringify(Object.fromEntries(Object.entries(state.messageFeedback).slice(-200))));}catch{}
+  const message=state.messages.find(item=>String(item.id||'')===String(messageId));
+  if(next&&message?.metadata?.toolId){try{await api('/api/tool-feedback',{method:'POST',body:JSON.stringify({messageId,value:next})});}catch(error){state.error=`Your rating was saved on this device, but model preference sync failed: ${error.message||'try again later'}`;}}
   render();
 }
 async function toggleMessageSpeech(messageId){
@@ -745,16 +750,16 @@ function startCompareFormat(id){
 }
 
 function toolsView(){const h=state.health?.capabilities||{};const chat=capabilityState('chat',Boolean(h.chat));const images=capabilityState('imageGeneration',Boolean(h.imageGeneration));const tools=[
-  ['web','Web Search','Current web retrieval with sources',icon('globe'),Boolean(h.webSearch),h.webSearch?'READY':'NOT CONFIGURED','Search the web for '],
-  ['code','Code','Build and review code with explicit test status',icon('code'),chat.enabled,chat.label,'Build or review code for '],
-  ['images','Images','Generate and edit with AI',icon('image'),images.enabled,images.label,'Create an image of '],
-  ['documents','Documents','Create retained PDF, DOCX, PPTX and XLSX deliverables',icon('doc'),chat.enabled,chat.label,'Create a professional PDF about '],
-  ['analysis','Source Review','Ground analysis in uploaded files and project context',icon('chart'),chat.enabled,chat.label,'Analyze the attached source and ground the findings in what it actually supports'],
+  ['web','Web Search','Current web retrieval with sources',icon('globe'),Boolean(h.webSearch),h.webSearch?'READY':'NOT CONFIGURED','Hermes','Search the web for '],
+  ['code','Code','Build and review code with explicit test status',icon('code'),chat.enabled,chat.label,'Hephaestus','Build or review code for '],
+  ['images','Images','Generate and edit with AI',icon('image'),images.enabled,images.label,'Apollo','Create an image of '],
+  ['documents','Documents','Create retained PDF, DOCX, PPTX and XLSX deliverables',icon('doc'),chat.enabled,chat.label,'Athena','Create a professional PDF about '],
+  ['analysis','Source Review','Ground analysis in uploaded files and project context',icon('chart'),chat.enabled,chat.label,'Hestia','Analyze the attached source and ground the findings in what it actually supports'],
 ];
 
   return `<section class="page tools-page">
-    <div class="page-head tight"><div><h1>Tools & Capabilities</h1><p class="eyebrow">REAL CAPABILITIES. REAL OUTPUTS.</p></div><button class="text-gold" data-tab="Files">Explore All ></button></div>
-    ${errorBanner('page-alert')}<div class="tool-grid">${tools.map(([kind,title,sub,ico,ok,label,prompt])=>`<button class="tool-card ${ok?'':'disabled'}" data-kind="${kind}" ${ok?`data-tool-prompt="${esc(prompt)}"`:'disabled aria-disabled="true"'}><div class="tool-ico">${ico}</div><div class="tool-copy"><strong>${title}</strong><span>${sub}</span></div><span class="tool-state">${esc(label)}</span><span class="chev">›</span></button>`).join('')}</div>
+    <div class="page-head tight"><div><h1>Tools & Capabilities</h1><p class="eyebrow">ZEUS LEVEL 3 · ONE GOD PER TOOL</p><p class="muted">Each tool opens its own conversation. Its eligible model pool adapts to your prompt and feedback.</p></div><button class="text-gold" data-tab="Files">Explore All ></button></div>
+    ${errorBanner('page-alert')}<div class="tool-grid">${tools.map(([kind,title,sub,ico,ok,label,god])=>{const models=state.toolModels.find(item=>item.id===kind)?.models||[];const modelLine=!state.toolModelsLoaded?'Loading eligible models…':state.toolModelsError?`Model list unavailable · ${state.toolModelsError}`:models.length?`${models.length}/6 eligible · ${models.slice(0,6).map(m=>m.name||m.id).join(' · ')}`:'No callable model is configured for this tool';return `<button class="tool-card ${ok?'':'disabled'}" data-kind="${kind}" ${ok?`data-tool-start="${kind}"`:'disabled aria-disabled="true"'}><div class="tool-ico">${ico}</div><div class="tool-copy"><strong>${title}</strong><span>${sub}</span><small>${esc(god)} · Zeus Level 3 · ${esc(modelLine)}</small></div><span class="tool-state">${esc(label)}</span><span class="chev">›</span></button>`}).join('')}</div>
     <section class="card" aria-labelledby="compare-title" style="padding:20px;margin-top:18px">
       <h2 id="compare-title">Compare &amp; Evolve</h2>
       <p class="muted">For PDF, DOCX, XLSX, PPTX and HTML, Zeus creates two separate files with two model families when both are configured. Open each file to review it, choose a preferred version, combine them into a new C, or request another pair. Other formats support uploaded-file comparison only.</p>
@@ -973,7 +978,7 @@ function appView(){const page=state.tab==='Home'?homeView():state.tab==='Project
 function focusKey(el){
   if(!el||el===document.body||!app.contains(el))return null;
   if(el.id)return `#${CSS.escape(el.id)}`;
-  for(const attr of ['data-tab','data-mode','data-conv','data-project','data-project-section','data-filter','data-task','data-prompt','data-tool-prompt']){
+  for(const attr of ['data-tab','data-mode','data-conv','data-project','data-project-section','data-filter','data-task','data-prompt','data-tool-prompt','data-tool-start']){
     if(el.hasAttribute(attr))return `[${attr}="${CSS.escape(el.getAttribute(attr))}"]`;
   }
   return null;
@@ -1066,7 +1071,7 @@ function bind(){
     try{
       if(state.tab==='Projects'){await loadProjects();if(state.currentProject?.id)await hydrateProjectWorkspace(state.currentProject.id,{loadConversation:false});else state.tasks=[];}
       if(state.tab==='Files')await Promise.all([loadFiles(),loadArtifacts()]);
-      if(state.tab==='Tools')await Promise.all([loadHealth(),loadFiles(),loadArtifacts()]);
+      if(state.tab==='Tools')await Promise.all([loadHealth(),loadFiles(),loadArtifacts(),loadToolModels()]);
       if(state.tab==='Settings')await Promise.all([loadHealth(),loadGoogleConnections(),loadPreferences()]);
     }catch(err){
       console.error(`Could not load ${next}`,err);
@@ -1102,7 +1107,7 @@ function bind(){
   $$('[data-edit-html]').forEach(b=>b.addEventListener('click',()=>openHtmlEditor(b.dataset.editHtml)));
   $$('[data-compare-artifact]').forEach(b=>b.addEventListener('click',openCompareArtifacts));
   $$('[data-compare-select]').forEach(b=>b.addEventListener('click',async()=>{
-    try{await api('/api/artifact-aliases',{method:'PUT',body:JSON.stringify({projectId:state.currentProject?.id||null,artifactId:b.dataset.compareSelect,alias:`preferred-${b.dataset.compareType||'file'}`})});state.error='';state.execStatus=`Saved your preferred ${String(b.dataset.compareType||'').toUpperCase()} artifact in this workspace.`;setTimeout(()=>{if(state.execStatus.startsWith('Saved your preferred')){state.execStatus='';render();}},2200);render();}
+    try{const artifact=state.artifacts.find(item=>item.id===b.dataset.compareSelect)||state.chatArtifacts.find(item=>item.id===b.dataset.compareSelect);if(artifact?.metadata?.comparePair&&(artifact.provenance?.toolId||artifact.metadata?.toolId))await api('/api/tool-feedback',{method:'POST',body:JSON.stringify({artifactId:artifact.id,value:'choose'})});await api('/api/artifact-aliases',{method:'PUT',body:JSON.stringify({projectId:state.currentProject?.id||null,artifactId:b.dataset.compareSelect,alias:`preferred-${b.dataset.compareType||'file'}`})});state.error='';state.execStatus=`Saved your preferred ${String(b.dataset.compareType||'').toUpperCase()} artifact in this workspace.`;setTimeout(()=>{if(state.execStatus.startsWith('Saved your preferred')){state.execStatus='';render();}},2200);render();}
     catch(error){state.error=error.message||'Could not save the preferred version.';render();}
   }));
   $$('[data-compare-retry]').forEach(b=>b.addEventListener('click',async()=>{
@@ -1161,7 +1166,7 @@ function bind(){
   $('#delete-project')?.addEventListener('click',deleteCurrentProject);
   $('#upload-project-file')?.addEventListener('click',()=>$('#global-file-input').click());
   $$('[data-compare-start]').forEach(b=>b.addEventListener('click',()=>startCompareFormat(b.dataset.compareStart)));
-  $$('[data-tool-prompt]').forEach(b=>b.addEventListener('click',()=>{state.currentProject=null;state.currentConversation=null;state.messages=[];state.chatArtifacts=[];state.attachedFiles=[];state.activeMode=null;state.messagePage={hasMore:false,nextCursor:null};state.error='';state.tab='Home';history.replaceState({},'',location.pathname);state.draft=b.dataset.toolPrompt;render();setTimeout(()=>{const t=$('#composer-text');if(t){t.focus();t.setSelectionRange(t.value.length,t.value.length)}},0)}));
+  $$('[data-tool-start]').forEach(b=>b.addEventListener('click',()=>{state.currentProject=null;state.currentConversation=null;state.currentToolId=b.dataset.toolStart;state.messages=[];state.chatArtifacts=[];state.attachedFiles=[];state.activeMode=null;state.activeLevel=3;state.messagePage={hasMore:false,nextCursor:null};state.error='';state.draft='';state.mode='ZEUS';state.tab='Home';history.replaceState({},'',location.pathname);render();setTimeout(()=>$('#composer-text')?.focus(),0)}));
 }
 document.addEventListener('keydown',e=>{
   if(state.drawer&&window.matchMedia('(max-width:959px)').matches&&e.key==='Tab'){
@@ -1188,7 +1193,7 @@ window.addEventListener('online',()=>{state.offline=false;if(state.user)render()
 window.addEventListener('offline',()=>{state.offline=true;if(state.user)render();});
 window.addEventListener('unhandledrejection',e=>{console.error('Unhandled Zeus error',e.reason);if(state.user&&!state.error){state.error=e.reason?.message||'Something went wrong. Try again.';render();}});
 async function newChat(){
-  state.currentConversation=null;state.currentProject=null;state.messages=[];state.chatArtifacts=[];state.attachedFiles=[];state.draft='';state.activeMode=null;state.activeLevel=null;
+  state.currentConversation=null;state.currentProject=null;state.currentToolId=null;state.messages=[];state.chatArtifacts=[];state.attachedFiles=[];state.draft='';state.activeMode=null;state.activeLevel=null;
   state.error='';state.lastFailedText='';state.lastFailedMessageId=null;state.lastFailedAttachments=[];state.lastFailedRequestId=null;state.lastFailedMode=null;state.messagePage={hasMore:false,nextCursor:null};
   state.tab='Home';state.drawer=false;history.replaceState({},'',location.pathname);render();resetViewport();
 }
@@ -1221,6 +1226,8 @@ async function openConversation(id,doRender=true){
       artifacts:(m.metadata?.artifacts||[]).map(id=>(d.artifacts||[]).find(a=>a.id===id)).filter(Boolean),
       attachments:(m.metadata?.attachments||[]).map(fid=>(typeof fid==='object'?fid:fileIndex[fid]||{id:fid,filename:'Attached file'}))
     }));
+    state.currentToolId=[...(d.messages||[])].reverse().find(m=>m.role==='assistant'&&m.metadata?.toolId)?.metadata?.toolId||null;
+    if(state.currentToolId&&!state.toolModelsLoaded){try{await loadToolModels()}catch{}}
     state.chatArtifacts=d.artifacts||[];
     state.artifacts=mergeById(state.artifacts,d.artifacts||[]);
     state.messagePage={hasMore:Boolean(d.page?.hasMore),nextCursor:d.page?.nextCursor||null};
@@ -1324,7 +1331,8 @@ async function sendText(text,pendingAttachments=[],requestId=crypto.randomUUID()
       content:text,
       fileIds:pending.map(f=>f.id),
       olympusAuto:liveTalkTurn?false:automaticOlympus(),
-      maxZeusLevel:liveTalkTurn?1:selectedZeusLevelCap(),
+      maxZeusLevel:liveTalkTurn?1:state.currentToolId?3:selectedZeusLevelCap(),
+      ...(state.currentToolId&&!liveTalkTurn?{toolId:state.currentToolId}:{}),
       ...(liveTalkTurn?{liveTalk:true}:{}),
       mode,
       requestId,

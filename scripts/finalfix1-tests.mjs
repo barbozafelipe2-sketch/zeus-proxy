@@ -15,10 +15,10 @@ const extract=readFileSync('netlify/functions/_shared/extract.mjs','utf8');
 const pkg=JSON.parse(readFileSync('package.json','utf8'));
 
 assert.ok(app.includes('hydrateProjectWorkspace(state.currentProject.id,{loadConversation:false})'),'project history open must hydrate full project scope');
-assert.ok(app.includes("if(state.tab==='Tools')await Promise.all([loadHealth(),loadFiles(),loadArtifacts()])"),'Tools must load global output scope');
+assert.ok(app.includes("if(state.tab==='Tools')await Promise.all([loadHealth(),loadFiles(),loadArtifacts(),loadToolModels()])"),'Tools must load global output scope and configured model candidates');
 assert.ok(app.includes('data-delete-output'),'file/artifact delete action missing');
 assert.ok(app.includes('deleteCurrentProject'),'project delete action missing');
-assert.ok(app.includes("chat.enabled,chat.label,'Create a professional PDF about '"),'Documents capability must follow chat readiness');
+assert.ok(app.includes("['documents','Documents','Create retained PDF, DOCX, PPTX and XLSX deliverables',icon('doc'),chat.enabled,chat.label"),'Documents capability must follow chat readiness');
 assert.ok(files.includes("if(req.method==='DELETE')"),'file DELETE endpoint missing');
 assert.ok(artifacts.includes("if(req.method==='DELETE')"),'artifact DELETE endpoint missing');
 assert.ok(files.includes("'file-delete'"),'file delete must queue blob cleanup');

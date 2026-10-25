@@ -8,6 +8,8 @@ import { consumeEndpointRate } from './_shared/limits.mjs';
 import { drainBlobGc } from './_shared/storage.mjs';
 import { withTransaction } from './_shared/db.mjs';
 
+function safeProvenance(value){const p=value&&typeof value==='object'?value:{};return Object.fromEntries(['provider','model','toolId','generator','variant','providerFamily'].filter(key=>typeof p[key]==='string').map(key=>[key,p[key].slice(0,160)]));}
+
 async function handler(req,context){
   const requestId=getRequestId(req,context,null);
   const auth=await requireUser(req,requestId);if(auth.error)return auth.error;const{user,db}=auth;
@@ -19,12 +21,12 @@ async function handler(req,context){
     const beforeRaw=url.searchParams.get('before'),before=beforeRaw?decodeCursor(beforeRaw):null;
     if(beforeRaw&&!before)return errorJson('Invalid artifact cursor.',400,'INVALID_CURSOR',requestId);
     let rows;
-    if(projectId&&before)rows=await db.sql`SELECT id,project_id,conversation_id,type,mime_type,filename,size,version,metadata,created_at FROM artifacts WHERE owner_id=${user.id} AND project_id=${projectId} AND (created_at < ${before.t}::timestamptz OR (created_at = ${before.t}::timestamptz AND id < ${before.id}::uuid)) ORDER BY created_at DESC,id DESC LIMIT ${limit+1}`;
-    else if(projectId)rows=await db.sql`SELECT id,project_id,conversation_id,type,mime_type,filename,size,version,metadata,created_at FROM artifacts WHERE owner_id=${user.id} AND project_id=${projectId} ORDER BY created_at DESC,id DESC LIMIT ${limit+1}`;
-    else if(before)rows=await db.sql`SELECT id,project_id,conversation_id,type,mime_type,filename,size,version,metadata,created_at FROM artifacts WHERE owner_id=${user.id} AND project_id IS NULL AND (created_at < ${before.t}::timestamptz OR (created_at = ${before.t}::timestamptz AND id < ${before.id}::uuid)) ORDER BY created_at DESC,id DESC LIMIT ${limit+1}`;
-    else rows=await db.sql`SELECT id,project_id,conversation_id,type,mime_type,filename,size,version,metadata,created_at FROM artifacts WHERE owner_id=${user.id} AND project_id IS NULL ORDER BY created_at DESC,id DESC LIMIT ${limit+1}`;
+    if(projectId&&before)rows=await db.sql`SELECT id,project_id,conversation_id,type,mime_type,filename,size,version,metadata,provenance,created_at FROM artifacts WHERE owner_id=${user.id} AND project_id=${projectId} AND (created_at < ${before.t}::timestamptz OR (created_at = ${before.t}::timestamptz AND id < ${before.id}::uuid)) ORDER BY created_at DESC,id DESC LIMIT ${limit+1}`;
+    else if(projectId)rows=await db.sql`SELECT id,project_id,conversation_id,type,mime_type,filename,size,version,metadata,provenance,created_at FROM artifacts WHERE owner_id=${user.id} AND project_id=${projectId} ORDER BY created_at DESC,id DESC LIMIT ${limit+1}`;
+    else if(before)rows=await db.sql`SELECT id,project_id,conversation_id,type,mime_type,filename,size,version,metadata,provenance,created_at FROM artifacts WHERE owner_id=${user.id} AND project_id IS NULL AND (created_at < ${before.t}::timestamptz OR (created_at = ${before.t}::timestamptz AND id < ${before.id}::uuid)) ORDER BY created_at DESC,id DESC LIMIT ${limit+1}`;
+    else rows=await db.sql`SELECT id,project_id,conversation_id,type,mime_type,filename,size,version,metadata,provenance,created_at FROM artifacts WHERE owner_id=${user.id} AND project_id IS NULL ORDER BY created_at DESC,id DESC LIMIT ${limit+1}`;
     const paged=pageResult(rows,limit);
-    return json({artifacts:paged.page.map(r=>({...r,downloadUrl:`/api/artifact-download?id=${r.id}`})),page:{hasMore:paged.hasMore,nextCursor:paged.nextCursor},requestId});
+    return json({artifacts:paged.page.map(r=>({...r,provenance:safeProvenance(r.provenance),downloadUrl:`/api/artifact-download?id=${r.id}`})),page:{hasMore:paged.hasMore,nextCursor:paged.nextCursor},requestId});
   }
   if(req.method==='DELETE'){
     const body=await readJson(req);if(!body)return errorJson('Invalid JSON.',400,'INVALID_JSON',requestId);

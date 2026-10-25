@@ -103,6 +103,7 @@ async function handler(req,context){
   const configuredRoutes=Object.values(providers).filter(Boolean).length+Number(transports.openrouter_direct)+Number(transports.openai_direct);
   const configuredModels=availableModels({ignoreCircuit:true});
   const activeModels=availableModels();
+  const openRouterImageReady=Boolean((providers.openrouter||transports.openrouter_direct)&&!runtime.openrouter?.circuitOpen&&!runtime.openrouter_direct?.circuitOpen);
   const warnings0=[];
   let readinessSection;
   try{readinessSection=await withTimeout(persistedProviderReadiness(db,user.id,providers,runtime,transports),5000,'providerReadiness');}
@@ -137,7 +138,7 @@ async function handler(req,context){
     capabilityReadiness:{
       chat:chatState,
       documents:chatState,
-      imageGeneration:providers.openai?(runtime.openai?.circuitOpen?'degraded':'configured_unverified'):'unavailable',
+      imageGeneration:(providers.openai&&!runtime.openai?.circuitOpen)||openRouterImageReady?'configured_unverified':'unavailable',
       imageEditing:providers.openai?(runtime.openai?.circuitOpen?'degraded':'configured_unverified'):'unavailable',
       imageUnderstanding:availableModels({vision:true,ignoreCircuit:true}).length?(availableModels({vision:true}).length?'configured_unverified':'degraded'):'unavailable',
       serverTranscription:serverTranscriptionConfigured()?'configured_unverified':'unavailable',
@@ -150,7 +151,7 @@ async function handler(req,context){
       projects:true,
       files:true,
       artifacts:true,
-      imageGeneration:Boolean(providers.openai&&!runtime.openai?.circuitOpen),
+      imageGeneration:Boolean((providers.openai&&!runtime.openai?.circuitOpen)||openRouterImageReady),
       imageEditing:Boolean(providers.openai&&!runtime.openai?.circuitOpen),
       imageUnderstanding:availableModels({vision:true}).length>0,
       webSearch:Boolean(providers.openai&&!runtime.openai?.circuitOpen),
