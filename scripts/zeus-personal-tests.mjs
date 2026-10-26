@@ -17,7 +17,10 @@ assert.ok(app.includes('id="hamburger" aria-label="Open navigation" title="Navig
 assert.ok(app.includes('function managerAgentStrip()')&&app.includes('id="manager-title">Projects</h1>')&&app.includes('class="manager-agent-chip"'),'Home must expose clickable Project shortcuts');
 assert.ok(app.includes('PERMANENT PROJECT CHAT'),'permanent Project chat missing');
 assert.match(app,/function projectChatView\(\)[\s\S]*?\$\{modeStrip\(\)\}/,'Project chat must reuse the main chat mode selector');
-assert.match(app,/id="zeus-level-cap"[\s\S]*?id="olympus-auto"/,'shared mode selector must expose Zeus level cap and automatic Olympus controls');
+assert.ok(!app.includes('id="zeus-level-cap"')&&!app.includes('id="olympus-auto"'),'Zeus level is automatic and the only manual mode choice is Zeus or Olympus');
+assert.ok(app.includes('if(!options?.projectResolved&&!voiceCommand&&!liveTalkTurn')&&app.includes('await openProjectWorkspace(matches[0].id)'),'typed project requests must open the matching workspace before sending so the server injects its context');
+assert.ok(app.includes('olympusAuto:Boolean(automatic)')&&app.includes('data-routing-mode="AUTO"')&&app.includes('data-routing-mode="MANUAL"')&&app.includes('toolRun?{maxZeusLevel:3}:{}'),'automatic routing can choose Zeus or Olympus; manual selects mode and tool chats remain Level 3');
+assert.ok(app.includes('Trace Lab ·')&&app.includes('metadata?.traceCalls')&&chat.includes('traceCalls:Array.isArray(result.trace?.providerTelemetry?.attempts)'),'Trace Lab lists actual provider/model calls from the execution telemetry');
 assert.ok(app.includes('Permanent project memory')&&app.includes('memory-form'),'Project memory missing');
 assert.ok(app.includes('task-form')&&app.includes('upload-project-file'),'Project tasks/files missing');
 assert.ok(app.includes('attach-media')&&app.includes('attach-camera')&&app.includes('attach-file'),'plus attachment chooser missing');

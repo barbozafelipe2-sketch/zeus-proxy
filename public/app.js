@@ -7,7 +7,7 @@ const app = $('#app');
 
 const state = {
   user:null, authReady:false, attachMenu:false,
-  tab:'Home', mode:'ZEUS', olympusAuto:false, activeMode:null, activeLevel:null, drawer:false,
+  tab:'Home', mode:'ZEUS', routingMode:'AUTO', activeMode:null, activeLevel:null, drawer:false,
   conversations:[], currentConversation:null, currentToolId:null, toolModels:[], toolModelsLoaded:false, toolModelsError:'', messages:[], chatArtifacts:[], sending:false, execStatus:'', error:'', bootstrapFailures:[],
   attachedFiles:[], projects:[], projectFilter:'ALL', currentProject:null, tasks:[],
   files:[], artifacts:[], health:null, recording:false,
@@ -274,16 +274,10 @@ function lastReply(messages=state.messages){return [...(messages||[])].reverse()
 function lastReplyMode(messages=state.messages){return lastReply(messages)?.mode||null;}
 function syncActiveModeFromMessages(){const last=lastReply();state.activeMode=last?.mode||null;state.activeLevel=last?.metadata?.executionLevel||null;}
 function liveMode(){return state.mode==='OLYMPUS'?'OLYMPUS':'ZEUS';}
-function autoModeKey(){return 'zeus.olympusAuto.v1.'+(state.user?.id||'anonymous');}
-function automaticOlympus(){try{return localStorage.getItem(autoModeKey())==='true';}catch{return state.olympusAuto===true;}}
-function selectedZeusLevelCap(){try{const n=Number(localStorage.getItem('zeus.maxLevel.v1')||3);return [1,2,3].includes(n)?n:3;}catch{return 3;}}
 function modeStrip(){
-  const selected=state.currentToolId?'ZEUS':liveMode();
-  const level=state.currentToolId?3:selectedZeusLevelCap();
-  return `<div class="mode-select-wrap"><div class="mode-strip" role="group" aria-label="Intelligence mode">
-    <button type="button" class="mode-card zeus ${selected==='ZEUS'?'selected':''}" data-mode="ZEUS" aria-pressed="${selected==='ZEUS'}" ${state.sending?'disabled':''}><div class="mode-icon">${icon('auto')}</div><div><strong>Zeus</strong></div></button>
-    <button type="button" class="mode-card olympus ${selected==='OLYMPUS'?'selected':''}" data-mode="OLYMPUS" aria-pressed="${selected==='OLYMPUS'}" ${state.sending||state.currentToolId?'disabled':''}><div class="mode-icon">${icon('globe')}</div><div><strong>Olympus</strong></div></button>
-  </div><div class="mode-extra-controls"><label class="zeus-level-control" for="zeus-level-cap"><span>Zeus level</span><select id="zeus-level-cap" aria-label="Maximum Zeus level" ${state.currentToolId?'disabled':''}>${[[1,'1 · Specialist'],[2,'2 · Specialist + director'],[3,'3 · Full Zeus']].map(([n,label])=>`<option value="${n}" ${level===n?'selected':''}>${label}</option>`).join('')}</select></label><label class="olympus-auto-control" for="olympus-auto"><input type="checkbox" id="olympus-auto" ${automaticOlympus()?'checked':''} ${state.currentToolId?'disabled':''}><span>Auto Olympus</span></label></div></div>`;
+  if(state.currentToolId)return `<div class="mode-select-wrap"><div class="routing-hint tool-routing-hint">Ferramenta dedicada · Zeus Nível 3 · equipe escolhida conforme o pedido</div></div>`;
+  const selected=state.currentToolId?'ZEUS':liveMode(),automatic=state.routingMode!=='MANUAL';
+  return `<div class="mode-select-wrap"><div class="routing-policy" role="group" aria-label="Execution routing"><button type="button" class="routing-policy-button ${automatic?'selected':''}" data-routing-mode="AUTO" aria-pressed="${automatic}" ${state.sending?'disabled':''}>Automático <small>Zeus L1–L3 ou Olympus</small></button><button type="button" class="routing-policy-button ${!automatic?'selected':''}" data-routing-mode="MANUAL" aria-pressed="${!automatic}" ${state.sending?'disabled':''}>Manual <small>Escolha Zeus ou Olympus</small></button></div>${automatic?`<div class="routing-hint" role="status">O sistema escolhe o modo e o nível para cada pedido.</div>`:`<div class="mode-strip" role="group" aria-label="Escolha o modo"><button type="button" class="mode-card zeus ${selected==='ZEUS'?'selected':''}" data-mode="ZEUS" aria-pressed="${selected==='ZEUS'}" ${state.sending?'disabled':''}><div class="mode-icon">${icon('auto')}</div><div><strong>Zeus</strong><small>Nível automático · L1–L3</small></div></button><button type="button" class="mode-card olympus ${selected==='OLYMPUS'?'selected':''}" data-mode="OLYMPUS" aria-pressed="${selected==='OLYMPUS'}" ${state.sending||state.currentToolId?'disabled':''}><div class="mode-icon">${icon('globe')}</div><div><strong>Olympus</strong><small>Equipe coordenada</small></div></button></div>`}</div>`;
 }
 
 function homeView(){
@@ -338,19 +332,22 @@ function messageHtml(m){
       :'Cost unknown (missing price, token usage or tool charges)';
   const usageNote=u?[`Calls ${fmt(u.callsUsed)}${u.maxCalls!=null?`/${fmt(u.maxCalls)}`:''}`,`Tokens in ${fmt(u.inputTokens)} · out ${fmt(u.outputTokens)} · total ${fmt(u.totalTokens)}`,...(Array.isArray(u.byRole)?u.byRole.slice(0,8).map(r=>`${String(r.role||'').replaceAll('_',' ')}: ${fmt(r.inputTokens)}/${fmt(r.outputTokens)}${r.outcome==='failure'?' (failed)':''}`):[]),costNote].join(' · '):'';
   const note=[level,m.metadata?.modeExplanation,m.metadata?.pipelineLabel,phaseNote,lead,m.metadata?.fallback?'fallback':'',m.metadata?.verificationLabel,visionNote,...capabilityNotes,usageNote].filter(Boolean).join(' · ');
+  const traceCalls=m.role==='assistant'&&Array.isArray(m.metadata?.traceCalls)?m.metadata.traceCalls.slice(0,24):[];
+  const traceHtml=traceCalls.length?`<details class="trace-lab"><summary>Trace Lab · ${traceCalls.filter(call=>call.outcome==='success').length} concluídas / ${traceCalls.length} chamadas</summary><ol>${traceCalls.map(call=>`<li class="trace-call ${call.outcome==='success'?'success':'failure'}"><span class="trace-call-state">${call.outcome==='success'?'OK':'Falhou'}</span><span class="trace-call-model">${esc([call.provider,call.model].filter(Boolean).join(' · ')||'Modelo não informado')}</span><span class="trace-call-stage">${esc(call.stage||'etapa')} · ${esc(call.transport||'rota')}${Number.isFinite(Number(call.durationMs))?` · ${Math.round(Number(call.durationMs))} ms`:''}${call.status?` · HTTP ${esc(call.status)}`:''}</span></li>`).join('')}</ol></details>`:'';
   const speaker=m.role==='user'?'YOU':String(m.mode||'ZEUS').toUpperCase();
   const messageId=String(m.id||m.execution_id||'');
   const reaction=state.messageFeedback[messageId]||'';
   const activeMessageAudio=state.messageAudioId===messageId;
   const audioBusy=state.messageAudioBusyId===messageId;
   const messageActions=m.role==='assistant'&&messageId?`<div class="message-actions" aria-label="Rate or listen to this Zeus reply"><button type="button" class="message-action ${reaction==='up'?'selected':''}" data-message-feedback="up" data-message-id="${esc(messageId)}" aria-label="Approve this answer" aria-pressed="${reaction==='up'}" title="Useful"><span>${icon('like')}</span></button><button type="button" class="message-action ${reaction==='down'?'selected':''}" data-message-feedback="down" data-message-id="${esc(messageId)}" aria-label="Disapprove this answer" aria-pressed="${reaction==='down'}" title="Not useful"><span>${icon('dislike')}</span></button><button type="button" class="message-action message-speak ${activeMessageAudio?'selected':''}" data-message-speak="${esc(messageId)}" aria-label="${audioBusy?'Generating speech':activeMessageAudio?'Pause or resume reading':'Read answer aloud'}" title="${audioBusy?'Preparing voice…':activeMessageAudio?'Pause / resume':'Read aloud'}" ${audioBusy?'disabled':''}><span>${icon(audioBusy?'auto':activeMessageAudio&&state.messageAudioPlaying?'pause':'speaker')}</span></button>${audioBusy?'<span class="message-audio-status" role="status">Preparing voice…</span>':''}</div>`:'';
-  return `<article class="message ${m.role==='user'?'user':'assistant'}"><div class="message-label">${m.role==='user'?'':`<span class="message-bolt" aria-hidden="true">⚡</span>`}<span>${esc(speaker)}</span></div><div class="message-body ${m.role==='assistant'?'markdown-body':''}">${m.role==='assistant'?renderMarkdown(m.content||''):esc(m.content||'')}</div>${messageActions}${note?`<details class="message-debug"><summary>Execution details</summary><div class="message-model">${esc(note)}</div></details>`:''}${sourceHtml}${attached?`<div class="attachments in-message">${attached}</div>`:''}${artifacts?`<div class="artifact-row">${artifacts}</div>`:''}${compareControls}</article>`;
+  return `<article class="message ${m.role==='user'?'user':'assistant'}"><div class="message-label">${m.role==='user'?'':`<span class="message-bolt" aria-hidden="true">⚡</span>`}<span>${esc(speaker)}</span></div><div class="message-body ${m.role==='assistant'?'markdown-body':''}">${m.role==='assistant'?renderMarkdown(m.content||''):esc(m.content||'')}</div>${messageActions}${traceHtml}${note?`<details class="message-debug"><summary>Execution details</summary><div class="message-model">${esc(note)}</div></details>`:''}${sourceHtml}${attached?`<div class="attachments in-message">${attached}</div>`:''}${artifacts?`<div class="artifact-row">${artifacts}</div>`:''}${compareControls}</article>`;
 }
 function artifactCard(a){const tag=esc((a.type||'FILE').toUpperCase().slice(0,4)),url=esc(a.downloadUrl||''),name=esc(a.filename||'Zeus Proxy output'),mime=esc(a.mime_type||a.type||'application/octet-stream'),isImage=String(a.mime_type||'').startsWith('image/'),isZip=a.type==='zip'||/zip/i.test(a.mime_type||'')||String(a.filename||'').toLowerCase().endsWith('.zip'),git=Boolean(state.health?.capabilities?.githubCommit);return `<div class="artifact-card">${isImage?`<button type="button" class="artifact-thumb-wrap" data-open-output="${url}" data-output-name="${name}" data-output-mime="${mime}" aria-label="Open ${name}"><img class="artifact-thumb" data-private-image="${url}" alt=""></button>`:`<div class="out-badge">${tag}</div>`}<div><strong>${name}</strong><small>${fmtSize(a.size)} · ${mime}</small></div><div class="artifact-actions"><button type="button" data-open-output="${url}" data-output-name="${name}" data-output-mime="${mime}">Open</button><button type="button" class="ghost-a" data-download-output="${url}" data-output-name="${name}">Download</button>${isZip&&git?`<button type="button" class="ghost-a" data-github-commit="artifact" data-source-id="${esc(a.id)}" data-source-name="${name}">Commit</button>`:''}</div></div>`}
 const LIVE_LOCALES={auto:'auto',pt:'pt-BR',en:'en-US',es:'es-ES'};
 const VOICE_AVATARS=new Set(['lightning','classic','olympus','liquid']);
 function initVoicePrefs(){
  try{const l=localStorage.getItem('zeus-live-locale');state.liveLocale=Object.prototype.hasOwnProperty.call(LIVE_LOCALES,l)?l:'auto';
+ const routing=localStorage.getItem('zeus-routing-mode.v1');state.routingMode=routing==='MANUAL'?'MANUAL':'AUTO';const savedMode=localStorage.getItem('zeus-manual-mode.v1');state.mode=savedMode==='OLYMPUS'?'OLYMPUS':'ZEUS';
  state.livePersona='ZEUS';try{localStorage.removeItem('zeus-live-persona')}catch{}
  const a=localStorage.getItem('zeus-voice-avatar');state.voiceAvatar=VOICE_AVATARS.has(a)?a:'lightning';
  const savedVoice=String(localStorage.getItem('zeus-voice-id')||'marin').toLowerCase();
@@ -1100,7 +1097,8 @@ function bind(){
   $('#chat-search')?.addEventListener('input',e=>{const q=e.target.value.toLowerCase();let shown=0;$$('.recent-item').forEach(x=>{const match=x.textContent.toLowerCase().includes(q);x.style.display=match?'block':'none';if(match)shown++;});$('#recent-empty')?.classList.toggle('hidden',!q||shown>0||!$$('.recent-item').length);});
   $$('[data-dismiss-error]').forEach(b=>b.addEventListener('click',dismissError));
   $('#retry-services')?.addEventListener('click',()=>bootstrapApp().catch(err=>{state.error=err.message||'Zeus could not load the workspace.';render();}));
-  $$('[data-mode]').forEach(b=>b.addEventListener('click',()=>{if(state.sending)return;state.mode=b.dataset.mode==='OLYMPUS'?'OLYMPUS':'ZEUS';state.activeLevel=null;render();}));
+  $$('[data-routing-mode]').forEach(b=>b.addEventListener('click',()=>{if(state.sending||state.currentToolId)return;state.routingMode=b.dataset.routingMode==='MANUAL'?'MANUAL':'AUTO';try{localStorage.setItem('zeus-routing-mode.v1',state.routingMode)}catch{}render();}));
+  $$('[data-mode]').forEach(b=>b.addEventListener('click',()=>{if(state.sending)return;state.routingMode='MANUAL';state.mode=b.dataset.mode==='OLYMPUS'?'OLYMPUS':'ZEUS';try{localStorage.setItem('zeus-routing-mode.v1','MANUAL');localStorage.setItem('zeus-manual-mode.v1',state.mode)}catch{}state.activeLevel=null;render();}));
   $$('[data-open-output]').forEach(b=>b.addEventListener('click',()=>openPrivateOutput(b.dataset.openOutput,b.dataset.outputName,b.dataset.outputMime).catch(e=>{state.error=e.message;render();})));
   $$('[data-download-output]').forEach(b=>b.addEventListener('click',()=>downloadPrivateOutput(b.dataset.downloadOutput,b.dataset.outputName).catch(e=>{state.error=e.message;render();})));
   $$('[data-use-artifact]').forEach(b=>b.addEventListener('click',async()=>{await attachSavedArtifact(b.dataset.useArtifact);if(!state.error){state.tab=state.currentProject?'Projects':'Home';if(state.currentProject)state.projectSection='CHAT';render();$('#composer-text')?.focus();}}));
@@ -1149,8 +1147,6 @@ function bind(){
   $('#live-talk-text-form')?.addEventListener('submit',sendLiveTalkText);
   $('#live-talk-retry')?.addEventListener('click',retryLiveTalk);
   $('#retry-last')?.addEventListener('click',retryLastMessage);
-  $('#zeus-level-cap')?.addEventListener('change',e=>{const n=Number(e.target.value);if([1,2,3].includes(n)){localStorage.setItem('zeus.maxLevel.v1',String(n));render();}});
-  $('#olympus-auto')?.addEventListener('change',e=>{state.olympusAuto=e.target.checked;try{localStorage.setItem(autoModeKey(),String(state.olympusAuto));}catch{}render();});
   $('#approve-olympus-five')?.addEventListener('click',approveNextOlympusFive);
   $('#load-older-messages')?.addEventListener('click',loadOlderMessages);
   $('#load-older-outputs')?.addEventListener('click',loadOlderOutputs);
@@ -1313,7 +1309,23 @@ async function pollForReply(conversationId, executionId){
 async function sendText(text,pendingAttachments=[],requestId=crypto.randomUUID(),requestedMode=state.mode,turboApproval=null,resumeExecutionId=null,options={}){
   const voiceCommand=options?.voiceCommand===true;
   if(!text||state.sending)return voiceCommand?JSON.stringify({ok:false,error:'Another OlyHub request is already running.'}):undefined;
-  const pending=[...(pendingAttachments||[])],liveTalkTurn=options?.liveTalk===true,mode=liveTalkTurn?'ZEUS':requestedMode==='OLYMPUS'?'OLYMPUS':'ZEUS',compareType=liveTalkTurn||voiceCommand?null:state.compareType;
+  const pending=[...(pendingAttachments||[])],liveTalkTurn=options?.liveTalk===true,toolRun=Boolean(state.currentToolId&&!liveTalkTurn),automatic=state.routingMode!=='MANUAL'&&!toolRun,mode=liveTalkTurn||toolRun||automatic?'ZEUS':requestedMode==='OLYMPUS'?'OLYMPUS':'ZEUS',compareType=liveTalkTurn||voiceCommand?null:state.compareType;
+  // In typed chat, a direct request to work inside a named project should use
+  // that project's permanent conversation and server-injected project context.
+  if(!options?.projectResolved&&!voiceCommand&&!liveTalkTurn&&!state.currentToolId&&/\b(project|projeto|projetos|workspace)\b/i.test(text)){
+    try{
+      if(!(state.projects||[]).length)await loadProjects();
+      const normalize=value=>String(value||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
+      const normalizedText=normalize(text),matches=(state.projects||[]).filter(project=>normalize(project.name).length>=2&&normalizedText.includes(normalize(project.name)));
+      if(matches.length>1){state.error=`More than one project matches this request: ${matches.map(project=>project.name).join(', ')}. Open the intended project first.`;render();return;}
+      if(matches.length===1&&matches[0].id!==state.currentProject?.id){
+        await openProjectWorkspace(matches[0].id);
+        if(state.currentProject?.id!==matches[0].id)return;
+        return await sendText(text,pending,requestId,requestedMode,turboApproval,resumeExecutionId,{...options,projectResolved:true});
+      }
+      if(!matches.length){state.error='I could not match that project name to a project in your workspace. Check the project title and try again.';render();return;}
+    }catch(error){state.error=error.message||'Could not open the requested project.';render();return;}
+  }
   const optimistic={id:crypto.randomUUID(),role:'user',mode,content:text,artifacts:[],attachments:pending};
   state.messages.push(optimistic);
   state.attachedFiles=[];state.draft='';
@@ -1330,8 +1342,10 @@ async function sendText(text,pendingAttachments=[],requestId=crypto.randomUUID()
       projectId:state.currentProject?.id||null,
       content:text,
       fileIds:pending.map(f=>f.id),
-      olympusAuto:liveTalkTurn?false:automaticOlympus(),
-      maxZeusLevel:liveTalkTurn?1:state.currentToolId?3:selectedZeusLevelCap(),
+      // Automatic lets the server choose Zeus L1–L3 or Olympus. Manual
+      // chooses the engine; Zeus still selects its own level.
+      olympusAuto:Boolean(automatic),
+      ...(toolRun?{maxZeusLevel:3}:{}),
       ...(state.currentToolId&&!liveTalkTurn?{toolId:state.currentToolId}:{}),
       ...(liveTalkTurn?{liveTalk:true}:{}),
       mode,
@@ -1639,10 +1653,11 @@ function livePersonaContext(){
     .replace(/\b(?:sk|rk|pk)-[A-Za-z0-9_-]{16,}\b/g,'[REDACTED API TOKEN]')
     .replace(/\b(?:ghp|gho|ghu|ghs|github_pat)_[A-Za-z0-9_]{16,}\b/g,'[REDACTED GITHUB TOKEN]')
     .replace(/\bAIza[0-9A-Za-z_-]{20,}\b/g,'[REDACTED GOOGLE API KEY]');
-  return `You are Zeus, the voice assistant in Zeus Proxy. Speak using the agent's configured primary voice, Felipe; do not switch voices. Remain Zeus in identity. Speak calmly and naturally, with restrained warmth. Avoid constant excitement, exaggerated praise, hype, and unnecessary exclamation marks. Be direct without sounding cold. Zeus Proxy supports natural text/voice conversation, Zeus levels 1/2/3, Olympus mode, project tasks, persistent personal and project memories, past conversation recall, research, and artifact work. Use the selected mode/level for requested work. Casual conversation is complete by itself: do not inspect or offer to inspect projects, call tools, or pitch work unless Felipe asks or a tool is needed to answer his request.\n\nMEMORY AND HISTORY: Use the owner-approved personal memories supplied below when relevant. Save a durable personal fact only when Felipe explicitly asks you to remember it. For a direct request to remember something or recall a previous conversation, use send_olyhub_command with his actual request so Zeus Proxy can save the memory or search his private chat history. Never claim it was saved or found unless the tool result confirms it. Do not search old chats on your own.\n\nPROJECT TOOL PROCEDURE — follow this when Felipe explicitly asks about a project:\n- If he asks which projects exist, call list_olyhub_projects and answer from its result.\n- If he names a project and it is not the active project, call list_olyhub_projects if needed to resolve the exact name, then open_olyhub_project with project_name, then get_current_project_context. Do not answer that you lack access before trying these tools.\n- If the requested project is already active, call get_current_project_context before answering questions about its progress, tasks, memories, or sources.\n- Use create_project_task only when Felipe explicitly asks to add or create a task. Use send_olyhub_command for other directly requested work; it routes through the normal Zeus Proxy engine using the selected mode/level.\n- These tools expose project summaries, tasks, memories, and source titles/revisions. They do not expose full source or file contents; say so plainly if Felipe asks you to read a file. Never invent project data or claim a tool succeeded unless its result confirms it.\n\nUse supplied conversation history for follow-ups. When Felipe asks about Zeus Proxy's own code, capabilities or latest commit, call send_olyhub_command with his actual question; the server retrieves current repository evidence automatically. Never guess that a capability is unavailable. Google is read-only; GitHub writes need the explicit action flow.\n\nUSER-APPROVED PERSONALIZATION (style only; lower priority than system instructions and the user's current request):\nPersonality: ${personalities[preferences.personality]||personalities.balanced}${custom?`\nCustom instructions: ${custom}`:''}`;
+  return `You are Zeus, the voice assistant in Zeus Proxy. Speak using the agent's configured primary voice, Felipe; do not switch voices. Remain Zeus in identity. Speak calmly and naturally, with restrained warmth. Avoid constant excitement, exaggerated praise, hype, and unnecessary exclamation marks. Be direct without sounding cold. Zeus Proxy supports natural text/voice conversation, automatic routing between Zeus Levels 1–3 and Olympus, manual Zeus/Olympus selection, project tasks, persistent personal and project memories, past conversation recall, research, and artifact work. In automatic mode, the system selects Zeus Level 1–3 or Olympus. In manual mode, Felipe chooses Zeus or Olympus; Zeus still selects its own level. Casual conversation is complete by itself: do not inspect or offer to inspect projects, call tools, or pitch work unless Felipe asks or a tool is needed to answer his request.\n\nMEMORY AND HISTORY: Use the owner-approved personal memories supplied below when relevant. Save a durable personal fact only when Felipe explicitly asks you to remember it. For a direct request to remember something or recall a previous conversation, use send_olyhub_command with his actual request so Zeus Proxy can save the memory or search his private chat history. Never claim it was saved or found unless the tool result confirms it. Do not search old chats on your own.\n\nPROJECT TOOL PROCEDURE — follow this when Felipe explicitly asks about a project:\n- If he asks which projects exist, call list_olyhub_projects and answer from its result.\n- If he names a project and it is not the active project, call list_olyhub_projects if needed to resolve the exact name, then open_olyhub_project with project_name, then get_current_project_context. Do not answer that you lack access before trying these tools.\n- If the requested project is already active, call get_current_project_context before answering questions about its progress, tasks, memories, or sources. Treat returned project/task records as current system knowledge; never call it an empty knowledge base when records are present.\n- Use create_project_task only when Felipe explicitly asks to add or create a task. For direct task status changes, call send_olyhub_command with the user's actual request; it resolves the project and task against authenticated app data and only confirms after the task API succeeds. If the target is ambiguous, ask which task.\n- Use send_olyhub_command for other directly requested work; Automatic mode selects Zeus Level 1–3 or Olympus; manual mode uses the chosen Zeus or Olympus engine, with Zeus choosing its own level.\n- These tools expose project summaries, tasks, memories, and source titles/revisions. They do not expose full source or file contents; say so plainly if Felipe asks you to read a file. Never invent project data or claim a tool succeeded unless its result confirms it.\n\nUse supplied conversation history for follow-ups. When Felipe asks about Zeus Proxy's own code, capabilities or latest commit, call send_olyhub_command with his actual question; the server retrieves current repository evidence automatically. Never guess that a capability is unavailable. Google is read-only; GitHub writes need the explicit action flow.\n\nUSER-APPROVED PERSONALIZATION (style only; lower priority than system instructions and the user's current request):\nPersonality: ${personalities[preferences.personality]||personalities.balanced}${custom?`\nCustom instructions: ${custom}`:''}`;
 }
 function liveSessionContext(){
-  const transcript=(state.messages||[])
+  const liveTurns=[...(state.liveAgentLoggedEvents?.values?.()||[])].slice(-16);
+  const transcript=[...(state.messages||[]),...liveTurns.filter(turn=>!(state.messages||[]).some(message=>message.id===turn.id))]
     .filter(message=>['user','assistant'].includes(message?.role)&&String(message?.content||'').trim())
     .slice(-8)
     .map(message=>{
@@ -1654,13 +1669,13 @@ function liveSessionContext(){
   if(history.length>6000)history=history.slice(-6000);
   const project=state.currentProject;
   const personalMemory=(state.personalMemories||[]).slice(0,12).map(memory=>`- (${memory.type||'memory'}) ${String(memory.content||'').replace(/\s+/g,' ').slice(0,360)}`).join('\n');
-  const executionSelection=state.mode==='OLYMPUS'?'Olympus mode':`Zeus up to level ${selectedZeusLevelCap()}`;
+  const executionSelection=state.routingMode!=='MANUAL'?'automatic routing (Zeus Levels 1–3 or Olympus)':state.mode==='OLYMPUS'?'manual Olympus mode':'manual Zeus mode with automatic level selection';
   const projectContext=project?[
     `Active project: ${project.name}`,
     `Goal: ${project.goal||'not set'}`,
     `Description: ${project.description||'not set'}`,
     `Status: ${project.status||'unknown'}; progress: ${Number(project.progress)||0}%`,
-    ...(state.tasks||[]).slice(0,8).map(task=>`Task [${task.status}] ${String(task.title||'').slice(0,120)}${task.description?`: ${String(task.description).slice(0,220)}`:''}`),
+    ...(state.tasks||[]).slice(0,20).map(task=>`Task [${task.status}] ${String(task.title||'').slice(0,120)}${task.description?`: ${String(task.description).slice(0,220)}`:''}`),
     ...(state.projectMemories||[]).slice(0,5).map(memory=>`Project memory: ${String(memory.content||'').slice(0,280)}`),
     ...(state.projectSources||[]).slice(0,5).map(source=>`Project source: ${String(source.title||'').slice(0,100)}`),
     `Voice work commands run through the normal Zeus Proxy engine in ${executionSelection}; preserve this selection.`,
@@ -1672,13 +1687,50 @@ function refreshLiveTalkContext(){try{state.liveAgentConversation?.sendContextua
 function liveProjectClientTools(){
   return {
     send_olyhub_command:async(parameters={})=>{
-      const project=state.currentProject;
+      let project=state.currentProject;
       const command=String(parameters?.command||'').trim().slice(0,40000);
       if(!command)return JSON.stringify({ok:false,error:'A clear command is required.'});
       if(state.sending)return JSON.stringify({ok:false,error:'OlyHub is already processing a request. Wait for it to finish before sending another command.'});
       try{
         await state.liveAgentLogQueue.catch(()=>{});
+        const normalize=value=>String(value||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
+        // Project-specific spoken commands sometimes arrive here before the
+        // agent has completed the separate list/open/context tool sequence.
+        // Resolve an explicitly named project deterministically before routing.
+        const normalizedCommand=normalize(command);
+        if(/\b(project|projeto|task|tarefa)\b/.test(normalizedCommand)||!(state.projects||[]).length)await loadProjects();
+        const namedProjects=(state.projects||[]).filter(item=>normalize(item.name).length>=2&&normalizedCommand.includes(normalize(item.name)));
+        if(namedProjects.length>1)return JSON.stringify({ok:false,error:'More than one project name appears in the request. Ask which project Felipe means.',projects:namedProjects.map(item=>item.name)});
+        if(namedProjects.length===1&&namedProjects[0].id!==project?.id){
+          await openProjectWorkspace(namedProjects[0].id);
+          project=state.currentProject;
+          if(!project?.id)return JSON.stringify({ok:false,error:`Could not open project “${namedProjects[0].name}”.`});
+        }
         if((state.currentProject?.id||null)!==(project?.id||null))return JSON.stringify({ok:false,error:'The active workspace changed before the command started. Please repeat the command.'});
+
+        // The existing authenticated task API is the authoritative source for
+        // status updates. Handle clear voice requests here so they do not get
+        // turned into a hallucinated promise or a request to edit manually.
+        const doneStatus=/\b(done|complet[oa]s?|complete(?:d)?|conclu[ií]d[oa]|finalizad[oa]|terminad[oa])\b/.test(normalizedCommand);
+        const progressStatus=/\b(in progress|em andamento|iniciar|start|comecar|comecada|comecado)\b/.test(normalizedCommand);
+        const statusIntent=/\b(mark|set|change|update|finish|complete|marca|marque|marcar|deixa|deixe|coloca|coloque|altera|atualiza|finaliza|conclui)\b.{0,60}\b(done|complet[oa]s?|complete(?:d)?|conclu[ií]d[oa]|finalizad[oa]|terminad[oa]|in progress|em andamento|iniciar|start|comecar|comecada|comecado)\b/.test(normalizedCommand)||/\b(complete|finish|conclude|conclui|conclua|finaliza|finalize)\b\s+(?:(?:the|my|this|that|a) +)?(?:task|tarefa)\b/.test(normalizedCommand);
+        const requestedStatus=statusIntent?(doneStatus?'DONE':progressStatus?'IN_PROGRESS':null):null;
+        if(statusIntent&&project?.id){
+          await loadTasks(project.id);
+          const savedLiveTurns=[...(state.liveAgentLoggedEvents?.values?.()||[])].slice(-12);
+          const recentUserContext=[...(state.messages||[]),...savedLiveTurns].filter(message=>message.role==='user').slice(-12).map(message=>message.content||'').join(' ');
+          const taskEvidence=normalize(`${command} ${recentUserContext}`);
+          const matches=(state.tasks||[]).filter(task=>{
+            const title=normalize(task.title);
+            return title.length>=2&&taskEvidence.includes(title);
+          });
+          if(matches.length!==1)return JSON.stringify({ok:false,error:matches.length?'Several task names match this request. Ask which task Felipe means.':'I could not identify the task from the request and recent chat. Ask Felipe for its exact title.',tasks:matches.slice(0,8).map(task=>task.title)});
+          const result=await api('/api/tasks',{method:'PATCH',body:JSON.stringify({id:matches[0].id,status:requestedStatus})});
+          await Promise.all([loadTasks(project.id),loadProjects()]);
+          state.currentProject=state.projects.find(item=>item.id===project.id)||project;
+          refreshLiveTalkContext();render();
+          return JSON.stringify({ok:true,updated:true,project:state.currentProject.name,task:{title:result.task?.title||matches[0].title,status:result.task?.status||requestedStatus},projectProgress:result.project?.progress??state.currentProject.progress});
+        }
         const selectedMode=state.mode==='OLYMPUS'?'OLYMPUS':'ZEUS';
         const result=await sendText(command,[],crypto.randomUUID(),selectedMode,null,null,{voiceCommand:true});
         return String(result||JSON.stringify({ok:false,error:'OlyHub returned no command result.'}));

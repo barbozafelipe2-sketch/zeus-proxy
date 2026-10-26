@@ -1,11 +1,14 @@
-# Automatic routing and explicit retries
+# Automatic and manual execution routing
 
-Olympus automatic defaults Off. The account-scoped device preference is included in chat requests. Off keeps the manually selected engine; On allows the zero-token router to select Olympus for substantive audit, high-stakes or multi-area work. Short ordinary turns stay in Zeus. Manual Olympus remains available, and all existing authorization, concurrency, price reservations and approval gates still apply.
+The chat composer offers two policies:
 
-Image creation/editing always use Zeus Level 2 (Compound) with a one-call initial budget. Comparison/Combine are separate explicit actions; this routing change does not generate extra versions automatically. Other Compound tasks retain their two-stage author/reviewer pipeline.
+- **Automatic:** the server chooses between Zeus and Olympus for each request. If it chooses Zeus, the deterministic level router selects Zeus Level 1–3. Olympus selection still uses the existing budget, authorization, concurrency, and approval gates.
+- **Manual:** the owner chooses Zeus or Olympus. Zeus still selects its own level (1–3); there is no manual level cap. Tool conversations continue to use their dedicated Zeus Level 3 workflow.
 
-Failed chat requests offer Try again with notice of possible new charges. The server keeps its existing request deduplication, attempt ledger and completed-stage resume checks. Transport replays cannot bypass usage limits. A separate optional specialist router makes one budget-counted, priced-model classification call for nontrivial text. Short greetings and acknowledgements bypass the paid classifier. No background retry is added.
+The policy is a browser preference and is sent with each chat request. Live Talk's fast conversational turn remains on the Zeus fast path; explicit work commands use the selected routing policy.
 
-Validation: full npm test suite, including automatic-routing-tests.mjs; mocked providers only.
+Assistant messages include a collapsed **Trace Lab** showing the provider, model, execution stage, route, duration, and success/failure for each actual model call. Failed calls remain visible alongside successful fallback calls, so the trace distinguishes an attempted model from one that completed a stage. Provider telemetry is already persisted with the execution; the message metadata copies only a bounded, sanitized list for display.
 
-Specialist classification uses the cheapest known-priced eligible model according to the router's estimated prompt/output weights. It is not a proven minimum end-to-end price. Provider errors, insufficient budget and malformed output fall back to deterministic routing. Full provider and live mobile integration still require separate verification.
+Image creation/editing retains its existing specialized routing. Comparison/Combine remain explicit actions; the routing change does not generate extra versions automatically. Failed chat requests retain existing retry, deduplication, attempt-ledger, and completed-stage resume behavior.
+
+Validation uses mocked providers; live provider and mobile integration still require separate verification.

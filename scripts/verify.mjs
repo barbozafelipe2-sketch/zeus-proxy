@@ -95,6 +95,8 @@ const mustContain = [
   [app,'startVoice','voice input handler'],
   [app,'state.health?.capabilities?.serverTranscription','ElevenLabs Scribe transcription gating'],
   [app,'activeMode','actual execution mode display'],
+  [app,'data-routing-mode="AUTO"','automatic execution routing'],
+  [app,'data-routing-mode="MANUAL"','manual execution routing'],
   [app,'data-mode="ZEUS"','manual Zeus selector'],
   [app,'data-mode="OLYMPUS"','manual Olympus selector'],
   [intent,'decideExecutionLevel','deterministic internal level router'],
@@ -273,7 +275,8 @@ if (!models.includes('maxCreators:2') || !models.includes('roleCandidates(\'CREA
 if (!models.includes("https://api.elevenlabs.io/v1/speech-to-text") || !models.includes("form.append('model_id','scribe_v2')")) throw new Error('Voice message input must post directly to ElevenLabs Scribe v2.');
 if (Object.prototype.hasOwnProperty.call(pkg.dependencies||{},'xlsx')) throw new Error('Redundant legacy xlsx dependency returned.');
 if (!app.includes("if(state.tab==='Tools')await Promise.all([loadHealth(),loadFiles(),loadArtifacts(),loadToolModels()])")) throw new Error('Tools can still render stale Project-scoped outputs or miss the eligible model pools.');
-if (!app.includes('data-tool-start') || !app.includes("maxZeusLevel:liveTalkTurn?1:state.currentToolId?3:selectedZeusLevelCap()") || !chat.includes('toolConversationTitle(toolId)')) throw new Error('Tool workflows must open dedicated Zeus Level 3 conversations with their deity title.');
+if (!app.includes('data-tool-start') || !app.includes('toolRun?{maxZeusLevel:3}:{}') || !chat.includes('toolConversationTitle(toolId)')) throw new Error('Tool workflows must open dedicated Zeus Level 3 conversations with their deity title.');
+if (!app.includes('Trace Lab ·') || !chat.includes('traceCalls:Array.isArray(result.trace?.providerTelemetry?.attempts)')) throw new Error('Trace Lab must expose the actual model calls used by each completed response.');
 if (!app.includes('await hydrateProjectWorkspace(state.currentProject.id,{loadConversation:false})')) throw new Error('Opening a Project conversation does not hydrate the full workspace.');
 
 if (models.includes('level >= 2 && lead.attempts.length === 0')) throw new Error('Zeus review is still disabled after a lead fallback.');
