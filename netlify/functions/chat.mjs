@@ -427,10 +427,9 @@ async function chatHandler(req, context, startedAt){
   if(body.compareImageSourceId!==undefined&&body.compareImageSourceId!==null&&!compareImageSourceId)return errorJson('A valid source image is required for image comparison.',400,'INVALID_IMAGE_COMPARE',requestId);
   let imageCompareSource=null;
   if(compareImageSourceId){
-    if(toolId!=='images')return errorJson('Image A/B comparison is available in the Apollo image conversation.',409,'INVALID_IMAGE_COMPARE',requestId);
-    const source=await db.sql`SELECT id,provenance FROM artifacts WHERE id=${compareImageSourceId} AND owner_id=${user.id} AND conversation_id=${conversationId} AND project_id IS NOT DISTINCT FROM ${projectId} AND type='image' AND metadata->>'toolId'='images'`;
+    const source=await db.sql`SELECT id,metadata,provenance FROM artifacts WHERE id=${compareImageSourceId} AND owner_id=${user.id} AND conversation_id=${conversationId} AND project_id IS NOT DISTINCT FROM ${projectId} AND type='image' AND metadata->>'prompt' IS NOT NULL`;
     imageCompareSource=source[0]||null;
-    if(!imageCompareSource||!attachmentRows.some(row=>row.metadata?.sourceArtifactId===compareImageSourceId))return errorJson('The source image is unavailable in this conversation. Reopen the Apollo image conversation and try again.',404,'IMAGE_COMPARE_SOURCE_NOT_FOUND',requestId);
+    if(!imageCompareSource||!attachmentRows.some(row=>row.metadata?.sourceArtifactId===compareImageSourceId))return errorJson('The generated source image is unavailable in this conversation. Reopen the conversation and try again.',404,'IMAGE_COMPARE_SOURCE_NOT_FOUND',requestId);
   }
   const comparePair=body.comparePair===true,compareType=String(body.compareType||'').toLowerCase();
   const compareTypes=new Set(['pdf','docx','xlsx','pptx','csv','html']);

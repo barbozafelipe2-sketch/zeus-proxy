@@ -165,6 +165,9 @@ assert.ok(app.includes('LONG_REQUEST_DROP_MS') && app.includes('CONNECTION_INTER
 assert.ok(app.includes('[502,503,504].includes(r.status)'), 'non-JSON gateway errors get a server-timeout message');
 assert.ok(app.includes("err?.code==='REQUEST_IN_PROGRESS'"));
 assert.ok(app.includes('data-compare-image')&&app.includes('compareImageSourceId'),'image artifacts must expose an A/B alternative flow');
+assert.ok(app.includes('message-action message-compare')&&app.includes('data-compare-image="${esc(compareSource.id)}"'),'generated image replies need a Compare action beside the message actions');
+assert.ok(app.includes('Modelo usado: ${esc(imageModelLabel(item))}')&&app.includes('Instruções para combinar (opcional)')&&app.includes('Combinar A + B em C'),'image comparison must show both model identities and accept optional combine instructions');
+assert.ok(chat.includes("metadata->>'prompt' IS NOT NULL")&&!chat.includes("toolId!=='images'"),'image comparison should work for generated chat images, not only Apollo tool conversations');
 assert.ok(/@media\(max-width:600px\)[\s\S]*?\.chat-error\{display:grid;grid-template-columns:minmax\(0,1fr\)/.test(read('public/ui-premium.css')),'mobile errors must use a full-width text column');
 assert.ok(app.includes('You are offline. Reconnect and try again.') && app.includes('Connection to Zeus ended before the server returned an HTTP response.'));
 

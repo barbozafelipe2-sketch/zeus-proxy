@@ -1,5 +1,15 @@
 # Zeus Proxy Personal Recovery
 
+## Inline image comparison — 2026-10-26
+- Generated images now render as visible previews directly in the chat, with the actual provider and model shown.
+- Added a Compare action beside reply feedback and voice controls. It generates an alternative from the original prompt, displays B, and shows A/B thumbnails with each model identity.
+- Added per-image selection and a custom optional instruction field for combining A and B into a new C artifact; A and B remain saved.
+- Enabled the same comparison flow for generated images in regular chat as well as the Images tool.
+
+## Agent conversations and project transfer — 2026-10-26
+- Removed the separate Code Agent navigation destination; Hephaestus remains available as the existing agent.
+- Added a “Mover esta conversa para um projeto” action to standalone chats, including conversations opened from an agent. Moving merges that conversation history into the project’s canonical chat using the existing authenticated transfer endpoint.
+
 ## Project task actions — 2026-10-26
 - Typed chat and Live Talk now execute clear project task creation and status-change requests through the authenticated task database flow, including relative deadlines.
 - A checklist can be converted into up to 30 separate project tasks in one transaction, from either the current message or a recent checklist in that project's conversation.

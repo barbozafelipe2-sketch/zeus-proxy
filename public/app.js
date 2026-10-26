@@ -22,7 +22,7 @@ const state = {
   googleSearchResults:{}, googleSearchQueries:{}, googleSearchBusy:null,
   draft:'', offline:typeof navigator!=='undefined'&&navigator.onLine===false,
   codeAgentJobs:[], codeAgentDetails:{}, codeAgentRepo:'', codeAgentBranch:'main', codeAgentSending:false, codeAgentError:'',
-  lastFailedText:'', lastFailedMessageId:null, lastFailedAttachments:[], lastFailedRequestId:null, lastFailedMode:null, lastFailedTurboApproval:null,lastFailedCompareType:null,compareType:null,
+  lastFailedText:'', lastFailedMessageId:null, lastFailedAttachments:[], lastFailedRequestId:null, lastFailedMode:null, lastFailedTurboApproval:null,lastFailedCompareType:null,compareType:null,imageCompareStartingId:null,
 };
 const privateBlobUrls=new Map();const PRIVATE_BLOB_CACHE_MAX=16;
 function revokePrivateBlobUrls(){for(const entry of privateBlobUrls.values())try{URL.revokeObjectURL(entry?.url||entry)}catch{}privateBlobUrls.clear();}
@@ -212,6 +212,7 @@ function icon(name){
     check:svg('<path d="m5 12 5 5 9-10"/>'),
     like:svg('<path d="M7 10v10H4a1 1 0 0 1-1-1v-8a1 1 0 0 1 1-1h3ZM7 10l5-7c2 0 3 1 2 4l-1 3h6a2 2 0 0 1 2 2l-1 6a2 2 0 0 1-2 2H7"/>'),
     dislike:svg('<path d="M7 14V4H4a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h3ZM7 14l5 7c2 0 3-1 2-4l-1-3h6a2 2 0 0 0 2-2l-1-6a2 2 0 0 0-2-2H7"/>'),
+    compare:svg('<path d="M4 7h15M15 3l4 4-4 4M20 17H5m4-4-4 4 4 4"/>'),
     speaker:svg('<path d="M4 10v4h4l5 4V6l-5 4H4Z"/><path d="M16 9a5 5 0 0 1 0 6M18.5 6.5a9 9 0 0 1 0 11"/>'),
     pause:svg('<path d="M8 5v14M16 5v14"/>'),
     folder:svg('<path d="M4 7h6l2 2h8v10H4z"/>'),
@@ -233,7 +234,7 @@ function sidebar(){
   </aside>${state.drawer?'<button class="scrim" id="scrim" aria-label="Close menu"></button>':''}`;
 }
 function navButtons(){
-  const items=[['Home','home','Home'],['Projects','projects','Projects'],['Code Agent','code','Code Agent'],['Tools','tools','Tools'],['Files','files','Files'],['Settings','settings','Settings']];
+  const items=[['Home','home','Home'],['Projects','projects','Projects'],['Tools','tools','Tools'],['Files','files','Files'],['Settings','settings','Settings']];
   return items.map(([tab,ico,label])=>`<button data-tab="${tab}" class="${state.tab===tab?'active':''}" ${state.tab===tab?'aria-current="page"':''}>${icon(ico)}<span>${label}</span></button>`).join('');
 }
 function homeChats(){ return (state.conversations||[]).filter(c=>!c.project_id); }
@@ -290,6 +291,7 @@ function homeView(){
   return `<section class="page chat-page home-workspace">
     <div class="home-chat-column">
     ${modeStrip()}
+    ${state.currentConversation&&!state.currentProject?`<div class="conversation-actions"><button type="button" class="text-gold" data-move-current="${esc(state.currentConversation)}">Mover esta conversa para um projeto</button></div>`:''}
     <div class="chat-scroll" id="chat-scroll">
       ${isEmpty?`<div class="welcome"><div class="eyebrow">${tool?`${esc(tool.god)} · ZEUS LEVEL 3`:state.currentProject?esc(state.currentProject.name):'ONE AI ENVIRONMENT. REAL RESULTS.'}</div><h1>${tool?`What should ${esc(tool.god)} do?`:'Turn the request into a result.'}</h1><p>${tool?`This private ${esc(tool.title.toLowerCase())} conversation will adapt its model team to your prompt and saved preferences.`:'Tell Zeus what you need. Your work stays saved in this conversation.'}</p>${tool?'':`<div class="quick-prompts"><button data-prompt="Analyze the attached file and ground every important claim in the source. Call out anything the source does not support.">Review a source</button><button data-prompt="Create the next professional deliverable for this work and keep it connected to the conversation.">Create a deliverable</button><button data-prompt="Build this as runnable code. Include focused tests and tell me clearly which tests were not actually executed.">Build with tests</button><button data-prompt="Turn this goal into a project plan with clear tasks, risks, and milestones.">Plan a project</button></div>`}</div>`:`${state.messagePage?.hasMore?'<div class="history-more"><button class="secondary compact" id="load-older-messages">Load older messages</button></div>':''}<div class="message-list">${msgs}</div>`}
       ${exec}
@@ -308,10 +310,29 @@ function safeSources(m){
   }
   return out;
 }
+function imageModelLabel(a){const p=a?.provenance||{};return [p.provider,p.model].filter(Boolean).join(' · ')||'Modelo não informado';}
+function chatImagePreview(a,label='Imagem gerada'){
+  const url=esc(a?.downloadUrl||''),name=esc(a?.filename||label),mime=esc(a?.mime_type||'image/png');
+  if(!url)return '';
+  return `<figure class="chat-image-output"><button type="button" class="chat-image-open" data-open-output="${url}" data-output-name="${name}" data-output-mime="${mime}" aria-label="Abrir ${name}"><img data-private-image="${url}" alt="${esc(label)}"></button><figcaption><strong>${esc(label)}</strong><small>Modelo usado: ${esc(imageModelLabel(a))}</small></figcaption></figure>`;
+}
+function imageComparePanel(a,b){
+  if(!a||!b)return '';
+  const mini=(item,label)=>`<article class="image-compare-choice"><button type="button" class="image-compare-thumb" data-open-output="${esc(item.downloadUrl||'')}" data-output-name="${esc(item.filename||label)}" data-output-mime="${esc(item.mime_type||'image/png')}" aria-label="Abrir ${esc(label)}"><img data-private-image="${esc(item.downloadUrl||'')}" alt="${esc(label)}"></button><strong>${label}</strong><small>Modelo usado: ${esc(imageModelLabel(item))}</small><button type="button" class="secondary compact" data-compare-select="${esc(item.id)}" data-compare-type="image">Escolher ${label.slice(0,1)}</button></article>`;
+  return `<section class="image-compare-panel" aria-label="Comparar imagens A e B"><div class="image-compare-heading"><span class="eyebrow">COMPARE A/B</span><strong>Escolha uma versão ou combine as duas</strong></div><div class="image-compare-choices">${mini(a,'A · Original')}${mini(b,'B · Alternativa')}</div><label class="image-compare-instructions">Instruções para combinar (opcional)<textarea data-compare-instructions rows="2" maxlength="4000" placeholder="Ex.: mantenha as cores de A e a composição de B…"></textarea></label><button type="button" class="primary image-compare-combine" data-compare-combine="${esc(a.id)}" data-compare-with="${esc(b.id)}" data-compare-type="image">Combinar A + B em C</button><p class="muted tiny">A imagem original e a alternativa continuam salvas.</p></section>`;
+}
 function messageHtml(m){
-  const artifacts=(m.artifacts||[]).map(artifactCard).join('');
-  const compareArtifacts=(m.role==='assistant'&&m.metadata?.comparePair&&Array.isArray(m.artifacts)&&m.artifacts.length>=2)?m.artifacts.slice(0,2):[];
-  const compareControls=compareArtifacts.length===2?`<div class="compare-pair-actions"><button type="button" data-compare-select="${esc(compareArtifacts[0].id)}" data-compare-type="${esc(m.metadata.compareType||compareArtifacts[0].type||'pdf')}">Choose A</button><button type="button" data-compare-select="${esc(compareArtifacts[1].id)}" data-compare-type="${esc(m.metadata.compareType||compareArtifacts[1].type||'pdf')}">Choose B</button><button type="button" data-compare-combine="${esc(compareArtifacts[0].id)}" data-compare-with="${esc(compareArtifacts[1].id)}" data-compare-type="${esc(m.metadata.compareType||compareArtifacts[0].type||'pdf')}">Combine into C</button><button type="button" data-compare-retry="${esc(m.execution_id||'')}" data-compare-type="${esc(m.metadata.compareType||compareArtifacts[0].type||'pdf')}" ${m.metadata.compareImageSourceId?`data-compare-source="${esc(m.metadata.compareImageSourceId)}"`:''}>Try another pair</button></div>`:'';
+  const allArtifacts=Array.isArray(m.artifacts)?m.artifacts:[];
+  const generatedImages=allArtifacts.filter(a=>a?.type==='image'&&a?.downloadUrl&&a?.metadata?.prompt);
+  const compareArtifacts=(m.role==='assistant'&&m.metadata?.comparePair&&allArtifacts.length>=2)?allArtifacts.slice(0,2):[];
+  const imagePair=m.role==='assistant'&&m.metadata?.comparePair&&m.metadata?.compareType==='image'&&compareArtifacts.length===2;
+  const compareA=imagePair?(allArtifacts.find(a=>a.id===m.metadata.compareImageSourceId)||allArtifacts.find(a=>a.metadata?.variant!=='B')):null;
+  const compareB=imagePair?(allArtifacts.find(a=>a.id!==compareA?.id&&a.metadata?.variant==='B')||allArtifacts.find(a=>a.id!==compareA?.id)):null;
+  const imageCompare=imagePair?imageComparePanel(compareA,compareB):'';
+  const displayedImage=imagePair?compareB:generatedImages[0];
+  const imagePreview=displayedImage?chatImagePreview(displayedImage,imagePair?'Imagem B · Alternativa':imageCompare?'Imagem A · Original':'Imagem gerada'):'';
+  const artifacts=allArtifacts.filter(a=>a.id!==displayedImage?.id&&(!imagePair||(a.id!==compareA?.id&&a.id!==compareB?.id))).map(artifactCard).join('');
+  const compareControls=compareArtifacts.length===2&&!imagePair?`<div class="compare-pair-actions"><button type="button" data-compare-select="${esc(compareArtifacts[0].id)}" data-compare-type="${esc(m.metadata.compareType||compareArtifacts[0].type||'pdf')}">Choose A</button><button type="button" data-compare-select="${esc(compareArtifacts[1].id)}" data-compare-type="${esc(m.metadata.compareType||compareArtifacts[1].type||'pdf')}">Choose B</button><button type="button" data-compare-combine="${esc(compareArtifacts[0].id)}" data-compare-with="${esc(compareArtifacts[1].id)}" data-compare-type="${esc(m.metadata.compareType||compareArtifacts[0].type||'pdf')}">Combine into C</button><button type="button" data-compare-retry="${esc(m.execution_id||'')}" data-compare-type="${esc(m.metadata.compareType||compareArtifacts[0].type||'pdf')}">Try another pair</button></div>`:'';
   const attached=(m.attachments||[]).map(f=>`<span class="file-chip static">${icon('files')} ${esc(f.filename||f.name||'file')}</span>`).join('');
   const sources=safeSources(m);
   const sourceHtml=sources.length?`<div class="message-sources"><span>Sources</span><div>${sources.map((source,i)=>`<a href="${esc(source.url)}" target="_blank" rel="noreferrer noopener" title="${esc(source.title)}"><strong>${i+1}</strong><span>${esc(source.title)}</span></a>`).join('')}</div></div>`:'';
@@ -341,8 +362,11 @@ function messageHtml(m){
   const reaction=state.messageFeedback[messageId]||'';
   const activeMessageAudio=state.messageAudioId===messageId;
   const audioBusy=state.messageAudioBusyId===messageId;
-  const messageActions=m.role==='assistant'&&messageId?`<div class="message-actions" aria-label="Rate or listen to this Zeus reply"><button type="button" class="message-action ${reaction==='up'?'selected':''}" data-message-feedback="up" data-message-id="${esc(messageId)}" aria-label="Approve this answer" aria-pressed="${reaction==='up'}" title="Useful"><span>${icon('like')}</span></button><button type="button" class="message-action ${reaction==='down'?'selected':''}" data-message-feedback="down" data-message-id="${esc(messageId)}" aria-label="Disapprove this answer" aria-pressed="${reaction==='down'}" title="Not useful"><span>${icon('dislike')}</span></button><button type="button" class="message-action message-speak ${activeMessageAudio?'selected':''}" data-message-speak="${esc(messageId)}" aria-label="${audioBusy?'Generating speech':activeMessageAudio?'Pause or resume reading':'Read answer aloud'}" title="${audioBusy?'Preparing voice…':activeMessageAudio?'Pause / resume':'Read aloud'}" ${audioBusy?'disabled':''}><span>${icon(audioBusy?'auto':activeMessageAudio&&state.messageAudioPlaying?'pause':'speaker')}</span></button>${audioBusy?'<span class="message-audio-status" role="status">Preparing voice…</span>':''}</div>`:'';
-  return `<article class="message ${m.role==='user'?'user':'assistant'}"><div class="message-label">${m.role==='user'?'':`<span class="message-bolt" aria-hidden="true">⚡</span>`}<span>${esc(speaker)}</span></div><div class="message-body ${m.role==='assistant'?'markdown-body':''}">${m.role==='assistant'?renderMarkdown(m.content||''):esc(m.content||'')}</div>${messageActions}${traceHtml}${note?`<details class="message-debug"><summary>Execution details</summary><div class="message-model">${esc(note)}</div></details>`:''}${sourceHtml}${attached?`<div class="attachments in-message">${attached}</div>`:''}${artifacts?`<div class="artifact-row">${artifacts}</div>`:''}${compareControls}</article>`;
+  const compareSource=generatedImages[0];
+  const compareBusy=compareSource&&state.imageCompareStartingId===compareSource.id;
+  const compareAction=m.role==='assistant'&&compareSource&&!m.metadata?.comparePair?`<button type="button" class="message-action message-compare ${compareBusy?'selected':''}" data-compare-image="${esc(compareSource.id)}" aria-label="${compareBusy?'Generating image B':'Generate image B to compare with this image'}" title="${compareBusy?'Generating B…':'Compare A/B'}" ${state.sending||Boolean(state.imageCompareStartingId)?'disabled':''}><span>${icon(compareBusy?'auto':'compare')}</span></button>`:'';
+  const messageActions=m.role==='assistant'&&messageId?`<div class="message-actions" aria-label="Rate, compare, or listen to this assistant reply"><button type="button" class="message-action ${reaction==='up'?'selected':''}" data-message-feedback="up" data-message-id="${esc(messageId)}" aria-label="Approve this answer" aria-pressed="${reaction==='up'}" title="Useful"><span>${icon('like')}</span></button><button type="button" class="message-action ${reaction==='down'?'selected':''}" data-message-feedback="down" data-message-id="${esc(messageId)}" aria-label="Disapprove this answer" aria-pressed="${reaction==='down'}" title="Not useful"><span>${icon('dislike')}</span></button><button type="button" class="message-action message-speak ${activeMessageAudio?'selected':''}" data-message-speak="${esc(messageId)}" aria-label="${audioBusy?'Generating speech':activeMessageAudio?'Pause or resume reading':'Read answer aloud'}" title="${audioBusy?'Preparing voice…':activeMessageAudio?'Pause / resume':'Read aloud'}" ${audioBusy?'disabled':''}><span>${icon(audioBusy?'auto':activeMessageAudio&&state.messageAudioPlaying?'pause':'speaker')}</span></button>${compareAction}${audioBusy?'<span class="message-audio-status" role="status">Preparing voice…</span>':''}</div>`:'';
+  return `<article class="message ${m.role==='user'?'user':'assistant'}"><div class="message-label">${m.role==='user'?'':`<span class="message-bolt" aria-hidden="true">⚡</span>`}<span>${esc(speaker)}</span></div><div class="message-body ${m.role==='assistant'?'markdown-body':''}">${m.role==='assistant'?renderMarkdown(m.content||''):esc(m.content||'')}</div>${imagePreview}${messageActions}${traceHtml}${note?`<details class="message-debug"><summary>Execution details</summary><div class="message-model">${esc(note)}</div></details>`:''}${sourceHtml}${attached?`<div class="attachments in-message">${attached}</div>`:''}${artifacts?`<div class="artifact-row">${artifacts}</div>`:''}${imageCompare||compareControls}</article>`;
 }
 function artifactCard(a){const tag=esc((a.type||'FILE').toUpperCase().slice(0,4)),url=esc(a.downloadUrl||''),name=esc(a.filename||'Zeus Proxy output'),mime=esc(a.mime_type||a.type||'application/octet-stream'),isImage=String(a.mime_type||'').startsWith('image/'),compareImage=isImage&&a.metadata?.toolId==='images',isZip=a.type==='zip'||/zip/i.test(a.mime_type||'')||String(a.filename||'').toLowerCase().endsWith('.zip'),git=Boolean(state.health?.capabilities?.githubCommit);return `<div class="artifact-card">${isImage?`<button type="button" class="artifact-thumb-wrap" data-open-output="${url}" data-output-name="${name}" data-output-mime="${mime}" aria-label="Open ${name}"><img class="artifact-thumb" data-private-image="${url}" alt=""></button>`:`<div class="out-badge">${tag}</div>`}<div><strong>${name}</strong><small>${fmtSize(a.size)} · ${mime}</small></div><div class="artifact-actions">${compareImage?`<button type="button" class="ghost-a" data-compare-image="${esc(a.id)}">Compare A/B</button>`:''}<button type="button" data-open-output="${url}" data-output-name="${name}" data-output-mime="${mime}">Open</button><button type="button" class="ghost-a" data-download-output="${url}" data-output-name="${name}">Download</button>${isZip&&git?`<button type="button" class="ghost-a" data-github-commit="artifact" data-source-id="${esc(a.id)}" data-source-name="${name}">Commit</button>`:''}</div></div>`}
 const LIVE_LOCALES={auto:'auto',pt:'pt-BR',en:'en-US',es:'es-ES'};
@@ -544,15 +568,18 @@ async function attachSavedArtifact(artifactId){
  render();
 }
 async function startImageComparison(artifactId){
-  if(state.sending)return;
+  if(state.sending||state.imageCompareStartingId)return;
   const source=state.artifacts.find(a=>a.id===artifactId)||state.chatArtifacts.find(a=>a.id===artifactId);
-  if(!source||source.type!=='image'||source.metadata?.toolId!=='images'){state.error='This Apollo image result is no longer available for comparison.';render();return;}
+  if(!source||source.type!=='image'||!source.metadata?.prompt){state.error='This generated image is no longer available for comparison.';render();return;}
   const originalPrompt=String(source.metadata?.prompt||'').trim().slice(0,4000);
   if(!originalPrompt){state.error='The original image prompt is unavailable, so Zeus cannot make a faithful alternative.';render();return;}
-  await attachSavedArtifact(artifactId);
-  if(state.error)return;
-  const prompt=`Create a second, clearly different image alternative for this request. Use the attached image as Alternative A and as a visual reference, while preserving the original goal and any required text or subject. Make meaningful changes to composition, visual treatment, and details; do not return a near-duplicate. Save this as Alternative B so I can choose A, choose B, or combine them into C.\n\nOriginal request: ${originalPrompt}`;
-  await sendText(prompt,[...state.attachedFiles],crypto.randomUUID(),'ZEUS',null,null,{compareImageSourceId:artifactId});
+  state.imageCompareStartingId=artifactId;state.error='';render();
+  try{
+    await attachSavedArtifact(artifactId);
+    if(state.error)return;
+    const prompt=`Create a second, clearly different image alternative for this request. Use the attached image as Alternative A and as a visual reference, while preserving the original goal and any required text or subject. Make meaningful changes to composition, visual treatment, and details; do not return a near-duplicate. Save this as Alternative B so I can choose A, choose B, or combine them into C.\n\nOriginal request: ${originalPrompt}`;
+    await sendText(prompt,[...state.attachedFiles],crypto.randomUUID(),'ZEUS',null,null,{compareImageSourceId:artifactId});
+  }finally{state.imageCompareStartingId=null;render();}
 }
 async function openHtmlEditor(artifactId){
  const artifact=state.artifacts.find(a=>a.id===artifactId&&a.type==='html');
@@ -1005,7 +1032,7 @@ function liveTalkDock(){
   const status=state.liveTalkStopRequested?'Finishing turn':state.liveMuted?'Mic muted · Zeus audio on':state.liveStage==='speaking'?'Zeus speaking':state.liveStage==='processing'?'Processing':state.liveStage==='error'?'Paused':state.liveStage==='connecting'?'Connecting':'Listening';
   return `<aside class="live-talk-dock" role="region" aria-label="Live Talk controls"><button type="button" class="live-dock-open" id="live-talk-dock-open" aria-label="Open Live Talk"><span class="live-dock-light ${state.liveStage==='error'?'is-error':''}"></span><span class="live-dock-copy"><strong>ZEUS · LIVE</strong><small>${esc(status)}</small></span><span class="live-dock-expand" aria-hidden="true">↗</span></button><button type="button" class="live-dock-action ${state.liveMuted?'is-muted':''}" id="live-talk-dock-mute" aria-pressed="${state.liveMuted}" aria-label="${state.liveMuted?'Unmute your microphone; Zeus audio stays on':'Mute your microphone; Zeus audio stays on'}" title="${state.liveMuted?'Unmute your microphone':'Mute your microphone'}">${icon(state.liveMuted?'mic-off':'mic')}</button><button type="button" class="live-dock-action live-dock-end" id="live-talk-dock-end" aria-label="End Live Talk" title="End Live Talk">${icon('close')}</button></aside>`;
 }
-function appView(){const page=state.tab==='Home'?homeView():state.tab==='Projects'?projectsView():state.tab==='Code Agent'?codeAgentView():state.tab==='Tools'?toolsView():state.tab==='Files'?filesView():settingsView();return `<div class="app-shell">${sidebar()}<main class="main" id="main-content" tabindex="-1">${topbar()}${page}</main><div id="modal-root"></div>${state.liveTalkMinimized&&state.liveTalk?liveTalkDock():''}${state.liveTalk&&!state.liveTalkMinimized?liveTalkExperience():''}</div>`}
+function appView(){const page=state.tab==='Home'?homeView():state.tab==='Projects'?projectsView():state.tab==='Tools'?toolsView():state.tab==='Files'?filesView():settingsView();return `<div class="app-shell">${sidebar()}<main class="main" id="main-content" tabindex="-1">${topbar()}${page}</main><div id="modal-root"></div>${state.liveTalkMinimized&&state.liveTalk?liveTalkDock():''}${state.liveTalk&&!state.liveTalkMinimized?liveTalkExperience():''}</div>`}
 function focusKey(el){
   if(!el||el===document.body||!app.contains(el))return null;
   if(el.id)return `#${CSS.escape(el.id)}`;
@@ -1178,15 +1205,17 @@ function bind(){
     await sendText(userMessage.content||'',[],crypto.randomUUID(),userMessage.mode==='OLYMPUS'?'OLYMPUS':'ZEUS');
   }));
   $$('[data-compare-combine]').forEach(b=>b.addEventListener('click',async()=>{
+    const instructions=b.closest('.image-compare-panel')?.querySelector('[data-compare-instructions]')?.value?.trim().slice(0,4000)||'';
     await attachSavedArtifact(b.dataset.compareCombine);
     if(state.error)return;
     await attachSavedArtifact(b.dataset.compareWith);
     if(state.error)return;
     const type=String(b.dataset.compareType||'pdf').toUpperCase();
-    state.compareType=null;state.tab='Home';if(state.currentProject)state.projectSection='CHAT';
-    state.draft=type==='IMAGE'
-      ?'Create a new image C that combines the strongest visual ideas from both attached alternatives. Preserve the original request, resolve visual conflicts thoughtfully, and save C as a separate image artifact.\n\nMy instructions: '
-      :`Create a new version C as a complete ${type} file, combining the strongest parts of both attached alternatives. Preserve their useful differences, resolve conflicts thoughtfully, and save C as a separate artifact.\n\nMy instructions: `;
+    state.compareType=null;state.tab=state.currentProject?'Projects':'Home';if(state.currentProject)state.projectSection='CHAT';
+    const base=type==='IMAGE'
+      ?'Create a new image C that combines the strongest visual ideas from both attached alternatives. Preserve the original request, resolve visual conflicts thoughtfully, and save C as a separate image artifact.'
+      :`Create a new version C as a complete ${type} file, combining the strongest parts of both attached alternatives. Preserve their useful differences, resolve conflicts thoughtfully, and save C as a separate artifact.`;
+    state.draft=`${base}\n\nMy instructions: ${instructions}`;
     render();requestAnimationFrame(()=>$('#composer-text')?.focus());
   }));
   $$('[data-github-commit]').forEach(b=>b.addEventListener('click',()=>githubCommitModal(b.dataset.githubCommit,b.dataset.sourceId,b.dataset.sourceName)));
