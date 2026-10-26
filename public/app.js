@@ -1789,13 +1789,16 @@ function liveProjectClientTools(){
         const requestedStatus=statusIntent?(doneStatus?'DONE':progressStatus?'IN_PROGRESS':null):null;
         if(statusIntent&&project?.id){
           await loadTasks(project.id);
-          const savedLiveTurns=[...(state.liveAgentLoggedEvents?.values?.()||[])].slice(-12);
-          const recentUserContext=[...(state.messages||[]),...savedLiveTurns].filter(message=>message.role==='user').slice(-12).map(message=>message.content||'').join(' ');
-          const taskEvidence=normalize(`${command} ${recentUserContext}`);
-          const matches=(state.tasks||[]).filter(task=>{
+          const savedLiveTurns=[...(state.liveAgentLoggedEvents?.values?.()||[])].slice(-16);
+          const taskMentions=(text)=> (state.tasks||[]).filter(task=>{
             const title=normalize(task.title);
-            return title.length>=2&&taskEvidence.includes(title);
+            return title.length>=2&&normalize(text).includes(title);
           });
+          let matches=taskMentions(command);
+          if(!matches.length){
+            const recentMessages=[...(state.messages||[]),...savedLiveTurns].filter(message=>message.role==='user'||message.role==='assistant').reverse();
+            for(const message of recentMessages){const contextualMatches=taskMentions(message.content||'');if(contextualMatches.length){matches=contextualMatches;break;}}
+          }
           if(matches.length!==1)return JSON.stringify({ok:false,error:matches.length?'Several task names match this request. Ask which task Felipe means.':'I could not identify the task from the request and recent chat. Ask Felipe for its exact title.',tasks:matches.slice(0,8).map(task=>task.title)});
           const result=await api('/api/tasks',{method:'PATCH',body:JSON.stringify({id:matches[0].id,status:requestedStatus})});
           await Promise.all([loadTasks(project.id),loadProjects()]);

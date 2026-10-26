@@ -4,6 +4,7 @@
 - Typed chat and Live Talk now execute clear project task creation and status-change requests through the authenticated task database flow, including relative deadlines.
 - A checklist can be converted into up to 30 separate project tasks in one transaction, from either the current message or a recent checklist in that project's conversation.
 - Live Talk's task tool accepts a list of checklist items and submits them together; task confirmations are generated only after the database confirms the write.
+- Follow-up status commands resolve references such as “deste”, “that one” and “the task you just created” against the nearest task mention in the active project conversation, instead of combining unrelated older mentions.
 - Task confirmations are generated only after a successful database result; ambiguous targets request clarification instead of claiming completion.
 - Task state and project progress refresh immediately in the open workspace.
 

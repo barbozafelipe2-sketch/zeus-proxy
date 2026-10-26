@@ -10,6 +10,7 @@ const CHANGE_VERB = /\b(?:mark|set|change|update|finish|complete|conclude|marcar
 const CREATE_VERB = /\b(?:create|add|make|crie|criar|cria|adicione|adicionar|adiciona|faca|fazer|fa[cç]a|inclua|incluir)\b/i;
 const DUE_DETAIL = /\b(?:due|deadline|prazo|vencimento)\b/i;
 const ADD_CHECKLIST = /\b(?:add|create|make|adicione|adicionar|adiciona|crie|criar|cria|inclua|incluir)\b.{0,70}\b(?:each|every|cada)\b.{0,50}\b(?:checklist|check list|lista|item|items|itens)\b|\b(?:checklist|check list|lista)\b.{0,70}\b(?:as|como)\s+(?:tasks|tarefas)\b/i;
+const TASK_REFERENT = /\b(?:it|this|that|these|those|one|ones|essa|esse|esta|este|dessa|desse|desta|deste|aquela|aquele|isso|aquilo|a que|o que|que voce criou|que voce acabou de criar|the one you created|the one i just created)\b/i;
 
 function checklistItems(text) {
   let insideList = false;
@@ -67,7 +68,7 @@ export function detectProjectTaskCommand(text, { now = new Date() } = {}) {
   if (!raw || QUESTION.test(raw)) return null;
   const normalized = normalize(raw);
   const status = COMPLETE.test(normalized) ? 'DONE' : IN_PROGRESS.test(normalized) ? 'IN_PROGRESS' : TODO.test(normalized) ? 'TODO' : null;
-  if (status && CHANGE_VERB.test(normalized) && (TASK_WORD.test(normalized) || /\b(?:it|this|that|essa|esta|essa tarefa|isso)\b/.test(normalized))) {
+  if (status && CHANGE_VERB.test(normalized) && (TASK_WORD.test(normalized) || TASK_REFERENT.test(normalized))) {
     return { type: 'status', status, target: raw, dueAt: null };
   }
 
@@ -86,6 +87,15 @@ function taskReferenceMatches(tasks, text) {
     const title = normalize(task.title);
     return title.length >= 2 && normalized.includes(title);
   });
+}
+
+function resolveRecentTaskReference(tasks, historyRows, currentText) {
+  for (const row of historyRows) {
+    if (row.role === 'user' && normalize(row.content) === normalize(currentText)) continue;
+    const matches = taskReferenceMatches(tasks, row.content);
+    if (matches.length) return matches;
+  }
+  return [];
 }
 
 function completionLabel(status, portuguese) {
@@ -147,10 +157,9 @@ export async function executeProjectTaskCommand({ db, ownerId, projectId, conver
 
   const taskRows = await db.sql`SELECT id,title,status,priority,due_at FROM tasks WHERE owner_id=${ownerId} AND project_id=${projectId} ORDER BY created_at DESC LIMIT 100`;
   let matches = taskReferenceMatches(taskRows, text);
-  if (!matches.length && conversationId && /\b(?:it|this|that|essa|esta|isso)\b/i.test(normalize(text))) {
-    const priorRows = await db.sql`SELECT content FROM messages WHERE owner_id=${ownerId} AND conversation_id=${conversationId} ORDER BY created_at DESC LIMIT 12`;
-    const priorText = priorRows.map(row => String(row.content || '')).join('\n');
-    matches = taskReferenceMatches(taskRows, priorText);
+  if (!matches.length && conversationId && TASK_REFERENT.test(normalize(text))) {
+    const priorRows = await db.sql`SELECT role,content FROM messages WHERE owner_id=${ownerId} AND conversation_id=${conversationId} ORDER BY created_at DESC LIMIT 20`;
+    matches = resolveRecentTaskReference(taskRows, priorRows, text);
   }
   if (matches.length !== 1) {
     const reason = matches.length ? (portuguese ? 'Encontrei mais de uma tarefa possível. Diga o título exato.' : 'I found more than one matching task. Please give me its exact title.')

@@ -69,7 +69,7 @@ assert.match(ui,/create_project_task:async/,'the voice agent must be able to cre
 assert.match(ui,/api\('\/api\/tasks',\{method:'PATCH',body:JSON\.stringify\(\{id:matches\[0\]\.id,status:requestedStatus\}\)\}\)/,'Live Talk must apply explicit task status changes through the authenticated task API');
 assert.match(ui,/const namedProjects=\(state\.projects\|\|\[\]\)\.filter/,'spoken work commands must resolve explicitly named projects from the authenticated project list');
 assert.match(ui,/never call it an empty knowledge base when records are present/i,'Live Talk must treat loaded project records as system knowledge');
-assert.ok(ui.includes('const taskEvidence=normalize(`${command} ${recentUserContext}`);'),'Live Talk task changes must resolve pronouns against recent spoken user turns');
+assert.ok(ui.includes("const recentMessages=[...(state.messages||[]),...savedLiveTurns].filter(message=>message.role==='user'||message.role==='assistant').reverse();"),'Live Talk task changes must resolve pronouns from the nearest prior user or assistant task mention');
 assert.match(ui,/projectId:project\.id,title,description:/,'voice task creation must use the app-selected project id rather than an agent-supplied id');
 assert.match(ui,/No project is currently open/,'project tools must refuse to operate without an active project');
 assert.match(ui,/Active project: \$\{project\.name\}/,'the voice context must identify the currently open project');

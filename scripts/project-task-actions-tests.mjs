@@ -19,6 +19,8 @@ assert.deepEqual(detectProjectTaskCommand('Adiciona cada item do checklist como 
 const portugueseComplete=detectProjectTaskCommand('Marque a tarefa "Test task" como completa',{now});
 assert.equal(portugueseComplete?.type,'status');
 assert.equal(portugueseComplete?.status,'DONE');
+assert.equal(detectProjectTaskCommand('Marque deste como completa')?.type,'status','demonstrative references such as “deste” must resolve as task actions');
+assert.equal(detectProjectTaskCommand('Marque a que você acabou de criar como concluída')?.status,'DONE');
 
 const englishComplete=detectProjectTaskCommand('Mark the task Test task as done',{now});
 assert.equal(englishComplete?.type,'status');
@@ -91,5 +93,37 @@ assert.equal(checklist?.tasks?.length,3);
 assert.deepEqual(insertedTitles,['Comprar leite','Fazer homework','Estudar inglês']);
 assert.equal(checklistProgress,0,'new checklist tasks must remain pending');
 assert.match(checklist?.reply,/Criei 3 tarefas/);
+
+let referencedTaskId=null;
+const referenceDb={
+  sql:async(strings)=>{
+    const query=strings.join('?');
+    if(query.includes('SELECT id,name FROM projects'))return [{id:'project-id',name:'Test'}];
+    if(query.includes('SELECT id,title,status,priority,due_at FROM tasks'))return [
+      {id:'latest-task-id',title:'Test task',status:'TODO',priority:'MEDIUM',due_at:null},
+      {id:'older-task-id',title:'Older task',status:'TODO',priority:'MEDIUM',due_at:null}
+    ];
+    if(query.includes('SELECT role,content FROM messages'))return [
+      {role:'user',content:'Marque deste como completa'},
+      {role:'assistant',content:'Tarefa “Test task” criada no projeto “Test”.'},
+      {role:'assistant',content:'A tarefa “Older task” está pendente.'}
+    ];
+    throw new Error(`Unexpected reference SQL read: ${query}`);
+  },
+  pool:{connect:async()=>({
+    async query(query,params=[]){
+      if(query==='BEGIN'||query==='COMMIT'||query==='ROLLBACK')return {rows:[]};
+      if(query.includes('SELECT id FROM projects')&&query.includes('FOR UPDATE'))return {rows:[{id:'project-id'}]};
+      if(query.includes('UPDATE tasks SET status=$1')){referencedTaskId=params[2];return {rows:[{id:params[2],title:params[2]==='latest-task-id'?'Test task':'Older task',status:params[0],priority:'MEDIUM',due_at:null}]};}
+      if(query.includes('SELECT count(*)::int AS total'))return {rows:[{total:2,done:1}]};
+      if(query.includes('UPDATE projects SET progress=$1'))return {rows:[{id:'project-id',name:'Test',progress:50,status:'IN_PROGRESS'}]};
+      throw new Error(`Unexpected reference SQL write: ${query}`);
+    },release(){}
+  })}
+};
+const referenced=await executeProjectTaskCommand({db:referenceDb,ownerId:'owner',projectId:'project-id',conversationId:'conversation-id',text:'Marque deste como completa',now});
+assert.equal(referenced?.ok,true);
+assert.equal(referencedTaskId,'latest-task-id','resolve the demonstrative from the nearest prior assistant mention, not the full mixed history');
+assert.equal(referenced?.task?.status,'DONE');
 
 console.log('Project task action tests passed');
