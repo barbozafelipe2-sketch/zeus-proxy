@@ -528,7 +528,7 @@ async function chatHandler(req, context, startedAt){
         content:action?.reply||'I did not change the task because the request could not be verified.',
         leadModel:null,
         sources:[],capabilities:[],
-        trace:{projectTaskAction:{type:action?.type||projectTaskCommand.type,ok:Boolean(action?.ok),taskId:action?.task?.id||null,status:action?.task?.status||null}},
+        trace:{projectTaskAction:{type:action?.type||projectTaskCommand.type,ok:Boolean(action?.ok),taskId:action?.task?.id||null,taskCount:action?.tasks?.length||0,status:action?.task?.status||null}},
         executionLevel:'SIMPLE',
         modeExplanation:'Project task action processed by OlyHub.'
       };

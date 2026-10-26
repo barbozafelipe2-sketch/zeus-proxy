@@ -1,7 +1,9 @@
 # Zeus Proxy Personal Recovery
 
 ## Project task actions — 2026-10-26
-- Typed chat now executes clear project task creation and status-change requests through the authenticated task database flow, including relative deadlines.
+- Typed chat and Live Talk now execute clear project task creation and status-change requests through the authenticated task database flow, including relative deadlines.
+- A checklist can be converted into up to 30 separate project tasks in one transaction, from either the current message or a recent checklist in that project's conversation.
+- Live Talk's task tool accepts a list of checklist items and submits them together; task confirmations are generated only after the database confirms the write.
 - Task confirmations are generated only after a successful database result; ambiguous targets request clarification instead of claiming completion.
 - Task state and project progress refresh immediately in the open workspace.
 

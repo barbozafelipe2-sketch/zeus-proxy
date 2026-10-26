@@ -40,18 +40,25 @@ async function handler(req,context){
   const body=await readJson(req);if(!body)return errorJson('Invalid JSON.',400,'INVALID_JSON',requestId);
   if(req.method==='POST'){
     if(!isUuid(body.projectId))return errorJson('Valid project required.',400,'INVALID_PROJECT_ID',requestId);
-    const title=cleanText(body.title,200);if(!title)return errorJson('Task title required.',400,'TASK_TITLE_REQUIRED',requestId);
-    const priority=['LOW','MEDIUM','HIGH'].includes(body.priority)?body.priority:'MEDIUM';
-    const dueAt=parseDueAt(body.dueAt);if(dueAt===undefined)return errorJson('Task due date is invalid.',400,'INVALID_DUE_DATE',requestId);
+    const items=Array.isArray(body.items)?body.items.map(item=>({
+      title:cleanText(typeof item==='string'?item:item?.title,200),
+      description:cleanText(typeof item==='string'?'':item?.description,2000),
+      priority:['LOW','MEDIUM','HIGH'].includes(typeof item==='string'?'':String(item?.priority||'').toUpperCase())?String(item.priority).toUpperCase():'MEDIUM',
+      dueAt:parseDueAt(typeof item==='string'?'':item?.dueAt)
+    })):[{title:cleanText(body.title,200),description:cleanText(body.description,2000),priority:['LOW','MEDIUM','HIGH'].includes(body.priority)?body.priority:'MEDIUM',dueAt:parseDueAt(body.dueAt)}];
+    if(!items.length||items.length>30)return errorJson('Provide between 1 and 30 task items.',400,'INVALID_TASK_ITEMS',requestId);
+    if(items.some(item=>!item.title))return errorJson('Every task needs a title.',400,'TASK_TITLE_REQUIRED',requestId);
+    if(items.some(item=>item.dueAt===undefined))return errorJson('A task due date is invalid.',400,'INVALID_DUE_DATE',requestId);
     const created=await withTransaction(db,async client=>{
       const project=(await client.query(`SELECT id FROM projects WHERE id=$1 AND owner_id=$2 FOR UPDATE`,[body.projectId,user.id])).rows[0];
       if(!project)return null;
-      const row=(await client.query(`INSERT INTO tasks(owner_id,project_id,title,description,status,priority,due_at) VALUES($1,$2,$3,$4,'TODO',$5,$6) RETURNING *`,[user.id,body.projectId,title,cleanText(body.description,2000),priority,dueAt])).rows[0];
+      const rows=[];
+      for(const item of items)rows.push((await client.query(`INSERT INTO tasks(owner_id,project_id,title,description,status,priority,due_at) VALUES($1,$2,$3,$4,'TODO',$5,$6) RETURNING *`,[user.id,body.projectId,item.title,item.description,item.priority,item.dueAt])).rows[0]);
       const projectState=await syncProjectProgressClient(client,user.id,body.projectId);
-      return {row,projectState};
+      return {rows,projectState};
     });
     if(!created)return errorJson('Project not found.',404,'PROJECT_NOT_FOUND',requestId);
-    return json({task:created.row,project:created.projectState,requestId},201);
+    return json({task:created.rows[0],tasks:created.rows,project:created.projectState,requestId},201);
   }
   if(req.method==='PATCH'){
     if(!isUuid(body.id))return errorJson('Valid task id required.',400,'INVALID_TASK_ID',requestId);
