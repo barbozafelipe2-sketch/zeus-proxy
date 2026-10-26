@@ -1302,10 +1302,12 @@ function imagePromptFit(model,prompt=''){
   if(/\b(illustration|anime|fantasy|concept art|ilustração|fantasia)\b/.test(request)&&/flux|qwen|seedream/.test(profile))score+=3;
   return score;
 }
-async function runOpenRouterImage(prompt,{budget,toolPreferences=null,reference=null,references=null,operation='Image generation'}={}){
+async function runOpenRouterImage(prompt,{budget,toolPreferences=null,reference=null,references=null,operation='Image generation',excludeModel=null}={}){
   const inputReferences=Array.isArray(references)?references.filter(ref=>ref?.base64&&ref?.mimeType):reference?[reference]:[];
   const candidates=await imageGeneratorCandidates({limit:6});let pool=candidates.filter(model=>model.provider==='openrouter'&&(!inputReferences.length||model.inputImage));
   if(!pool.length)return null;
+  const alternate=pool.filter(model=>`${model.provider}:${model.id}`!==excludeModel&&model.id!==excludeModel);
+  if(alternate.length)pool=alternate;
   const preference=toolPreferences?.images,standard=preference?.standard;
   pool.sort((a,b)=>(imagePromptFit(b,prompt)+toolPreferenceScore(b,preference))-(imagePromptFit(a,prompt)+toolPreferenceScore(a,preference)));
   const preferred=standard&&Math.random()<0.7?pool.find(model=>`openrouter:${model.id}`===standard):null;
@@ -1323,14 +1325,16 @@ async function runOpenRouterImage(prompt,{budget,toolPreferences=null,reference=
   if(!attempts.length)return null;
   throw imageFailure(operation,attempts,last);
 }
-async function runImageModels(operation, label, buildRequest, budget) {
+async function runImageModels(operation, label, buildRequest, budget, excludeModel=null) {
   if (!providerStatus().openai) throw Object.assign(new Error(`${operation} is not configured (no OpenAI / AI Gateway image access).`), { code: 'AI_NOT_CONFIGURED', status: 503 });
   if (circuitOpen('openai')) throw Object.assign(new Error(`${operation} is briefly paused after repeated OpenAI credential/billing failures. Retry in a few minutes.`), { code: 'AI_PROVIDER_PAUSED', status: 503 });
   const base = apiRoot(openaiBase());
   const key = env('OPENAI_API_KEY');
   const attempts = [];
   let last;
-  for (const model of imageModelCandidates()) {
+  const imageModels=imageModelCandidates();
+  const alternatives=imageModels.filter(model=>`openai:${model}`!==excludeModel&&model!==excludeModel);
+  for (const model of alternatives.length?alternatives:imageModels) {
     if (!budget.canCall(8000)) break;
     try {
       budget.reserveCall(`${label}:${model}`);
@@ -1351,9 +1355,12 @@ async function runImageModels(operation, label, buildRequest, budget) {
   throw imageFailure(operation, attempts, last);
 }
 
-export async function generateImage(prompt, { budget = null, toolId=null, toolPreferences=null, referenceImages=[] } = {}) {
+export async function generateImage(prompt, { budget = null, toolId=null, toolPreferences=null, referenceImages=[],excludeModel=null } = {}) {
   const localBudget = budget || createExecutionBudget({ timeoutMs: 46000, maxCalls: 3 });
   if(Array.isArray(referenceImages)&&referenceImages.length){
+    if(toolId==='images'){
+      try{const routed=await runOpenRouterImage(prompt,{budget:localBudget,toolPreferences,references:referenceImages,operation:'Reference-based image generation',excludeModel});if(routed)return routed;}catch(error){if(!providerStatus().openai)throw error;}
+    }
     return runImageModels('Reference-based image generation','image-edit',(model)=>{
       const form=new FormData();
       form.append('model',model);
@@ -1364,7 +1371,7 @@ export async function generateImage(prompt, { budget = null, toolId=null, toolPr
         form.append('image[]',new Blob([bytes],{type:reference.mimeType||'image/png'}),`reference-${index+1}.${reference.mimeType==='image/jpeg'?'jpg':reference.mimeType==='image/webp'?'webp':'png'}`);
       }
       return {path:'/images/edits',init:{body:form}};
-    },localBudget);
+    },localBudget,excludeModel);
   }
   if(toolId==='images'){
     try{const routed=await runOpenRouterImage(prompt,{budget:localBudget,toolPreferences});if(routed)return routed;}catch(error){if(!providerStatus().openai)throw error;}

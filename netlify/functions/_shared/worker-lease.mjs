@@ -12,12 +12,12 @@ function validDate(value){
 }
 export function executionLeaseExpired(execution,now=Date.now()){
   if(!execution)return false;
+  const until=validDate(execution.lease_expires_at);
+  if(until!=null)return now>=until;
   if(execution.mode!=='OLYMPUS'){
     const started=validDate(execution.started_at);
     return started!=null&&now-started>ZEUS_SYNC_STALE_MS;
   }
-  const until=validDate(execution.lease_expires_at);
-  if(until!=null)return now>=until;
   // Old records written before the additive lease migration must never be
   // reclaimed at the 90s synchronous threshold while their worker is alive.
   const started=validDate(execution.started_at);
@@ -43,7 +43,7 @@ export async function claimOlympusWorker(client,{executionId,ownerId,dispatchTok
   const result=await client.query(`UPDATE executions
     SET state='UNDERSTANDING',worker_token=gen_random_uuid(),
         lease_expires_at=now()+interval '210 seconds',started_at=now()
-    WHERE id=$1 AND owner_id=$2 AND mode='OLYMPUS'
+    WHERE id=$1 AND owner_id=$2 AND mode IN ('OLYMPUS','ZEUS')
       AND state='QUEUED' AND dispatch_token=$3::uuid
       AND worker_token IS NULL AND lease_expires_at>now()
     RETURNING id,worker_token,lease_expires_at`,[executionId,ownerId,dispatchToken]);
@@ -58,7 +58,7 @@ export async function claimInlineFallback(db,{executionId,ownerId,dispatchToken}
         worker_token=gen_random_uuid(),lease_expires_at=now()+interval '90 seconds',
         started_at=now()
     WHERE id=${executionId} AND owner_id=${ownerId}
-      AND mode='OLYMPUS' AND state='QUEUED'
+      AND mode IN ('OLYMPUS','ZEUS') AND state='QUEUED'
       AND dispatch_token=${dispatchToken}::uuid AND worker_token IS NULL
       AND lease_expires_at>now()
     RETURNING worker_token,lease_expires_at`;

@@ -1,7 +1,7 @@
 import { runChatRequest } from './chat.mjs';
 
 // Filename suffix `-background` makes Netlify return 202 immediately and keep this
-// invocation alive past the 60s synchronous limit. The real Olympus work runs here.
+// invocation alive past the 60s synchronous limit. Olympus and Zeus Level 3 jobs run here.
 export default async (req, context) => {
   const headers = new Headers(req.headers);
   headers.set('x-olympus-execute', '1');

@@ -11,12 +11,14 @@ function coded(message,status=400,code='GITHUB_COMMIT_FAILED',details=null){
   const error=new Error(message);error.status=status;error.code=code;if(details)error.details=details;return error;
 }
 export function githubWriteConfigured(){return Boolean(env('GITHUB_TOKEN')) && githubRepoAllowlist().some(entry=>/^[a-z0-9_.-]+\/[a-z0-9_.-]+$/i.test(entry));}
+export function githubTokenConfigured(){return Boolean(env('GITHUB_TOKEN'));}
 export function githubRepoAllowlist(){
   return [...new Set(String(env('GITHUB_REPO_ALLOWLIST')||'').split(/[\s,;]+/).map(v=>v.trim().toLowerCase()).filter(Boolean).map(v=>v.replace(/^https?:\/\/github\.com\//,'').replace(/\.git$/,'').replace(/^\/+|\/+$/g,'')))];
 }
-export function assertGithubRepoAllowed(repoUrl){
+export function assertGithubRepoAllowed(repoUrl,{allowAnyRepo=false}={}){
   const ref=parseGitHubRepoUrl(repoUrl);
   if(!ref)throw coded('Provide a valid GitHub repository URL.',400,'GITHUB_REPO_URL_INVALID');
+  if(allowAnyRepo){if(!githubTokenConfigured())throw coded('GitHub access requires a server-side GITHUB_TOKEN.',503,'GITHUB_WRITE_NOT_CONFIGURED');return ref;}
   const allowed=githubRepoAllowlist(),key=`${ref.owner}/${ref.repo}`.toLowerCase();
   if(!allowed.length)throw coded('GitHub writes require a configured GITHUB_REPO_ALLOWLIST.',403,'GITHUB_ALLOWLIST_REQUIRED');
   if(!allowed.includes(key))throw coded('This repository is outside the configured GitHub allowlist.',403,'GITHUB_REPO_NOT_ALLOWED');
@@ -146,4 +148,55 @@ export async function commitZipToGitHub({repoUrl,branch='',message='',zipBytes,r
     if(error?.name==='AbortError'||error?.name==='TimeoutError')throw coded('GitHub commit timed out before the branch could be updated.',504,'GITHUB_TIMEOUT');
     throw error;
   }finally{clearTimeout(timer);}
+}
+
+export async function commitCodeAgentWorkspace({repoUrl,branch,expectedBaseSha,message,requestId,changes=[],deletes=[],timeoutMs=90000}){
+  if(!githubTokenConfigured())throw coded('GitHub access requires a server-side GITHUB_TOKEN.',503,'GITHUB_WRITE_NOT_CONFIGURED');
+  const ref=assertGithubRepoAllowed(repoUrl,{allowAnyRepo:true}),branchName=normalizeGitBranch(branch);
+  if(!branchName||!/^([0-9a-f]{40}|[0-9a-f]{64})$/i.test(String(expectedBaseSha||'')))
+    throw coded('A validated target branch and base commit are required.',400,'CODE_AGENT_BASE_REQUIRED');
+  const requestMarker=`OlyHub-Request-Id: ${String(requestId||'').slice(0,80)}`;
+  if(!/^OlyHub-Request-Id: [0-9a-f-]{36}$/i.test(requestMarker))throw coded('A valid request id is required for idempotent commits.',400,'CODE_AGENT_REQUEST_ID_INVALID');
+  if(!Array.isArray(changes)||!Array.isArray(deletes)||changes.length+deletes.length>120)
+    throw coded('The coding job exceeds the safe 120 changed-file commit limit.',413,'GITHUB_ZIP_TOO_MANY_FILES');
+  const seen=new Set();let total=0;
+  const files=changes.map(file=>{
+    const path=String(file?.path||''),safe=safeZipPath(path);
+    if(!safe||safe!==path||dangerousPath(safe))throw coded(`Refusing to commit an unsafe repository path: ${path.slice(0,180)}`,422,'GITHUB_SENSITIVE_PATH');
+    if(seen.has(path))throw coded(`Duplicate file in final workspace: ${path}`,422,'CODE_AGENT_WORKSPACE_INVALID');seen.add(path);
+    const bytes=file?.bytes instanceof Uint8Array?Buffer.from(file.bytes):Buffer.from(String(file?.content??''),'utf8');
+    total+=bytes.byteLength;
+    if(!bytes.length||bytes.byteLength>2*1024*1024||total>12*1024*1024)throw coded('The final workspace exceeds the safe 12 MB source limit.',413,'GITHUB_ZIP_TOO_LARGE');
+    const text=bytes.toString('utf8');
+    if(text.includes('\u0000'))throw coded(`Binary files are not supported by the coding workspace: ${path}`,422,'CODE_AGENT_BINARY_FILE');
+    if(redactSecrets(text)!==text)throw coded(`A credential-like value was detected in ${path}; GitHub commit was blocked.`,422,'GITHUB_SECRET_DETECTED');
+    const mode=String(file?.mode||'100644');if(!['100644','100755'].includes(mode))throw coded(`Unsupported Git file mode: ${path}`,422,'CODE_AGENT_WORKSPACE_INVALID');
+    return {path,bytes,mode};
+  });
+  const removed=[...new Set(deletes.map(path=>String(path||'')))];
+  for(const path of removed){const safe=safeZipPath(path);if(!safe||safe!==path||dangerousPath(safe)||seen.has(path))throw coded(`Refusing to delete an unsafe or duplicate repository path: ${path.slice(0,180)}`,422,'GITHUB_SENSITIVE_PATH');}
+  if(files.length+removed.length===0)return {repository:`${ref.owner}/${ref.repo}`,branch:branchName,sha:expectedBaseSha,url:`https://github.com/${ref.owner}/${ref.repo}/commit/${expectedBaseSha}`,filesCommitted:0,replayed:false,noChange:true};
+  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeoutMs),root=`/repos/${encodeURIComponent(ref.owner)}/${encodeURIComponent(ref.repo)}`;
+  try{
+    const recent=await github(`${root}/commits?sha=${encodeURIComponent(branchName)}&per_page=100`,{signal:controller.signal}).catch(()=>[]);
+    const prior=(Array.isArray(recent)?recent:[]).find(row=>String(row?.commit?.message||'').includes(requestMarker));
+    if(prior)return {repository:`${ref.owner}/${ref.repo}`,branch:branchName,sha:prior.sha,url:prior.html_url||`https://github.com/${ref.owner}/${ref.repo}/commit/${prior.sha}`,filesCommitted:files.length+removed.length,replayed:true,noChange:false};
+    const branchRef=await github(`${root}/git/ref/heads/${encodeURIComponent(branchName)}`,{signal:controller.signal});
+    const headSha=branchRef?.object?.sha;
+    if(headSha!==expectedBaseSha)throw coded('The GitHub branch changed after the roadmap was prepared. Refresh the workspace and review a new plan before committing.',409,'GITHUB_BRANCH_CONFLICT');
+    const parent=await github(`${root}/git/commits/${encodeURIComponent(expectedBaseSha)}`,{signal:controller.signal}),baseTree=parent?.tree?.sha;
+    if(!baseTree)throw coded('GitHub base tree could not be resolved.',409,'GITHUB_BRANCH_CONFLICT');
+    const blobs=await mapLimit(files,6,async file=>{
+      const created=await github(`${root}/git/blobs`,{method:'POST',body:{content:file.bytes.toString('base64'),encoding:'base64'},signal:controller.signal});
+      return {path:file.path,mode:file.mode,type:'blob',sha:created.sha};
+    });
+    const entries=[...blobs,...removed.map(path=>({path,mode:'100644',type:'blob',sha:null}))];
+    const tree=await github(`${root}/git/trees`,{method:'POST',body:{base_tree:baseTree,tree:entries},signal:controller.signal});
+    if(tree?.sha===baseTree)return {repository:`${ref.owner}/${ref.repo}`,branch:branchName,sha:expectedBaseSha,url:`https://github.com/${ref.owner}/${ref.repo}/commit/${expectedBaseSha}`,filesCommitted:0,replayed:false,noChange:true};
+    const subject=String(message||'OlyHub: implement approved roadmap').replace(/[\r\n]+/g,' ').trim().slice(0,180)||'OlyHub: implement approved roadmap';
+    const commit=await github(`${root}/git/commits`,{method:'POST',body:{message:`${subject}\n\n${requestMarker}`,tree:tree.sha,parents:[expectedBaseSha]},signal:controller.signal});
+    await github(`${root}/git/refs/heads/${encodeURIComponent(branchName)}`,{method:'PATCH',body:{sha:commit.sha,force:false},signal:controller.signal});
+    return {repository:`${ref.owner}/${ref.repo}`,branch:branchName,sha:commit.sha,url:`https://github.com/${ref.owner}/${ref.repo}/commit/${commit.sha}`,filesCommitted:files.length+removed.length,replayed:false,noChange:false};
+  }catch(error){if(error?.name==='AbortError'||error?.name==='TimeoutError')throw coded('GitHub commit timed out before the branch could be updated.',504,'GITHUB_TIMEOUT');throw error;}
+  finally{clearTimeout(timer);}
 }

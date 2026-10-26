@@ -1043,6 +1043,14 @@ html.is-busy body::before{content:"";position:fixed;left:0;top:0;height:2px;widt
 @media(prefers-reduced-motion:reduce){
   *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important}
 }
+/* Keep long errors readable on narrow iPhone screens; actions get their own row. */
+@media(max-width:600px){
+  .chat-error{display:grid;grid-template-columns:minmax(0,1fr);align-items:start;gap:12px}
+  .chat-error .error-copy{width:100%;min-width:0;overflow-wrap:anywhere;line-height:1.5}
+  .chat-error .error-actions{width:100%;display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:8px}
+  .chat-error .error-actions #retry-last,.chat-error .error-actions #retry-services{flex:1 1 180px;min-height:44px;white-space:normal}
+  .chat-error .error-dismiss{flex:0 0 42px;width:42px;height:42px}
+}
 /* The later unconditional two-column .project-chat-layout rule overrode the 959px stacking rule, squeezing the Project chat into a ~110px column on phones. */
 @media(max-width:959px){
   .project-chat-layout{grid-template-columns:minmax(0,1fr)}

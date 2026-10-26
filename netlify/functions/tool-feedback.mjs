@@ -20,9 +20,10 @@ export default async function(req,context){
       const roles=Array.isArray(row.trace?.roles)?row.trace.roles:[];
       models=roles.map(m=>`${String(m.provider||'')}:${String(m.model||m.id||'')}`).filter(k=>/^[a-z0-9_-]{2,32}:[a-z0-9._/-]{1,100}$/i.test(k)).slice(0,3);
     }else{
-      const artifact=(await client.query(`SELECT id,metadata,provenance,execution_id FROM artifacts WHERE id=$1 AND owner_id=$2 FOR UPDATE`,[body.artifactId,user.id])).rows[0];
+      const artifact=(await client.query(`SELECT id,type,metadata,provenance,execution_id FROM artifacts WHERE id=$1 AND owner_id=$2 FOR UPDATE`,[body.artifactId,user.id])).rows[0];
       toolId=String(artifact?.provenance?.toolId||artifact?.metadata?.toolId||'');
-      if(!artifact||!artifact.metadata?.comparePair||!getToolWorkflow(toolId))return {error:'TOOL_COMPARE_ARTIFACT_NOT_FOUND'};
+      const eligibleImageChoice=artifact?.type==='image'&&toolId==='images';
+      if(!artifact||(!artifact.metadata?.comparePair&&!eligibleImageChoice)||!getToolWorkflow(toolId))return {error:'TOOL_COMPARE_ARTIFACT_NOT_FOUND'};
       const modelKey=`${String(artifact.provenance?.provider||'')}:${String(artifact.provenance?.model||'')}`;
       if(/^[a-z0-9_-]{2,32}:[a-z0-9._/-]{1,100}$/i.test(modelKey))models=[modelKey];
     }

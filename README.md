@@ -6,7 +6,15 @@ Zeus Proxy is Felipe's private Netlify edition of Olympus Hub.
 
 ## Personal access
 
-The app is a single-owner personal workspace and does not use a shared API access token or unlock screen. Every API route resolves to the same persistent owner. Protect the Netlify site itself with Netlify visitor access controls if its contents must not be publicly reachable; provider credentials remain server-side.
+The app is a single-owner personal workspace and does not use a shared API access token or unlock screen. Every API route resolves to the same persistent owner. Protect the Netlify site itself with Netlify visitor access controls; provider credentials remain server-side.
+
+## Code Agent
+
+Code Agent queues repository requests, reads the selected GitHub branch, creates a roadmap, and waits for explicit approval. After approval it applies the roadmap phases to durable Netlify Blobs snapshots, reports phase progress, then publishes all changes in one GitHub commit. New requests remain queued while a job is executing. The worker does not expose its GitHub token to the browser.
+
+Set `GITHUB_TOKEN` with **Functions** scope in Netlify. Give it Contents read/write access to the repositories Code Agent should use. Code Agent can use every repository this token can access, so the Netlify site must be protected with visitor access controls before this feature is deployed: the app has no per-person login and its APIs resolve to the single owner. The older ZIP commit action still uses `GITHUB_REPO_ALLOWLIST`; Code Agent does not require that variable.
+
+The background worker generates code changes from the approved roadmap and commits them as a single tree update. It does not run repository shell scripts or tests; phase verification items are shown for review, not reported as executed. Branch-head conflicts and credential-like content block the commit.
 
 ## Zeus Levels
 

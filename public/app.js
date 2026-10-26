@@ -4,6 +4,7 @@ import { localizeInterface, translateInterfaceText } from './locale-pt.js';
 const $ = (s, root=document) => root.querySelector(s);
 const $$ = (s, root=document) => [...root.querySelectorAll(s)];
 const app = $('#app');
+let codeAgentPollTimer=null;
 
 const state = {
   user:null, authReady:false, attachMenu:false,
@@ -20,6 +21,7 @@ const state = {
   preferences:{personality:'balanced',instructions:''}, preferencesLoaded:false,
   googleSearchResults:{}, googleSearchQueries:{}, googleSearchBusy:null,
   draft:'', offline:typeof navigator!=='undefined'&&navigator.onLine===false,
+  codeAgentJobs:[], codeAgentDetails:{}, codeAgentRepo:'', codeAgentBranch:'main', codeAgentSending:false, codeAgentError:'',
   lastFailedText:'', lastFailedMessageId:null, lastFailedAttachments:[], lastFailedRequestId:null, lastFailedMode:null, lastFailedTurboApproval:null,lastFailedCompareType:null,compareType:null,
 };
 const privateBlobUrls=new Map();const PRIVATE_BLOB_CACHE_MAX=16;
@@ -231,7 +233,7 @@ function sidebar(){
   </aside>${state.drawer?'<button class="scrim" id="scrim" aria-label="Close menu"></button>':''}`;
 }
 function navButtons(){
-  const items=[['Home','home','Home'],['Projects','projects','Projects'],['Tools','tools','Tools'],['Files','files','Files'],['Settings','settings','Settings']];
+  const items=[['Home','home','Home'],['Projects','projects','Projects'],['Code Agent','code','Code Agent'],['Tools','tools','Tools'],['Files','files','Files'],['Settings','settings','Settings']];
   return items.map(([tab,ico,label])=>`<button data-tab="${tab}" class="${state.tab===tab?'active':''}" ${state.tab===tab?'aria-current="page"':''}>${icon(ico)}<span>${label}</span></button>`).join('');
 }
 function homeChats(){ return (state.conversations||[]).filter(c=>!c.project_id); }
@@ -309,7 +311,7 @@ function safeSources(m){
 function messageHtml(m){
   const artifacts=(m.artifacts||[]).map(artifactCard).join('');
   const compareArtifacts=(m.role==='assistant'&&m.metadata?.comparePair&&Array.isArray(m.artifacts)&&m.artifacts.length>=2)?m.artifacts.slice(0,2):[];
-  const compareControls=compareArtifacts.length===2?`<div class="compare-pair-actions"><button type="button" data-compare-select="${esc(compareArtifacts[0].id)}" data-compare-type="${esc(m.metadata.compareType||compareArtifacts[0].type||'pdf')}">Choose A</button><button type="button" data-compare-select="${esc(compareArtifacts[1].id)}" data-compare-type="${esc(m.metadata.compareType||compareArtifacts[1].type||'pdf')}">Choose B</button><button type="button" data-compare-combine="${esc(compareArtifacts[0].id)}" data-compare-with="${esc(compareArtifacts[1].id)}" data-compare-type="${esc(m.metadata.compareType||compareArtifacts[0].type||'pdf')}">Combine into C</button><button type="button" data-compare-retry="${esc(m.execution_id||'')}" data-compare-type="${esc(m.metadata.compareType||compareArtifacts[0].type||'pdf')}">Try another pair</button></div>`:'';
+  const compareControls=compareArtifacts.length===2?`<div class="compare-pair-actions"><button type="button" data-compare-select="${esc(compareArtifacts[0].id)}" data-compare-type="${esc(m.metadata.compareType||compareArtifacts[0].type||'pdf')}">Choose A</button><button type="button" data-compare-select="${esc(compareArtifacts[1].id)}" data-compare-type="${esc(m.metadata.compareType||compareArtifacts[1].type||'pdf')}">Choose B</button><button type="button" data-compare-combine="${esc(compareArtifacts[0].id)}" data-compare-with="${esc(compareArtifacts[1].id)}" data-compare-type="${esc(m.metadata.compareType||compareArtifacts[0].type||'pdf')}">Combine into C</button><button type="button" data-compare-retry="${esc(m.execution_id||'')}" data-compare-type="${esc(m.metadata.compareType||compareArtifacts[0].type||'pdf')}" ${m.metadata.compareImageSourceId?`data-compare-source="${esc(m.metadata.compareImageSourceId)}"`:''}>Try another pair</button></div>`:'';
   const attached=(m.attachments||[]).map(f=>`<span class="file-chip static">${icon('files')} ${esc(f.filename||f.name||'file')}</span>`).join('');
   const sources=safeSources(m);
   const sourceHtml=sources.length?`<div class="message-sources"><span>Sources</span><div>${sources.map((source,i)=>`<a href="${esc(source.url)}" target="_blank" rel="noreferrer noopener" title="${esc(source.title)}"><strong>${i+1}</strong><span>${esc(source.title)}</span></a>`).join('')}</div></div>`:'';
@@ -342,7 +344,7 @@ function messageHtml(m){
   const messageActions=m.role==='assistant'&&messageId?`<div class="message-actions" aria-label="Rate or listen to this Zeus reply"><button type="button" class="message-action ${reaction==='up'?'selected':''}" data-message-feedback="up" data-message-id="${esc(messageId)}" aria-label="Approve this answer" aria-pressed="${reaction==='up'}" title="Useful"><span>${icon('like')}</span></button><button type="button" class="message-action ${reaction==='down'?'selected':''}" data-message-feedback="down" data-message-id="${esc(messageId)}" aria-label="Disapprove this answer" aria-pressed="${reaction==='down'}" title="Not useful"><span>${icon('dislike')}</span></button><button type="button" class="message-action message-speak ${activeMessageAudio?'selected':''}" data-message-speak="${esc(messageId)}" aria-label="${audioBusy?'Generating speech':activeMessageAudio?'Pause or resume reading':'Read answer aloud'}" title="${audioBusy?'Preparing voice…':activeMessageAudio?'Pause / resume':'Read aloud'}" ${audioBusy?'disabled':''}><span>${icon(audioBusy?'auto':activeMessageAudio&&state.messageAudioPlaying?'pause':'speaker')}</span></button>${audioBusy?'<span class="message-audio-status" role="status">Preparing voice…</span>':''}</div>`:'';
   return `<article class="message ${m.role==='user'?'user':'assistant'}"><div class="message-label">${m.role==='user'?'':`<span class="message-bolt" aria-hidden="true">⚡</span>`}<span>${esc(speaker)}</span></div><div class="message-body ${m.role==='assistant'?'markdown-body':''}">${m.role==='assistant'?renderMarkdown(m.content||''):esc(m.content||'')}</div>${messageActions}${traceHtml}${note?`<details class="message-debug"><summary>Execution details</summary><div class="message-model">${esc(note)}</div></details>`:''}${sourceHtml}${attached?`<div class="attachments in-message">${attached}</div>`:''}${artifacts?`<div class="artifact-row">${artifacts}</div>`:''}${compareControls}</article>`;
 }
-function artifactCard(a){const tag=esc((a.type||'FILE').toUpperCase().slice(0,4)),url=esc(a.downloadUrl||''),name=esc(a.filename||'Zeus Proxy output'),mime=esc(a.mime_type||a.type||'application/octet-stream'),isImage=String(a.mime_type||'').startsWith('image/'),isZip=a.type==='zip'||/zip/i.test(a.mime_type||'')||String(a.filename||'').toLowerCase().endsWith('.zip'),git=Boolean(state.health?.capabilities?.githubCommit);return `<div class="artifact-card">${isImage?`<button type="button" class="artifact-thumb-wrap" data-open-output="${url}" data-output-name="${name}" data-output-mime="${mime}" aria-label="Open ${name}"><img class="artifact-thumb" data-private-image="${url}" alt=""></button>`:`<div class="out-badge">${tag}</div>`}<div><strong>${name}</strong><small>${fmtSize(a.size)} · ${mime}</small></div><div class="artifact-actions"><button type="button" data-open-output="${url}" data-output-name="${name}" data-output-mime="${mime}">Open</button><button type="button" class="ghost-a" data-download-output="${url}" data-output-name="${name}">Download</button>${isZip&&git?`<button type="button" class="ghost-a" data-github-commit="artifact" data-source-id="${esc(a.id)}" data-source-name="${name}">Commit</button>`:''}</div></div>`}
+function artifactCard(a){const tag=esc((a.type||'FILE').toUpperCase().slice(0,4)),url=esc(a.downloadUrl||''),name=esc(a.filename||'Zeus Proxy output'),mime=esc(a.mime_type||a.type||'application/octet-stream'),isImage=String(a.mime_type||'').startsWith('image/'),compareImage=isImage&&a.metadata?.toolId==='images',isZip=a.type==='zip'||/zip/i.test(a.mime_type||'')||String(a.filename||'').toLowerCase().endsWith('.zip'),git=Boolean(state.health?.capabilities?.githubCommit);return `<div class="artifact-card">${isImage?`<button type="button" class="artifact-thumb-wrap" data-open-output="${url}" data-output-name="${name}" data-output-mime="${mime}" aria-label="Open ${name}"><img class="artifact-thumb" data-private-image="${url}" alt=""></button>`:`<div class="out-badge">${tag}</div>`}<div><strong>${name}</strong><small>${fmtSize(a.size)} · ${mime}</small></div><div class="artifact-actions">${compareImage?`<button type="button" class="ghost-a" data-compare-image="${esc(a.id)}">Compare A/B</button>`:''}<button type="button" data-open-output="${url}" data-output-name="${name}" data-output-mime="${mime}">Open</button><button type="button" class="ghost-a" data-download-output="${url}" data-output-name="${name}">Download</button>${isZip&&git?`<button type="button" class="ghost-a" data-github-commit="artifact" data-source-id="${esc(a.id)}" data-source-name="${name}">Commit</button>`:''}</div></div>`}
 const LIVE_LOCALES={auto:'auto',pt:'pt-BR',en:'en-US',es:'es-ES'};
 const VOICE_AVATARS=new Set(['lightning','classic','olympus','liquid']);
 function initVoicePrefs(){
@@ -528,7 +530,7 @@ function voiceSupported(){
   return Boolean(state.health?.capabilities?.serverTranscription&&navigator.mediaDevices?.getUserMedia&&window.MediaRecorder);
 }
 async function attachSavedArtifact(artifactId){
- const artifact=state.artifacts.find(a=>a.id===artifactId);
+ const artifact=state.artifacts.find(a=>a.id===artifactId)||state.chatArtifacts.find(a=>a.id===artifactId);
  if(!artifact||((artifact.project_id||null)!==(state.currentProject?.id||null))){state.error='Artifact not in this workspace.';render();return;}
  try{
   state.execStatus='Preparing saved artifact…';render();
@@ -540,6 +542,17 @@ async function attachSavedArtifact(artifactId){
   state.execStatus='Saved artifact attached. Add instructions and send.';state.error='';
  }catch(error){state.error=error?.message||'Artifact could not be attached.';state.execStatus='';}
  render();
+}
+async function startImageComparison(artifactId){
+  if(state.sending)return;
+  const source=state.artifacts.find(a=>a.id===artifactId)||state.chatArtifacts.find(a=>a.id===artifactId);
+  if(!source||source.type!=='image'||source.metadata?.toolId!=='images'){state.error='This Apollo image result is no longer available for comparison.';render();return;}
+  const originalPrompt=String(source.metadata?.prompt||'').trim().slice(0,4000);
+  if(!originalPrompt){state.error='The original image prompt is unavailable, so Zeus cannot make a faithful alternative.';render();return;}
+  await attachSavedArtifact(artifactId);
+  if(state.error)return;
+  const prompt=`Create a second, clearly different image alternative for this request. Use the attached image as Alternative A and as a visual reference, while preserving the original goal and any required text or subject. Make meaningful changes to composition, visual treatment, and details; do not return a near-duplicate. Save this as Alternative B so I can choose A, choose B, or combine them into C.\n\nOriginal request: ${originalPrompt}`;
+  await sendText(prompt,[...state.attachedFiles],crypto.randomUUID(),'ZEUS',null,null,{compareImageSourceId:artifactId});
 }
 async function openHtmlEditor(artifactId){
  const artifact=state.artifacts.find(a=>a.id===artifactId&&a.type==='html');
@@ -772,6 +785,27 @@ function toolsView(){const h=state.health?.capabilities||{};const chat=capabilit
 function outputsList(limit=12){let all=[...state.artifacts.map(a=>({...a,kind:'artifact'})),...state.files.map(f=>({...f,kind:'file',type:(f.mime_type||'file').split('/').pop()}))].sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));if(Number.isFinite(limit))all=all.slice(0,limit);return all.length?`<div class="output-list">${all.map(outputItem).join('')}</div>`:`<div class="card" style="padding:24px"><strong>Your library starts with the first source or deliverable.</strong><p class="muted">Upload a source for analysis, or ask Zeus/Olympus to create a document, image, spreadsheet, presentation or ZIP.</p></div>`}
 function outputItem(o){const tag=String(o.type||o.mime_type||'FILE').split('/').pop().toUpperCase().slice(0,4),kind=o.kind==='artifact'?'artifact':'file',download=esc(o.downloadUrl||''),open=esc((kind==='file'&&o.previewUrl)||o.downloadUrl||''),name=esc(o.filename||'Output'),mime=esc(kind==='file'&&o.previewUrl?'text/plain':(o.mime_type||o.type||'application/octet-stream')),status=kind==='file'?(o.metadata?.extractionStatus||'stored_only'):'',isZip=o.type==='zip'||/zip/i.test(o.mime_type||'')||String(o.filename||'').toLowerCase().endsWith('.zip'),git=Boolean(state.health?.capabilities?.githubCommit);return `<article class="out-row"><div class="out-badge ${tag.toLowerCase()}">${esc(tag)}</div><div><strong>${name}</strong><small>${fmtSize(o.size)}${status?` · ${esc(status.replaceAll('_',' '))}`:''}${fmtDateTime(o.created_at)?` · ${fmtDateTime(o.created_at)}`:''}</small></div><div class="out-actions"><button class="chev-link" type="button" data-open-output="${open}" data-output-name="${name}" data-output-mime="${mime}">Open</button><button class="chev-link" type="button" data-download-output="${download}" data-output-name="${name}">Download</button>${kind==='artifact'?`<button class="chev-link" type="button" data-use-artifact="${esc(o.id)}">Use in chat</button><button class="chev-link" type="button" data-compare-artifact="1">Compare</button>${o.type==='html'?`<button class="chev-link" type="button" data-edit-html="${esc(o.id)}">Edit preview</button>`:''}`:''}${isZip&&git?`<button class="chev-link" type="button" data-github-commit="${kind}" data-source-id="${esc(o.id)}" data-source-name="${name}">Commit</button>`:''}<button class="icon-danger" type="button" data-delete-output="${kind}" data-output-id="${esc(o.id)}" aria-label="Delete ${kind} ${name}" title="Delete ${kind}">${icon('close')}</button></div></article>`}
 function filesView(){const more=Boolean(state.filesPage?.hasMore||state.artifactsPage?.hasMore);return `<section class="page files-page"><div class="page-head"><div><div class="eyebrow">Files</div><h1>Files & Library</h1><p>Upload, analyze, and keep files and generated artifacts connected to your conversations and projects.</p></div><button class="primary" id="upload-files">${icon('plus')} Upload files</button></div><div class="project-tabs" style="margin-bottom:18px"><button type="button" class="active" aria-pressed="true">All outputs</button></div>${errorBanner('page-alert')}${outputsList(null)}${more?'<div class="history-more"><button class="secondary compact" id="load-older-outputs">Load older</button></div>':''}</section>`}
+function codeAgentView(){
+  const active=new Set(['QUEUED','PLANNING','AWAITING_APPROVAL','RUNNING','COMMITTING']);
+  const jobs=[...(state.codeAgentJobs||[])].sort((a,b)=>Number(a.queue_sequence)-Number(b.queue_sequence));
+  const cards=jobs.length?jobs.map(job=>{
+    const plan=Array.isArray(job.plan)?job.plan:job.plan?.phases||[];
+    const statusLabel={QUEUED:'Na fila',PLANNING:'Preparando roadmap',AWAITING_APPROVAL:'Roadmap pronto',RUNNING:'Executando',COMMITTING:'Commit único',COMPLETED:'Concluído',FAILED:'Falhou',CANCELLED:'Cancelado'}[job.status]||job.status;
+    const details=state.codeAgentDetails[job.id]?.events||[];
+    const progress=job.status==='RUNNING'&&plan.length?`<p class="code-job-progress">Fase ${Math.min(Number(job.current_phase||0)+1,plan.length)} de ${plan.length} · ${esc(plan[Math.min(Number(job.current_phase||0),plan.length-1)]?.title||'finalização')}</p>`:'';
+    const commitLink=job.commit_sha?`<a class="code-job-commit" href="https://github.com/${encodeURIComponent(job.repo_owner)}/${encodeURIComponent(job.repo_name)}/commit/${encodeURIComponent(job.commit_sha)}" target="_blank" rel="noopener noreferrer">Ver commit ${esc(String(job.commit_sha).slice(0,10))} ↗</a>`:'';
+    return `<article class="card code-job-card"><div class="code-job-head"><div><span class="eyebrow">${esc(job.repo_owner)}/${esc(job.repo_name)} · ${esc(job.target_branch)}</span><h2>${esc(job.plan?.title||job.request_text||'Pedido de código')}</h2></div><span class="code-job-status ${active.has(job.status)?'active':''}">${esc(statusLabel)}</span></div><p class="muted code-job-request">${esc(job.request_text||'')}</p>${progress}${job.status==='FAILED'?`<p class="code-job-error">${esc(job.result_summary||job.error_code||'Não foi possível concluir o pedido.')}</p>`:''}${job.status==='QUEUED'?'<p class="muted tiny">Este pedido será aberto quando o worker terminar o item ativo.</p>':''}${plan.length?`<div class="code-roadmap"><h3>${esc(job.plan?.goal||'Roadmap de implementação')}</h3>${plan.map((phase,index)=>`<section class="code-roadmap-phase"><strong>Fase ${index+1}: ${esc(phase.title)}</strong>${phase.summary?`<p>${esc(phase.summary)}</p>`:''}<ul>${(phase.tasks||[]).map(task=>`<li>${esc(task)}</li>`).join('')}</ul>${phase.verification?.length?`<small>Verificação: ${phase.verification.map(esc).join(' · ')}</small>`:''}</section>`).join('')}</div>${job.status==='AWAITING_APPROVAL'?'<div class="code-roadmap-next">Revise as fases e autorize a execução completa. OlyHub preparará as alterações e publicará tudo em um único commit.</div><button type="button" class="primary code-agent-approve" data-code-agent-approve="'+esc(job.id)+'">Fazer tudo e criar um commit único</button>':''}`:''}${job.result_summary&&job.status==='COMPLETED'?`<p class="code-job-result">${esc(job.result_summary)}</p>`:''}${commitLink}<div class="code-job-events">${details.slice(-5).map(event=>`<p><time>${esc(fmtDateTime(event.created_at))}</time> ${esc(event.summary)}</p>`).join('')}</div></article>`;
+  }).join(''):'<div class="card code-job-empty"><h2>Nenhum pedido ainda</h2><p>Escolha qualquer repositório que seu token do GitHub possa acessar e descreva o que quer adicionar. OlyHub prepara o roadmap em background.</p></div>';
+  return `<section class="page code-agent-page"><div class="page-head"><div><div class="eyebrow">HEPHAESTUS · BACKGROUND WORKSPACE</div><h1>Code Agent</h1><p>Roadmap por pedido, progresso persistido e fila para solicitações enviadas enquanto outro trabalho está em andamento.</p></div></div>${state.codeAgentError?`<div class="chat-error" role="alert">${esc(state.codeAgentError)}</div>`:''}<form class="card code-agent-form" id="code-agent-form"><label>Repositório GitHub<input id="code-agent-repo" type="url" required placeholder="https://github.com/owner/repository" value="${esc(state.codeAgentRepo)}" autocomplete="url"></label><label>Branch<input id="code-agent-branch" type="text" value="${esc(state.codeAgentBranch)}" maxlength="120"></label><label>O que você quer adicionar ou mudar?<textarea id="code-agent-request" rows="4" maxlength="40000" required placeholder="Descreva o resultado desejado. Ex.: agregue uma fila de pedidos com status por fase..."></textarea></label><div class="code-agent-form-foot"><span class="muted tiny">Qualquer repo acessível ao token. O token GitHub fica apenas no servidor; cada envio vira um pedido na fila.</span><button class="primary" type="submit" ${state.codeAgentSending?'disabled':''}>${state.codeAgentSending?'Enviando…':'Criar roadmap'}</button></div></form><div class="code-agent-queue-head"><h2>Pedidos</h2><button type="button" class="secondary compact" id="code-agent-refresh">Atualizar</button></div><div class="code-agent-jobs">${cards}</div></section>`;
+}
+async function loadCodeAgentJobs({silent=false}={}){
+  try{
+    const data=await api('/api/code-agent');
+    state.codeAgentJobs=Array.isArray(data?.jobs)?data.jobs:[];
+    const details={};for(const event of data?.events||[]){if(!details[event.job_id])details[event.job_id]={events:[]};details[event.job_id].events.push(event)}
+    state.codeAgentDetails=details;state.codeAgentError='';
+  }catch(error){if(!silent)state.codeAgentError=error.message||'Não foi possível carregar os pedidos de código.';}
+}
 async function googleConnectionAction(service,action){
   try{
     const result=await api('/api/google-integration/'+action,{
@@ -971,7 +1005,7 @@ function liveTalkDock(){
   const status=state.liveTalkStopRequested?'Finishing turn':state.liveMuted?'Mic muted · Zeus audio on':state.liveStage==='speaking'?'Zeus speaking':state.liveStage==='processing'?'Processing':state.liveStage==='error'?'Paused':state.liveStage==='connecting'?'Connecting':'Listening';
   return `<aside class="live-talk-dock" role="region" aria-label="Live Talk controls"><button type="button" class="live-dock-open" id="live-talk-dock-open" aria-label="Open Live Talk"><span class="live-dock-light ${state.liveStage==='error'?'is-error':''}"></span><span class="live-dock-copy"><strong>ZEUS · LIVE</strong><small>${esc(status)}</small></span><span class="live-dock-expand" aria-hidden="true">↗</span></button><button type="button" class="live-dock-action ${state.liveMuted?'is-muted':''}" id="live-talk-dock-mute" aria-pressed="${state.liveMuted}" aria-label="${state.liveMuted?'Unmute your microphone; Zeus audio stays on':'Mute your microphone; Zeus audio stays on'}" title="${state.liveMuted?'Unmute your microphone':'Mute your microphone'}">${icon(state.liveMuted?'mic-off':'mic')}</button><button type="button" class="live-dock-action live-dock-end" id="live-talk-dock-end" aria-label="End Live Talk" title="End Live Talk">${icon('close')}</button></aside>`;
 }
-function appView(){const page=state.tab==='Home'?homeView():state.tab==='Projects'?projectsView():state.tab==='Tools'?toolsView():state.tab==='Files'?filesView():settingsView();return `<div class="app-shell">${sidebar()}<main class="main" id="main-content" tabindex="-1">${topbar()}${page}</main><div id="modal-root"></div>${state.liveTalkMinimized&&state.liveTalk?liveTalkDock():''}${state.liveTalk&&!state.liveTalkMinimized?liveTalkExperience():''}</div>`}
+function appView(){const page=state.tab==='Home'?homeView():state.tab==='Projects'?projectsView():state.tab==='Code Agent'?codeAgentView():state.tab==='Tools'?toolsView():state.tab==='Files'?filesView():settingsView();return `<div class="app-shell">${sidebar()}<main class="main" id="main-content" tabindex="-1">${topbar()}${page}</main><div id="modal-root"></div>${state.liveTalkMinimized&&state.liveTalk?liveTalkDock():''}${state.liveTalk&&!state.liveTalkMinimized?liveTalkExperience():''}</div>`}
 function focusKey(el){
   if(!el||el===document.body||!app.contains(el))return null;
   if(el.id)return `#${CSS.escape(el.id)}`;
@@ -986,6 +1020,9 @@ function render(){
   const scopeSidebar=Boolean(active?.closest?.('.sidebar'));
   clearModalLifecycle();modalReturnFocus=null;if(!state.authReady){app.innerHTML='<div class="boot-screen" role="status">INITIALIZING ZEUS</div>';return;} app.innerHTML=appView();bind();
   localizeInterface(app);syncDrawerAccessibility();
+  if(codeAgentPollTimer){clearTimeout(codeAgentPollTimer);codeAgentPollTimer=null;}
+  if(state.tab==='Code Agent'&&(state.codeAgentJobs||[]).some(job=>['QUEUED','PLANNING','RUNNING','COMMITTING'].includes(job.status)))
+    codeAgentPollTimer=setTimeout(async()=>{await loadCodeAgentJobs({silent:true});render();},5000);
   const offCanvasSidebar=scopeSidebar&&!state.drawer&&window.matchMedia('(max-width:959px)').matches;
   if(key&&offCanvasSidebar){$('#main-content')?.focus({preventScroll:true});}
   else if(key){const candidates=$$(key,app);const next=candidates.find(el=>Boolean(el.closest('.sidebar'))===scopeSidebar)||candidates[0];if(next&&!next.disabled){next.focus({preventScroll:true});if(selection&&next.setSelectionRange){try{next.setSelectionRange(selection.start,selection.end)}catch{}}}}
@@ -1069,6 +1106,10 @@ function bind(){
       if(state.tab==='Projects'){await loadProjects();if(state.currentProject?.id)await hydrateProjectWorkspace(state.currentProject.id,{loadConversation:false});else state.tasks=[];}
       if(state.tab==='Files')await Promise.all([loadFiles(),loadArtifacts()]);
       if(state.tab==='Tools')await Promise.all([loadHealth(),loadFiles(),loadArtifacts(),loadToolModels()]);
+      if(state.tab==='Code Agent'){
+        try{state.codeAgentRepo=localStorage.getItem('olyhub.code-agent.repo.v1')||state.codeAgentRepo;state.codeAgentBranch=localStorage.getItem('olyhub.code-agent.branch.v1')||state.codeAgentBranch;}catch{}
+        await loadCodeAgentJobs();
+      }
       if(state.tab==='Settings')await Promise.all([loadHealth(),loadGoogleConnections(),loadPreferences()]);
     }catch(err){
       console.error(`Could not load ${next}`,err);
@@ -1077,6 +1118,26 @@ function bind(){
     render();resetViewport();
   }));
   $('#new-chat')?.addEventListener('click',newChat);
+  $('#code-agent-refresh')?.addEventListener('click',async()=>{await loadCodeAgentJobs();render();});
+  $$('[data-code-agent-approve]').forEach(button=>button.addEventListener('click',async()=>{
+    if(button.disabled)return;button.disabled=true;button.setAttribute('aria-busy','true');
+    try{await api('/api/code-agent',{method:'POST',body:JSON.stringify({action:'approve',jobId:button.dataset.codeAgentApprove})});await loadCodeAgentJobs();}
+    catch(error){state.codeAgentError=error.message||'Não foi possível iniciar a execução aprovada.';}
+    render();
+  }));
+  $('#code-agent-form')?.addEventListener('submit',async event=>{
+    event.preventDefault();if(state.codeAgentSending)return;
+    const repoUrl=$('#code-agent-repo')?.value.trim()||'',branch=$('#code-agent-branch')?.value.trim()||'main',requestText=$('#code-agent-request')?.value.trim()||'';
+    state.codeAgentRepo=repoUrl;state.codeAgentBranch=branch;state.codeAgentSending=true;state.codeAgentError='';
+    try{localStorage.setItem('olyhub.code-agent.repo.v1',repoUrl);localStorage.setItem('olyhub.code-agent.branch.v1',branch);}catch{}
+    render();
+    try{
+      const requestId=crypto.randomUUID();
+      await api('/api/code-agent',{method:'POST',requestId,body:JSON.stringify({repoUrl,branch,requestText,requestId})});
+      await loadCodeAgentJobs();
+    }catch(error){state.codeAgentError=error.message||'Não foi possível adicionar o pedido à fila.';}
+    finally{state.codeAgentSending=false;render();$('#code-agent-request')?.focus();}
+  });
   $('#project-source-form')?.addEventListener('submit',async e=>{
     e.preventDefault();const form=e.currentTarget;
     const id=$('#project-source-id')?.value||'';
@@ -1105,10 +1166,12 @@ function bind(){
   $$('[data-edit-html]').forEach(b=>b.addEventListener('click',()=>openHtmlEditor(b.dataset.editHtml)));
   $$('[data-compare-artifact]').forEach(b=>b.addEventListener('click',openCompareArtifacts));
   $$('[data-compare-select]').forEach(b=>b.addEventListener('click',async()=>{
-    try{const artifact=state.artifacts.find(item=>item.id===b.dataset.compareSelect)||state.chatArtifacts.find(item=>item.id===b.dataset.compareSelect);if(artifact?.metadata?.comparePair&&(artifact.provenance?.toolId||artifact.metadata?.toolId))await api('/api/tool-feedback',{method:'POST',body:JSON.stringify({artifactId:artifact.id,value:'choose'})});await api('/api/artifact-aliases',{method:'PUT',body:JSON.stringify({projectId:state.currentProject?.id||null,artifactId:b.dataset.compareSelect,alias:`preferred-${b.dataset.compareType||'file'}`})});state.error='';state.execStatus=`Saved your preferred ${String(b.dataset.compareType||'').toUpperCase()} artifact in this workspace.`;setTimeout(()=>{if(state.execStatus.startsWith('Saved your preferred')){state.execStatus='';render();}},2200);render();}
+    try{const artifact=state.artifacts.find(item=>item.id===b.dataset.compareSelect)||state.chatArtifacts.find(item=>item.id===b.dataset.compareSelect);const imageChoice=artifact?.type==='image'&&(artifact.provenance?.toolId||artifact.metadata?.toolId)==='images';if((artifact?.metadata?.comparePair||imageChoice)&&(artifact.provenance?.toolId||artifact.metadata?.toolId))await api('/api/tool-feedback',{method:'POST',body:JSON.stringify({artifactId:artifact.id,value:'choose'})});await api('/api/artifact-aliases',{method:'PUT',body:JSON.stringify({projectId:state.currentProject?.id||null,artifactId:b.dataset.compareSelect,alias:`preferred-${b.dataset.compareType||'file'}`})});state.error='';state.execStatus=`Saved your preferred ${String(b.dataset.compareType||'').toUpperCase()} artifact in this workspace.`;setTimeout(()=>{if(state.execStatus.startsWith('Saved your preferred')){state.execStatus='';render();}},2200);render();}
     catch(error){state.error=error.message||'Could not save the preferred version.';render();}
   }));
+  $$('[data-compare-image]').forEach(b=>b.addEventListener('click',()=>startImageComparison(b.dataset.compareImage)));
   $$('[data-compare-retry]').forEach(b=>b.addEventListener('click',async()=>{
+    if(b.dataset.compareType==='image'&&b.dataset.compareSource){await startImageComparison(b.dataset.compareSource);return;}
     const userMessage=[...state.messages].reverse().find(m=>m.role==='user'&&m.execution_id===b.dataset.compareRetry);
     if(!userMessage){state.error='Original comparison request is unavailable in this conversation.';render();return;}
     state.compareType=b.dataset.compareType||null;
@@ -1121,7 +1184,9 @@ function bind(){
     if(state.error)return;
     const type=String(b.dataset.compareType||'pdf').toUpperCase();
     state.compareType=null;state.tab='Home';if(state.currentProject)state.projectSection='CHAT';
-    state.draft=`Create a new version C as a complete ${type} file, combining the strongest parts of both attached alternatives. Preserve their useful differences, resolve conflicts thoughtfully, and save C as a separate artifact.\n\nMy instructions: `;
+    state.draft=type==='IMAGE'
+      ?'Create a new image C that combines the strongest visual ideas from both attached alternatives. Preserve the original request, resolve visual conflicts thoughtfully, and save C as a separate image artifact.\n\nMy instructions: '
+      :`Create a new version C as a complete ${type} file, combining the strongest parts of both attached alternatives. Preserve their useful differences, resolve conflicts thoughtfully, and save C as a separate artifact.\n\nMy instructions: `;
     render();requestAnimationFrame(()=>$('#composer-text')?.focus());
   }));
   $$('[data-github-commit]').forEach(b=>b.addEventListener('click',()=>githubCommitModal(b.dataset.githubCommit,b.dataset.sourceId,b.dataset.sourceName)));
@@ -1281,7 +1346,7 @@ async function sendVoiceTranscript(transcript){
   state.draft='';
   await sendText([typed,String(transcript||'').trim()].filter(Boolean).join('\n\n'),[...state.attachedFiles]);
 }
-async function pollForReply(conversationId, executionId){
+async function pollForReply(conversationId, executionId, mode='OLYMPUS'){
   const deadline=Date.now()+180000;let waitMs=1800,lastStatusPaint=0;
   while(Date.now()<deadline){
     const pause=document.visibilityState==='hidden'?Math.max(waitMs,5500):waitMs;
@@ -1296,15 +1361,15 @@ async function pollForReply(conversationId, executionId){
       }
       const userRow=(page.messages||[]).find(m=>m.role==='user'&&m.execution_id===executionId);
       if(userRow?.metadata?.failed){const code=userRow.metadata.errorCode||'AI_EXECUTION_FAILED';throw apiError(code==='OLYMPUS_APPROVAL_REQUIRED'?'Olympus needs explicitly authorized extra $5.':'Olympus could not finish. Tap Retry.',code==='OLYMPUS_APPROVAL_REQUIRED'?402:503,code,{executionId});}
-      if(Date.now()-lastStatusPaint>12000){state.execStatus='Olympus is still writing one answer…';lastStatusPaint=Date.now();render();}
+      if(Date.now()-lastStatusPaint>12000){state.execStatus=mode==='OLYMPUS'?'Olympus is still writing one answer…':'Zeus Level 3 is still coordinating its specialists…';lastStatusPaint=Date.now();render();}
     }catch(error){
       if(error?.code==='AI_EXECUTION_FAILED'||error?.status===401)throw error;
       if(!([0,502,503,504].includes(Number(error?.status||0))||error?.code==='CONNECTION_INTERRUPTED'))throw error;
-      if(Date.now()-lastStatusPaint>12000){state.execStatus='Olympus is still working · reconnecting to its result…';lastStatusPaint=Date.now();render();}
+      if(Date.now()-lastStatusPaint>12000){state.execStatus=mode==='OLYMPUS'?'Olympus is still working · reconnecting to its result…':'Zeus Level 3 is still working · reconnecting to its result…';lastStatusPaint=Date.now();render();}
     }
     waitMs=Math.min(5500,Math.round(waitMs*1.35));
   }
-  throw apiError('Olympus is still working. Wait a moment, then tap Retry to collect the reply.',503,'REQUEST_IN_PROGRESS');
+  throw apiError(`${mode==='OLYMPUS'?'Olympus':'Zeus Level 3'} is still working. Wait a moment, then tap Retry to collect the reply.`,503,'REQUEST_IN_PROGRESS');
 }
 async function sendText(text,pendingAttachments=[],requestId=crypto.randomUUID(),requestedMode=state.mode,turboApproval=null,resumeExecutionId=null,options={}){
   const voiceCommand=options?.voiceCommand===true;
@@ -1348,6 +1413,7 @@ async function sendText(text,pendingAttachments=[],requestId=crypto.randomUUID()
       ...(toolRun?{maxZeusLevel:3}:{}),
       ...(state.currentToolId&&!liveTalkTurn?{toolId:state.currentToolId}:{}),
       ...(liveTalkTurn?{liveTalk:true}:{}),
+      ...(/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(options?.compareImageSourceId||''))?{compareImageSourceId:options.compareImageSourceId}:{}),
       mode,
       requestId,
       ...(compareType?{comparePair:true,compareType}:{}),
@@ -1381,16 +1447,21 @@ async function sendText(text,pendingAttachments=[],requestId=crypto.randomUUID()
     }
     let assistant=d.message||null;
     if(d.pending){
-      state.execTitle='Olympus is working';
-      state.execStatus=d.modeExplanation||'Olympus is drafting, then writing one answer…';
+      state.execTitle=d.mode==='OLYMPUS'?'Olympus is working':'Zeus is working';
+      state.execStatus=d.modeExplanation||(d.mode==='OLYMPUS'?'Olympus is drafting, then writing one answer…':'Zeus is coordinating the selected specialists…');
       render();
-      const polled=await pollForReply(d.conversationId,d.execution?.id);
+      const polled=await pollForReply(d.conversationId,d.execution?.id,d.mode||mode);
       assistant=polled.assistant;
       if(assistant?.mode)state.activeMode=assistant.mode;if(assistant?.metadata?.executionLevel)state.activeLevel=assistant.metadata.executionLevel;
     }
     if(assistant){
       if(assistant.mode)state.activeMode=assistant.mode;if(assistant?.metadata?.executionLevel)state.activeLevel=assistant.metadata.executionLevel;
-      const deliveredArtifacts=d.artifacts||assistant.artifacts||[];
+      let deliveredArtifacts=d.artifacts||assistant.artifacts||[];
+      if(options?.compareImageSourceId){
+        const source=state.artifacts.find(item=>item.id===options.compareImageSourceId)||state.chatArtifacts.find(item=>item.id===options.compareImageSourceId);
+        deliveredArtifacts=[...(source?[source]:[]),...deliveredArtifacts.filter(item=>item.id!==options.compareImageSourceId)];
+        assistant={...assistant,metadata:{...(assistant.metadata||{}),comparePair:true,compareType:'image',compareImageSourceId:options.compareImageSourceId}};
+      }
       state.messages.push({...assistant,artifacts:deliveredArtifacts});
       if(deliveredArtifacts.length){state.chatArtifacts=mergeById(state.chatArtifacts,deliveredArtifacts);state.artifacts=mergeById(state.artifacts,deliveredArtifacts);}
       if(liveTalkTurn&&state.liveTalk){
@@ -1653,7 +1724,7 @@ function livePersonaContext(){
     .replace(/\b(?:sk|rk|pk)-[A-Za-z0-9_-]{16,}\b/g,'[REDACTED API TOKEN]')
     .replace(/\b(?:ghp|gho|ghu|ghs|github_pat)_[A-Za-z0-9_]{16,}\b/g,'[REDACTED GITHUB TOKEN]')
     .replace(/\bAIza[0-9A-Za-z_-]{20,}\b/g,'[REDACTED GOOGLE API KEY]');
-  return `You are Zeus, the voice assistant in Zeus Proxy. Speak using the agent's configured primary voice, Felipe; do not switch voices. Remain Zeus in identity. Speak calmly and naturally, with restrained warmth. Avoid constant excitement, exaggerated praise, hype, and unnecessary exclamation marks. Be direct without sounding cold. Zeus Proxy supports natural text/voice conversation, automatic routing between Zeus Levels 1–3 and Olympus, manual Zeus/Olympus selection, project tasks, persistent personal and project memories, past conversation recall, research, and artifact work. In automatic mode, the system selects Zeus Level 1–3 or Olympus. In manual mode, Felipe chooses Zeus or Olympus; Zeus still selects its own level. Casual conversation is complete by itself: do not inspect or offer to inspect projects, call tools, or pitch work unless Felipe asks or a tool is needed to answer his request.\n\nMEMORY AND HISTORY: Use the owner-approved personal memories supplied below when relevant. Save a durable personal fact only when Felipe explicitly asks you to remember it. For a direct request to remember something or recall a previous conversation, use send_olyhub_command with his actual request so Zeus Proxy can save the memory or search his private chat history. Never claim it was saved or found unless the tool result confirms it. Do not search old chats on your own.\n\nPROJECT TOOL PROCEDURE — follow this when Felipe explicitly asks about a project:\n- If he asks which projects exist, call list_olyhub_projects and answer from its result.\n- If he names a project and it is not the active project, call list_olyhub_projects if needed to resolve the exact name, then open_olyhub_project with project_name, then get_current_project_context. Do not answer that you lack access before trying these tools.\n- If the requested project is already active, call get_current_project_context before answering questions about its progress, tasks, memories, or sources. Treat returned project/task records as current system knowledge; never call it an empty knowledge base when records are present.\n- Use create_project_task only when Felipe explicitly asks to add or create a task. For direct task status changes, call send_olyhub_command with the user's actual request; it resolves the project and task against authenticated app data and only confirms after the task API succeeds. If the target is ambiguous, ask which task.\n- Use send_olyhub_command for other directly requested work; Automatic mode selects Zeus Level 1–3 or Olympus; manual mode uses the chosen Zeus or Olympus engine, with Zeus choosing its own level.\n- These tools expose project summaries, tasks, memories, and source titles/revisions. They do not expose full source or file contents; say so plainly if Felipe asks you to read a file. Never invent project data or claim a tool succeeded unless its result confirms it.\n\nUse supplied conversation history for follow-ups. When Felipe asks about Zeus Proxy's own code, capabilities or latest commit, call send_olyhub_command with his actual question; the server retrieves current repository evidence automatically. Never guess that a capability is unavailable. Google is read-only; GitHub writes need the explicit action flow.\n\nUSER-APPROVED PERSONALIZATION (style only; lower priority than system instructions and the user's current request):\nPersonality: ${personalities[preferences.personality]||personalities.balanced}${custom?`\nCustom instructions: ${custom}`:''}`;
+  return `You are Zeus, the voice assistant in Zeus Proxy. Speak using the agent's configured primary voice, Felipe; do not switch voices. Remain Zeus in identity. Speak calmly and naturally, with restrained warmth. Avoid constant excitement, exaggerated praise, hype, and unnecessary exclamation marks. Be direct without sounding cold. Zeus Proxy supports natural text/voice conversation, automatic routing between Zeus Levels 1–3 and Olympus, manual Zeus/Olympus selection, project tasks, persistent personal and project memories, past conversation recall, research, and artifact work. In automatic mode, the system selects Zeus Level 1–3 or Olympus. In manual mode, Felipe chooses Zeus or Olympus; Zeus still selects its own level. Casual conversation is complete by itself: do not inspect or offer to inspect projects, call tools, or pitch work unless Felipe asks or a tool is needed to answer his request.\n\nMEMORY AND HISTORY: Use the owner-approved personal memories supplied below when relevant. Save a durable personal fact only when Felipe explicitly asks you to remember it. For a direct request to remember something or recall a previous conversation, use send_olyhub_command with his actual request so Zeus Proxy can save the memory or search his private chat history. Never claim it was saved or found unless the tool result confirms it. Do not search old chats on your own.\n\nPROJECT TOOL PROCEDURE — follow this when Felipe explicitly asks about a project:\n- If he asks which projects exist, call list_olyhub_projects and answer from its result.\n- If he names a project and it is not the active project, call list_olyhub_projects if needed to resolve the exact name, then open_olyhub_project with project_name, then get_current_project_context. Do not answer that you lack access before trying these tools.\n- If the requested project is already active, call get_current_project_context before answering questions about its progress, tasks, memories, or sources. Treat returned project/task records as current system knowledge; never call it an empty knowledge base when records are present.\n- Use create_project_task only when Felipe explicitly asks to add or create a task. For direct task status changes, call send_olyhub_command with the user's actual request; it resolves the project and task against authenticated app data and only confirms after the task API succeeds. If the target is ambiguous, ask which task.\n- Use send_olyhub_command for other directly requested work; Automatic mode selects Zeus Level 1–3 or Olympus; manual mode uses the chosen Zeus or Olympus engine, with Zeus choosing its own level.\n- These tools expose project summaries, tasks, memories, and source titles/revisions. They do not expose full source or file contents; say so plainly if Felipe asks you to read a file. Never invent project data or claim a tool succeeded unless its result confirms it.\n\nUse supplied conversation history for follow-ups. When Felipe asks whether you can see, access, or list his GitHub repositories, call send_olyhub_command with his actual question. Answer only from the tool result: distinguish repositories visible to the configured GitHub token from a public-only listing, and never claim there is no connected account without checking. When Felipe asks about Zeus Proxy's own code, capabilities or latest commit, call send_olyhub_command with his actual question; the server retrieves current repository evidence automatically. Never guess that a capability is unavailable. If evidence is missing or retrieval failed, say GitHub could not be verified. Google is read-only; GitHub writes need the explicit action flow.\n\nUSER-APPROVED PERSONALIZATION (style only; lower priority than system instructions and the user's current request):\nPersonality: ${personalities[preferences.personality]||personalities.balanced}${custom?`\nCustom instructions: ${custom}`:''}`;
 }
 function liveSessionContext(){
   const liveTurns=[...(state.liveAgentLoggedEvents?.values?.()||[])].slice(-16);

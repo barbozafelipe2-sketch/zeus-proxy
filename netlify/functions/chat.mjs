@@ -245,7 +245,7 @@ async function initializeTurn({db,userId,conversationId,projectId,mode,level,con
 
     if(worker){
       // Even a delayed duplicate dispatch cannot create work or steal a newer generation.
-      if(existing.mode!=='OLYMPUS'||existing.state!=='QUEUED')
+      if(!['OLYMPUS','ZEUS'].includes(existing.mode)||existing.state!=='QUEUED')
         return {kind:'in_progress',execution:existing,userMessage:prior};
       const claimed=await claimOlympusWorker(client,{executionId:existing.id,ownerId:userId,dispatchToken});
       if(!claimed)return {kind:'in_progress',execution:existing,userMessage:prior};
@@ -302,7 +302,7 @@ async function finalizeTurn({db,userId,projectId,conversationId,execution,mode,r
     await client.query(`UPDATE executions SET state='SAVING',lead_model=$1,trace=$2::jsonb WHERE id=$3 AND owner_id=$4`,[result.leadModel||null,JSON.stringify(result.trace||{}),execution.id,userId]);
     const assistant=(await client.query(
       `INSERT INTO messages(owner_id,conversation_id,execution_id,role,mode,content,metadata) VALUES($1,$2,$3,'assistant',$4,$5,$6::jsonb) RETURNING id,execution_id,role,mode,content,metadata,created_at`,
-      [userId,conversationId,execution.id,mode,result.content,JSON.stringify({artifacts:artifacts.map(a=>a.id),sources:Array.isArray(result.sources)?result.sources.slice(0,12):[],capabilities:Array.isArray(result.capabilities)?result.capabilities:[],leadModel:result.leadModel||null,fallback:Array.isArray(result.trace?.fallbacks)&&result.trace.fallbacks.length>0,modeExplanation:result.modeExplanation||null,executionLevel:result.executionLevel||null,pipelineLabel:result.pipelineLabel||null,toolId:result.toolId||null,toolGod:result.trace?.toolGod||null,comparePair:Boolean(result.trace?.comparePair),compareType:result.trace?.comparePair?result.trace.compareType:null,phases:Array.isArray(result.trace?.roles)?result.trace.roles.slice(0,3).map(role=>({label:String(role.role||'').slice(0,32),model:String(role.provider||'')+':'+String(role.model||role.id||''),state:'COMPLETED',restored:Boolean(role.restored)})):[],traceCalls:Array.isArray(result.trace?.providerTelemetry?.attempts)?result.trace.providerTelemetry.attempts.slice(0,24).map(call=>({stage:String(call.stage||'').slice(0,48),transport:String(call.transport||'').slice(0,32),provider:String(call.provider||'').slice(0,36),model:String(call.model||'').slice(0,100),outcome:call.outcome==='success'?'success':'failure',durationMs:Number.isFinite(Number(call.durationMs))?Number(call.durationMs):null,status:Number.isInteger(call.status)?call.status:null})):[],verificationLabel:result.verificationLabel||null,visionSummary:result.visionSummary||null,usage:result.usage||null})]
+      [userId,conversationId,execution.id,mode,result.content,JSON.stringify({artifacts:[...new Set([...artifacts.map(a=>a.id),...(isUuid(result.trace?.compareImageSourceId)?[result.trace.compareImageSourceId]:[])])],sources:Array.isArray(result.sources)?result.sources.slice(0,12):[],capabilities:Array.isArray(result.capabilities)?result.capabilities:[],leadModel:result.leadModel||null,fallback:Array.isArray(result.trace?.fallbacks)&&result.trace.fallbacks.length>0,modeExplanation:result.modeExplanation||null,executionLevel:result.executionLevel||null,pipelineLabel:result.pipelineLabel||null,toolId:result.toolId||null,toolGod:result.trace?.toolGod||null,comparePair:Boolean(result.trace?.comparePair),compareType:result.trace?.comparePair?result.trace.compareType:null,compareImageSourceId:isUuid(result.trace?.compareImageSourceId)?result.trace.compareImageSourceId:null,phases:Array.isArray(result.trace?.roles)?result.trace.roles.slice(0,3).map(role=>({label:String(role.role||'').slice(0,32),model:String(role.provider||'')+':'+String(role.model||role.id||''),state:'COMPLETED',restored:Boolean(role.restored)})):[],traceCalls:Array.isArray(result.trace?.providerTelemetry?.attempts)?result.trace.providerTelemetry.attempts.slice(0,24).map(call=>({stage:String(call.stage||'').slice(0,48),transport:String(call.transport||'').slice(0,32),provider:String(call.provider||'').slice(0,36),model:String(call.model||'').slice(0,100),outcome:call.outcome==='success'?'success':'failure',durationMs:Number.isFinite(Number(call.durationMs))?Number(call.durationMs):null,status:Number.isInteger(call.status)?call.status:null})):[],verificationLabel:result.verificationLabel||null,visionSummary:result.visionSummary||null,usage:result.usage||null})]
     )).rows[0];
     await client.query(`UPDATE executions SET state='COMPLETED',completed_at=now(),lease_expires_at=NULL,dispatch_token=NULL,worker_token=NULL WHERE id=$1 AND owner_id=$2`,[execution.id,userId]);
     await client.query(`UPDATE conversations SET updated_at=now() WHERE id=$1 AND owner_id=$2`,[conversationId,userId]);
@@ -377,7 +377,7 @@ async function chatHandler(req, context, startedAt){
       :await db.sql`SELECT id,execution_id,role,mode,content,metadata,created_at FROM messages WHERE conversation_id=${id} AND owner_id=${user.id} ORDER BY created_at DESC,id DESC LIMIT ${limit+1}`;
     const paged=pageResult(rows,limit);
     const pageMessages=paged.page.slice().reverse();
-    const artifactIds=[...new Set(pageMessages.flatMap(m=>Array.isArray(m.metadata?.artifacts)?m.metadata.artifacts:[]).filter(isUuid))];
+    const artifactIds=[...new Set(pageMessages.flatMap(m=>[...(Array.isArray(m.metadata?.artifacts)?m.metadata.artifacts:[]),...(isUuid(m.metadata?.compareImageSourceId)?[m.metadata.compareImageSourceId]:[])]).filter(isUuid))];
     const attachmentIds=[...new Set(pageMessages.flatMap(m=>Array.isArray(m.metadata?.attachments)?m.metadata.attachments:[]).filter(isUuid))];
     const artifacts=artifactIds.length?await db.sql`SELECT id,project_id,conversation_id,type,mime_type,filename,size,version,metadata,provenance,created_at FROM artifacts WHERE owner_id=${user.id} AND conversation_id=${id} AND id = ANY(${artifactIds}) ORDER BY created_at,id`:[];
     const files=attachmentIds.length?await db.sql`SELECT id,project_id,conversation_id,filename,mime_type,size,status,metadata,created_at FROM files WHERE owner_id=${user.id} AND id = ANY(${attachmentIds})`:[];
@@ -388,7 +388,9 @@ async function chatHandler(req, context, startedAt){
   const requestId=getRequestId(req,context,body.requestId);
   const worker=req.headers.get('x-olympus-execute')==='1';
   if(body.toolId!==undefined&&body.toolId!==null&&!getToolWorkflow(body.toolId))return errorJson('Choose a supported OlyHub tool.',400,'INVALID_TOOL_ID',requestId);
-  const toolId=worker?null:(getToolWorkflow(body.toolId)?.id||null),toolWorkflow=getToolWorkflow(toolId);
+  // Preserve validated tool context when Zeus Level 3 resumes in the
+  // background Function; otherwise dedicated tool requests become generic.
+  const toolId=getToolWorkflow(body.toolId)?.id||null,toolWorkflow=getToolWorkflow(toolId);
   const content=cleanText(body.content,40000); if(!content)return errorJson('Message is required.',400,'MESSAGE_REQUIRED',requestId);
   let modelText=redactSecrets(content);
   const historySearched=explicitHistoryIntent(modelText);
@@ -420,12 +422,22 @@ async function chatHandler(req, context, startedAt){
   const attachmentRows=await validateAttachedFiles(db,user.id,projectId,fileIds);
   const hasImage=attachmentRows.some(r=>(r.mime_type||'').startsWith('image/'));
   if(body.comparePair!==undefined&&typeof body.comparePair!=='boolean')return errorJson('comparePair must be a boolean.',400,'INVALID_COMPARE_REQUEST',requestId);
+  const compareImageSourceId=isUuid(body.compareImageSourceId)?body.compareImageSourceId:null;
+  if(body.compareImageSourceId!==undefined&&body.compareImageSourceId!==null&&!compareImageSourceId)return errorJson('A valid source image is required for image comparison.',400,'INVALID_IMAGE_COMPARE',requestId);
+  let imageCompareSource=null;
+  if(compareImageSourceId){
+    if(toolId!=='images')return errorJson('Image A/B comparison is available in the Apollo image conversation.',409,'INVALID_IMAGE_COMPARE',requestId);
+    const source=await db.sql`SELECT id,provenance FROM artifacts WHERE id=${compareImageSourceId} AND owner_id=${user.id} AND conversation_id=${conversationId} AND project_id IS NOT DISTINCT FROM ${projectId} AND type='image' AND metadata->>'toolId'='images'`;
+    imageCompareSource=source[0]||null;
+    if(!imageCompareSource||!attachmentRows.some(row=>row.metadata?.sourceArtifactId===compareImageSourceId))return errorJson('The source image is unavailable in this conversation. Reopen the Apollo image conversation and try again.',404,'IMAGE_COMPARE_SOURCE_NOT_FOUND',requestId);
+  }
   const comparePair=body.comparePair===true,compareType=String(body.compareType||'').toLowerCase();
   const compareTypes=new Set(['pdf','docx','xlsx','pptx','csv','html']);
   if(comparePair&&!compareTypes.has(compareType))return errorJson('Compare & Evolve currently supports independent PDF, DOCX, XLSX, PPTX, CSV and HTML pairs.',422,'COMPARE_FORMAT_UNSUPPORTED',requestId);
   if(comparePair&&shouldSearchWeb(modelText))return errorJson('Compare & Evolve does not perform live web research. Research the source first, then request the A/B pair.',422,'COMPARE_LIVE_RESEARCH_UNSUPPORTED',requestId);
   let intent=classifyIntent(modelText,{hasImage,hasFiles:attachmentRows.length>0});
   if(comparePair)intent={action:'ARTIFACT_CREATE',artifactType:compareType,artifactTypes:[compareType],reason:'independent_compare_pair'};
+  if(compareImageSourceId)intent={action:'IMAGE_CREATE',artifactType:'image',artifactTypes:['image'],reason:'image_compare_alternative'};
   const requestedArtifacts=Array.isArray(intent.artifactTypes)?intent.artifactTypes:(intent.artifactType?[intent.artifactType]:[]);
   if(intent.action==='ARTIFACT_CREATE'&&(requestedArtifacts.length>4||(requestedArtifacts.includes('zip')&&requestedArtifacts.length>1))){
     return errorJson('Request up to four files at once. ZIP packages must be requested separately.',422,'ARTIFACT_FORMAT_UNSUPPORTED',requestId);
@@ -502,10 +514,16 @@ async function chatHandler(req, context, startedAt){
     init=await initializeTurn({db,userId:user.id,conversationId,projectId,mode,level,content,fileIds,requestId,toolId,worker,dispatchToken:body.dispatchToken});
     if(init.kind==='replay')return replayCompleted(db,user.id,conversationId,init.execution,init.userMessage,requestId);
     if(init.kind==='in_progress')return errorJson('This request is already running.',409,'REQUEST_IN_PROGRESS',requestId,{conversationId,executionId:init.execution.id});
-    if(mode==='OLYMPUS'&&!worker){
+    const backgroundEligible=mode==='OLYMPUS'||(mode==='ZEUS'&&level==='ZEUS_DIRECTED');
+    if(backgroundEligible&&!worker){
       const dispatchToken=await queueOlympusExecution(db,{executionId:init.execution.id,ownerId:user.id});
       const dispatched=await dispatchOlympus(req,{...body,content,conversationId,projectId,mode,requestId,fileIds,dispatchToken});
       if(dispatched)return json({pending:true,mode,level,modeExplanation,conversationId,userMessage:init.userMessage,execution:{id:init.execution.id,state:'QUEUED'},requestId,replayed:false},202);
+      // A lost acknowledgement does not prove that Netlify rejected the background
+      // invocation. Retry the same fenced dispatch once before reporting trouble.
+      const redispatched=await dispatchOlympus(req,{...body,content,conversationId,projectId,mode,requestId,fileIds,dispatchToken});
+      if(redispatched)return json({pending:true,mode,level,modeExplanation,conversationId,userMessage:init.userMessage,execution:{id:init.execution.id,state:'QUEUED'},requestId,replayed:false},202);
+      if(mode==='ZEUS')return errorJson('Zeus Level 3 was queued, but Netlify did not acknowledge its background worker. Wait a few seconds and retry to recover it; do not resend as a new request.',503,'BACKGROUND_DISPATCH_FAILED',requestId,{conversationId,executionId:init.execution.id});
       // A lost HTTP acknowledgement does NOT prove the background worker failed.
       // Claim the queue atomically only if no worker started in the meantime.
       const inlineClaim=await claimInlineFallback(db,{executionId:init.execution.id,ownerId:user.id,dispatchToken});
@@ -648,10 +666,11 @@ ${aiContext}`);
     }else if(intent.action==='IMAGE_CREATE'){
       await db.sql`UPDATE executions SET state='RUNNING' WHERE id=${execution.id} AND owner_id=${user.id}`;
       const referenceImages=vision.images.map(({mimeType,base64})=>({mimeType,base64}));
-      const img=await generateImage(modelText,{budget:executionBudget,toolId,toolPreferences:prefRows?.[0]?.family_preferences||null,referenceImages});
+      const sourceModel=imageCompareSource?.provenance?.provider&&imageCompareSource?.provenance?.model?`${imageCompareSource.provenance.provider}:${imageCompareSource.provenance.model}`:null;
+      const img=await generateImage(modelText,{budget:executionBudget,toolId,toolPreferences:prefRows?.[0]?.family_preferences||null,referenceImages,excludeModel:compareImageSourceId?sourceModel:null});
       const imageMime=img.mimeType||'image/png';
-      stagedArtifacts.push(await stageBinaryArtifact({ownerId:user.id,type:'image',mimeType:imageMime,filename:`OlyHub-${Date.now()}.${imageMime==='image/jpeg'?'jpg':imageMime==='image/webp'?'webp':'png'}`,bytes:img.bytes,metadata:{prompt:modelText,toolId,referenceImageCount:referenceImages.length},provenance:{provider:img.provider||'openai',model:img.model,toolId,referenceImageCount:referenceImages.length}}));
-      result={content:referenceImages.length?'Image created using your reference images and saved to your OlyHub Files.':'Image created and saved to your OlyHub Files.',leadModel:`${img.provider||'openai'}:${img.model}`,trace:{image:true,referenceImageCount:referenceImages.length,toolId,toolGod:toolWorkflow?.god||null,roles:[{role:'Image generator',provider:img.provider||'openai',model:img.model}],budget:img.budget}};
+      stagedArtifacts.push(await stageBinaryArtifact({ownerId:user.id,type:'image',mimeType:imageMime,filename:`OlyHub-${Date.now()}.${imageMime==='image/jpeg'?'jpg':imageMime==='image/webp'?'webp':'png'}`,bytes:img.bytes,metadata:{prompt:modelText,toolId,referenceImageCount:referenceImages.length,...(compareImageSourceId?{comparePair:true,variant:'B',compareSourceArtifactId:compareImageSourceId}:{})},provenance:{provider:img.provider||'openai',model:img.model,toolId,referenceImageCount:referenceImages.length,...(compareImageSourceId?{operation:'compare_alternative'}:{})}}));
+      result={content:compareImageSourceId?'Alternative B was generated with a different eligible image model where available. Compare it with A below, choose either one, or combine both into C.':referenceImages.length?'Image created using your reference images and saved to your OlyHub Files.':'Image created and saved to your OlyHub Files.',leadModel:`${img.provider||'openai'}:${img.model}`,trace:{image:true,referenceImageCount:referenceImages.length,toolId,toolGod:toolWorkflow?.god||null,...(compareImageSourceId?{comparePair:true,compareType:'image',compareImageSourceId}:{}),roles:[{role:'Image generator',provider:img.provider||'openai',model:img.model}],budget:img.budget}};
     }else{
       await db.sql`UPDATE executions SET state='RUNNING' WHERE id=${execution.id} AND owner_id=${user.id}`;
       if(comparePair){

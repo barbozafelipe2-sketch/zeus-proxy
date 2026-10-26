@@ -110,6 +110,33 @@ const referencedImage=await models.generateImage('Create a new image inspired by
 assert.match(referencedImage.model,/^gpt-image-/);
 assert.equal(calls.length,1,'reference-based generation should use one gateway image call');
 
+// A/B image generation prefers a different eligible image model, without
+// pretending to call the full six-model roster for each single output.
+envVars.OPENROUTER_API_KEY='test-openrouter-key';
+envVars.OPENROUTER_BASE_URL='https://openrouter.invalid/api/v1';
+delete envVars.OPENAI_API_KEY;
+models.__resetImageModelsCacheForTests();
+calls=[];
+globalThis.fetch=async(url,init)=>{
+  calls.push({url:String(url),body:init?.body});
+  if(String(url).endsWith('/images/models'))return Response.json({data:[
+    {id:'qwen/qwen-image-2.1-pro',architecture:{input_modalities:['image'],output_modalities:['image']}},
+    {id:'bytedance-seed/seedream-5.0-flash',architecture:{input_modalities:['image'],output_modalities:['image']}}
+  ]});
+  if(String(url).endsWith('/images')){
+    assert.equal(JSON.parse(init.body).prompt,'distinct alternative');
+    assert.equal(JSON.parse(init.body).input_references.length,1);
+    return Response.json({data:[{b64_json:Buffer.from('image-b').toString('base64')}]});
+  }
+  throw Error(`Unexpected mocked image endpoint ${url}`);
+};
+const imageB=await models.generateImage('distinct alternative',{toolId:'images',excludeModel:'openrouter:qwen/qwen-image-2.1-pro',referenceImages:[{mimeType:'image/png',base64:Buffer.from('ref').toString('base64')}],budget:runtime.createExecutionBudget({timeoutMs:46000,maxCalls:2})});
+assert.notEqual(`${imageB.provider}:${imageB.model}`,'openrouter:qwen/qwen-image-2.1-pro','Alternative B must use a different eligible model');
+assert.equal(imageB.provider,'openrouter');
+assert.ok(calls.some(call=>String(call.url).endsWith('/images')),'alternative must reach the image gateway');
+delete envVars.OPENROUTER_API_KEY;delete envVars.OPENROUTER_BASE_URL;envVars.OPENAI_API_KEY='\x73k-test-reliability-000000';
+models.__resetImageModelsCacheForTests();
+
 // Image auth failure is reported as such.
 models.__resetProviderHealthForTests();
 globalThis.fetch = async () => new Response(JSON.stringify({ error: { message: 'Incorrect API key provided' } }), { status: 401, headers: { 'content-type': 'application/json' } });
@@ -127,15 +154,18 @@ assert.ok(chat.includes('reuse the conversation already bound to this request id
 assert.ok(chat.includes('CHAT_TIMEOUT_MS') && chat.includes('CHAT_WEB_TIMEOUT_MS'));
 const limitsSource=read('netlify/functions/_shared/limits.mjs');
 assert.ok(limitsSource.includes("'90 seconds'")&&limitsSource.includes("'16 minutes'"), 'concurrency guard needs separate Zeus and Olympus liveness windows');
-assert.ok(chat.includes("if(existing.mode!=='OLYMPUS'||existing.state!=='QUEUED')") &&
+assert.ok(chat.includes("if(!['OLYMPUS','ZEUS'].includes(existing.mode)||existing.state!=='QUEUED')") &&
   chat.includes('const claimed=await claimOlympusWorker(client,') &&
-  chat.includes('if(!claimed)return'), 'only a queued, exclusively claimed Olympus execution may be resumed by a background worker');
+  chat.includes('if(!claimed)return') && chat.includes("mode==='ZEUS'&&level==='ZEUS_DIRECTED'"), 'only queued Zeus Level 3 or Olympus executions may be resumed by a fenced background worker');
+assert.ok(chat.includes('const toolId=getToolWorkflow(body.toolId)?.id||null'), 'background execution must retain its validated dedicated tool context');
 
 // ---- Client: long-request drops and gateway timeouts are not mislabeled as user network errors ----
 const app = read('public/app.js');
 assert.ok(app.includes('LONG_REQUEST_DROP_MS') && app.includes('CONNECTION_INTERRUPTED'));
 assert.ok(app.includes('[502,503,504].includes(r.status)'), 'non-JSON gateway errors get a server-timeout message');
 assert.ok(app.includes("err?.code==='REQUEST_IN_PROGRESS'"));
+assert.ok(app.includes('data-compare-image')&&app.includes('compareImageSourceId'),'image artifacts must expose an A/B alternative flow');
+assert.ok(/@media\(max-width:600px\)[\s\S]*?\.chat-error\{display:grid;grid-template-columns:minmax\(0,1fr\)/.test(read('public/ui-premium.css')),'mobile errors must use a full-width text column');
 assert.ok(app.includes('You are offline. Reconnect and try again.') && app.includes('Connection to Zeus ended before the server returned an HTTP response.'));
 
 console.log('Chat reliability tests: PASS');

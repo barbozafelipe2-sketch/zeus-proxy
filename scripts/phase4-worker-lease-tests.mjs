@@ -44,6 +44,8 @@ assert.equal(executionLeaseExpired({mode:'OLYMPUS',started_at:ago(OLYMPUS_LEGACY
 assert.equal(executionLeaseExpired({mode:'OLYMPUS',lease_expires_at:new Date(now+50000).toISOString()},now),false);
 assert.equal(executionLeaseExpired({mode:'OLYMPUS',lease_expires_at:new Date(now-1).toISOString()},now),true);
 assert.equal(executionLeaseExpired({mode:'ZEUS',started_at:ago(100000)},now),true);
+assert.equal(executionLeaseExpired({mode:'ZEUS',lease_expires_at:new Date(now+50000).toISOString()},now),false,'a live queued Zeus worker lease prevents premature retry');
+assert.equal(executionLeaseExpired({mode:'ZEUS',lease_expires_at:new Date(now-1).toISOString()},now),true,'expired Zeus background leases are recoverable');
 const firstDispatch=await queueOlympusExecution(db,args);
 const workers=await Promise.all([claimOlympusWorker(client,{...args,dispatchToken:firstDispatch}),claimOlympusWorker(client,{...args,dispatchToken:firstDispatch})]);
 assert.equal(workers.filter(Boolean).length,1,'only one worker claims a dispatch');
@@ -77,5 +79,6 @@ assert.ok(chat.indexOf('assertWorkerFence(client,')<chat.indexOf('for(const stag
 assert.ok(chat.includes('userMessageId:init.userMessage?.id||null'),'failed marker must be written only by the fenced owner');
 assert.ok(lease.includes('WITH owned AS (')&&lease.includes('execution_id IN (SELECT id FROM owned)'),'execution failure and user-message marker must be atomic');
 assert.ok(lease.includes('AND dispatch_token=$3::uuid'));
+assert.ok(lease.includes("mode IN ('OLYMPUS','ZEUS')"),'background worker claim accepts only execution modes supported by the queue');
 assert.ok(sql.includes('ADD COLUMN IF NOT EXISTS dispatch_token uuid')&&sql.includes('ADD COLUMN IF NOT EXISTS worker_token uuid')&&sql.includes('ADD COLUMN IF NOT EXISTS lease_expires_at timestamptz'));
 console.log('Phase 4/7: exclusive worker claim, deadline-safe leases, fencing and lost-ACK fallback: PASS');
