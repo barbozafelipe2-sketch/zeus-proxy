@@ -23,7 +23,7 @@ const chat=readFileSync('netlify/functions/chat.mjs','utf8');
 const ui=readFileSync('public/app.js','utf8');
 assert.match(chat,/PROJECT SOURCE OF TRUTH/);
 assert.match(chat,/ARTIFACT REFERENCE/);
-assert.match(ui,/Move to project/);
+assert.match(ui,/Mover para projeto/);
 assert.match(ui,/await loadProjectSources\(\)/);
 assert.match(ui,/conversation-transfer-form/);
 assert.match(ui,/data-move-current="\$\{esc\(state\.currentConversation\)\}"/,'standalone conversations, including chats opened with an agent, can be moved into a project');

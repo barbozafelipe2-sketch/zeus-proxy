@@ -16,7 +16,7 @@ const must=[
   [app,'id="manager-title">Projects</h1>','Home Projects heading'],
   [app,'${modeStrip()}','shared chat mode controls'],
   [app,"['Projects','projects','Projects']",'Projects navigation label with compatible Projects state'],
-  [app,'role="button" aria-label="Open project','keyboard-accessible project cards'],
+  [app,'class="proj-card-main" data-project="${esc(p.id)}" aria-label="Abrir projeto','keyboard-accessible native project card button'],
   [app,'aria-label="Delete this memory"','memory action label'],
   [app,'aria-disabled="true"','truthful disabled tools'],
 ];

@@ -74,10 +74,19 @@ async function handler(req,context){
     const deleted=await withTransaction(db,async(client)=>{
       const project=(await client.query(`SELECT id FROM projects WHERE id=$1 AND owner_id=$2 FOR UPDATE`,[body.id,user.id])).rows[0];
       if(!project)return null;
+      const activeExecution=(await client.query("SELECT e.id FROM executions e JOIN conversations c ON c.id=e.conversation_id WHERE e.owner_id=$1 AND c.project_id=$2 AND e.state NOT IN ('COMPLETED','PARTIAL','FAILED','CANCELLED') LIMIT 1",[user.id,body.id])).rows[0];
+      if(activeExecution)return {error:'PROJECT_HAS_ACTIVE_WORK'};
+      const activeJob=(await client.query("SELECT id FROM code_agent_jobs WHERE owner_id=$1 AND (project_id=$2 OR conversation_id IN (SELECT id FROM conversations WHERE owner_id=$1 AND project_id=$2)) AND status IN ('QUEUED','PLANNING','AWAITING_APPROVAL','RUNNING','COMMITTING') LIMIT 1",[user.id,body.id])).rows[0];
+      if(activeJob)return {error:'PROJECT_HAS_ACTIVE_WORK'};
       const queued=await queueProjectBlobs(client,user.id,body.id);
+      await client.query('DELETE FROM code_agent_jobs WHERE owner_id=$1 AND (project_id=$2 OR conversation_id IN (SELECT id FROM conversations WHERE owner_id=$1 AND project_id=$2))',[user.id,body.id]);
+      await client.query('DELETE FROM files WHERE owner_id=$1 AND (project_id=$2 OR conversation_id IN (SELECT id FROM conversations WHERE owner_id=$1 AND project_id=$2))',[user.id,body.id]);
+      await client.query('DELETE FROM artifacts WHERE owner_id=$1 AND (project_id=$2 OR conversation_id IN (SELECT id FROM conversations WHERE owner_id=$1 AND project_id=$2))',[user.id,body.id]);
+      await client.query('DELETE FROM conversations WHERE owner_id=$1 AND project_id=$2',[user.id,body.id]);
       await client.query(`DELETE FROM projects WHERE id=$1 AND owner_id=$2`,[body.id,user.id]);
       return {id:body.id,queued};
     });
+    if(deleted?.error)return errorJson('This project still has active work. Let the task finish before deleting the project.',409,deleted.error,requestId);
     if(!deleted)return errorJson('Project not found.',404,'PROJECT_NOT_FOUND',requestId);
     let cleanup={attempted:0,deleted:0,failed:0,pending:deleted.queued};
     try{cleanup=await drainBlobGc(db,user.id,{limit:Math.min(100,Math.max(10,deleted.queued||0))});}catch(error){console.warn('Project blob cleanup deferred',requestId,error?.message||error);}

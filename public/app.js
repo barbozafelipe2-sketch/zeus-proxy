@@ -222,14 +222,16 @@ function icon(name){
 }
 
 function sidebar(){
-  const recents=homeChats().slice(0,18).map(c=>`<button class="recent-item ${c.id===state.currentConversation?'active':''}" data-conv="${esc(c.id)}" title="${esc(c.title)}" ${c.id===state.currentConversation?'aria-current="true"':''}>${esc(c.title||'Conversation')}</button>`).join('') || `<div class="muted tiny" style="padding:8px 10px">Home chats appear here. Project chats stay inside each project.</div>`;
+  const recents=homeChats().slice(0,80).map(c=>`<div class="conversation-nav-row"><button class="recent-item ${c.id===state.currentConversation?'active':''}" data-conv="${esc(c.id)}" title="${esc(c.title)}" ${c.id===state.currentConversation?'aria-current="true"':''}>${esc(c.title||'Conversa')}</button><details class="nav-context-menu"><summary aria-label="Opções da conversa" title="Opções da conversa">···</summary><div class="nav-context-popover" role="menu"><button type="button" role="menuitem" data-conversation-rename="${esc(c.id)}">Renomear</button><button type="button" role="menuitem" data-conversation-move="${esc(c.id)}">Mover para projeto</button><button type="button" role="menuitem" class="danger-item" data-conversation-delete="${esc(c.id)}">Excluir conversa</button></div></details></div>`).join('') || `<div class="muted tiny" style="padding:8px 10px">Conversas fora de projetos aparecem aqui.</div>`;
+  const projectItems=(state.projects||[]).map(p=>`<div class="project-nav-row"><button type="button" class="project-nav-link ${p.id===state.currentProject?.id?'active':''}" data-project="${esc(p.id)}" title="${esc(p.name)}">${icon('folder')}<span>${esc(p.name)}</span></button><details class="nav-context-menu project-nav-menu"><summary aria-label="Opções de ${esc(p.name)}" title="Opções do projeto">···</summary><div class="nav-context-popover" role="menu"><button type="button" role="menuitem" data-project-settings="${esc(p.id)}">Configurações do projeto</button><button type="button" role="menuitem" class="danger-item" data-project-delete="${esc(p.id)}">Excluir projeto</button></div></details></div>`).join('') || `<div class="muted tiny side-empty">Nenhum projeto ainda.</div>`;
   return `<aside class="sidebar ${state.drawer?'open':''}" id="app-sidebar" aria-label="Workspace navigation">
     <button type="button" class="close-navigation" id="close-navigation" aria-label="Fechar navegação">${icon('close')}</button>
     <div class="logo-row"><div class="personal-bolt small">ϟ</div><div><div class="logo-word">OLYMPUS HUB</div><div class="logo-sub">PERSONAL · ZEUS</div></div></div>
     <button class="new-chat" id="new-chat">${icon('chat')} <span><strong>New chat</strong><small class="muted" style="display:block;margin-top:2px">Start a clean execution</small></span></button>
     <div class="search-box" role="search">${icon('search')}<input id="chat-search" type="search" placeholder="Search chats" aria-label="Search chats" autocomplete="off"></div>
     <nav class="side-nav" aria-label="Primary">${navButtons()}</nav>
-    <div class="side-section"><div class="side-title">Recent chats</div><div class="recent-list" id="recent-list">${recents}<div class="muted tiny recent-empty hidden" id="recent-empty" style="padding:8px 10px">No chats match your search.</div></div></div>
+    <div class="side-section side-project-section"><div class="side-section-heading"><div class="side-title">Projetos</div><button type="button" class="side-add" id="sidebar-create-project" aria-label="Criar projeto" title="Criar projeto">＋</button></div><div class="project-nav-list">${projectItems}</div><button type="button" class="side-view-all" data-tab="Projects">Todos os projetos <span aria-hidden="true">›</span></button></div>
+    <div class="side-section side-chat-section"><div class="side-section-heading"><div class="side-title">Conversas recentes</div><button type="button" class="side-add" id="sidebar-new-chat" aria-label="Nova conversa" title="Nova conversa">＋</button></div><div class="recent-list" id="recent-list">${recents}<div class="muted tiny recent-empty hidden" id="recent-empty" style="padding:8px 10px">Nenhuma conversa corresponde à busca.</div></div></div>
     <div class="sidebar-foot"><div class="user-chip"><div class="avatar">${esc(initials())}</div><div style="min-width:0"><strong style="font-size:12px">${esc(state.user?.user_metadata?.full_name||state.user?.email||'Felipe')}</strong><div class="muted tiny">Personal workspace</div></div></div></div>
   </aside>${state.drawer?'<button class="scrim" id="scrim" aria-label="Close menu"></button>':''}`;
 }
@@ -259,7 +261,8 @@ function homeMobileArtifacts(){
 }
 function topbar(){
   const tool=state.toolModels?.find(item=>item.id===state.currentToolId);
-  const context=state.currentProject?.name||(state.tab==='Home'?(tool?`${tool.god} · ${tool.title}`:state.currentConversation?'Conversation':'Home'):state.tab);
+  const conversationTitle=state.conversations.find(c=>c.id===state.currentConversation)?.title;
+  const context=state.currentProject?.name||(state.tab==='Home'?(tool?`${tool.god} · ${tool.title}`:state.currentConversation?conversationTitle||'Conversation':'Home'):state.tab);
   const hasHealth=Boolean(state.health);
   const chatReady=Boolean(state.health?.capabilities?.chat);
   const status=state.offline?'OFFLINE':chatReady?'READY':(hasHealth||state.healthError)?'LIMITED':'SYNCING';
@@ -654,7 +657,7 @@ function projectsView(){
   const tasksSection=upcoming.length?`<h2 class="section-title">Upcoming tasks</h2><div class="card" style="padding:14px"><div class="task-list">${upcoming.map(taskHtml).join('')}</div></div>`:'';
   return `<section class="page projects-page"><div class="page-head"><div><div class="eyebrow">PROJECTS</div><h1>Projects</h1><p>Each project keeps its own permanent chat, tasks, files, artifacts and memory.</p></div><button class="primary" id="create-project">${icon('plus')} New project</button></div><div class="project-tabs" role="group" aria-label="Filter projects">${[['ALL','All Projects'],['IN_PROGRESS','In Progress'],['COMPLETED','Completed']].map(([key,label])=>`<button type="button" data-filter="${key}" class="${state.projectFilter===key?'active':''}" aria-pressed="${state.projectFilter===key}">${label}</button>`).join('')}</div>${errorBanner('page-alert')}${projectSection}${tasksSection}</section>`;
 }
-function projectCard(p){const status=String(p.status||'IN_PROGRESS').replaceAll('_',' ');return `<article class="proj-row" data-project="${esc(p.id)}" tabindex="0" role="button" aria-label="Open project ${esc(p.name)}"><div class="proj-card-top"><div class="proj-thumb">${icon('folder')}</div><span class="proj-status ${esc(String(p.status||'IN_PROGRESS').toLowerCase())}">${esc(status)}</span></div><div class="proj-body"><strong>${esc(p.name)}</strong><span>${esc(p.description||p.goal||'OlyHub project')}</span><div class="progress"><span style="width:${Math.max(0,Math.min(100,Number(p.progress||0)))}%"></span></div><div class="proj-meta"><span>${Number(p.task_count||0)} tasks</span><span>${Number(p.file_count||0)} files</span><span>${Number(p.memory_count||0)} memories</span></div></div><div class="proj-foot"><em>${Number(p.progress||0)}%</em><span class="proj-open">Open workspace ›</span></div></article>`}
+function projectCard(p){const status=String(p.status||'IN_PROGRESS').replaceAll('_',' ');return `<article class="proj-row project-card-shell"><details class="project-card-menu"><summary aria-label="Opções de ${esc(p.name)}" title="Opções do projeto">···</summary><div class="nav-context-popover" role="menu"><button type="button" role="menuitem" data-project-settings="${esc(p.id)}">Configurações do projeto</button><button type="button" role="menuitem" class="danger-item" data-project-delete="${esc(p.id)}">Excluir projeto</button></div></details><button type="button" class="proj-card-main" data-project="${esc(p.id)}" aria-label="Abrir projeto ${esc(p.name)}"><span class="proj-card-top"><span class="proj-thumb">${icon('folder')}</span><span class="proj-status ${esc(String(p.status||'IN_PROGRESS').toLowerCase())}">${esc(status)}</span></span><span class="proj-body"><strong>${esc(p.name)}</strong><span>${esc(p.description||p.goal||'Projeto OlyHub')}</span><span class="progress"><span style="width:${Math.max(0,Math.min(100,Number(p.progress||0)))}%"></span></span><span class="proj-meta"><span>${Number(p.task_count||0)} tarefas</span><span>${Number(p.file_count||0)} arquivos</span><span>${Number(p.memory_count||0)} memórias</span></span></span><span class="proj-foot"><em>${Number(p.progress||0)}%</em><span class="proj-open">Abrir espaço ›</span></span></button></article>`}
 function projectWorkspace(){
   const p=state.currentProject;
   const section=state.projectSection||'CHAT';
@@ -787,26 +790,16 @@ function startCompareFormat(id){
 }
 
 function toolsView(){const h=state.health?.capabilities||{};const chat=capabilityState('chat',Boolean(h.chat));const images=capabilityState('imageGeneration',Boolean(h.imageGeneration));const tools=[
-  ['web','Web Search','Current web retrieval with sources',icon('globe'),Boolean(h.webSearch),h.webSearch?'READY':'NOT CONFIGURED','Hermes','Search the web for '],
-  ['code','Code','Build and review code with explicit test status',icon('code'),chat.enabled,chat.label,'Hephaestus','Build or review code for '],
-  ['images','Images','Generate and edit with AI',icon('image'),images.enabled,images.label,'Apollo','Create an image of '],
-  ['documents','Documents','Create retained PDF, DOCX, PPTX and XLSX deliverables',icon('doc'),chat.enabled,chat.label,'Athena','Create a professional PDF about '],
-  ['analysis','Source Review','Ground analysis in uploaded files and project context',icon('chart'),chat.enabled,chat.label,'Hestia','Analyze the attached source and ground the findings in what it actually supports'],
+  ['web','PESQUISA NA WEB','Pesquisa na web','Respostas atuais com fontes confiáveis da internet.',Boolean(h.webSearch),h.webSearch?'PRONTA':'NÃO CONFIGURADA','Hermes','O MENSAGEIRO','Pesquisar na web sobre '],
+  ['code','CÓDIGO E AUTOMAÇÕES','Código e automações','Cria, depura e revisa código com status real dos testes.',chat.enabled,chat.label,'Hephaestus','O ARTESÃO','Construir ou revisar código para '],
+  ['documents','DOCUMENTOS E APRESENTAÇÕES','Documentos e apresentações','Textos, relatórios e apresentações de alto impacto.',chat.enabled,chat.label,'Athena','A ESTRATEGISTA','Criar um documento profissional sobre '],
+  ['images','IMAGENS E DESIGN','Imagens e design','Cria imagens, ilustrações e conceitos visuais.',images.enabled,images.label,'Apollo','O CRIADOR','Criar uma imagem de '],
+  ['analysis','ANÁLISE DE ARQUIVOS','Análise de arquivos','Extrai insights de PDFs, planilhas, imagens e outros formatos.',chat.enabled,chat.label,'Hestia','A GUARDIÃ','Analisar o arquivo anexado e fundamentar cada conclusão no conteúdo.'],
 ];
-
-  return `<section class="page tools-page">
-    <div class="page-head tight"><div><h1>Tools & Capabilities</h1><p class="eyebrow">ZEUS LEVEL 3 · ONE GOD PER TOOL</p><p class="muted">Each tool opens its own conversation. Its eligible model pool adapts to your prompt and feedback.</p></div><button class="text-gold" data-tab="Files">Explore All ></button></div>
-    ${errorBanner('page-alert')}<div class="tool-grid">${tools.map(([kind,title,sub,ico,ok,label,god])=>{const models=state.toolModels.find(item=>item.id===kind)?.models||[];const modelLine=!state.toolModelsLoaded?'Loading eligible models…':state.toolModelsError?`Model list unavailable · ${state.toolModelsError}`:models.length?`${models.length}/6 eligible · ${models.slice(0,6).map(m=>m.name||m.id).join(' · ')}`:'No callable model is configured for this tool';return `<button class="tool-card ${ok?'':'disabled'}" data-kind="${kind}" ${ok?`data-tool-start="${kind}"`:'disabled aria-disabled="true"'}><div class="tool-ico">${ico}</div><div class="tool-copy"><strong>${title}</strong><span>${sub}</span><small>${esc(god)} · Zeus Level 3 · ${esc(modelLine)}</small></div><span class="tool-state">${esc(label)}</span><span class="chev">›</span></button>`}).join('')}</div>
-    <section class="card" aria-labelledby="compare-title" style="padding:20px;margin-top:18px">
-      <h2 id="compare-title">Compare &amp; Evolve</h2>
-      <p class="muted">For PDF, DOCX, XLSX, PPTX and HTML, Zeus creates two separate files with two model families when both are configured. Open each file to review it, choose a preferred version, combine them into a new C, or request another pair. Other formats support uploaded-file comparison only.</p>
-      <div class="tool-grid">${COMPARE_FORMATS.map(f=>{
-        const available=f.capability==='upload'||Boolean(h[f.capability]);
-        const label=f.capability==='upload'?'UPLOAD & COMPARE':available?'START COMPARISON':'NOT CONFIGURED';
-        return `<button type="button" class="tool-card" data-compare-start="${esc(f.id)}" aria-label="Compare ${esc(f.title)}"><div class="tool-copy"><strong>${esc(f.title)}</strong><span>${esc(f.formats)}</span></div><span class="tool-state">${esc(label)}</span><span class="chev">›</span></button>`;
-      }).join('')}</div>
-    </section>
-    <button class="panel library-card" data-tab="Files"><div class="tool-ico">${icon('folder')}</div><div><strong>Files & Library</strong><p>Upload, analyze, and keep everything in context across all your projects and conversations.</p></div><span class="chev">›</span></button>
+  const providerName=m=>String(m.provider||'').replaceAll('_',' ').replace(/\b\w/g,c=>c.toUpperCase());
+  return `<section class="page tools-page tools-catalog">
+    <div class="tools-hero"><span class="eyebrow">OLYMPUS HUB · INTELIGÊNCIA SEM LIMITES</span><h1>Ferramentas</h1><p>Escolha uma tarefa. O sistema monta a equipe.</p></div>
+    ${errorBanner('page-alert')}<div class="tool-list">${tools.map(([kind,eyebrow,title,sub,ok,label,god,role,prompt])=>{const models=state.toolModels.find(item=>item.id===kind)?.models||[];const modelLine=!state.toolModelsLoaded?'Carregando modelos elegíveis…':state.toolModelsError?`Lista indisponível · ${state.toolModelsError}`:models.length?`${models.length} modelos elegíveis · seleção adaptativa`:'Nenhum modelo configurado para esta ferramenta';const modelList=models.length?models.slice(0,6).map(m=>`<span class="tool-model-chip"><i aria-hidden="true"></i>${esc(providerName(m))} · ${esc(m.name||m.id)}</span>`).join(''):'<span class="tool-model-empty">A lista de modelos aparece quando os provedores estão configurados.</span>';return `<article class="tool-feature-card ${ok?'':'unavailable'}" data-kind="${kind}"><div class="tool-god-portrait god-${kind}" role="img" aria-label="${esc(god)}"><span class="tool-god-caption"><strong>${esc(god)}</strong><small>${esc(role)}</small></span></div><div class="tool-feature-copy"><small class="eyebrow">${esc(eyebrow)}</small><h2>${esc(title)}</h2><p>${esc(sub)}</p><details class="tool-model-details"><summary>${icon('memory')}<span>${esc(modelLine)}</span><b aria-hidden="true">⌄</b></summary><div class="tool-model-list">${modelList}</div></details></div><div class="tool-feature-actions"><button type="button" class="tool-launch-button" data-tool-start="${kind}" ${ok?'':'disabled aria-disabled="true"'}>${ok?'Abrir ferramenta':'Indisponível'} <span aria-hidden="true">›</span></button><small class="tool-capability-state ${ok?'ready':''}">${esc(label)}</small></div></article>`}).join('')}</div>
   </section>`;
 }
 function outputsList(limit=12){let all=[...state.artifacts.map(a=>({...a,kind:'artifact'})),...state.files.map(f=>({...f,kind:'file',type:(f.mime_type||'file').split('/').pop()}))].sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));if(Number.isFinite(limit))all=all.slice(0,limit);return all.length?`<div class="output-list">${all.map(outputItem).join('')}</div>`:`<div class="card" style="padding:24px"><strong>Your library starts with the first source or deliverable.</strong><p class="muted">Upload a source for analysis, or ask Zeus/Olympus to create a document, image, spreadsheet, presentation or ZIP.</p></div>`}
@@ -1182,7 +1175,12 @@ function bind(){
     catch(err){state.error=err.message||'Could not remove source.';}render();
   }));
   $$('[data-move-current]').forEach(b=>b.addEventListener('click',()=>moveConversationModal(b.dataset.moveCurrent)));
-  $('#chat-search')?.addEventListener('input',e=>{const q=e.target.value.toLowerCase();let shown=0;$$('.recent-item').forEach(x=>{const match=x.textContent.toLowerCase().includes(q);x.style.display=match?'block':'none';if(match)shown++;});$('#recent-empty')?.classList.toggle('hidden',!q||shown>0||!$$('.recent-item').length);});
+  $$('[data-conversation-rename]').forEach(b=>b.addEventListener('click',e=>{e.stopPropagation();renameConversationModal(b.dataset.conversationRename);}));
+  $$('[data-conversation-move]').forEach(b=>b.addEventListener('click',e=>{e.stopPropagation();moveConversationModal(b.dataset.conversationMove);}));
+  $$('[data-conversation-delete]').forEach(b=>b.addEventListener('click',e=>{e.stopPropagation();deleteConversationModal(b.dataset.conversationDelete);}));
+  $$('[data-project-settings]').forEach(b=>b.addEventListener('click',e=>{e.stopPropagation();projectEditModal(b.dataset.projectSettings);}));
+  $$('[data-project-delete]').forEach(b=>b.addEventListener('click',e=>{e.stopPropagation();deleteProjectById(b.dataset.projectDelete);}));
+  $('#chat-search')?.addEventListener('input',e=>{const q=e.target.value.toLowerCase();let shown=0;$$('.conversation-nav-row').forEach(row=>{const match=row.querySelector('.recent-item')?.textContent.toLowerCase().includes(q);row.style.display=match?'flex':'none';if(match)shown++;});$('#recent-empty')?.classList.toggle('hidden',!q||shown>0||!$$('.conversation-nav-row').length);});
   $$('[data-dismiss-error]').forEach(b=>b.addEventListener('click',dismissError));
   $('#retry-services')?.addEventListener('click',()=>bootstrapApp().catch(err=>{state.error=err.message||'Zeus could not load the workspace.';render();}));
   $$('[data-routing-mode]').forEach(b=>b.addEventListener('click',()=>{if(state.sending||state.currentToolId)return;state.routingMode=b.dataset.routingMode==='MANUAL'?'MANUAL':'AUTO';try{localStorage.setItem('zeus-routing-mode.v1',state.routingMode)}catch{}render();}));
@@ -1244,16 +1242,16 @@ function bind(){
   $('#approve-olympus-five')?.addEventListener('click',approveNextOlympusFive);
   $('#load-older-messages')?.addEventListener('click',loadOlderMessages);
   $('#load-older-outputs')?.addEventListener('click',loadOlderOutputs);
-  $('#create-project')?.addEventListener('click',projectModal); $('#home-create-project')?.addEventListener('click',projectModal); $('#create-project-empty')?.addEventListener('click',projectModal);
+  $('#create-project')?.addEventListener('click',projectModal); $('#home-create-project')?.addEventListener('click',projectModal); $('#create-project-empty')?.addEventListener('click',projectModal); $('#sidebar-create-project')?.addEventListener('click',()=>{state.drawer=false;render();projectModal();});
+  $('#sidebar-new-chat')?.addEventListener('click',newChat);
   $$('[data-filter]').forEach(b=>b.addEventListener('click',()=>{state.projectFilter=b.dataset.filter;render()}));
   $$('[data-project]').forEach(b=>{b.addEventListener('click',()=>openProjectWorkspace(b.dataset.project));b.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();openProjectWorkspace(b.dataset.project);}});});
   $$('[data-project-section]').forEach(b=>b.addEventListener('click',async()=>{state.projectSection=b.dataset.projectSection;try{if(state.projectSection==='MEMORY'&&state.currentProject)await loadMemories(state.currentProject.id);if(state.projectSection==='SOURCE'&&state.currentProject)await loadProjectSources();}catch(err){state.error=err?.message||'Could not load project memory.';}render();resetViewport()}));
-  $('#edit-project')?.addEventListener('click',projectEditModal);
+  $('#edit-project')?.addEventListener('click',()=>projectEditModal(state.currentProject?.id));
   $('#back-projects')?.addEventListener('click',async()=>{state.currentProject=null;state.currentConversation=null;state.messages=[];state.chatArtifacts=[];state.attachedFiles=[];state.activeMode=null;state.projectMemories=[];state.memoryPolicy=null;state.projectSection='CHAT';state.messagePage={hasMore:false,nextCursor:null};state.tasks=[];state.error='';history.replaceState({},'',location.pathname);refreshLiveTalkContext();render()});
   $('#task-form')?.addEventListener('submit',createTask); $$('[data-task]').forEach(b=>b.addEventListener('click',()=>{if(b.disabled)return;b.disabled=true;b.setAttribute('aria-busy','true');toggleTask(b.dataset.task,b.dataset.status);}));
   $('#memory-form')?.addEventListener('submit',createMemory); $('#personal-memory-form')?.addEventListener('submit',createPersonalMemory); $$('[data-memory-delete]').forEach(b=>b.addEventListener('click',()=>deleteMemory(b.dataset.memoryDelete,b.dataset.memoryScope)));
   $$('[data-delete-output]').forEach(b=>b.addEventListener('click',()=>deleteOutput(b.dataset.deleteOutput,b.dataset.outputId)));
-  $('#delete-project')?.addEventListener('click',deleteCurrentProject);
   $('#upload-project-file')?.addEventListener('click',()=>$('#global-file-input').click());
   $$('[data-compare-start]').forEach(b=>b.addEventListener('click',()=>startCompareFormat(b.dataset.compareStart)));
   $$('[data-tool-start]').forEach(b=>b.addEventListener('click',()=>{state.currentProject=null;state.currentConversation=null;state.currentToolId=b.dataset.toolStart;state.messages=[];state.chatArtifacts=[];state.attachedFiles=[];state.activeMode=null;state.activeLevel=3;state.messagePage={hasMore:false,nextCursor:null};state.error='';state.draft='';state.mode='ZEUS';state.tab='Home';history.replaceState({},'',location.pathname);render();setTimeout(()=>$('#composer-text')?.focus(),0)}));
@@ -1289,19 +1287,44 @@ async function newChat(){
 }
 function moveConversationModal(conversationId){
   const projects=state.projects||[];
-  if(!projects.length){state.error='Create a project first.';render();return;}
+  if(!projects.length){state.error='Crie um projeto primeiro.';render();return;}
   const options=projects.map(p=>`<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('');
-  showModal(`<div class="modal-backdrop"><div class="modal" aria-labelledby="conversation-transfer-title"><div class="modal-head"><h2 id="conversation-transfer-title">Move conversation</h2><button type="button" class="ghost" id="modal-close" aria-label="Close dialog">×</button></div><div id="modal-notice" class="notice error-notice hidden" role="alert"></div><form id="conversation-transfer-form" class="form-grid"><p class="muted tiny">Move this conversation, its files and artifacts into a project.</p><label for="conversation-target-project">Destination project</label><select id="conversation-target-project" required>${options}</select><div class="modal-actions"><button type="submit" class="primary">Move to project</button></div></form></div></div>`,{initialFocus:'#conversation-target-project'});
+  showModal(`<div class="modal-backdrop"><div class="modal" aria-labelledby="conversation-transfer-title"><div class="modal-head"><h2 id="conversation-transfer-title">Mover conversa para projeto</h2><button type="button" class="ghost" id="modal-close" aria-label="Fechar janela">×</button></div><div id="modal-notice" class="notice error-notice hidden" role="alert"></div><form id="conversation-transfer-form" class="form-grid"><p class="muted tiny">O histórico, os arquivos e os resultados acompanham a conversa.</p><label for="conversation-target-project">Projeto de destino</label><select id="conversation-target-project" required>${options}</select><div class="modal-actions"><button type="submit" class="primary">Mover para projeto</button></div></form></div></div>`,{initialFocus:'#conversation-target-project'});
   $('#modal-close')?.addEventListener('click',()=>closeModal());
   $('#conversation-transfer-form')?.addEventListener('submit',async e=>{
     e.preventDefault();
     try{const d=await api('/api/conversations',{method:'PATCH',body:JSON.stringify({conversationId,projectId:$('#conversation-target-project').value,operation:'move'})});
       closeModal();await Promise.all([loadProjects(),loadConversations()]);await openConversation(d.conversationId);}
-    catch(err){setModalError(err.message||'Transfer failed.');}
+    catch(err){setModalError(err.message||'Não foi possível mover a conversa.');}
   });
+}
+function renameConversationModal(conversationId){
+  const conversation=state.conversations.find(item=>item.id===conversationId);if(!conversation)return;
+  showModal(`<div class="modal-backdrop"><div class="modal" aria-labelledby="conversation-rename-title"><div class="modal-head"><h2 id="conversation-rename-title">Renomear conversa</h2><button type="button" class="ghost" id="modal-close" aria-label="Fechar">×</button></div><div id="modal-notice" class="notice error-notice hidden" role="alert"></div><form id="conversation-rename-form" class="form-grid"><label for="conversation-new-title">Nome da conversa</label><input id="conversation-new-title" required maxlength="120" value="${esc(conversation.title||'Conversa')}"><div class="modal-actions"><button type="button" class="secondary" id="modal-cancel">Cancelar</button><button type="submit" class="primary" id="conversation-rename-submit">Salvar nome</button></div></form></div></div>`,{initialFocus:'#conversation-new-title'});
+  $('#modal-close').onclick=$('#modal-cancel').onclick=()=>closeModal();
+  $('#conversation-rename-form')?.addEventListener('submit',async e=>{
+    e.preventDefault();const submit=$('#conversation-rename-submit');submit.disabled=true;setModalError('');
+    try{await api('/api/conversations',{method:'PATCH',body:JSON.stringify({conversationId,operation:'rename',title:$('#conversation-new-title').value})});await loadConversations();closeModal({restoreFocus:false});render();}
+    catch(error){setModalError(error.message||'Não foi possível renomear esta conversa.');submit.disabled=false;}
+  });
+}
+function destructiveConfirmModal({title,message,confirmText,onConfirm}){
+  showModal(`<div class="modal-backdrop"><div class="modal" aria-labelledby="destructive-confirm-title"><div class="modal-head"><h2 id="destructive-confirm-title">${esc(title)}</h2><button type="button" class="ghost" id="modal-close" aria-label="Fechar">×</button></div><div id="modal-notice" class="notice error-notice hidden" role="alert"></div><form id="destructive-confirm-form" class="form-grid"><p class="muted" style="line-height:1.6;margin:0">${esc(message)}</p><div class="modal-actions"><button type="button" class="secondary" id="modal-cancel">Cancelar</button><button type="submit" class="secondary danger" id="destructive-confirm-submit">${esc(confirmText)}</button></div></form></div></div>`,{initialFocus:'#modal-cancel'});
+  $('#modal-close').onclick=$('#modal-cancel').onclick=()=>closeModal();
+  $('#destructive-confirm-form')?.addEventListener('submit',async e=>{e.preventDefault();const submit=$('#destructive-confirm-submit');submit.disabled=true;setModalError('');try{await onConfirm();}catch(error){setModalError(error.message||'The action could not be completed.');submit.disabled=false;}});
+}
+function deleteConversationModal(conversationId){
+  const conversation=state.conversations.find(item=>item.id===conversationId);if(!conversation)return;
+  destructiveConfirmModal({title:'Excluir conversa?',message:`“${conversation.title||'Conversa'}”, suas mensagens, arquivos anexados e resultados salvos serão apagados permanentemente.`,confirmText:'Excluir conversa',onConfirm:async()=>{
+    await api('/api/conversations',{method:'DELETE',body:JSON.stringify({conversationId})});
+    closeModal({restoreFocus:false});
+    if(state.currentConversation===conversationId){state.currentConversation=null;state.messages=[];state.chatArtifacts=[];state.attachedFiles=[];state.activeMode=null;state.activeLevel=null;state.messagePage={hasMore:false,nextCursor:null};state.draft='';history.replaceState({},'',location.pathname);}
+    await Promise.all([loadConversations(),loadFiles(),loadArtifacts()]);state.error='';state.execStatus='Conversa excluída.';render();
+  }});
 }
 async function openConversation(id,doRender=true){
   try{
+    state.drawer=false;
     const d=await api(`/api/chat?conversationId=${encodeURIComponent(id)}&limit=60`);
     state.currentConversation=id;
     state.currentProject=state.projects.find(p=>p.id===d.conversation?.project_id)||null;
@@ -2003,16 +2026,16 @@ async function loadProjectConversation(project){
   syncActiveModeFromMessages();
 }
 
-function projectEditModal(){
-  const p=state.currentProject;if(!p)return;
+function projectEditModal(projectId=state.currentProject?.id){
+  const p=state.projects.find(item=>item.id===projectId)||state.currentProject;if(!p)return;
   showModal(`<div class="modal-backdrop" id="modal-bg"><div class="modal" aria-labelledby="project-edit-title"><div class="modal-head"><h2 id="project-edit-title">Edit project</h2><button class="ghost" id="modal-close" aria-label="Close dialog">${icon('close')}</button></div><div id="modal-notice" class="notice error-notice hidden" role="alert" aria-live="assertive"></div><form id="project-edit-form" class="form-grid"><div class="field"><label for="edit-project-name">Name</label><input id="edit-project-name" required maxlength="120" value="${esc(p.name)}"></div><div class="field"><label for="edit-project-goal">Goal</label><textarea id="edit-project-goal" rows="4">${esc(p.goal||'')}</textarea></div><div class="field"><label for="edit-project-description">Description</label><textarea id="edit-project-description" rows="4">${esc(p.description||'')}</textarea></div><div class="field"><label for="edit-project-status">Status</label><select id="edit-project-status"><option value="IN_PROGRESS" ${p.status==='IN_PROGRESS'?'selected':''}>In progress</option><option value="PAUSED" ${p.status==='PAUSED'?'selected':''}>Paused</option><option value="COMPLETED" ${p.status==='COMPLETED'?'selected':''}>Completed</option></select></div><div class="modal-actions split-actions"><button type="button" class="secondary danger" id="delete-project">Delete project</button><div><button type="button" class="secondary" id="modal-cancel">Cancel</button><button class="primary" id="project-edit-submit">Save changes</button></div></div></form></div></div>`,{initialFocus:'#edit-project-name'});
   $('#modal-close').onclick=$('#modal-cancel').onclick=()=>closeModal();
-  $('#delete-project').onclick=async()=>{closeModal({restoreFocus:false});await deleteCurrentProject();};
+  $('#delete-project').onclick=async()=>{closeModal({restoreFocus:false});await deleteProjectById(p.id);};
   $('#project-edit-form').addEventListener('submit',async e=>{
     e.preventDefault();setModalError('');const submit=$('#project-edit-submit');submit.disabled=true;
     try{
       await api('/api/projects',{method:'PATCH',body:JSON.stringify({id:p.id,name:$('#edit-project-name').value,goal:$('#edit-project-goal').value,description:$('#edit-project-description').value,status:$('#edit-project-status').value,progress:p.progress})});
-      closeModal({restoreFocus:false});await loadProjects();state.currentProject=state.projects.find(x=>x.id===p.id)||state.currentProject;render();
+      closeModal({restoreFocus:false});await loadProjects();if(state.currentProject?.id===p.id)state.currentProject=state.projects.find(x=>x.id===p.id)||state.currentProject;render();
     }catch(err){setModalError(err.message||'Could not update project.');submit.disabled=false;}
   });
 }
@@ -2063,16 +2086,17 @@ async function deleteOutput(kind,id){
   }catch(err){state.error=err.message||`Could not delete ${noun}.`;render();}
 }
 
-async function deleteCurrentProject(){
-  const p=state.currentProject;if(!p)return;
-  if(!confirm(`Excluir “${p.name}” e suas conversas, tarefas, memória e arquivos? Esta ação não pode ser desfeita.`))return;
-  try{
-    await api('/api/projects',{method:'DELETE',body:JSON.stringify({id:p.id})});
-    state.currentProject=null;state.currentConversation=null;state.messages=[];state.chatArtifacts=[];state.attachedFiles=[];state.activeMode=null;state.projectMemories=[];state.memoryPolicy=null;state.tasks=[];state.files=[];state.artifacts=[];state.projectSection='CHAT';state.messagePage={hasMore:false,nextCursor:null};state.error='';
-    history.replaceState({},'',location.pathname);
-    await Promise.all([loadProjects(),loadFiles(),loadArtifacts()]);
-    state.tab='Projects';render();resetViewport();
-  }catch(err){state.error=err.message||'Could not delete project.';render();}
+function deleteCurrentProject(){return state.currentProject?deleteProjectById(state.currentProject.id):undefined;}
+function deleteProjectById(projectId){
+  const project=state.projects.find(item=>item.id===projectId)||state.currentProject;if(!project)return;
+  destructiveConfirmModal({title:'Excluir projeto?',message:`“${project.name}”, a conversa dedicada, tarefas, memória, fontes, arquivos e resultados salvos serão apagados permanentemente.`,confirmText:'Excluir projeto',onConfirm:async()=>{
+    await api('/api/projects',{method:'DELETE',body:JSON.stringify({id:project.id})});
+    closeModal({restoreFocus:false});
+    const wasCurrentProject=state.currentProject?.id===project.id;
+    if(wasCurrentProject){state.currentProject=null;state.currentConversation=null;state.messages=[];state.chatArtifacts=[];state.attachedFiles=[];state.activeMode=null;state.projectMemories=[];state.memoryPolicy=null;state.tasks=[];state.files=[];state.artifacts=[];state.projectSection='CHAT';state.messagePage={hasMore:false,nextCursor:null};state.tab='Projects';history.replaceState({},'',location.pathname);}
+    await Promise.all([loadProjects(),loadConversations(),loadFiles(),loadArtifacts()]);
+    state.error='';render();resetViewport();
+  }});
 }
 
 async function openProjectWorkspace(projectId){

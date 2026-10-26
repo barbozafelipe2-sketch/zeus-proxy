@@ -1,8 +1,9 @@
 import { blobStore } from './blob.mjs';
 
 export async function queueProjectBlobs(client, ownerId, projectId) {
-  const files = (await client.query(`SELECT blob_key FROM files WHERE owner_id=$1 AND project_id=$2`, [ownerId, projectId])).rows;
-  const artifacts = (await client.query(`SELECT blob_key FROM artifacts WHERE owner_id=$1 AND project_id=$2`, [ownerId, projectId])).rows;
+  const files = (await client.query(`SELECT blob_key FROM files WHERE owner_id=$1 AND (project_id=$2 OR conversation_id IN (SELECT id FROM conversations WHERE owner_id=$1 AND project_id=$2))`, [ownerId, projectId])).rows;
+  const artifacts = (await client.query(`SELECT blob_key FROM artifacts WHERE owner_id=$1 AND (project_id=$2 OR conversation_id IN (SELECT id FROM conversations WHERE owner_id=$1 AND project_id=$2))`, [ownerId, projectId])).rows;
+  const workspaces = (await client.query(`SELECT workspace_blob_key,base_workspace_blob_key FROM code_agent_jobs WHERE owner_id=$1 AND (project_id=$2 OR conversation_id IN (SELECT id FROM conversations WHERE owner_id=$1 AND project_id=$2))`, [ownerId, projectId])).rows;
   for (const row of files) {
     if (!row.blob_key) continue;
     await client.query(`INSERT INTO blob_gc_queue(owner_id,store_name,blob_key,reason) VALUES($1,'olyhub-files',$2,'project-delete') ON CONFLICT(store_name,blob_key) DO NOTHING`, [ownerId, row.blob_key]);
@@ -11,7 +12,32 @@ export async function queueProjectBlobs(client, ownerId, projectId) {
     if (!row.blob_key) continue;
     await client.query(`INSERT INTO blob_gc_queue(owner_id,store_name,blob_key,reason) VALUES($1,'olyhub-artifacts',$2,'project-delete') ON CONFLICT(store_name,blob_key) DO NOTHING`, [ownerId, row.blob_key]);
   }
-  return files.length + artifacts.length;
+  for (const row of workspaces) {
+    for (const key of new Set([row.workspace_blob_key,row.base_workspace_blob_key].filter(Boolean))) {
+      await client.query(`INSERT INTO blob_gc_queue(owner_id,store_name,blob_key,reason) VALUES($1,'olyhub-code-workspaces',$2,'project-delete') ON CONFLICT(store_name,blob_key) DO NOTHING`, [ownerId, key]);
+    }
+  }
+  return files.length + artifacts.length + workspaces.length;
+}
+
+export async function queueConversationBlobs(client, ownerId, conversationId) {
+  const files = (await client.query(`SELECT blob_key FROM files WHERE owner_id=$1 AND conversation_id=$2`, [ownerId, conversationId])).rows;
+  const artifacts = (await client.query(`SELECT blob_key FROM artifacts WHERE owner_id=$1 AND conversation_id=$2`, [ownerId, conversationId])).rows;
+  const workspaces = (await client.query(`SELECT workspace_blob_key,base_workspace_blob_key FROM code_agent_jobs WHERE owner_id=$1 AND conversation_id=$2`, [ownerId, conversationId])).rows;
+  for (const row of files) {
+    if (!row.blob_key) continue;
+    await client.query(`INSERT INTO blob_gc_queue(owner_id,store_name,blob_key,reason) VALUES($1,'olyhub-files',$2,'conversation-delete') ON CONFLICT(store_name,blob_key) DO NOTHING`, [ownerId, row.blob_key]);
+  }
+  for (const row of artifacts) {
+    if (!row.blob_key) continue;
+    await client.query(`INSERT INTO blob_gc_queue(owner_id,store_name,blob_key,reason) VALUES($1,'olyhub-artifacts',$2,'conversation-delete') ON CONFLICT(store_name,blob_key) DO NOTHING`, [ownerId, row.blob_key]);
+  }
+  for (const row of workspaces) {
+    for (const key of new Set([row.workspace_blob_key,row.base_workspace_blob_key].filter(Boolean))) {
+      await client.query(`INSERT INTO blob_gc_queue(owner_id,store_name,blob_key,reason) VALUES($1,'olyhub-code-workspaces',$2,'conversation-delete') ON CONFLICT(store_name,blob_key) DO NOTHING`, [ownerId, key]);
+    }
+  }
+  return files.length + artifacts.length + workspaces.length;
 }
 
 export async function queueBlobGc(db, ownerId, storeName, blobKey, reason='cleanup') {
