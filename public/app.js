@@ -1479,6 +1479,7 @@ async function sendText(text,pendingAttachments=[],requestId=crypto.randomUUID()
     if(compareType)state.compareType=null;
     state.execStatus='Completed';
     await Promise.allSettled([loadConversations(),loadProjects()]);
+    if(d.projectTaskAction&&state.currentProject?.id){await loadTasks(state.currentProject.id);state.currentProject=state.projects.find(project=>project.id===state.currentProject.id)||state.currentProject;}
     setTimeout(()=>{if(state.execStatus==='Completed'&&!state.sending){state.execStatus='';state.execTitle='';render();}},900);
     if(voiceCommand)return assistant?JSON.stringify({ok:true,mode:assistant.mode||state.activeMode||mode,level:assistant.metadata?.executionLevel||state.activeLevel||null,memorySaved:Boolean(d.memorySaved),historySearched:Boolean(d.historySearched),reply:String(assistant.content||'')}):JSON.stringify({ok:false,error:'OlyHub finished without returning an answer.'});
   }catch(err){

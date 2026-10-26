@@ -1,5 +1,10 @@
 # Zeus Proxy Personal Recovery
 
+## Project task actions — 2026-10-26
+- Typed chat now executes clear project task creation and status-change requests through the authenticated task database flow, including relative deadlines.
+- Task confirmations are generated only after a successful database result; ambiguous targets request clarification instead of claiming completion.
+- Task state and project progress refresh immediately in the open workspace.
+
 ## Session gate — 2026-10-07 (superseded 2026-10-23)
 - Historical note: this version used a shared access key and a local unlock screen. The 2026-10-23 personal-workspace update removes that gate.
 

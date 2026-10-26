@@ -7,8 +7,8 @@ const required = [
   'netlify/functions/chat.mjs','netlify/functions/google-integration.mjs','netlify/functions/projects.mjs','netlify/functions/tasks.mjs','netlify/functions/memories.mjs',
   'netlify/functions/files.mjs','netlify/functions/file-download.mjs','netlify/functions/file-preview.mjs','netlify/functions/github-commit.mjs',
   'netlify/functions/artifacts.mjs','netlify/functions/artifact-download.mjs','netlify/functions/health.mjs','netlify/functions/transcribe.mjs',
-  'netlify/functions/_shared/models.mjs','netlify/functions/_shared/tool-workflows.mjs','netlify/functions/tool-models.mjs','netlify/functions/tool-feedback.mjs','netlify/functions/_shared/zeus-directed.mjs','netlify/functions/_shared/provider-routing.mjs','netlify/functions/_shared/provider-observability.mjs','netlify/functions/_shared/execution-error.mjs','netlify/functions/_shared/reliability.mjs','netlify/functions/_shared/web-search.mjs','netlify/functions/_shared/github-context.mjs','netlify/functions/_shared/execution-policy.mjs','netlify/functions/_shared/memory.mjs','netlify/functions/_shared/artifact.mjs','netlify/functions/_shared/artifact-delivery.mjs','netlify/functions/_shared/compare-pair.mjs','netlify/functions/_shared/google-service.mjs','netlify/functions/_shared/artifact-limits.mjs','netlify/functions/_shared/pdf-layout.mjs','netlify/functions/_shared/extract.mjs','netlify/functions/_shared/auth.mjs','netlify/functions/_shared/db.mjs','netlify/functions/_shared/relations.mjs','netlify/functions/_shared/intent.mjs','netlify/functions/_shared/security.mjs','netlify/functions/_shared/context.mjs','netlify/functions/_shared/runtime.mjs','netlify/functions/_shared/worker-lease.mjs','netlify/functions/_shared/history.mjs','netlify/functions/_shared/archive-safety.mjs','netlify/functions/_shared/zip-output.mjs','netlify/functions/_shared/pagination.mjs','netlify/functions/_shared/limits.mjs','netlify/functions/_shared/storage.mjs',
-  'scripts/tool-workflow-tests.mjs',
+  'netlify/functions/_shared/models.mjs','netlify/functions/_shared/project-task-actions.mjs','netlify/functions/_shared/tool-workflows.mjs','netlify/functions/tool-models.mjs','netlify/functions/tool-feedback.mjs','netlify/functions/_shared/zeus-directed.mjs','netlify/functions/_shared/provider-routing.mjs','netlify/functions/_shared/provider-observability.mjs','netlify/functions/_shared/execution-error.mjs','netlify/functions/_shared/reliability.mjs','netlify/functions/_shared/web-search.mjs','netlify/functions/_shared/github-context.mjs','netlify/functions/_shared/execution-policy.mjs','netlify/functions/_shared/memory.mjs','netlify/functions/_shared/artifact.mjs','netlify/functions/_shared/artifact-delivery.mjs','netlify/functions/_shared/compare-pair.mjs','netlify/functions/_shared/google-service.mjs','netlify/functions/_shared/artifact-limits.mjs','netlify/functions/_shared/pdf-layout.mjs','netlify/functions/_shared/extract.mjs','netlify/functions/_shared/auth.mjs','netlify/functions/_shared/db.mjs','netlify/functions/_shared/relations.mjs','netlify/functions/_shared/intent.mjs','netlify/functions/_shared/security.mjs','netlify/functions/_shared/context.mjs','netlify/functions/_shared/runtime.mjs','netlify/functions/_shared/worker-lease.mjs','netlify/functions/_shared/history.mjs','netlify/functions/_shared/archive-safety.mjs','netlify/functions/_shared/zip-output.mjs','netlify/functions/_shared/pagination.mjs','netlify/functions/_shared/limits.mjs','netlify/functions/_shared/storage.mjs',
+  'scripts/tool-workflow-tests.mjs','scripts/project-task-actions-tests.mjs',
   'netlify/database/migrations/20260930044607_create_olyhub_foundation/migration.sql',
   'netlify/database/migrations/20260930080000_add_files/migration.sql',
   'netlify/database/migrations/20261001030000_hard-fix-1-integrity/migration.sql',
@@ -46,6 +46,7 @@ const phase8Source = read('scripts/phase8-resilience-tests.mjs');
 const phase9Source = read('scripts/phase9-regression-tests.mjs');
 const projects = read('netlify/functions/projects.mjs');
 const tasks = read('netlify/functions/tasks.mjs');
+const projectTaskActions = read('netlify/functions/_shared/project-task-actions.mjs');
 const memories = read('netlify/functions/memories.mjs');
 const files = read('netlify/functions/files.mjs');
 const auth = read('netlify/functions/_shared/auth.mjs');
@@ -349,6 +350,9 @@ if(!chat.includes('claimOlympusWorker(client,')||!chat.includes('executionLeaseE
   throw new Error('Background dispatch lacks exclusive lease and deadline-safe recovery.');
 if (!security.includes('REDACTED NETLIFY TOKEN')) throw new Error('Netlify token redaction missing.');
 if (!tasks.includes('syncProjectProgressClient')) throw new Error('Task/project progress updates are not transactional.');
+if (!chat.includes('executeProjectTaskCommand') || !chat.includes('projectTaskAction')) throw new Error('Typed task commands are not executed and reported through the authenticated task API flow.');
+if (!projectTaskActions.includes("command.status === 'DONE' ? now.toISOString() : null")) throw new Error('Task completion timestamp is not synchronized with the completed state.');
+if (!models.includes('Never claim a task was created or its status changed unless the authenticated task action returned success')) throw new Error('The model may still promise task changes without a verified action result.');
 
 if (models.includes('planSpecialists') || models.includes('DOMAIN_PRIORITY')) throw new Error('Legacy keyword-domain Olympus planner returned.');
 if (!models.includes('deterministicTurboPlan') || !models.includes('creatorSettled=await Promise.allSettled')) throw new Error('Olympus Turbo requirement partitioning or parallel creators missing.');

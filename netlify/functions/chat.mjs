@@ -32,6 +32,7 @@ import { extractRequirementChecklist, formatChecklist, isWhatMissingIntent, shou
 import { hasGitHubRepoUrl, loadGitHubContext } from './_shared/github-context.mjs';
 import { stripStructuredZipManifest } from './_shared/zip-output.mjs';
 import { estimateTurboQuote, turboApprovalFingerprint, externalMutationPolicy } from './_shared/execution-policy.mjs';
+import { detectProjectTaskCommand, executeProjectTaskCommand } from './_shared/project-task-actions.mjs';
 
 function titleFrom(text){return text.replace(/\s+/g,' ').trim().slice(0,72) || 'OlyHub output';}
 function runtimeEnv(name){return globalThis.Netlify?.env?.get?.(name)||process.env?.[name]||'';}
@@ -436,6 +437,9 @@ async function chatHandler(req, context, startedAt){
   if(comparePair&&!compareTypes.has(compareType))return errorJson('Compare & Evolve currently supports independent PDF, DOCX, XLSX, PPTX, CSV and HTML pairs.',422,'COMPARE_FORMAT_UNSUPPORTED',requestId);
   if(comparePair&&shouldSearchWeb(modelText))return errorJson('Compare & Evolve does not perform live web research. Research the source first, then request the A/B pair.',422,'COMPARE_LIVE_RESEARCH_UNSUPPORTED',requestId);
   let intent=classifyIntent(modelText,{hasImage,hasFiles:attachmentRows.length>0});
+  // Typed chat and Live Talk turns share this endpoint. Handle explicit task
+  // mutations here so a model cannot merely promise an action it never ran.
+  const projectTaskCommand=detectProjectTaskCommand(content);
   if(comparePair)intent={action:'ARTIFACT_CREATE',artifactType:compareType,artifactTypes:[compareType],reason:'independent_compare_pair'};
   if(compareImageSourceId)intent={action:'IMAGE_CREATE',artifactType:'image',artifactTypes:['image'],reason:'image_compare_alternative'};
   const requestedArtifacts=Array.isArray(intent.artifactTypes)?intent.artifactTypes:(intent.artifactType?[intent.artifactType]:[]);
@@ -451,10 +455,14 @@ async function chatHandler(req, context, startedAt){
   if(!requestedMode)return errorJson('Mode must be ZEUS or OLYMPUS.',400,'INVALID_INTELLIGENCE_MODE',requestId);
   const effectiveRequestedMode=liveTalkTurn?'ZEUS':requestedMode;
   if(body.olympusAuto!==undefined&&typeof body.olympusAuto!=='boolean')return errorJson('olympusAuto must be a boolean.',400,'INVALID_AUTO_MODE',requestId);
-  const decision=liveTalkTurn
+  const decision=projectTaskCommand
+    ?{mode:'ZEUS',reason:'verified_project_task_action',workstreams:[],router:'direct_action'}
+    :liveTalkTurn
     ?{mode:'ZEUS',reason:'live_talk_fast_path',workstreams:[],router:'bypassed'}
     :decideExecutionMode(modelText,{requestedMode:effectiveRequestedMode,olympusAuto:body.olympusAuto===true,action:intent.action,route,hasFiles:attachmentRows.length>0,hasImage,requirementCount:requirementSpec.items.length,artifactType:intent.artifactType,requiresVerification:verificationSignal});
-  const levelDecision=liveTalkTurn
+  const levelDecision=projectTaskCommand
+    ?{mode:'ZEUS',level:'SIMPLE',maxCalls:0,workstreams:[],reason:'verified_project_task_action'}
+    :liveTalkTurn
     ?{mode:'ZEUS',level:'SIMPLE',maxCalls:GEAR_CALL_CAPS.SIMPLE,workstreams:[],reason:'live_talk_fast_path'}
     :decideExecutionLevel(modelText,{mode:decision.mode,action:intent.action,route,hasFiles:attachmentRows.length>0,hasImage,requirementCount:requirementSpec.items.length,artifactType:intent.artifactType,requiresVerification:verificationSignal});
   if(toolWorkflow&&!liveTalkTurn){levelDecision.mode='ZEUS';levelDecision.level='ZEUS_DIRECTED';levelDecision.maxCalls=GEAR_CALL_CAPS.ZEUS_DIRECTED;levelDecision.reason='owner_tool_level_3';}
@@ -514,6 +522,19 @@ async function chatHandler(req, context, startedAt){
     init=await initializeTurn({db,userId:user.id,conversationId,projectId,mode,level,content,fileIds,requestId,toolId,worker,dispatchToken:body.dispatchToken});
     if(init.kind==='replay')return replayCompleted(db,user.id,conversationId,init.execution,init.userMessage,requestId);
     if(init.kind==='in_progress')return errorJson('This request is already running.',409,'REQUEST_IN_PROGRESS',requestId,{conversationId,executionId:init.execution.id});
+    if(projectTaskCommand){
+      const action=await executeProjectTaskCommand({db,ownerId:user.id,projectId,conversationId,text:content});
+      const taskResult={
+        content:action?.reply||'I did not change the task because the request could not be verified.',
+        leadModel:null,
+        sources:[],capabilities:[],
+        trace:{projectTaskAction:{type:action?.type||projectTaskCommand.type,ok:Boolean(action?.ok),taskId:action?.task?.id||null,status:action?.task?.status||null}},
+        executionLevel:'SIMPLE',
+        modeExplanation:'Project task action processed by OlyHub.'
+      };
+      const final=await finalizeTurn({db,userId:user.id,projectId,conversationId,execution:init.execution,mode:'ZEUS',result:taskResult,stagedArtifacts:[]});
+      return json({conversationId,message:final.assistant,userMessage:init.userMessage,artifacts:[],mode:'ZEUS',level:'SIMPLE',modeExplanation:taskResult.modeExplanation,projectTaskAction:action,execution:{id:init.execution.id,state:'COMPLETED'},requestId,replayed:false});
+    }
     const backgroundEligible=mode==='OLYMPUS'||(mode==='ZEUS'&&level==='ZEUS_DIRECTED');
     if(backgroundEligible&&!worker){
       const dispatchToken=await queueOlympusExecution(db,{executionId:init.execution.id,ownerId:user.id});
