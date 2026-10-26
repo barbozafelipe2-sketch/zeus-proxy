@@ -1003,7 +1003,7 @@ body{background:var(--zeus-black)}
 /* OH-004.3.7 — simplified navigation and reliable message wrapping */
 .personal-more .ico{width:24px;height:24px;stroke-width:1.8}
 .message.user{width:100%!important;max-width:100%!important;display:flex;justify-content:flex-end}
-.message.user .message-body{width:auto!important;min-width:0!important;max-width:min(82%,720px)!important;white-space:pre-wrap!important;overflow-wrap:break-word!important;word-break:normal!important;hyphens:none!important}
+.message.user .message-body{display:block!important;flex:0 1 auto!important;width:max-content!important;min-width:0!important;max-width:min(86%,720px)!important;white-space:pre-wrap!important;overflow-wrap:anywhere!important;word-break:normal!important;hyphens:none!important;box-sizing:border-box!important}
 .message.assistant .message-body{white-space:pre-wrap;overflow-wrap:break-word;word-break:normal}
 @media(max-width:900px){
   .page{padding-bottom:28px}

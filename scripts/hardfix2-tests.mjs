@@ -13,6 +13,9 @@ assert.equal(classifyIntent('Edit it', { hasImage:true, hasFiles:true }).action,
 assert.equal(classifyIntent('Make it more realistic', { hasImage:true, hasFiles:true }).action, 'IMAGE_EDIT', 'attached image realism requests must not fall through to chat');
 assert.equal(classifyIntent('Edit this image').action, 'IMAGE_EDIT', 'explicit image-edit requests without an attachment must fail as IMAGE_REQUIRED instead of hallucinating completion');
 assert.equal(classifyIntent('Create a new image of Nico Robin without using the attached photo', { hasImage:true, hasFiles:true }).action, 'IMAGE_CREATE', 'an explicit new-image request must remain image generation');
+assert.equal(classifyIntent('Cria uma imagem melhor que essas duas', { hasImage:true, hasFiles:true }).action, 'IMAGE_CREATE', 'new-image requests with attached visual references must generate, not edit only the first attachment');
+assert.equal(classifyIntent('Create a better image using these two as inspiration', { hasImage:true, hasFiles:true }).action, 'IMAGE_CREATE', 'reference images can guide a new generated image');
+assert.equal(classifyIntent('Edite essa imagem e melhore o fundo', { hasImage:true, hasFiles:true }).action, 'IMAGE_EDIT', 'explicit edit instructions continue to edit the attachment');
 assert.equal(classifyIntent('O que tem no background desta imagem?', { hasImage:true, hasFiles:true }).action, 'ANALYZE');
 assert.equal(classifyIntent('Crie uma apresentação para investidores').artifactType, 'pptx');
 assert.equal(classifyIntent('Analise esse ZIP e crie um relatório PDF', { hasFiles:true }).artifactType, 'pdf');

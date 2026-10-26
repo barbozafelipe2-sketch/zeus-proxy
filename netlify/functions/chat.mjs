@@ -647,10 +647,11 @@ ${aiContext}`);
       result={content:'Image edited and saved as a new OlyHub artifact. The original upload was preserved.',leadModel:`${img.provider||'openai'}:${img.model}`,trace:{imageEdit:true,toolId,toolGod:toolWorkflow?.god||null,sourceFileId:src.id,roles:[{role:'Image editor',provider:img.provider||'openai',model:img.model}],budget:img.budget}};
     }else if(intent.action==='IMAGE_CREATE'){
       await db.sql`UPDATE executions SET state='RUNNING' WHERE id=${execution.id} AND owner_id=${user.id}`;
-      const img=await generateImage(modelText,{budget:executionBudget,toolId,toolPreferences:prefRows?.[0]?.family_preferences||null});
+      const referenceImages=vision.images.map(({mimeType,base64})=>({mimeType,base64}));
+      const img=await generateImage(modelText,{budget:executionBudget,toolId,toolPreferences:prefRows?.[0]?.family_preferences||null,referenceImages});
       const imageMime=img.mimeType||'image/png';
-      stagedArtifacts.push(await stageBinaryArtifact({ownerId:user.id,type:'image',mimeType:imageMime,filename:`OlyHub-${Date.now()}.${imageMime==='image/jpeg'?'jpg':imageMime==='image/webp'?'webp':'png'}`,bytes:img.bytes,metadata:{prompt:modelText,toolId},provenance:{provider:img.provider||'openai',model:img.model,toolId}}));
-      result={content:'Image created and saved to your OlyHub Files.',leadModel:`${img.provider||'openai'}:${img.model}`,trace:{image:true,toolId,toolGod:toolWorkflow?.god||null,roles:[{role:'Image generator',provider:img.provider||'openai',model:img.model}],budget:img.budget}};
+      stagedArtifacts.push(await stageBinaryArtifact({ownerId:user.id,type:'image',mimeType:imageMime,filename:`OlyHub-${Date.now()}.${imageMime==='image/jpeg'?'jpg':imageMime==='image/webp'?'webp':'png'}`,bytes:img.bytes,metadata:{prompt:modelText,toolId,referenceImageCount:referenceImages.length},provenance:{provider:img.provider||'openai',model:img.model,toolId,referenceImageCount:referenceImages.length}}));
+      result={content:referenceImages.length?'Image created using your reference images and saved to your OlyHub Files.':'Image created and saved to your OlyHub Files.',leadModel:`${img.provider||'openai'}:${img.model}`,trace:{image:true,referenceImageCount:referenceImages.length,toolId,toolGod:toolWorkflow?.god||null,roles:[{role:'Image generator',provider:img.provider||'openai',model:img.model}],budget:img.budget}};
     }else{
       await db.sql`UPDATE executions SET state='RUNNING' WHERE id=${execution.id} AND owner_id=${user.id}`;
       if(comparePair){

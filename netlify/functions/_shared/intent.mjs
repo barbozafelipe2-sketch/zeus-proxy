@@ -3,6 +3,7 @@ const normalize = (value = '') => String(value || '').normalize('NFD').replace(/
 const ANALYZE = /\b(analy[sz]e|analysis|review|inspect|explain|summari[sz]e|read|check|audit|what(?:'s| is)|tell me what|analise|analisar|analisa|analisa-lo|revise|revisar|inspecione|inspecionar|explique|explicar|resuma|resumir|leia|ler|verifique|verificar|audite|auditar|o que tem|o que ha|analiza|analizar|revisa|revisar|inspecciona|inspeccionar|explica|explicar|resume|resumir|lee|leer|verifica|verificar|audita|auditar|que contiene|que hay)\b/i;
 const CREATE = /\b(create|generate|make|build|produce|prepare|export|save|draw|design|crie|criar|cria|gere|gerar|gera|faca|fazer|fa\u00e7a|produza|produzir|prepare|preparar|exporte|exportar|salve|salvar|desenhe|desenhar|monte|montar|crea|crear|genera|generar|haz|hacer|construye|construir|produce|producir|prepara|preparar|exporta|exportar|guarda|guardar|dibuja|dibujar|dise\u00f1a|dise\u00f1ar)\b/i;
 const EDIT = /\b(edit|change|remove|replace|improve|enhance|transform|restyle|erase|add|crop|retouch|edite|editar|mude|mudar|remova|remover|substitua|substituir|melhore|melhorar|aprimore|aprimorar|transforme|transformar|adicione|adicionar|recorte|retocar|edita|cambia|cambiar|elimina|eliminar|reemplaza|reemplazar|mejora|mejorar|transforma|transformar|agrega|agregar|recorta|recortar|retoca)\b/i;
+const DIRECT_IMAGE_EDIT = /\b(edit|change|remove|replace|transform|restyle|erase|add|crop|retouch|edite|editar|mude|mudar|remova|remover|substitua|substituir|transforme|transformar|adicione|adicionar|recorte|retocar|edita|cambia|cambiar|elimina|eliminar|reemplaza|reemplazar|transforma|transformar|agrega|agregar|recorta|recortar|retoca)\b/i;
 const IMAGE = /\b(image|picture|photo|logo|illustration|poster|graphic|artwork|screenshot|imagem|foto|logotipo|ilustracao|poster|grafico|arte|captura de tela|imagen|foto|logotipo|ilustracion|grafico|captura de pantalla)\b/i;
 const IMAGE_SUBJECT = /\b(this|that|it|attached|her|him|she|he|person|woman|man|ela|ele|dela|dele|nela|nele|pessoa|mulher|homem|essa|este|esta|a foto|na foto|nessa foto|nesta foto)\b/i;
 const VISUAL_TRANSFORM = /\b(costume|outfit|clothes|dress|makeup|hairstyle|appearance|look|style|realistic|realism|background|color|colour|halloween|fantasia|roupa|vestido|maquiagem|cabelo|aparencia|visual|estilo|pareca|parecida|parecer|realista|fundo|cor)\b/i;
@@ -36,10 +37,17 @@ export function classifyIntent(text = '', { hasImage = false, hasFiles = false }
   const artifactType = artifactTypes[0]||null;
 
   const imageSubject=IMAGE_SUBJECT.test(t);
+  const explicitNewImage=EXPLICIT_NEW_IMAGE.test(t);
+  const newImageRequest=create&&imageMention&&!artifactType&&!explicitNewImage&&!DIRECT_IMAGE_EDIT.test(t);
+
+  // A create verb plus "image/logo" is a new-image request even when source
+  // images are attached for inspiration. Do not reinterpret it as editing the
+  // first upload just because the user says "better than these".
+  if(newImageRequest)return { action: 'IMAGE_CREATE', artifactType: null, reason: hasImage?'image_create_with_references':'explicit_image_create' };
   // When an image is attached, requests to dress/style/transform the depicted
   // person often omit the words "edit this photo". Treat that visual request
   // as an edit so it reaches the image-edit provider instead of a chat model.
-  if (!analysis && !EXPLICIT_NEW_IMAGE.test(t) && (
+  if (!analysis && !explicitNewImage && (
     (edit && (imageMention || (hasImage && (imageSubject || VISUAL_TRANSFORM.test(t))))) ||
     (hasImage && create && (imageMention || imageSubject || VISUAL_TRANSFORM.test(t))) ||
     (hasImage && imageSubject && VISUAL_TRANSFORM.test(t)) ||

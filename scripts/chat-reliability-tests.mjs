@@ -95,6 +95,21 @@ const after = await models.executeWithFallback('Hello', 'sys', 'Hello', { budget
 assert.equal(after.content, 'Hi', '"Hello" after a failed image request must still work');
 assert.deepEqual(models.imageRequestFields('dall-e-3'), { size: '1024x1024', response_format: 'b64_json' });
 
+// Reference-based creation must send every attached image through the configured
+// image gateway instead of silently editing only the first attachment.
+calls=[];
+globalThis.fetch=async(url,init)=>{
+  calls.push({url:String(url),body:init?.body});
+  assert.equal(String(url),'https://gateway.invalid/v1/images/edits');
+  assert.equal(init.body.getAll('image[]').length,2,'all attached reference images must be sent');
+  assert.equal(init.body.getAll('image[]')[0].type,'image/png');
+  assert.equal(init.body.getAll('image[]')[1].type,'image/jpeg');
+  return new Response(JSON.stringify({data:[{b64_json:Buffer.from('image').toString('base64'),media_type:'image/png'}]}),{status:200,headers:{'content-type':'application/json'}});
+};
+const referencedImage=await models.generateImage('Create a new image inspired by both references',{toolId:'images',referenceImages:[{mimeType:'image/png',base64:Buffer.from('ref-a').toString('base64')},{mimeType:'image/jpeg',base64:Buffer.from('ref-b').toString('base64')}],budget:runtime.createExecutionBudget({timeoutMs:46000,maxCalls:1})});
+assert.match(referencedImage.model,/^gpt-image-/);
+assert.equal(calls.length,1,'reference-based generation should use one gateway image call');
+
 // Image auth failure is reported as such.
 models.__resetProviderHealthForTests();
 globalThis.fetch = async () => new Response(JSON.stringify({ error: { message: 'Incorrect API key provided' } }), { status: 401, headers: { 'content-type': 'application/json' } });

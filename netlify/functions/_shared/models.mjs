@@ -1262,6 +1262,7 @@ export async function imageGeneratorCandidates({limit=6}={}){
   }
   const seen=new Set();return candidates.filter(item=>{const key=`${item.provider}:${item.id}`;if(seen.has(key))return false;seen.add(key);return true;}).slice(0,Math.max(1,Math.min(6,Number(limit)||6)));
 }
+export function __resetImageModelsCacheForTests(){imageModelsCache={expiresAt:0,models:[]};}
 export function imageRequestFields(model) {
   return /^dall-e/i.test(model) ? { size: '1024x1024', response_format: 'b64_json' } : { size: '1024x1024' };
 }
@@ -1301,8 +1302,9 @@ function imagePromptFit(model,prompt=''){
   if(/\b(illustration|anime|fantasy|concept art|ilustração|fantasia)\b/.test(request)&&/flux|qwen|seedream/.test(profile))score+=3;
   return score;
 }
-async function runOpenRouterImage(prompt,{budget,toolPreferences=null,reference=null,operation='Image generation'}={}){
-  const candidates=await imageGeneratorCandidates({limit:6});let pool=candidates.filter(model=>model.provider==='openrouter'&&(!reference||model.inputImage));
+async function runOpenRouterImage(prompt,{budget,toolPreferences=null,reference=null,references=null,operation='Image generation'}={}){
+  const inputReferences=Array.isArray(references)?references.filter(ref=>ref?.base64&&ref?.mimeType):reference?[reference]:[];
+  const candidates=await imageGeneratorCandidates({limit:6});let pool=candidates.filter(model=>model.provider==='openrouter'&&(!inputReferences.length||model.inputImage));
   if(!pool.length)return null;
   const preference=toolPreferences?.images,standard=preference?.standard;
   pool.sort((a,b)=>(imagePromptFit(b,prompt)+toolPreferenceScore(b,preference))-(imagePromptFit(a,prompt)+toolPreferenceScore(a,preference)));
@@ -1312,8 +1314,8 @@ async function runOpenRouterImage(prompt,{budget,toolPreferences=null,reference=
   for(const model of ordered){if(!budget.canCall(8000))break;
     try{
       budget.reserveCall(`image:openrouter:${model.id}`);
-      const inputReferences=reference?[{type:'image_url',image_url:{url:`data:${reference.mimeType};base64,${Buffer.from(reference.bytes).toString('base64')}`}}]:undefined;
-      const response=await fetch(`${apiRoot(openRouterImageApi())}/images`,{method:'POST',headers:{Authorization:`Bearer ${openRouterImageKey()}`,'Content-Type':'application/json'},signal:budget.signal(imageCallTimeout(budget)),body:JSON.stringify({model:model.id,prompt,n:1,...(inputReferences?{input_references:inputReferences}:{})})});
+      const encodedReferences=inputReferences.map(ref=>({type:'image_url',image_url:{url:`data:${ref.mimeType};base64,${ref.base64||Buffer.from(ref.bytes).toString('base64')}`}}));
+      const response=await fetch(`${apiRoot(openRouterImageApi())}/images`,{method:'POST',headers:{Authorization:`Bearer ${openRouterImageKey()}`,'Content-Type':'application/json'},signal:budget.signal(imageCallTimeout(budget)),body:JSON.stringify({model:model.id,prompt,n:1,...(encodedReferences.length?{input_references:encodedReferences}:{})})});
       const data=await response.json().catch(()=>({}));if(!response.ok)throw providerError(data?.error?.message||`Image ${response.status}`,response.status);
       const bytes=await imageBytesFromResponse(data,budget);return {bytes,model:model.id,provider:'openrouter',mimeType:data?.data?.[0]?.media_type||'image/png',attempts,budget:budget.snapshot()};
     }catch(error){last=error;attempts.push({model:model.id,status:errorStatus(error)||null,code:isTimeoutFailure(error)?'PROVIDER_TIMEOUT':error?.code||null,error:redactProviderText(String(error?.message||error)).slice(0,160)});if([401,403,402].includes(errorStatus(error)))break;}
@@ -1349,8 +1351,21 @@ async function runImageModels(operation, label, buildRequest, budget) {
   throw imageFailure(operation, attempts, last);
 }
 
-export async function generateImage(prompt, { budget = null, toolId=null, toolPreferences=null } = {}) {
+export async function generateImage(prompt, { budget = null, toolId=null, toolPreferences=null, referenceImages=[] } = {}) {
   const localBudget = budget || createExecutionBudget({ timeoutMs: 46000, maxCalls: 3 });
+  if(Array.isArray(referenceImages)&&referenceImages.length){
+    return runImageModels('Reference-based image generation','image-edit',(model)=>{
+      const form=new FormData();
+      form.append('model',model);
+      form.append('prompt',prompt);
+      for(const [key,value] of Object.entries(imageRequestFields(model)))form.append(key,String(value));
+      for(const [index,reference] of referenceImages.slice(0,16).entries()){
+        const bytes=reference.base64?Buffer.from(reference.base64,'base64'):new Uint8Array(reference.bytes||[]);
+        form.append('image[]',new Blob([bytes],{type:reference.mimeType||'image/png'}),`reference-${index+1}.${reference.mimeType==='image/jpeg'?'jpg':reference.mimeType==='image/webp'?'webp':'png'}`);
+      }
+      return {path:'/images/edits',init:{body:form}};
+    },localBudget);
+  }
   if(toolId==='images'){
     try{const routed=await runOpenRouterImage(prompt,{budget:localBudget,toolPreferences});if(routed)return routed;}catch(error){if(!providerStatus().openai)throw error;}
     if(imageModelsCache.models.length&&!providerStatus().openai)throw imageFailure('Image generation',[],null);
