@@ -7,8 +7,21 @@ import { formatChecklist, mergeClarifiedRequirements, splitRequirementScopes, st
 import { getToolWorkflow, pickToolCandidate, toolPreferenceScore } from './tool-workflows.mjs';
 
 const env = (name) => globalThis.Netlify?.env?.get?.(name) || process.env?.[name] || '';
-const openRouterImageKey = () => env('OPENROUTER_API_KEY') || env('OPENROUTER_DIRECT_API_KEY');
-const openRouterImageApi = () => env('OPENROUTER_BASE_URL') || 'https://openrouter.ai/api/v1';
+function openRouterGatewayConfig(){
+  const key=env('OPENROUTER_API_KEY'),base=env('OPENROUTER_BASE_URL');
+  if(key)return {key,base:base||'https://openrouter.ai/api/v1',source:'openrouter_gateway'};
+  const gatewayKey=env('NETLIFY_AI_GATEWAY_KEY'),gatewayUrl=env('NETLIFY_AI_GATEWAY_URL');
+  if(gatewayKey&&gatewayUrl)return {key:gatewayKey,base:gatewayUrl,source:'netlify_ai_gateway'};
+  return null;
+}
+function openRouterImageConfig(){
+  const gateway=openRouterGatewayConfig();
+  if(gateway)return gateway;
+  const key=env('OPENROUTER_DIRECT_API_KEY');
+  return key?{key,base:env('OPENROUTER_DIRECT_BASE_URL')||'https://openrouter.ai/api/v1',source:'openrouter_direct'}:null;
+}
+const openRouterImageKey = () => openRouterImageConfig()?.key||'';
+const openRouterImageApi = () => openRouterImageConfig()?.base||'';
 const MAX_SPECIALIST_CHARS = 24000;
 const CIRCUIT_FAILURE_THRESHOLD = 2;
 const CIRCUIT_COOLDOWN_MS = 60_000;
@@ -61,7 +74,7 @@ function geminiBase() {
   return env('GOOGLE_GEMINI_BASE_URL') || (env('GEMINI_API_KEY') ? 'https://generativelanguage.googleapis.com' : '');
 }
 function openrouterBase() {
-  return env('OPENROUTER_BASE_URL') || (env('OPENROUTER_API_KEY') ? 'https://openrouter.ai/api/v1' : '');
+  return openRouterGatewayConfig()?.base || (env('OPENROUTER_DIRECT_API_KEY') ? env('OPENROUTER_DIRECT_BASE_URL')||'https://openrouter.ai/api/v1' : '');
 }
 export function serverTranscriptionConfigured() {
   return Boolean(env('ELEVENLABS_API_KEY')||env('ELEVEN_LABS_API_KEY'));
@@ -72,7 +85,7 @@ export function providerStatus() {
     openai: Boolean(env('OPENAI_API_KEY') && openaiBase()),
     anthropic: Boolean(env('ANTHROPIC_API_KEY') && anthropicBase()),
     gemini: Boolean(env('GEMINI_API_KEY') && geminiBase()),
-    openrouter: Boolean(env('OPENROUTER_API_KEY') && openrouterBase()),
+    openrouter: Boolean(openRouterGatewayConfig() || env('OPENROUTER_DIRECT_API_KEY')),
   };
 }
 
@@ -345,7 +358,7 @@ async function callGemini(model, system, user, { images = [], history = [], budg
 async function callOpenRouter(model, system, user, { images = [], history = [], budget, reserveAfterMs = 0, callTimeoutMs = DEFAULT_CALL_TIMEOUT_MS, maxOutputTokens = 5000, transport = 'gateway' }) {
   const direct=transport==='openrouter_direct';
   const base = (direct?(env('OPENROUTER_DIRECT_BASE_URL')||'https://openrouter.ai/api/v1'):openrouterBase()).replace(/\/$/, '');
-  const key = direct?env('OPENROUTER_DIRECT_API_KEY'):env('OPENROUTER_API_KEY');
+  const key = direct?env('OPENROUTER_DIRECT_API_KEY'):openRouterGatewayConfig()?.key;
   if (!base || !key) throw providerError('OpenRouter is not configured.');
   const messages = [{ role: 'system', content: system }, ...chatTurns(history, openAIUserContent(user, images))];
   const res = await fetch(`${base}/chat/completions`, {
@@ -1244,36 +1257,24 @@ export function imageModelCandidates() {
   const configured = env('OPENAI_IMAGE_MODEL').trim();
   return [...new Set([configured, 'gpt-image-2.5-flare', 'gpt-image-2', 'gpt-image-1'].filter(Boolean))];
 }
-let imageModelsCache={expiresAt:0,models:[]};
+const OPENROUTER_IMAGE_MODELS=Object.freeze([
+  {id:'openai/gpt-image-2.5-flare',family:'openai',name:'GPT Image 2.5',inputImage:false},
+  {id:'x-ai/grok-imagine-image-2.0',family:'x-ai',name:'Grok Imagine',inputImage:false},
+  {id:'qwen/qwen-image-3-pro',family:'qwen',name:'Qwen Image 3 Pro',inputImage:false},
+  {id:'black-forest-labs/flux-3-image',family:'black-forest-labs',name:'FLUX.3 Image',inputImage:false},
+  {id:'recraft/recraft-v4.1-pro',family:'recraft',name:'Recraft V4.1 Pro',inputImage:false},
+  {id:'google/gemini-3.1-flash-image',family:'google',name:'Imagen · Gemini Flash Image',inputImage:false},
+]);
 export function imageModelFamily(model={}){return modelFamily(model);}
-export async function imageGeneratorCandidates({limit=6}={}){
+export function imageGeneratorCandidates({limit=6}={}){
   const candidates=[];
-  if(openRouterImageKey()){
-    if(imageModelsCache.expiresAt<Date.now()){
-      try{
-        const response=await fetch(`${apiRoot(openRouterImageApi())}/images/models`,{headers:{Authorization:`Bearer ${openRouterImageKey()}`},signal:AbortSignal.timeout(3500)});
-        if(response.ok){const payload=await response.json();const list=Array.isArray(payload?.data)?payload.data:[];
-          const usable=list.filter(item=>Array.isArray(item?.architecture?.output_modalities)&&item.architecture.output_modalities.includes('image')&&typeof item.id==='string');
-          const priority=['openai','x-ai','qwen','black-forest-labs','recraft','google','bytedance-seed','tencent','ideogram','stability','luma','meta'];
-          const ranked=usable.map(item=>({...item,family:String(item.id).split('/')[0]})).sort((a,b)=>{
-            const pa=priority.indexOf(a.family),pb=priority.indexOf(b.family);return (pa<0?99:pa)-(pb<0?99:pb)||String(a.id).localeCompare(String(b.id));
-          });
-          const diverse=[];const seen=new Set();for(const item of ranked){if(seen.has(item.family))continue;seen.add(item.family);diverse.push(item);}
-          // Keep one real model per provider family even when fewer than six
-          // families are currently available. Duplicated models must never be
-          // presented as independent choices.
-          imageModelsCache={expiresAt:Date.now()+5*60_000,models:diverse.slice(0,12)};
-        }else imageModelsCache={expiresAt:Date.now()+30_000,models:[]};
-      }catch{imageModelsCache={expiresAt:Date.now()+30_000,models:[]};}
-    }
-    candidates.push(...imageModelsCache.models.map(item=>({id:item.id,provider:'openrouter',family:item.family,name:item.name||item.id,description:String(item.description||'').slice(0,240),inputImage:Array.isArray(item.architecture?.input_modalities)&&item.architecture.input_modalities.includes('image')})));
-  }
   if(providerStatus().openai){
     candidates.push(...imageModelCandidates().map(id=>({id,provider:'openai',family:'openai',name:id,description:'OpenAI image generation and editing',inputImage:true})));
   }
+  if(openRouterImageConfig())candidates.push(...OPENROUTER_IMAGE_MODELS.map(item=>({...item,provider:'openrouter',description:'Image generation model routed through the configured OpenRouter gateway.'})));
   const seen=new Set();return candidates.filter(item=>{const family=imageModelFamily(item);if(!family||seen.has(family))return false;seen.add(family);return true;}).slice(0,Math.max(1,Math.min(6,Number(limit)||6)));
 }
-export function __resetImageModelsCacheForTests(){imageModelsCache={expiresAt:0,models:[]};}
+export function __resetImageModelsCacheForTests(){}
 export function imageRequestFields(model) {
   return /^dall-e/i.test(model) ? { size: '1024x1024', response_format: 'b64_json' } : { size: '1024x1024' };
 }
@@ -1390,7 +1391,7 @@ export async function generateImage(prompt, { budget = null, toolId=null, toolPr
   if(toolId==='images'){
     try{const routed=await runOpenRouterImage(prompt,{budget:localBudget,toolPreferences,excludeModel,excludeFamily});if(routed)return routed;}catch(error){if(!providerStatus().openai||excludeFamily==='openai')throw excludeFamily==='openai'?unavailableImageFamilyError():error;}
     if(excludeFamily==='openai')throw unavailableImageFamilyError();
-    if(imageModelsCache.models.length&&!providerStatus().openai)throw imageFailure('Image generation',[],null);
+    if(!providerStatus().openai&&!openRouterImageConfig())throw imageFailure('Image generation',[],null);
   }
   return runImageModels('Image generation', 'image', (model) => ({
     path: '/images/generations',

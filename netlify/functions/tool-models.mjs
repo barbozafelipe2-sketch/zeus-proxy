@@ -21,8 +21,8 @@ export default async function(req,context){
     const transports=providerTransportStatus();
     const imageHint=tool.id==='images'&&imageFamilies.size<6
       ?transports.gateway.openrouter||transports.openrouter_direct
-        ?'OpenRouter está conectado, mas a lista retornou menos famílias de geração de imagem. Confira o acesso ao catálogo de imagens.'
-        :'Configure OPENROUTER_API_KEY no Netlify para habilitar outras famílias de imagem além da OpenAI.'
+        ?'O Gateway OpenRouter está ativo, mas há menos de seis famílias de imagem disponíveis nesta configuração.'
+        :'Ative o Netlify AI Gateway para disponibilizar as opções OpenRouter. Não é necessária uma chave OpenRouter separada.'
       :null;
     return {id:tool.id,god:tool.god,title:tool.title,route:tool.route,models,...(imageHint?{notice:imageHint}:{})};
   }));
