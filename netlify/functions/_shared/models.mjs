@@ -1,3 +1,4 @@
+import sharp from 'sharp';
 import { createExecutionBudget } from './runtime.mjs';
 import { runDirectedPipeline } from './zeus-directed.mjs';
 import { redactSecrets } from './security.mjs';
@@ -1269,7 +1270,7 @@ export function imageModelCandidates() {
 }
 export function imageGenerationCallLimit(){return 1+Number(Boolean(openRouterDirectConfig()))+Number(Boolean(providerStatus().openai));}
 const OPENROUTER_IMAGE_MODELS=Object.freeze([
-  {id:'openai/gpt-image-2.5-flare',family:'openai',name:'GPT Image 2.5',inputImage:true,resolutions:['1K','2K','4K'],outputFormats:['png','jpeg','webp']},
+  {id:'openai/gpt-image-2.5-flare',family:'openai',name:'GPT Image 2.5',inputImage:true,resolutions:['1K']},
   {id:'x-ai/grok-imagine-image-2.0',family:'x-ai',name:'Grok Imagine',inputImage:true,resolutions:['1K','2K']},
   {id:'qwen/qwen-image-3-pro',family:'qwen',name:'Qwen Image 3 Pro',inputImage:true,resolutions:['1K','2K']},
   {id:'black-forest-labs/flux-3-image',family:'black-forest-labs',name:'FLUX.3 Image',inputImage:true,resolutions:['1K','2K','4K'],outputFormats:['png','jpeg']},
@@ -1294,6 +1295,27 @@ export function imageRequestFields(model,imageOptions=null) {
   if(imageOptions?.purpose==='photo')fields.quality='high';
   if(/^gpt-image/i.test(model)&&['png','jpeg','webp'].includes(imageOptions?.outputFormat))fields.output_format=imageOptions.outputFormat;
   return fields;
+}
+function imageOutputDimensions(options,metadata={}){
+  const tier=({ '1K':1024,'2K':2048,'4K':4096 })[options?.resolution]||1024;
+  const ratio=options?.aspectRatio||'auto';
+  if(ratio==='1:1')return {width:tier,height:tier};
+  if(ratio==='9:16')return {width:Math.round(tier*9/16),height:tier};
+  if(ratio==='16:9')return {width:tier,height:Math.round(tier*9/16)};
+  const sourceWidth=Math.max(1,metadata.width||1024),sourceHeight=Math.max(1,metadata.height||1024),scale=tier/Math.max(sourceWidth,sourceHeight);
+  return {width:Math.max(1,Math.round(sourceWidth*scale)),height:Math.max(1,Math.round(sourceHeight*scale))};
+}
+async function finalizeGeneratedImage(result,options={}){
+  const source=Buffer.from(result.bytes),input=sharp(source,{failOn:'none',limitInputPixels:100_000_000}),metadata=await input.metadata();
+  const {width,height}=imageOutputDimensions(options,metadata),format=['png','jpeg','webp'].includes(options.outputFormat)?options.outputFormat:'png';
+  const preserveLogo=options.purpose==='logo'&&format!=='jpeg';
+  let pipeline=input.resize({width,height,fit:options.aspectRatio==='auto'?'fill':preserveLogo?'contain':'cover',position:'centre',background:format==='jpeg'?{r:255,g:255,b:255,alpha:1}:{r:0,g:0,b:0,alpha:0}});
+  if(format==='jpeg')pipeline=pipeline.jpeg({quality:92,mozjpeg:true});
+  else if(format==='webp')pipeline=pipeline.webp({quality:92,effort:5});
+  else pipeline=pipeline.png({compressionLevel:8,palette:false});
+  const bytes=await pipeline.toBuffer(),native=['1K','2K','4K'].includes(options.resolution)&&result.nativeResolution===options.resolution;
+  const resolutionMode=native?'native':width*height>(metadata.width||0)*(metadata.height||0)?'upscaled':'normalized';
+  return {...result,bytes,mimeType:`image/${format}`,width,height,resolution:options.resolution||'1K',resolutionMode};
 }
 // Image endpoint failures must not pause OpenAI *chat*: only credential/billing failures say anything about the provider.
 function imageFailureTripsProvider(error) {
@@ -1335,13 +1357,12 @@ async function runOpenRouterImage(prompt,{budget,toolPreferences=null,reference=
   const inputReferences=Array.isArray(references)?references.filter(ref=>ref?.base64&&ref?.mimeType):reference?[reference]:[];
   const config=transport==='openrouter_direct'?openRouterDirectConfig():openRouterGatewayConfig();
   if(!config)return null;
-  const candidates=await imageGeneratorCandidates({limit:6});let pool=candidates.filter(model=>model.provider==='openrouter'&&(!inputReferences.length||model.inputImage)&&(!imageOptions?.resolution||model.resolutions?.includes(imageOptions.resolution)));
-  if(imageOptions?.resolution&&!pool.length)throw Object.assign(new Error(`No configured image model supports the selected ${imageOptions.resolution} resolution.`),{code:'IMAGE_RESOLUTION_UNAVAILABLE',status:422});
+  const candidates=await imageGeneratorCandidates({limit:6});let pool=candidates.filter(model=>model.provider==='openrouter'&&(!inputReferences.length||model.inputImage));
   if(!pool.length)return null;
   pool=pool.filter(model=>`${model.provider}:${model.id}`!==excludeModel&&model.id!==excludeModel&&(!excludeFamily||imageModelFamily(model)!==excludeFamily));
   if(!pool.length)return null;
   const preference=toolPreferences?.images,standard=preference?.standard;
-  pool.sort((a,b)=>(imagePromptFit(b,prompt)+toolPreferenceScore(b,preference))-(imagePromptFit(a,prompt)+toolPreferenceScore(a,preference)));
+  pool.sort((a,b)=>((b.resolutions?.includes(imageOptions?.resolution)?3:0)+imagePromptFit(b,prompt)+toolPreferenceScore(b,preference))-((a.resolutions?.includes(imageOptions?.resolution)?3:0)+imagePromptFit(a,prompt)+toolPreferenceScore(a,preference)));
   const preferred=standard&&Math.random()<0.7?pool.find(model=>`openrouter:${model.id}`===standard):null;
   const first=preferred||(pool.length>1&&Math.random()<0.25?pool[Math.floor(Math.random()*pool.length)]:pool[0]);
   // One image model is selected for an output. Alternative families are used
@@ -1353,14 +1374,14 @@ async function runOpenRouterImage(prompt,{budget,toolPreferences=null,reference=
       budget.reserveCall(`image:openrouter:${model.id}`);
       const encodedReferences=inputReferences.map(ref=>({type:'image_url',image_url:{url:`data:${ref.mimeType};base64,${ref.base64||Buffer.from(ref.bytes).toString('base64')}`}}));
       const imageParameters={};
-      if(imageOptions?.resolution&&!model.fixedResolution)imageParameters.resolution=imageOptions.resolution;
+      if(imageOptions?.resolution&&model.resolutions?.includes(imageOptions.resolution)&&!model.fixedResolution)imageParameters.resolution=imageOptions.resolution;
       if(imageOptions?.aspectRatio&&imageOptions.aspectRatio!=='auto')imageParameters.aspect_ratio=imageOptions.aspectRatio;
       if(imageOptions?.outputFormat&&model.outputFormats?.includes(imageOptions.outputFormat))imageParameters.output_format=imageOptions.outputFormat;
       const response=await fetch(`${apiRoot(config.base)}/images`,{method:'POST',headers:{Authorization:`Bearer ${config.key}`,'Content-Type':'application/json'},signal:budget.signal(imageCallTimeout(budget)),body:JSON.stringify({model:model.id,prompt,n:1,...imageParameters,...(encodedReferences.length?{input_references:encodedReferences}:{})})});
       const data=await response.json().catch(()=>({}));if(!response.ok)throw providerError(data?.error?.message||`Image ${response.status}`,response.status);
       const bytes=await imageBytesFromResponse(data,budget);
       recordProviderAttempt(budget,{model:{provider:'openrouter',id:model.id,transport},stage:'image_generation',durationMs:Date.now()-callStartedAt});
-      return {bytes,model:model.id,provider:'openrouter',transport,mimeType:data?.data?.[0]?.media_type||data?.data?.[0]?.mime_type||`image/${imageOptions?.outputFormat||'png'}`,attempts,budget:budget.snapshot()};
+      return {bytes,model:model.id,provider:'openrouter',transport,mimeType:data?.data?.[0]?.media_type||data?.data?.[0]?.mime_type||'image/png',nativeResolution:model.resolutions?.includes(imageOptions?.resolution)?imageOptions.resolution:null,attempts,budget:budget.snapshot()};
     }catch(error){last=error;recordProviderAttempt(budget,{model:{provider:'openrouter',id:model.id,transport},stage:'image_generation',durationMs:0,error});attempts.push({model:model.id,status:errorStatus(error)||null,code:isTimeoutFailure(error)?'PROVIDER_TIMEOUT':error?.code||null,error:redactProviderText(String(error?.message||error)).slice(0,160)});if([401,403,402].includes(errorStatus(error)))break;}
   }
   if(!attempts.length)return null;
@@ -1407,7 +1428,7 @@ async function runImageModels(operation, label, buildRequest, budget, excludeMod
       const bytes = await imageBytesFromResponse(data, budget);
       recordProviderSuccess('openai');
       recordProviderAttempt(budget,{model:{provider:'openai',id:model,transport:'gateway'},stage:'image_generation',durationMs:Date.now()-callStartedAt});
-      return { bytes, model, provider:'openai',transport:'gateway',mimeType:`image/${outputFormat==='jpg'?'jpeg':outputFormat}`,budget: budget.snapshot(), attempts };
+      return { bytes, model, provider:'openai',transport:'gateway',mimeType:`image/${outputFormat==='jpg'?'jpeg':outputFormat}`,nativeResolution:imageOptions?.resolution==='1K'?'1K':null,budget: budget.snapshot(), attempts };
     } catch (error) {
       last = error;
       recordProviderAttempt(budget,{model:{provider:'openai',id:model,transport:'gateway'},stage:'image_generation',durationMs:0,error});
@@ -1424,19 +1445,15 @@ function imagePromptWithOptions(prompt,options){
   const orientation={'1:1':'Use a square 1:1 composition.','9:16':'Use a vertical 9:16 composition.','16:9':'Use a horizontal 16:9 composition.'};
   return [String(prompt||'').trim(),details[options?.purpose],orientation[options?.aspectRatio]].filter(Boolean).join('\n\n');
 }
-function assertOpenAIImageOptions(options){
-  if(options?.resolution&&options.resolution!=='1K')throw Object.assign(new Error(`The selected ${options.resolution} resolution is not available from the configured image provider for this request. Choose a model that supports it through the image gateway.`),{code:'IMAGE_RESOLUTION_UNAVAILABLE',status:422});
-}
 export async function generateImage(prompt, { budget = null, toolId=null, toolPreferences=null, referenceImages=[],excludeModel=null,excludeFamily=null,imageOptions=null } = {}) {
   const localBudget = budget || createExecutionBudget({ timeoutMs: 46000, maxCalls: 3 });
   prompt=imagePromptWithOptions(prompt,imageOptions);
   if(Array.isArray(referenceImages)&&referenceImages.length){
     if(toolId==='images'){
-      try{const routed=await runOpenRouterImageWithFallback(prompt,{budget:localBudget,toolPreferences,references:referenceImages,operation:'Reference-based image generation',excludeModel,excludeFamily,imageOptions});if(routed)return routed;}catch(error){if(!providerStatus().openai||excludeFamily==='openai')throw excludeFamily==='openai'?unavailableImageFamilyError():error;}
+      try{const routed=await runOpenRouterImageWithFallback(prompt,{budget:localBudget,toolPreferences,references:referenceImages,operation:'Reference-based image generation',excludeModel,excludeFamily,imageOptions});if(routed)return finalizeGeneratedImage(routed,imageOptions||{});}catch(error){if(!providerStatus().openai||excludeFamily==='openai')throw excludeFamily==='openai'?unavailableImageFamilyError():error;}
       if(excludeFamily==='openai')throw unavailableImageFamilyError();
     }
-    assertOpenAIImageOptions(imageOptions);
-    return runImageModels('Reference-based image generation','image-edit',(model)=>{
+    return finalizeGeneratedImage(await runImageModels('Reference-based image generation','image-edit',(model)=>{
       const form=new FormData();
       form.append('model',model);
       form.append('prompt',prompt);
@@ -1446,31 +1463,29 @@ export async function generateImage(prompt, { budget = null, toolId=null, toolPr
         form.append('image[]',new Blob([bytes],{type:reference.mimeType||'image/png'}),`reference-${index+1}.${reference.mimeType==='image/jpeg'?'jpg':reference.mimeType==='image/webp'?'webp':'png'}`);
       }
       return {path:'/images/edits',init:{body:form}};
-    },localBudget,excludeModel,excludeFamily,imageOptions?.outputFormat||'png');
+    },localBudget,excludeModel,excludeFamily,imageOptions?.outputFormat||'png'),imageOptions||{});
   }
   if(toolId==='images'){
-    try{const routed=await runOpenRouterImageWithFallback(prompt,{budget:localBudget,toolPreferences,excludeModel,excludeFamily,imageOptions});if(routed)return routed;}catch(error){if(!providerStatus().openai||excludeFamily==='openai')throw excludeFamily==='openai'?unavailableImageFamilyError():error;}
+    try{const routed=await runOpenRouterImageWithFallback(prompt,{budget:localBudget,toolPreferences,excludeModel,excludeFamily,imageOptions});if(routed)return finalizeGeneratedImage(routed,imageOptions||{});}catch(error){if(!providerStatus().openai||excludeFamily==='openai')throw excludeFamily==='openai'?unavailableImageFamilyError():error;}
     if(excludeFamily==='openai')throw unavailableImageFamilyError();
     if(!providerStatus().openai&&!openRouterImageConfig())throw imageFailure('Image generation',[],null);
   }
-  assertOpenAIImageOptions(imageOptions);
-  return runImageModels('Image generation', 'image', (model) => ({
+  return finalizeGeneratedImage(await runImageModels('Image generation', 'image', (model) => ({
     path: '/images/generations',
     init: { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model, prompt, ...imageRequestFields(model,imageOptions) }) },
-  }), localBudget,excludeModel,excludeFamily,imageOptions?.outputFormat||'png');
+  }), localBudget,excludeModel,excludeFamily,imageOptions?.outputFormat||'png'),imageOptions||{});
 }
 
 export async function editImage(prompt, imageBytes, imageName = 'source.png', imageType = 'image/png', { budget = null,toolPreferences=null,imageOptions=null } = {}) {
   const localBudget = budget || createExecutionBudget({ timeoutMs: 46000, maxCalls: 3 });
   prompt=imagePromptWithOptions(prompt,imageOptions);
-  try{const routed=await runOpenRouterImageWithFallback(prompt,{budget:localBudget,toolPreferences,reference:{bytes:imageBytes,mimeType:imageType},operation:'Image editing',imageOptions});if(routed)return routed;}catch(error){if(!providerStatus().openai)throw error;}
-  assertOpenAIImageOptions(imageOptions);
-  return runImageModels('Image editing', 'image-edit', (model) => {
+  try{const routed=await runOpenRouterImageWithFallback(prompt,{budget:localBudget,toolPreferences,reference:{bytes:imageBytes,mimeType:imageType},operation:'Image editing',imageOptions});if(routed)return finalizeGeneratedImage(routed,imageOptions||{});}catch(error){if(!providerStatus().openai)throw error;}
+  return finalizeGeneratedImage(await runImageModels('Image editing', 'image-edit', (model) => {
     const form = new FormData();
     form.append('model', model);
     form.append('prompt', prompt);
     for (const [k, v] of Object.entries(imageRequestFields(model,imageOptions))) form.append(k, v);
     form.append('image', new Blob([imageBytes], { type: imageType }), imageName);
     return { path: '/images/edits', init: { body: form } };
-  }, localBudget,null,null,imageOptions?.outputFormat||'png');
+  }, localBudget,null,null,imageOptions?.outputFormat||'png'),imageOptions||{});
 }
