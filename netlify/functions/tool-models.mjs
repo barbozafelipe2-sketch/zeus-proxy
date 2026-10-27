@@ -1,7 +1,7 @@
 import { requireUser } from './_shared/auth.mjs';
 import { json, getRequestId, errorJson } from './_shared/http.mjs';
 import { getToolWorkflow, TOOL_WORKFLOWS } from './_shared/tool-workflows.mjs';
-import { imageGeneratorCandidates, toolModelCandidates, providerStatus } from './_shared/models.mjs';
+import { imageGeneratorCandidates, toolModelCandidates, providerTransportStatus } from './_shared/models.mjs';
 import { modelFamily } from './_shared/provider-routing.mjs';
 
 export default async function(req,context){
@@ -18,8 +18,9 @@ export default async function(req,context){
     const source=tool.id==='images'?await imageGeneratorCandidates({limit:6}):toolModelCandidates(tool.id,`${tool.title} ${tool.route}`,{toolId:tool.id});
     const models=source.map(m=>({id:m.id,provider:m.provider,family:modelFamily(m),name:m.name||m.id}));
     const imageFamilies=new Set(models.map(model=>model.family));
+    const transports=providerTransportStatus();
     const imageHint=tool.id==='images'&&imageFamilies.size<6
-      ?providerStatus().openrouter
+      ?transports.gateway.openrouter||transports.openrouter_direct
         ?'OpenRouter está conectado, mas a lista retornou menos famílias de geração de imagem. Confira o acesso ao catálogo de imagens.'
         :'Configure OPENROUTER_API_KEY no Netlify para habilitar outras famílias de imagem além da OpenAI.'
       :null;
