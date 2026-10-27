@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { loadCodeAgentWorkspaceSnapshot, saveCodeAgentWorkspaceSnapshot } from '../netlify/functions/_shared/code-agent-workspace.mjs';
 import { assertGithubRepoAllowed, commitCodeAgentWorkspace, githubWriteConfigured } from '../netlify/functions/_shared/github-write.mjs';
 
@@ -8,6 +9,13 @@ const jobId='84e6f30b-7dbd-4fa4-a17f-c438bf21a311',workerToken='a4f5a174-27a3-45
 const store=new Map(),sqlCalls=[];
 const db={sql:async(strings,...args)=>{sqlCalls.push(strings.join('?'));return [{id:jobId,...Object.fromEntries(args.map((value,index)=>[`arg${index}`,value]))}];}};
 const blobs={async set(key,value){store.set(key,value);},async get(key){return store.get(key)||null;},async delete(key){store.delete(key);}};
+const chatUi=readFileSync(new URL('../public/app.js',import.meta.url),'utf8');
+const codeApi=readFileSync(new URL('../netlify/functions/code-agent.mjs',import.meta.url),'utf8');
+assert.ok(chatUi.includes('if(codeAgentRequestIntent(text))return queueChatCodeJob(text,requestId);'),'typed chat must route coding work to the background workspace');
+assert.ok(chatUi.includes('if(codeAgentRequestIntent(command)){')&&chatUi.includes("workspace:'background'"),'Live Talk must use the same coding queue');
+assert.ok(chatUi.includes('Continuação do pedido: ${text}')&&chatUi.includes('state.messages||[]'),'short coding follow-ups must carry recent chat context');
+assert.ok(chatUi.includes('codeAgentJobCard(codeJob)')&&chatUi.includes('state.tab===\'Home\''),'chat must render and poll background job state');
+assert.ok(codeApi.includes('VALUES(${user.id},NULL,${title})')&&codeApi.includes('createCodeAgentJob(db,{ownerId:user.id,projectId,conversationId'),'code jobs must support a personal conversation without an OlyHub project');
 
 const saved=await saveCodeAgentWorkspaceSnapshot({ownerId,jobId,workerToken,db,blobStoreImpl:blobs,
   files:[{path:'src/app.js',content:'export const ready = true;\n',mode:'100755'}],deletedPaths:['old/file.js']});

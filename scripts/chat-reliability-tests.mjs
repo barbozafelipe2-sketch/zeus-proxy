@@ -8,6 +8,8 @@ globalThis.Netlify = { env: { get: (k) => envVars[k] } };
 
 const models = await import('../netlify/functions/_shared/models.mjs');
 const runtime = await import('../netlify/functions/_shared/runtime.mjs');
+const sharp = (await import('sharp')).default;
+const imageFixture=await sharp({create:{width:2,height:2,channels:4,background:{r:20,g:30,b:40,alpha:1}}}).png().toBuffer();
 const { filesFromModelText, looksLikeFilePath, stripStructuredZipManifest } = await import('../netlify/functions/_shared/zip-output.mjs');
 const { parseGitHubRepoUrl, hasGitHubRepoUrl, shouldReadSystemRepository, shouldReadLatestSystemCommit, loadGitHubContext } = await import('../netlify/functions/_shared/github-context.mjs');
 const read = (p) => readFileSync(new URL(`../${p}`, import.meta.url), 'utf8');
@@ -104,7 +106,7 @@ globalThis.fetch=async(url,init)=>{
   assert.equal(init.body.getAll('image[]').length,2,'all attached reference images must be sent');
   assert.equal(init.body.getAll('image[]')[0].type,'image/png');
   assert.equal(init.body.getAll('image[]')[1].type,'image/jpeg');
-  return new Response(JSON.stringify({data:[{b64_json:Buffer.from('image').toString('base64'),media_type:'image/png'}]}),{status:200,headers:{'content-type':'application/json'}});
+  return new Response(JSON.stringify({data:[{b64_json:imageFixture.toString('base64'),media_type:'image/png'}]}),{status:200,headers:{'content-type':'application/json'}});
 };
 const referencedImage=await models.generateImage('Create a new image inspired by both references',{toolId:'images',referenceImages:[{mimeType:'image/png',base64:Buffer.from('ref-a').toString('base64')},{mimeType:'image/jpeg',base64:Buffer.from('ref-b').toString('base64')}],budget:runtime.createExecutionBudget({timeoutMs:46000,maxCalls:1})});
 assert.match(referencedImage.model,/^gpt-image-/);
@@ -126,7 +128,7 @@ globalThis.fetch=async(url,init)=>{
   if(String(url).endsWith('/images')){
     assert.equal(JSON.parse(init.body).prompt,'distinct alternative');
     assert.equal(JSON.parse(init.body).input_references.length,1);
-    return Response.json({data:[{b64_json:Buffer.from('image-b').toString('base64')}]});
+    return Response.json({data:[{b64_json:imageFixture.toString('base64')}]});
   }
   throw Error(`Unexpected mocked image endpoint ${url}`);
 };

@@ -1406,7 +1406,7 @@ async function runOpenRouterImageWithFallback(prompt,options={}){
   return null;
 }
 function unavailableImageFamilyError(){return Object.assign(new Error('A different image model family is not available right now. No same-family alternative was used.'),{code:'IMAGE_COMPARE_FAMILY_UNAVAILABLE',status:409});}
-async function runImageModels(operation, label, buildRequest, budget, excludeModel=null, excludeFamily=null,outputFormat='png') {
+async function runImageModels(operation, label, buildRequest, budget, excludeModel=null, excludeFamily=null,outputFormat='png',imageOptions=null) {
   if (!providerStatus().openai) throw Object.assign(new Error(`${operation} is not configured (no OpenAI / AI Gateway image access).`), { code: 'AI_NOT_CONFIGURED', status: 503 });
   if (circuitOpen('openai')) throw Object.assign(new Error(`${operation} is briefly paused after repeated OpenAI credential/billing failures. Retry in a few minutes.`), { code: 'AI_PROVIDER_PAUSED', status: 503 });
   const base = apiRoot(openaiBase());
@@ -1463,7 +1463,7 @@ export async function generateImage(prompt, { budget = null, toolId=null, toolPr
         form.append('image[]',new Blob([bytes],{type:reference.mimeType||'image/png'}),`reference-${index+1}.${reference.mimeType==='image/jpeg'?'jpg':reference.mimeType==='image/webp'?'webp':'png'}`);
       }
       return {path:'/images/edits',init:{body:form}};
-    },localBudget,excludeModel,excludeFamily,imageOptions?.outputFormat||'png'),imageOptions||{});
+    },localBudget,excludeModel,excludeFamily,imageOptions?.outputFormat||'png',imageOptions),imageOptions||{});
   }
   if(toolId==='images'){
     try{const routed=await runOpenRouterImageWithFallback(prompt,{budget:localBudget,toolPreferences,excludeModel,excludeFamily,imageOptions});if(routed)return finalizeGeneratedImage(routed,imageOptions||{});}catch(error){if(!providerStatus().openai||excludeFamily==='openai')throw excludeFamily==='openai'?unavailableImageFamilyError():error;}
@@ -1473,7 +1473,7 @@ export async function generateImage(prompt, { budget = null, toolId=null, toolPr
   return finalizeGeneratedImage(await runImageModels('Image generation', 'image', (model) => ({
     path: '/images/generations',
     init: { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model, prompt, ...imageRequestFields(model,imageOptions) }) },
-  }), localBudget,excludeModel,excludeFamily,imageOptions?.outputFormat||'png'),imageOptions||{});
+  }), localBudget,excludeModel,excludeFamily,imageOptions?.outputFormat||'png',imageOptions),imageOptions||{});
 }
 
 export async function editImage(prompt, imageBytes, imageName = 'source.png', imageType = 'image/png', { budget = null,toolPreferences=null,imageOptions=null } = {}) {
@@ -1487,5 +1487,5 @@ export async function editImage(prompt, imageBytes, imageName = 'source.png', im
     for (const [k, v] of Object.entries(imageRequestFields(model,imageOptions))) form.append(k, v);
     form.append('image', new Blob([imageBytes], { type: imageType }), imageName);
     return { path: '/images/edits', init: { body: form } };
-  }, localBudget,null,null,imageOptions?.outputFormat||'png'),imageOptions||{});
+  }, localBudget,null,null,imageOptions?.outputFormat||'png',imageOptions),imageOptions||{});
 }
