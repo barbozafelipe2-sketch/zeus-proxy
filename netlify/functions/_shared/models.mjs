@@ -1269,11 +1269,13 @@ export function imageModelCandidates() {
 }
 export function imageGenerationCallLimit(){return 1+Number(Boolean(openRouterDirectConfig()||providerStatus().openai));}
 const OPENROUTER_IMAGE_MODELS=Object.freeze([
-  {id:'openai/gpt-image-2.5-flare',family:'openai',name:'GPT Image 2.5',inputImage:true,resolutions:['1K']},
+  {id:'openai/gpt-image-2.5-flare',family:'openai',name:'GPT Image 2.5',inputImage:true,resolutions:['1K','2K','4K'],outputFormats:['png','jpeg','webp']},
   {id:'x-ai/grok-imagine-image-2.0',family:'x-ai',name:'Grok Imagine',inputImage:true,resolutions:['1K','2K']},
   {id:'qwen/qwen-image-3-pro',family:'qwen',name:'Qwen Image 3 Pro',inputImage:true,resolutions:['1K','2K']},
-  {id:'black-forest-labs/flux-3-image',family:'black-forest-labs',name:'FLUX.3 Image',inputImage:true,resolutions:['1K','2K','4K']},
-  {id:'recraft/recraft-v4.1-pro',family:'recraft',name:'Recraft V4.1 Pro',inputImage:true,resolutions:['1K','2K']},
+  {id:'black-forest-labs/flux-3-image',family:'black-forest-labs',name:'FLUX.3 Image',inputImage:true,resolutions:['1K','2K','4K'],outputFormats:['png','jpeg']},
+  // Recraft V4.1 Pro produces its native ~2K output and does not accept the
+  // normalized `resolution` or `output_format` fields on the Image API.
+  {id:'recraft/recraft-v4.1-pro',family:'recraft',name:'Recraft V4.1 Pro',inputImage:true,resolutions:['2K'],fixedResolution:true},
   {id:'google/gemini-3.1-flash-image',family:'google',name:'Imagen · Gemini Flash Image',inputImage:true,resolutions:['1K','2K','4K']},
 ]);
 export function imageModelFamily(model={}){return modelFamily(model);}
@@ -1350,7 +1352,11 @@ async function runOpenRouterImage(prompt,{budget,toolPreferences=null,reference=
       const callStartedAt=Date.now();
       budget.reserveCall(`image:openrouter:${model.id}`);
       const encodedReferences=inputReferences.map(ref=>({type:'image_url',image_url:{url:`data:${ref.mimeType};base64,${ref.base64||Buffer.from(ref.bytes).toString('base64')}`}}));
-      const response=await fetch(`${apiRoot(config.base)}/images`,{method:'POST',headers:{Authorization:`Bearer ${config.key}`,'Content-Type':'application/json'},signal:budget.signal(imageCallTimeout(budget)),body:JSON.stringify({model:model.id,prompt,n:1,...(imageOptions?{resolution:imageOptions.resolution,...(imageOptions.aspectRatio&&imageOptions.aspectRatio!=='auto'?{aspect_ratio:imageOptions.aspectRatio}:{}),output_format:imageOptions.outputFormat}:{ }),...(encodedReferences.length?{input_references:encodedReferences}:{})})});
+      const imageParameters={};
+      if(imageOptions?.resolution&&!model.fixedResolution)imageParameters.resolution=imageOptions.resolution;
+      if(imageOptions?.aspectRatio&&imageOptions.aspectRatio!=='auto')imageParameters.aspect_ratio=imageOptions.aspectRatio;
+      if(imageOptions?.outputFormat&&model.outputFormats?.includes(imageOptions.outputFormat))imageParameters.output_format=imageOptions.outputFormat;
+      const response=await fetch(`${apiRoot(config.base)}/images`,{method:'POST',headers:{Authorization:`Bearer ${config.key}`,'Content-Type':'application/json'},signal:budget.signal(imageCallTimeout(budget)),body:JSON.stringify({model:model.id,prompt,n:1,...imageParameters,...(encodedReferences.length?{input_references:encodedReferences}:{})})});
       const data=await response.json().catch(()=>({}));if(!response.ok)throw providerError(data?.error?.message||`Image ${response.status}`,response.status);
       const bytes=await imageBytesFromResponse(data,budget);
       recordProviderAttempt(budget,{model:{provider:'openrouter',id:model.id,transport},stage:'image_generation',durationMs:Date.now()-callStartedAt});

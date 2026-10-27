@@ -15,6 +15,7 @@ const authored={
   ARTIFACT_VERIFICATION_FAILED:'A generated file failed its integrity check, so it was not delivered. Please retry.',
   ARTIFACT_FORMAT_UNSUPPORTED:'This combination of file types is not supported (max 4 of PDF, DOCX, XLSX, PPTX, CSV).',
   ARTIFACT_TOO_LARGE:'The generated file exceeded the size limit. Ask for a shorter deliverable.',
+  IMAGE_GENERATION_FAILED:'The selected image model rejected this combination of resolution, orientation or format. Retry with standard resolution and automatic orientation, or choose another image model.',
   OLYMPUS_CREATOR_UNAVAILABLE:'No AI model was available for an Olympus specialist (provider credits, quota or configuration). Check provider credits or use Zeus mode.',
   OLYMPUS_CRITIC_UNAVAILABLE:'No AI model was available for the Olympus reviewer (provider credits, quota or configuration). Check provider credits or use Zeus mode.',
   PROVIDER_MODEL_INVALID_CACHED:'A configured model ID is invalid and was skipped. Check the model environment variables.',
