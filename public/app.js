@@ -333,6 +333,8 @@ function messageHtml(m){
   const compareA=imagePair?(allArtifacts.find(a=>a.id===m.metadata.compareImageSourceId)||allArtifacts.find(a=>a.metadata?.variant!=='B')):null;
   const compareB=imagePair?(allArtifacts.find(a=>a.id!==compareA?.id&&a.metadata?.variant==='B')||allArtifacts.find(a=>a.id!==compareA?.id)):null;
   const imageCompare=imagePair?imageComparePanel(compareA,compareB):'';
+  const codeJob=state.codeAgentJobs.find(job=>job.id===m.metadata?.codeAgentJobId);
+  const codeJobHtml=m.role==='assistant'&&m.metadata?.codeAgentJobId?codeAgentJobCard(codeJob):'';
   const displayedImage=imagePair?compareB:generatedImages[0];
   const imagePreview=displayedImage?chatImagePreview(displayedImage,imagePair?'Imagem B · Alternativa':imageCompare?'Imagem A · Original':'Imagem gerada'):'';
   const artifacts=allArtifacts.filter(a=>a.id!==displayedImage?.id&&(!imagePair||(a.id!==compareA?.id&&a.id!==compareB?.id))).map(artifactCard).join('');
@@ -370,7 +372,7 @@ function messageHtml(m){
   const compareBusy=compareSource&&state.imageCompareStartingId===compareSource.id;
   const compareAction=m.role==='assistant'&&compareSource&&!m.metadata?.comparePair?`<button type="button" class="message-action message-compare ${compareBusy?'selected':''}" data-compare-image="${esc(compareSource.id)}" aria-label="${compareBusy?'Generating image B':'Generate image B to compare with this image'}" title="${compareBusy?'Generating B…':'Compare A/B'}" ${state.sending||Boolean(state.imageCompareStartingId)?'disabled':''}><span>${icon(compareBusy?'auto':'compare')}</span></button>`:'';
   const messageActions=m.role==='assistant'&&messageId?`<div class="message-actions" aria-label="Rate, compare, or listen to this assistant reply"><button type="button" class="message-action ${reaction==='up'?'selected':''}" data-message-feedback="up" data-message-id="${esc(messageId)}" aria-label="Approve this answer" aria-pressed="${reaction==='up'}" title="Useful"><span>${icon('like')}</span></button><button type="button" class="message-action ${reaction==='down'?'selected':''}" data-message-feedback="down" data-message-id="${esc(messageId)}" aria-label="Disapprove this answer" aria-pressed="${reaction==='down'}" title="Not useful"><span>${icon('dislike')}</span></button><button type="button" class="message-action message-speak ${activeMessageAudio?'selected':''}" data-message-speak="${esc(messageId)}" aria-label="${audioBusy?'Generating speech':activeMessageAudio?'Pause or resume reading':'Read answer aloud'}" title="${audioBusy?'Preparing voice…':activeMessageAudio?'Pause / resume':'Read aloud'}" ${audioBusy?'disabled':''}><span>${icon(audioBusy?'auto':activeMessageAudio&&state.messageAudioPlaying?'pause':'speaker')}</span></button>${compareAction}${audioBusy?'<span class="message-audio-status" role="status">Preparing voice…</span>':''}</div>`:'';
-  return `<article class="message ${m.role==='user'?'user':'assistant'}"><div class="message-label">${m.role==='user'?'':`<span class="message-bolt" aria-hidden="true">⚡</span>`}<span>${esc(speaker)}</span></div><div class="message-body ${m.role==='assistant'?'markdown-body':''}">${m.role==='assistant'?renderMarkdown(m.content||''):esc(m.content||'')}</div>${imagePreview}${messageActions}${traceHtml}${note?`<details class="message-debug"><summary>Execution details</summary><div class="message-model">${esc(note)}</div></details>`:''}${sourceHtml}${attached?`<div class="attachments in-message">${attached}</div>`:''}${artifacts?`<div class="artifact-row">${artifacts}</div>`:''}${imageCompare||compareControls}</article>`;
+  return `<article class="message ${m.role==='user'?'user':'assistant'}"><div class="message-label">${m.role==='user'?'':`<span class="message-bolt" aria-hidden="true">⚡</span>`}<span>${esc(speaker)}</span></div><div class="message-body ${m.role==='assistant'?'markdown-body':''}">${m.role==='assistant'?renderMarkdown(m.content||''):esc(m.content||'')}</div>${imagePreview}${codeJobHtml}${messageActions}${traceHtml}${note?`<details class="message-debug"><summary>Execution details</summary><div class="message-model">${esc(note)}</div></details>`:''}${sourceHtml}${attached?`<div class="attachments in-message">${attached}</div>`:''}${artifacts?`<div class="artifact-row">${artifacts}</div>`:''}${imageCompare||compareControls}</article>`;
 }
 function artifactCard(a){const tag=esc((a.type||'FILE').toUpperCase().slice(0,4)),url=esc(a.downloadUrl||''),name=esc(a.filename||'Zeus Proxy output'),mime=esc(a.mime_type||a.type||'application/octet-stream'),isImage=String(a.mime_type||'').startsWith('image/'),compareImage=isImage&&a.metadata?.toolId==='images',isZip=a.type==='zip'||/zip/i.test(a.mime_type||'')||String(a.filename||'').toLowerCase().endsWith('.zip'),git=Boolean(state.health?.capabilities?.githubCommit);return `<div class="artifact-card">${isImage?`<button type="button" class="artifact-thumb-wrap" data-open-output="${url}" data-output-name="${name}" data-output-mime="${mime}" aria-label="Open ${name}"><img class="artifact-thumb" data-private-image="${url}" alt=""></button>`:`<div class="out-badge">${tag}</div>`}<div><strong>${name}</strong><small>${fmtSize(a.size)} · ${mime}</small></div><div class="artifact-actions">${compareImage?`<button type="button" class="ghost-a" data-compare-image="${esc(a.id)}">Compare A/B</button>`:''}<button type="button" data-open-output="${url}" data-output-name="${name}" data-output-mime="${mime}">Open</button><button type="button" class="ghost-a" data-download-output="${url}" data-output-name="${name}">Download</button>${isZip&&git?`<button type="button" class="ghost-a" data-github-commit="artifact" data-source-id="${esc(a.id)}" data-source-name="${name}">Commit</button>`:''}</div></div>`}
 const LIVE_LOCALES={auto:'auto',pt:'pt-BR',en:'en-US',es:'es-ES'};
@@ -994,6 +996,43 @@ function githubCommitModal(sourceKind,sourceId,sourceName='project.zip'){
     }catch(err){setModalError(err.message||'Could not commit to GitHub.');submit.disabled=false;submit.textContent=translateInterfaceText('Commit');}
   });
 }
+function codeAgentRepositoryModal(initialUrl='',initialBranch='main'){
+  return new Promise(resolve=>{
+    let settled=false;const finish=value=>{if(settled)return;settled=true;closeModal();resolve(value);};
+    showModal(`<div class="modal-backdrop"><div class="modal" aria-labelledby="code-agent-repo-title"><div class="modal-head"><h2 id="code-agent-repo-title">Onde salvar esse código?</h2><button class="ghost" id="modal-close" aria-label="Fechar">${icon('close')}</button></div><p class="muted">A tarefa fica nesta conversa e roda em segundo plano. Escolha o repositório GitHub de destino; não precisa criar um projeto no OlyHub.</p><div id="modal-notice" class="notice error-notice hidden" role="alert"></div><form id="code-agent-repo-form" class="form-grid"><label for="code-agent-repo-url">Repositório GitHub</label><input id="code-agent-repo-url" required inputmode="url" autocomplete="url" placeholder="https://github.com/owner/repository" value="${esc(initialUrl)}"><label for="code-agent-repo-branch">Branch</label><input id="code-agent-repo-branch" maxlength="120" value="${esc(initialBranch||'main')}"><p class="muted tiny">O token fica no servidor. O agente prepara o roadmap, executa as fases e reúne as alterações em um commit único depois da sua aprovação.</p><div class="modal-actions"><button type="button" class="secondary" id="modal-cancel">Cancelar</button><button class="primary" type="submit">Continuar no chat</button></div></form></div></div>`,{initialFocus:'#code-agent-repo-url',onClose:()=>{if(!settled){settled=true;resolve(null);}}});
+    $('#modal-close').onclick=$('#modal-cancel').onclick=()=>finish(null);
+    $('#code-agent-repo-form')?.addEventListener('submit',event=>{
+      event.preventDefault();setModalError('');const repoUrl=$('#code-agent-repo-url')?.value.trim()||'',branch=$('#code-agent-repo-branch')?.value.trim()||'main';
+      if(!/^https?:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/?$/i.test(repoUrl)){setModalError('Cole um endereço github.com/owner/repository válido.');return;}
+      try{localStorage.setItem('olyhub.code-agent.repo.v1',repoUrl);localStorage.setItem('olyhub.code-agent.branch.v1',branch);}catch{}
+      state.codeAgentRepo=repoUrl;state.codeAgentBranch=branch;finish({repoUrl,branch});
+    });
+  });
+}
+function codeAgentRequestIntent(text,messages=state.messages){
+  const value=String(text||'').trim();
+  if(/^(?:como\s+(?:eu\s+)?(?:fa[cç]o|fazer|construir|criar)|how\s+(?:do\s+i|to)\b)/i.test(value)&&!/(?:fa[cç]a|faz|construa|cria|implemente)\s+(?:pra\s+mim|para\s+mim|isso|agora)/i.test(value))return false;
+  const object=/\b(?:jogo|game|xadrez|chess|aplicativo|app|site|website|software|sistema|funcionalidade|feature|c[oó]digo|code|programa|program)\b/i;
+  const create=/\b(?:cria|crie|criar|faz|fa[cç]a|fazer|construa|construir|desenvolva|desenvolver|implemente|implementar|implementa|build|create|make|develop|implement|start\s+building|come[cç]a|comece|inicie|iniciar)\b/i;
+  if(create.test(value)&&object.test(value))return true;
+  const followup=/\b(?:come[cç]a|comece|inicie|iniciar|faz|fa[cç]a|execute|implemente|build\s+it|start\s+(?:building|making)|go\s+ahead|do\s+it|comece\s+a\s+fazer)\b/i.test(value);
+  return followup&&(messages||[]).slice(-12).some(message=>object.test(String(message?.content||'')));
+}
+function codeAgentApprovalIntent(text){return /\b(?:sim|ok|okay|pode|manda\s+ver|vai|come[cç]a|comece|fa[zç]|fa[cç]a|execute|executa|implemente|implementa|prossiga|aprovo|aprovado|go\s+ahead|do\s+it|build\s+it|start|proceed|approved|faz\s+tudo|fa[cç]a\s+tudo)\b/i.test(String(text||''));}
+function codeAgentJobCard(job){
+  if(!job)return '';
+  const active=new Set(['QUEUED','PLANNING','AWAITING_APPROVAL','RUNNING','COMMITTING']);
+  const statusLabel={QUEUED:'Na fila',PLANNING:'Montando roadmap',AWAITING_APPROVAL:'Roadmap pronto',RUNNING:'Executando',COMMITTING:'Criando commit único',COMPLETED:'Concluído',FAILED:'Falhou',CANCELLED:'Cancelado'}[job.status]||job.status;
+  const plan=Array.isArray(job.plan?.phases)?job.plan.phases:Array.isArray(job.plan)?job.plan:[];
+  const events=state.codeAgentDetails[job.id]?.events||[];
+  const current=Math.max(0,Math.min(Number(job.current_phase||0),Math.max(0,plan.length-1)));
+  const progress=job.status==='RUNNING'&&plan.length?`<p class="code-job-progress">Fase ${Math.min(Number(job.current_phase||0)+1,plan.length)} de ${plan.length} · ${esc(plan[current]?.title||'finalização')}</p>`:'';
+  const phases=plan.length?`<div class="code-roadmap"><h3>${esc(job.plan?.goal||'Roadmap de implementação')}</h3>${plan.map((phase,index)=>`<section class="code-roadmap-phase"><strong>Fase ${index+1}: ${esc(phase.title)}</strong>${phase.summary?`<p>${esc(phase.summary)}</p>`:''}<ul>${(phase.tasks||[]).map(task=>`<li>${esc(task)}</li>`).join('')}</ul>${phase.verification?.length?`<small>Verificação: ${phase.verification.map(esc).join(' · ')}</small>`:''}</section>`).join('')}</div>`:'';
+  const approve=job.status==='AWAITING_APPROVAL'?`<div class="code-roadmap-next">O roadmap está pronto. Ao aprovar, as fases rodam em segundo plano e terminam em um commit único.</div><button type="button" class="primary code-agent-approve" data-code-agent-approve="${esc(job.id)}">Fazer tudo e criar commit único</button>`:'';
+  const commit=job.commit_sha?`<a class="code-job-commit" href="https://github.com/${encodeURIComponent(job.repo_owner)}/${encodeURIComponent(job.repo_name)}/commit/${encodeURIComponent(job.commit_sha)}" target="_blank" rel="noopener noreferrer">Abrir commit ${esc(String(job.commit_sha).slice(0,10))} ↗</a>`:'';
+  const latest=events.slice(-5).map(event=>`<p><time>${esc(fmtDateTime(event.created_at))}</time> ${esc(event.summary)}</p>`).join('');
+  return `<article class="card code-job-card"><div class="code-job-head"><div><span class="eyebrow">${esc(job.repo_owner)}/${esc(job.repo_name)} · ${esc(job.target_branch)}</span><h2>${esc(job.plan?.title||'Workspace desta tarefa')}</h2></div><span class="code-job-status ${active.has(job.status)?'active':''}">${esc(statusLabel)}</span></div>${job.status==='FAILED'?`<p class="code-job-error">${esc(job.result_summary||job.error_code||'Não foi possível concluir o pedido.')}</p>`:''}${job.status==='QUEUED'?'<p class="muted tiny">Este pedido está na fila e começa quando o worker liberar.</p>':''}${job.status==='PLANNING'?'<p class="muted tiny">Lendo o repositório e preparando o roadmap. Este trabalho continua em segundo plano.</p>':''}${progress}${phases}${approve}${job.result_summary&&job.status==='COMPLETED'?`<p class="code-job-result">${esc(job.result_summary)}</p>`:''}${commit}<div class="code-job-events">${latest}</div></article>`;
+}
 
 function liveTalkExperience(){
   const persona='ZEUS';
@@ -1042,7 +1081,7 @@ function render(){
   clearModalLifecycle();modalReturnFocus=null;if(!state.authReady){app.innerHTML='<div class="boot-screen" role="status">INITIALIZING ZEUS</div>';return;} app.innerHTML=appView();bind();
   localizeInterface(app);syncDrawerAccessibility();
   if(codeAgentPollTimer){clearTimeout(codeAgentPollTimer);codeAgentPollTimer=null;}
-  if(state.tab==='Code Agent'&&(state.codeAgentJobs||[]).some(job=>['QUEUED','PLANNING','RUNNING','COMMITTING'].includes(job.status)))
+  if((state.tab==='Code Agent'||state.tab==='Home')&&(state.codeAgentJobs||[]).some(job=>['QUEUED','PLANNING','RUNNING','COMMITTING'].includes(job.status)&&(state.tab==='Code Agent'||job.conversation_id===state.currentConversation)))
     codeAgentPollTimer=setTimeout(async()=>{await loadCodeAgentJobs({silent:true});render();},5000);
   const offCanvasSidebar=scopeSidebar&&!state.drawer&&window.matchMedia('(max-width:959px)').matches;
   if(key&&offCanvasSidebar){$('#main-content')?.focus({preventScroll:true});}
@@ -1341,6 +1380,7 @@ async function openConversation(id,doRender=true){
       attachments:(m.metadata?.attachments||[]).map(fid=>(typeof fid==='object'?fid:fileIndex[fid]||{id:fid,filename:'Attached file'}))
     }));
     state.currentToolId=[...(d.messages||[])].reverse().find(m=>m.role==='assistant'&&m.metadata?.toolId)?.metadata?.toolId||null;
+    await loadCodeAgentJobs({silent:true});
     if(state.currentToolId&&!state.toolModelsLoaded){try{await loadToolModels()}catch{}}
     state.chatArtifacts=d.artifacts||[];
     state.artifacts=mergeById(state.artifacts,d.artifacts||[]);
@@ -1450,6 +1490,11 @@ function imageOptionsModal(){
 async function sendText(text,pendingAttachments=[],requestId=crypto.randomUUID(),requestedMode=state.mode,turboApproval=null,resumeExecutionId=null,options={}){
   const voiceCommand=options?.voiceCommand===true;
   if(!text||state.sending)return voiceCommand?JSON.stringify({ok:false,error:'Another OlyHub request is already running.'}):undefined;
+  if(!options?.liveTalk&&!voiceCommand&&!state.currentToolId&&!pendingAttachments?.length){
+    const approvalJob=(state.codeAgentJobs||[]).find(job=>job.conversation_id===state.currentConversation&&job.status==='AWAITING_APPROVAL');
+    if(approvalJob&&codeAgentApprovalIntent(text))return approveChatCodeJob(approvalJob,text);
+    if(codeAgentRequestIntent(text))return queueChatCodeJob(text,requestId);
+  }
   if(!options?.imageOptions&&shouldAskImageOptions(text,pendingAttachments)){
     const imageOptions=await imageOptionsModal();
     if(!imageOptions)return;
@@ -1579,6 +1624,39 @@ async function sendText(text,pendingAttachments=[],requestId=crypto.randomUUID()
     state.lastFailedResumeExecutionId=mode==='ZEUS'?err?.data?.executionId||null:null;
     if(voiceCommand)return JSON.stringify({ok:false,error:String(err?.message||'OlyHub could not complete the command.')});
   }finally{clearTimeout(timer);state.sending=false;render();}
+}
+async function queueChatCodeJob(text,requestId){
+  let repoUrl=String(state.codeAgentRepo||'').trim(),branch=String(state.codeAgentBranch||'main').trim()||'main';
+  const explicit=text.match(/https?:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/?/i)?.[0];
+  if(explicit)repoUrl=explicit;
+  if(!repoUrl){try{repoUrl=localStorage.getItem('olyhub.code-agent.repo.v1')||'';branch=localStorage.getItem('olyhub.code-agent.branch.v1')||branch;}catch{}}
+  if(!repoUrl){const selected=await codeAgentRepositoryModal('',branch);if(!selected)return;repoUrl=selected.repoUrl;branch=selected.branch;}
+  const targetWords=/\b(?:jogo|game|xadrez|chess|aplicativo|app|site|website|software|sistema|funcionalidade|feature|c[oó]digo|code|programa|program)\b/i;
+  const requestText=targetWords.test(text)?text:[...(state.messages||[])].slice(-12).filter(message=>['user','assistant'].includes(message.role)).map(message=>`${message.role==='user'?'Usuário':'Assistente'}: ${String(message.content||'').slice(0,2500)}`).join('\n').slice(-12000)+`\n\nContinuação do pedido: ${text}`;
+  const optimistic={id:crypto.randomUUID(),role:'user',mode:'ZEUS',content:text,artifacts:[],attachments:[]};
+  state.messages.push(optimistic);state.sending=true;state.activeMode='ZEUS';state.activeLevel=null;state.error='';state.execTitle='Hephaestus is preparing the roadmap';state.execStatus='Abrindo o workspace desta tarefa e lendo o repositório…';render();
+  try{
+    const data=await api('/api/code-agent',{method:'POST',requestId,body:JSON.stringify({repoUrl,branch,requestText,displayText:text,requestId,projectId:state.currentProject?.id||null,conversationId:state.currentConversation||null})});
+    state.currentConversation=data.conversationId;state.codeAgentRepo=repoUrl;state.codeAgentBranch=branch;
+    const index=state.messages.findIndex(message=>message.id===optimistic.id);
+    if(index>=0&&data.userMessage)state.messages[index]={...data.userMessage,artifacts:[],attachments:[]};
+    if(data.assistantMessage&&!state.messages.some(message=>message.id===data.assistantMessage.id))state.messages.push({...data.assistantMessage,artifacts:[],attachments:[]});
+    await Promise.all([loadCodeAgentJobs({silent:true}),loadConversations()]);
+    history.replaceState({},'',state.currentProject?.id?`/?project=${encodeURIComponent(state.currentProject.id)}`:`/?conversation=${encodeURIComponent(data.conversationId)}`);
+    state.execStatus='Roadmap em preparação. Você pode continuar conversando; novos pedidos entram na fila.';state.error='';
+  }catch(error){state.messages=state.messages.filter(message=>message.id!==optimistic.id);state.error=error.message||'Não foi possível abrir o workspace de código.';state.execStatus='';}
+  finally{state.sending=false;render();}
+}
+async function approveChatCodeJob(job,text=''){
+  state.sending=true;state.error='';state.execTitle='Hephaestus is starting the approved roadmap';state.execStatus='Enfileirando todas as fases e o commit único…';
+  const optimistic=text?{id:crypto.randomUUID(),role:'user',mode:'ZEUS',content:text,artifacts:[],attachments:[]}:null;
+  if(optimistic)state.messages.push(optimistic);render();
+  try{
+    const result=await api('/api/code-agent',{method:'POST',body:JSON.stringify({action:'approve',jobId:job.id,...(text?{confirmationText:text}:{})})});
+    if(optimistic&&result.confirmationMessage){const index=state.messages.findIndex(message=>message.id===optimistic.id);if(index>=0)state.messages[index]={...result.confirmationMessage,artifacts:[],attachments:[]};}
+    await loadCodeAgentJobs({silent:true});state.execStatus='Roadmap aprovado. O worker está executando as fases em segundo plano e criará um commit único.';state.error='';
+  }catch(error){if(optimistic)state.messages=state.messages.filter(message=>message.id!==optimistic.id);state.error=error.message||'Não foi possível iniciar o roadmap aprovado.';state.execStatus='';}
+  finally{state.sending=false;render();}
 }
 async function approveNextOlympusFive(){
  const executionId=state.lastFailedBudgetExecutionId;
@@ -1889,6 +1967,15 @@ function liveProjectClientTools(){
           return JSON.stringify({ok:true,updated:true,project:state.currentProject.name,task:{title:result.task?.title||matches[0].title,status:result.task?.status||requestedStatus},projectProgress:result.project?.progress??state.currentProject.progress});
         }
         const selectedMode=state.mode==='OLYMPUS'?'OLYMPUS':'ZEUS';
+        const pendingCodeJob=(state.codeAgentJobs||[]).find(job=>job.conversation_id===state.currentConversation&&job.status==='AWAITING_APPROVAL');
+        if(pendingCodeJob&&codeAgentApprovalIntent(command)){
+          await approveChatCodeJob(pendingCodeJob,command);
+          return JSON.stringify({ok:true,approved:true,jobId:pendingCodeJob.id,workspace:'background',commit:'one final commit'});
+        }
+        if(codeAgentRequestIntent(command)){
+          await queueChatCodeJob(command,crypto.randomUUID());
+          return JSON.stringify({ok:!state.error,queued:!state.error,conversationId:state.currentConversation,workspace:'background'});
+        }
         const result=await sendText(command,[],crypto.randomUUID(),selectedMode,null,null,{voiceCommand:true});
         return String(result||JSON.stringify({ok:false,error:'OlyHub returned no command result.'}));
       }catch(error){return JSON.stringify({ok:false,error:String(error?.message||'OlyHub command failed.').slice(0,300)});}
