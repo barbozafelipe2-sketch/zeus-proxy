@@ -1267,7 +1267,7 @@ export function imageModelCandidates() {
   const configured = env('OPENAI_IMAGE_MODEL').trim();
   return [...new Set([configured, 'gpt-image-2.5-flare', 'gpt-image-2', 'gpt-image-1'].filter(Boolean))];
 }
-export function imageGenerationCallLimit(){return 1+Number(Boolean(openRouterDirectConfig()||providerStatus().openai));}
+export function imageGenerationCallLimit(){return 1+Number(Boolean(openRouterDirectConfig()))+Number(Boolean(providerStatus().openai));}
 const OPENROUTER_IMAGE_MODELS=Object.freeze([
   {id:'openai/gpt-image-2.5-flare',family:'openai',name:'GPT Image 2.5',inputImage:true,resolutions:['1K','2K','4K'],outputFormats:['png','jpeg','webp']},
   {id:'x-ai/grok-imagine-image-2.0',family:'x-ai',name:'Grok Imagine',inputImage:true,resolutions:['1K','2K']},
@@ -1432,7 +1432,7 @@ export async function generateImage(prompt, { budget = null, toolId=null, toolPr
   prompt=imagePromptWithOptions(prompt,imageOptions);
   if(Array.isArray(referenceImages)&&referenceImages.length){
     if(toolId==='images'){
-      try{const routed=await runOpenRouterImage(prompt,{budget:localBudget,toolPreferences,references:referenceImages,operation:'Reference-based image generation',excludeModel,excludeFamily,imageOptions});if(routed)return routed;}catch(error){if(!providerStatus().openai||excludeFamily==='openai')throw excludeFamily==='openai'?unavailableImageFamilyError():error;}
+      try{const routed=await runOpenRouterImageWithFallback(prompt,{budget:localBudget,toolPreferences,references:referenceImages,operation:'Reference-based image generation',excludeModel,excludeFamily,imageOptions});if(routed)return routed;}catch(error){if(!providerStatus().openai||excludeFamily==='openai')throw excludeFamily==='openai'?unavailableImageFamilyError():error;}
       if(excludeFamily==='openai')throw unavailableImageFamilyError();
     }
     assertOpenAIImageOptions(imageOptions);
@@ -1449,7 +1449,7 @@ export async function generateImage(prompt, { budget = null, toolId=null, toolPr
     },localBudget,excludeModel,excludeFamily,imageOptions?.outputFormat||'png');
   }
   if(toolId==='images'){
-    try{const routed=await runOpenRouterImage(prompt,{budget:localBudget,toolPreferences,excludeModel,excludeFamily,imageOptions});if(routed)return routed;}catch(error){if(!providerStatus().openai||excludeFamily==='openai')throw excludeFamily==='openai'?unavailableImageFamilyError():error;}
+    try{const routed=await runOpenRouterImageWithFallback(prompt,{budget:localBudget,toolPreferences,excludeModel,excludeFamily,imageOptions});if(routed)return routed;}catch(error){if(!providerStatus().openai||excludeFamily==='openai')throw excludeFamily==='openai'?unavailableImageFamilyError():error;}
     if(excludeFamily==='openai')throw unavailableImageFamilyError();
     if(!providerStatus().openai&&!openRouterImageConfig())throw imageFailure('Image generation',[],null);
   }
@@ -1463,7 +1463,7 @@ export async function generateImage(prompt, { budget = null, toolId=null, toolPr
 export async function editImage(prompt, imageBytes, imageName = 'source.png', imageType = 'image/png', { budget = null,toolPreferences=null,imageOptions=null } = {}) {
   const localBudget = budget || createExecutionBudget({ timeoutMs: 46000, maxCalls: 3 });
   prompt=imagePromptWithOptions(prompt,imageOptions);
-  try{const routed=await runOpenRouterImage(prompt,{budget:localBudget,toolPreferences,reference:{bytes:imageBytes,mimeType:imageType},operation:'Image editing',imageOptions});if(routed)return routed;}catch(error){if(!providerStatus().openai)throw error;}
+  try{const routed=await runOpenRouterImageWithFallback(prompt,{budget:localBudget,toolPreferences,reference:{bytes:imageBytes,mimeType:imageType},operation:'Image editing',imageOptions});if(routed)return routed;}catch(error){if(!providerStatus().openai)throw error;}
   assertOpenAIImageOptions(imageOptions);
   return runImageModels('Image editing', 'image-edit', (model) => {
     const form = new FormData();
