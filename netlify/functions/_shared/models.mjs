@@ -985,7 +985,14 @@ export function roleCandidates(role,text='',{
 export function toolModelCandidates(toolId,text='',options={}){
   const tool=getToolWorkflow(toolId);if(!tool)return [];
   const vision=options.vision===true||tool.vision===true;
-  return roleCandidates(tool.route==='writing'?'CREATOR':tool.route==='vision'?'DIRECTOR':'CREATOR',text,{...options,vision,toolId,routeHint:tool.route,limit:6}).slice(0,6);
+  const role=tool.route==='writing'?'CREATOR':tool.route==='vision'?'DIRECTOR':'CREATOR';
+  const blocked=new Set(options.blockedProviders||[]),excluded=new Set(options.excludeProviders||[]),skip=options.exclude instanceof Set?options.exclude:new Set(options.exclude||[]);
+  const preference=options.toolPreferences?.[toolId]||null;
+  const pool=availableModels({vision}).filter(model=>routeEligibleWhenGatewayBlocked(model,blocked)&&!excluded.has(modelFamily(model))&&!skip.has(`${model.provider}:${model.id}`));
+  const ranked=uniqueModelOrder(pool.sort((a,b)=>(roleScore(role,b,text,tool.route)+toolPreferenceScore(b,preference))-(roleScore(role,a,text,tool.route)+toolPreferenceScore(a,preference))));
+  const families=new Set(),diverse=[];
+  for(const model of ranked){const family=modelFamily(model);if(!family||families.has(family))continue;families.add(family);diverse.push({...model,family});if(diverse.length===6)break;}
+  return diverse;
 }
 
 function normalizeTurboSpecialty(value='general'){
@@ -1238,6 +1245,7 @@ export function imageModelCandidates() {
   return [...new Set([configured, 'gpt-image-2.5-flare', 'gpt-image-2', 'gpt-image-1'].filter(Boolean))];
 }
 let imageModelsCache={expiresAt:0,models:[]};
+export function imageModelFamily(model={}){return modelFamily(model);}
 export async function imageGeneratorCandidates({limit=6}={}){
   const candidates=[];
   if(openRouterImageKey()){
@@ -1246,12 +1254,15 @@ export async function imageGeneratorCandidates({limit=6}={}){
         const response=await fetch(`${apiRoot(openRouterImageApi())}/images/models`,{headers:{Authorization:`Bearer ${openRouterImageKey()}`},signal:AbortSignal.timeout(3500)});
         if(response.ok){const payload=await response.json();const list=Array.isArray(payload?.data)?payload.data:[];
           const usable=list.filter(item=>Array.isArray(item?.architecture?.output_modalities)&&item.architecture.output_modalities.includes('image')&&typeof item.id==='string');
-          const priority=['qwen','bytedance-seed','black-forest-labs','tencent','recraft','ideogram','stability','luma','openai','google','meta'];
+          const priority=['openai','x-ai','qwen','black-forest-labs','recraft','google','bytedance-seed','tencent','ideogram','stability','luma','meta'];
           const ranked=usable.map(item=>({...item,family:String(item.id).split('/')[0]})).sort((a,b)=>{
             const pa=priority.indexOf(a.family),pb=priority.indexOf(b.family);return (pa<0?99:pa)-(pb<0?99:pb)||String(a.id).localeCompare(String(b.id));
           });
           const diverse=[];const seen=new Set();for(const item of ranked){if(seen.has(item.family))continue;seen.add(item.family);diverse.push(item);}
-          imageModelsCache={expiresAt:Date.now()+5*60_000,models:(diverse.length>=6?diverse:ranked).slice(0,12)};
+          // Keep one real model per provider family even when fewer than six
+          // families are currently available. Duplicated models must never be
+          // presented as independent choices.
+          imageModelsCache={expiresAt:Date.now()+5*60_000,models:diverse.slice(0,12)};
         }else imageModelsCache={expiresAt:Date.now()+30_000,models:[]};
       }catch{imageModelsCache={expiresAt:Date.now()+30_000,models:[]};}
     }
@@ -1260,7 +1271,7 @@ export async function imageGeneratorCandidates({limit=6}={}){
   if(providerStatus().openai){
     candidates.push(...imageModelCandidates().map(id=>({id,provider:'openai',family:'openai',name:id,description:'OpenAI image generation and editing',inputImage:true})));
   }
-  const seen=new Set();return candidates.filter(item=>{const key=`${item.provider}:${item.id}`;if(seen.has(key))return false;seen.add(key);return true;}).slice(0,Math.max(1,Math.min(6,Number(limit)||6)));
+  const seen=new Set();return candidates.filter(item=>{const family=imageModelFamily(item);if(!family||seen.has(family))return false;seen.add(family);return true;}).slice(0,Math.max(1,Math.min(6,Number(limit)||6)));
 }
 export function __resetImageModelsCacheForTests(){imageModelsCache={expiresAt:0,models:[]};}
 export function imageRequestFields(model) {
@@ -1302,12 +1313,12 @@ function imagePromptFit(model,prompt=''){
   if(/\b(illustration|anime|fantasy|concept art|ilustração|fantasia)\b/.test(request)&&/flux|qwen|seedream/.test(profile))score+=3;
   return score;
 }
-async function runOpenRouterImage(prompt,{budget,toolPreferences=null,reference=null,references=null,operation='Image generation',excludeModel=null}={}){
+async function runOpenRouterImage(prompt,{budget,toolPreferences=null,reference=null,references=null,operation='Image generation',excludeModel=null,excludeFamily=null}={}){
   const inputReferences=Array.isArray(references)?references.filter(ref=>ref?.base64&&ref?.mimeType):reference?[reference]:[];
   const candidates=await imageGeneratorCandidates({limit:6});let pool=candidates.filter(model=>model.provider==='openrouter'&&(!inputReferences.length||model.inputImage));
   if(!pool.length)return null;
-  const alternate=pool.filter(model=>`${model.provider}:${model.id}`!==excludeModel&&model.id!==excludeModel);
-  if(alternate.length)pool=alternate;
+  pool=pool.filter(model=>`${model.provider}:${model.id}`!==excludeModel&&model.id!==excludeModel&&(!excludeFamily||imageModelFamily(model)!==excludeFamily));
+  if(!pool.length)return null;
   const preference=toolPreferences?.images,standard=preference?.standard;
   pool.sort((a,b)=>(imagePromptFit(b,prompt)+toolPreferenceScore(b,preference))-(imagePromptFit(a,prompt)+toolPreferenceScore(a,preference)));
   const preferred=standard&&Math.random()<0.7?pool.find(model=>`openrouter:${model.id}`===standard):null;
@@ -1325,7 +1336,8 @@ async function runOpenRouterImage(prompt,{budget,toolPreferences=null,reference=
   if(!attempts.length)return null;
   throw imageFailure(operation,attempts,last);
 }
-async function runImageModels(operation, label, buildRequest, budget, excludeModel=null) {
+function unavailableImageFamilyError(){return Object.assign(new Error('A different image model family is not available right now. No same-family alternative was used.'),{code:'IMAGE_COMPARE_FAMILY_UNAVAILABLE',status:409});}
+async function runImageModels(operation, label, buildRequest, budget, excludeModel=null, excludeFamily=null) {
   if (!providerStatus().openai) throw Object.assign(new Error(`${operation} is not configured (no OpenAI / AI Gateway image access).`), { code: 'AI_NOT_CONFIGURED', status: 503 });
   if (circuitOpen('openai')) throw Object.assign(new Error(`${operation} is briefly paused after repeated OpenAI credential/billing failures. Retry in a few minutes.`), { code: 'AI_PROVIDER_PAUSED', status: 503 });
   const base = apiRoot(openaiBase());
@@ -1333,8 +1345,9 @@ async function runImageModels(operation, label, buildRequest, budget, excludeMod
   const attempts = [];
   let last;
   const imageModels=imageModelCandidates();
-  const alternatives=imageModels.filter(model=>`openai:${model}`!==excludeModel&&model!==excludeModel);
-  for (const model of alternatives.length?alternatives:imageModels) {
+  const alternatives=imageModels.filter(model=>`openai:${model}`!==excludeModel&&model!==excludeModel&&(!excludeFamily||imageModelFamily({provider:'openai',id:model})!==excludeFamily));
+  if(!alternatives.length)throw unavailableImageFamilyError();
+  for (const model of alternatives) {
     if (!budget.canCall(8000)) break;
     try {
       budget.reserveCall(`${label}:${model}`);
@@ -1355,11 +1368,12 @@ async function runImageModels(operation, label, buildRequest, budget, excludeMod
   throw imageFailure(operation, attempts, last);
 }
 
-export async function generateImage(prompt, { budget = null, toolId=null, toolPreferences=null, referenceImages=[],excludeModel=null } = {}) {
+export async function generateImage(prompt, { budget = null, toolId=null, toolPreferences=null, referenceImages=[],excludeModel=null,excludeFamily=null } = {}) {
   const localBudget = budget || createExecutionBudget({ timeoutMs: 46000, maxCalls: 3 });
   if(Array.isArray(referenceImages)&&referenceImages.length){
     if(toolId==='images'){
-      try{const routed=await runOpenRouterImage(prompt,{budget:localBudget,toolPreferences,references:referenceImages,operation:'Reference-based image generation',excludeModel});if(routed)return routed;}catch(error){if(!providerStatus().openai)throw error;}
+      try{const routed=await runOpenRouterImage(prompt,{budget:localBudget,toolPreferences,references:referenceImages,operation:'Reference-based image generation',excludeModel,excludeFamily});if(routed)return routed;}catch(error){if(!providerStatus().openai||excludeFamily==='openai')throw excludeFamily==='openai'?unavailableImageFamilyError():error;}
+      if(excludeFamily==='openai')throw unavailableImageFamilyError();
     }
     return runImageModels('Reference-based image generation','image-edit',(model)=>{
       const form=new FormData();
@@ -1371,16 +1385,17 @@ export async function generateImage(prompt, { budget = null, toolId=null, toolPr
         form.append('image[]',new Blob([bytes],{type:reference.mimeType||'image/png'}),`reference-${index+1}.${reference.mimeType==='image/jpeg'?'jpg':reference.mimeType==='image/webp'?'webp':'png'}`);
       }
       return {path:'/images/edits',init:{body:form}};
-    },localBudget,excludeModel);
+    },localBudget,excludeModel,excludeFamily);
   }
   if(toolId==='images'){
-    try{const routed=await runOpenRouterImage(prompt,{budget:localBudget,toolPreferences});if(routed)return routed;}catch(error){if(!providerStatus().openai)throw error;}
+    try{const routed=await runOpenRouterImage(prompt,{budget:localBudget,toolPreferences,excludeModel,excludeFamily});if(routed)return routed;}catch(error){if(!providerStatus().openai||excludeFamily==='openai')throw excludeFamily==='openai'?unavailableImageFamilyError():error;}
+    if(excludeFamily==='openai')throw unavailableImageFamilyError();
     if(imageModelsCache.models.length&&!providerStatus().openai)throw imageFailure('Image generation',[],null);
   }
   return runImageModels('Image generation', 'image', (model) => ({
     path: '/images/generations',
     init: { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model, prompt, ...imageRequestFields(model) }) },
-  }), localBudget);
+  }), localBudget,excludeModel,excludeFamily);
 }
 
 export async function editImage(prompt, imageBytes, imageName = 'source.png', imageType = 'image/png', { budget = null,toolPreferences=null } = {}) {
