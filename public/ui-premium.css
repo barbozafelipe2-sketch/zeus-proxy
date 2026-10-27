@@ -1526,3 +1526,15 @@ body .message.user .message-body{border-color:#d4b66e55!important;background:lin
 @media(max-width:700px){.tool-god-portrait{min-height:137px;background-size:100% 100%,727px 1536px!important;background-position:center,-45px -260px!important}.tool-god-portrait.god-code{background-position:center,-45px -454px!important}.tool-god-portrait.god-documents{background-position:center,-45px -648px!important}.tool-god-portrait.god-images{background-position:center,-45px -844px!important}.tool-god-portrait.god-analysis{background-position:center,-45px -1079px!important}}
 @media(max-width:400px){.tool-god-portrait{background-position:center,-54px -260px!important}.tool-god-portrait.god-code{background-position:center,-54px -454px!important}.tool-god-portrait.god-documents{background-position:center,-54px -648px!important}.tool-god-portrait.god-images{background-position:center,-54px -844px!important}.tool-god-portrait.god-analysis{background-position:center,-54px -1079px!important}}
 .tool-god-portrait{min-height:136px}
+.image-options-modal{width:min(480px,100%);background:linear-gradient(155deg,#111820f5,#090c11f8);border-color:#b79656a0;backdrop-filter:blur(22px);box-shadow:0 24px 90px #000b,0 0 35px #d2aa4712}
+.image-options-modal .modal-head{align-items:flex-start;border-bottom:1px solid #ffffff12;padding-bottom:15px}
+.image-options-modal .modal-head h2{font-size:22px;line-height:1.2}
+.image-options-modal .modal-head p{margin:8px 0 0;max-width:340px}
+.image-options-modal .modal-head .eyebrow{color:#d1af67;font-size:9px;letter-spacing:.2em;margin:0 0 6px}
+.image-options-modal .modal-head .ghost{flex:0 0 38px;width:38px;height:38px;border:1px solid #ffffff22;border-radius:50%;background:#ffffff08}
+.image-options-form{grid-template-columns:repeat(2,minmax(0,1fr));gap:13px}
+.image-options-form>label{display:grid;gap:7px;color:#d4d1ca;font-size:12px}
+.image-options-form select{width:100%;min-height:44px;border:1px solid #ffffff1d;border-radius:12px;background:#0a0f15;color:#f4f1e9;padding:10px 12px}
+.image-options-form .modal-actions{grid-column:1/-1;margin-top:5px;display:flex;gap:9px}
+.image-options-form .modal-actions button{flex:1;min-height:44px}
+@media(max-width:520px){.image-options-backdrop{align-items:flex-end;padding:12px}.image-options-modal{border-radius:22px 22px 16px 16px;padding:19px}.image-options-modal .modal-head h2{font-size:20px}}

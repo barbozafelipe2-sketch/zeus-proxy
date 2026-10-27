@@ -1424,9 +1424,37 @@ async function pollForReply(conversationId, executionId, mode='OLYMPUS'){
   }
   throw apiError(`${mode==='OLYMPUS'?'Olympus':'Zeus Level 3'} is still working. Wait a moment, then tap Retry to collect the reply.`,503,'REQUEST_IN_PROGRESS');
 }
+function shouldAskImageOptions(text,attachments=[]){
+  if(state.currentToolId==='images')return true;
+  const value=String(text||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
+  const image=/\b(image|picture|photo|logo|illustration|poster|graphic|artwork|imagem|foto|logotipo|ilustracao|cartaz|grafico|arte|imagen)\b/.test(value);
+  const hasImage=(attachments||[]).some(item=>String(item?.mime_type||item?.type||'').startsWith('image/'));
+  if(!image&&!hasImage)return false;
+  const create=/\b(create|generate|make|build|produce|draw|design|crie|criar|cria|gere|gerar|gera|faca|fazer|produza|produzir|desenhe|desenhar|monte|montar|crea|crear|genera|generar|dibuja|dibujar|diseña|diseñar)\b/.test(value);
+  const edit=/\b(edit|change|remove|replace|improve|enhance|transform|restyle|erase|add|crop|retouch|edite|editar|mude|mudar|remova|remover|substitua|substituir|melhore|melhorar|transforme|transformar|adicione|adicionar|recorte|retocar)\b/.test(value);
+  return create||(hasImage&&edit);
+}
+function imageOptionsModal(){
+  return new Promise(resolve=>{
+    let settled=false;
+    const finish=value=>{if(settled)return;settled=true;closeModal();resolve(value);};
+    showModal(`<div class="modal-backdrop image-options-backdrop"><section class="modal image-options-modal" aria-labelledby="image-options-title"><div class="modal-head"><div><div class="eyebrow">APOLLO · IMAGEM</div><h2 id="image-options-title">Como você quer a imagem?</h2><p class="muted tiny">Escolha antes de começar. Algumas resoluções dependem do modelo disponível.</p></div><button type="button" class="ghost" id="image-options-close" aria-label="Fechar">×</button></div><form id="image-options-form" class="form-grid image-options-form"><label for="image-resolution">Resolução<select id="image-resolution"><option value="1K">Padrão · 1K</option><option value="2K">HD · 2K</option><option value="4K">Máxima · 4K</option></select></label><label for="image-composition">Orientação<select id="image-composition"><option value="auto">Automática</option><option value="1:1">Quadrada · 1:1</option><option value="9:16">Vertical · 9:16</option><option value="16:9">Horizontal · 16:9</option></select></label><label for="image-purpose">Estilo<select id="image-purpose"><option value="auto">Escolher pelo pedido</option><option value="photo">Foto</option><option value="logo">Logo</option><option value="illustration">Ilustração</option></select></label><label for="image-output-format">Formato do arquivo<select id="image-output-format"><option value="png">PNG</option><option value="jpeg">JPEG</option><option value="webp">WebP</option></select></label><div class="modal-actions"><button type="button" class="secondary" id="image-options-cancel">Cancelar</button><button type="submit" class="primary">Gerar imagem</button></div></form></section></div>`,{initialFocus:'#image-resolution',onClose:()=>{if(!settled){settled=true;resolve(null);}}});
+    $('#image-options-close')?.addEventListener('click',()=>finish(null));
+    $('#image-options-cancel')?.addEventListener('click',()=>finish(null));
+    $('#image-options-form')?.addEventListener('submit',event=>{
+      event.preventDefault();
+      finish({resolution:$('#image-resolution').value,aspectRatio:$('#image-composition').value,purpose:$('#image-purpose').value,outputFormat:$('#image-output-format').value});
+    });
+  });
+}
 async function sendText(text,pendingAttachments=[],requestId=crypto.randomUUID(),requestedMode=state.mode,turboApproval=null,resumeExecutionId=null,options={}){
   const voiceCommand=options?.voiceCommand===true;
   if(!text||state.sending)return voiceCommand?JSON.stringify({ok:false,error:'Another OlyHub request is already running.'}):undefined;
+  if(!options?.imageOptions&&shouldAskImageOptions(text,pendingAttachments)){
+    const imageOptions=await imageOptionsModal();
+    if(!imageOptions)return;
+    return sendText(text,pendingAttachments,requestId,requestedMode,turboApproval,resumeExecutionId,{...options,imageOptions});
+  }
   const pending=[...(pendingAttachments||[])],liveTalkTurn=options?.liveTalk===true,toolRun=Boolean(state.currentToolId&&!liveTalkTurn),automatic=state.routingMode!=='MANUAL'&&!toolRun,mode=liveTalkTurn||toolRun||automatic?'ZEUS':requestedMode==='OLYMPUS'?'OLYMPUS':'ZEUS',compareType=liveTalkTurn||voiceCommand?null:state.compareType;
   // In typed chat, a direct request to work inside a named project should use
   // that project's permanent conversation and server-injected project context.
@@ -1466,6 +1494,7 @@ async function sendText(text,pendingAttachments=[],requestId=crypto.randomUUID()
       ...(toolRun?{maxZeusLevel:3}:{}),
       ...(state.currentToolId&&!liveTalkTurn?{toolId:state.currentToolId}:{}),
       ...(liveTalkTurn?{liveTalk:true}:{}),
+      ...(options?.imageOptions?{imageOptions:options.imageOptions}:{}),
       ...(/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(options?.compareImageSourceId||''))?{compareImageSourceId:options.compareImageSourceId}:{}),
       mode,
       requestId,

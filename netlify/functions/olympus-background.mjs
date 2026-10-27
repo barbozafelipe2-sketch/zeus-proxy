@@ -14,4 +14,6 @@ export default async (req, context) => {
   }
 };
 
-export const config = { path: '/api/olympus-background' };
+// Mark this explicitly as a background function; the chat router waits for
+// Netlify's immediate 202 acknowledgement before it returns the queued state.
+export const config = { path: '/api/olympus-background', background: true };
