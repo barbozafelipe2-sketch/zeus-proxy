@@ -10,9 +10,9 @@ const saved=[{phaseLabel:'CREATOR',content:'Existing specialist code',model:'ope
 const calls=[],checkpointed=[];
 const b={reserveMs:6500,remaining:()=>49000,snapshot:()=>({calls:calls.length,maxCalls:3})};
 const result=await runDirectedPipeline({text:'Build backend',budget:b,resumeStages:saved,onStage:v=>checkpointed.push(v)},{
- candidates:role=>[{id:role.toLowerCase(),provider:'mock'}],
+ candidates:role=>[{id:role.toLowerCase(),provider:`mock-${role.toLowerCase()}`}],
  call:async model=>{calls.push(model.id);return model.id+' generated';},
- family:()=> 'mock'
+ family:model=>model.provider
 });
 assert.deepEqual(calls,['director','ceo']);
 assert.deepEqual(checkpointed.map(x=>x.phaseNumber),[1,2,3]);

@@ -8,20 +8,22 @@ import { getToolWorkflow, pickToolCandidate, toolPreferenceScore } from './tool-
 
 const env = (name) => globalThis.Netlify?.env?.get?.(name) || process.env?.[name] || '';
 function openRouterGatewayConfig(){
+  // Netlify's provider-specific pair is the normal Gateway route. A bare
+  // OPENROUTER_API_KEY is not enough to infer a Gateway URL (and must never
+  // silently turn into a direct OpenRouter call).
   const key=env('OPENROUTER_API_KEY'),base=env('OPENROUTER_BASE_URL');
-  if(key)return {key,base:base||'https://openrouter.ai/api/v1',source:'openrouter_gateway'};
+  if(key&&base)return {key,base,source:'netlify_ai_gateway_provider'};
   const gatewayKey=env('NETLIFY_AI_GATEWAY_KEY'),gatewayUrl=env('NETLIFY_AI_GATEWAY_URL');
   if(gatewayKey&&gatewayUrl)return {key:gatewayKey,base:gatewayUrl,source:'netlify_ai_gateway'};
   return null;
 }
-function openRouterImageConfig(){
-  const gateway=openRouterGatewayConfig();
-  if(gateway)return gateway;
+function openRouterDirectConfig(){
   const key=env('OPENROUTER_DIRECT_API_KEY');
   return key?{key,base:env('OPENROUTER_DIRECT_BASE_URL')||'https://openrouter.ai/api/v1',source:'openrouter_direct'}:null;
 }
-const openRouterImageKey = () => openRouterImageConfig()?.key||'';
-const openRouterImageApi = () => openRouterImageConfig()?.base||'';
+function openRouterImageConfig(){
+  return openRouterGatewayConfig()||openRouterDirectConfig();
+}
 const MAX_SPECIALIST_CHARS = 24000;
 const CIRCUIT_FAILURE_THRESHOLD = 2;
 const CIRCUIT_COOLDOWN_MS = 60_000;
@@ -65,13 +67,13 @@ export function modelCatalog() {
 }
 
 function openaiBase() {
-  return env('OPENAI_BASE_URL') || env('OPENAI_API_BASE') || (env('OPENAI_API_KEY') ? 'https://api.openai.com/v1' : '');
+  return env('OPENAI_BASE_URL') || env('OPENAI_API_BASE') || '';
 }
 function anthropicBase() {
-  return env('ANTHROPIC_BASE_URL') || (env('ANTHROPIC_API_KEY') ? 'https://api.anthropic.com' : '');
+  return env('ANTHROPIC_BASE_URL') || '';
 }
 function geminiBase() {
-  return env('GOOGLE_GEMINI_BASE_URL') || (env('GEMINI_API_KEY') ? 'https://generativelanguage.googleapis.com' : '');
+  return env('GOOGLE_GEMINI_BASE_URL') || '';
 }
 function openrouterBase() {
   return openRouterGatewayConfig()?.base || (env('OPENROUTER_DIRECT_API_KEY') ? env('OPENROUTER_DIRECT_BASE_URL')||'https://openrouter.ai/api/v1' : '');
@@ -85,7 +87,9 @@ export function providerStatus() {
     openai: Boolean(env('OPENAI_API_KEY') && openaiBase()),
     anthropic: Boolean(env('ANTHROPIC_API_KEY') && anthropicBase()),
     gemini: Boolean(env('GEMINI_API_KEY') && geminiBase()),
-    openrouter: Boolean(openRouterGatewayConfig() || env('OPENROUTER_DIRECT_API_KEY')),
+    // Direct credentials are separate break-glass transports. They must not
+    // make the Gateway provider appear configured or be mistaken for it.
+    openrouter: Boolean(openRouterGatewayConfig()),
   };
 }
 
@@ -706,7 +710,13 @@ function repairFailureLabel(text){return codeLikeRequest(text)?'Static review fo
 export async function runZeus({ text, context = '', images = [], history = [], requirements = { items: [], ambiguous: false }, level = 'SIMPLE', verify = false, deliveryContract = '', blockedProviders = [], budget = null, onStage = null, resumeStages = [], routeHint = null, toolId=null,toolPreferences=null }) {
   if(String(level||'').toUpperCase()==='ZEUS_DIRECTED'){
     const localBudget=budget||createExecutionBudget({timeoutMs:120000,maxCalls:3,reserveMs:6500});
-    return runDirectedPipeline({text,context,images,history,requirements,deliveryContract,blockedProviders,budget:localBudget,onStage,resumeStages,routeHint,toolId,toolPreferences},{candidates:roleCandidates,call:callModel,family:modelFamily,pickCandidate:pickToolCandidate});
+    return runDirectedPipeline({text,context,images,history,requirements,deliveryContract,blockedProviders,budget:localBudget,onStage,resumeStages,routeHint,toolId,toolPreferences},{
+      candidates:roleCandidates,call:callModel,family:modelFamily,pickCandidate:pickToolCandidate,
+      execute:(ranked,system,prompt,options)=>executeCandidateOrder(ranked,system,prompt,{
+        ...options,maxAttempts:2,blockedProviders,
+        callTimeoutMs:(b)=>Math.min(24000,Math.max(2500,b.remaining()-b.reserveMs-options.reserveAfterMs-1000))
+      })
+    });
   }
   const requestedLevel=(String(level||'').toUpperCase()==='COMPOUND'||verify)?'COMPOUND':'SIMPLE';
   const localBudget=budget||createExecutionBudget({timeoutMs:52000,maxCalls:requestedLevel==='COMPOUND'?2:1});
@@ -1257,13 +1267,14 @@ export function imageModelCandidates() {
   const configured = env('OPENAI_IMAGE_MODEL').trim();
   return [...new Set([configured, 'gpt-image-2.5-flare', 'gpt-image-2', 'gpt-image-1'].filter(Boolean))];
 }
+export function imageGenerationCallLimit(){return 1+Number(Boolean(openRouterDirectConfig()||providerStatus().openai));}
 const OPENROUTER_IMAGE_MODELS=Object.freeze([
-  {id:'openai/gpt-image-2.5-flare',family:'openai',name:'GPT Image 2.5',inputImage:false},
-  {id:'x-ai/grok-imagine-image-2.0',family:'x-ai',name:'Grok Imagine',inputImage:false},
-  {id:'qwen/qwen-image-3-pro',family:'qwen',name:'Qwen Image 3 Pro',inputImage:false},
-  {id:'black-forest-labs/flux-3-image',family:'black-forest-labs',name:'FLUX.3 Image',inputImage:false},
-  {id:'recraft/recraft-v4.1-pro',family:'recraft',name:'Recraft V4.1 Pro',inputImage:false},
-  {id:'google/gemini-3.1-flash-image',family:'google',name:'Imagen · Gemini Flash Image',inputImage:false},
+  {id:'openai/gpt-image-2.5-flare',family:'openai',name:'GPT Image 2.5',inputImage:true},
+  {id:'x-ai/grok-imagine-image-2.0',family:'x-ai',name:'Grok Imagine',inputImage:true},
+  {id:'qwen/qwen-image-3-pro',family:'qwen',name:'Qwen Image 3 Pro',inputImage:true},
+  {id:'black-forest-labs/flux-3-image',family:'black-forest-labs',name:'FLUX.3 Image',inputImage:true},
+  {id:'recraft/recraft-v4.1-pro',family:'recraft',name:'Recraft V4.1 Pro',inputImage:true},
+  {id:'google/gemini-3.1-flash-image',family:'google',name:'Imagen · Gemini Flash Image',inputImage:true},
 ]);
 export function imageModelFamily(model={}){return modelFamily(model);}
 export function imageGeneratorCandidates({limit=6}={}){
@@ -1314,8 +1325,10 @@ function imagePromptFit(model,prompt=''){
   if(/\b(illustration|anime|fantasy|concept art|ilustração|fantasia)\b/.test(request)&&/flux|qwen|seedream/.test(profile))score+=3;
   return score;
 }
-async function runOpenRouterImage(prompt,{budget,toolPreferences=null,reference=null,references=null,operation='Image generation',excludeModel=null,excludeFamily=null}={}){
+async function runOpenRouterImage(prompt,{budget,toolPreferences=null,reference=null,references=null,operation='Image generation',excludeModel=null,excludeFamily=null,transport='gateway'}={}){
   const inputReferences=Array.isArray(references)?references.filter(ref=>ref?.base64&&ref?.mimeType):reference?[reference]:[];
+  const config=transport==='openrouter_direct'?openRouterDirectConfig():openRouterGatewayConfig();
+  if(!config)return null;
   const candidates=await imageGeneratorCandidates({limit:6});let pool=candidates.filter(model=>model.provider==='openrouter'&&(!inputReferences.length||model.inputImage));
   if(!pool.length)return null;
   pool=pool.filter(model=>`${model.provider}:${model.id}`!==excludeModel&&model.id!==excludeModel&&(!excludeFamily||imageModelFamily(model)!==excludeFamily));
@@ -1324,18 +1337,41 @@ async function runOpenRouterImage(prompt,{budget,toolPreferences=null,reference=
   pool.sort((a,b)=>(imagePromptFit(b,prompt)+toolPreferenceScore(b,preference))-(imagePromptFit(a,prompt)+toolPreferenceScore(a,preference)));
   const preferred=standard&&Math.random()<0.7?pool.find(model=>`openrouter:${model.id}`===standard):null;
   const first=preferred||(pool.length>1&&Math.random()<0.25?pool[Math.floor(Math.random()*pool.length)]:pool[0]);
-  const ordered=[first,...pool.filter(model=>model!==first)],attempts=[];let last;
+  // One image model is selected for an output. Alternative families are used
+  // only for the explicitly configured fallback transport or by Compare.
+  const ordered=[first],attempts=[];let last;
   for(const model of ordered){if(!budget.canCall(8000))break;
     try{
+      const callStartedAt=Date.now();
       budget.reserveCall(`image:openrouter:${model.id}`);
       const encodedReferences=inputReferences.map(ref=>({type:'image_url',image_url:{url:`data:${ref.mimeType};base64,${ref.base64||Buffer.from(ref.bytes).toString('base64')}`}}));
-      const response=await fetch(`${apiRoot(openRouterImageApi())}/images`,{method:'POST',headers:{Authorization:`Bearer ${openRouterImageKey()}`,'Content-Type':'application/json'},signal:budget.signal(imageCallTimeout(budget)),body:JSON.stringify({model:model.id,prompt,n:1,...(encodedReferences.length?{input_references:encodedReferences}:{})})});
+      const response=await fetch(`${apiRoot(config.base)}/images`,{method:'POST',headers:{Authorization:`Bearer ${config.key}`,'Content-Type':'application/json'},signal:budget.signal(imageCallTimeout(budget)),body:JSON.stringify({model:model.id,prompt,n:1,...(encodedReferences.length?{input_references:encodedReferences}:{})})});
       const data=await response.json().catch(()=>({}));if(!response.ok)throw providerError(data?.error?.message||`Image ${response.status}`,response.status);
-      const bytes=await imageBytesFromResponse(data,budget);return {bytes,model:model.id,provider:'openrouter',mimeType:data?.data?.[0]?.media_type||'image/png',attempts,budget:budget.snapshot()};
-    }catch(error){last=error;attempts.push({model:model.id,status:errorStatus(error)||null,code:isTimeoutFailure(error)?'PROVIDER_TIMEOUT':error?.code||null,error:redactProviderText(String(error?.message||error)).slice(0,160)});if([401,403,402].includes(errorStatus(error)))break;}
+      const bytes=await imageBytesFromResponse(data,budget);
+      recordProviderAttempt(budget,{model:{provider:'openrouter',id:model.id,transport},stage:'image_generation',durationMs:Date.now()-callStartedAt});
+      return {bytes,model:model.id,provider:'openrouter',transport,mimeType:data?.data?.[0]?.media_type||'image/png',attempts,budget:budget.snapshot()};
+    }catch(error){last=error;recordProviderAttempt(budget,{model:{provider:'openrouter',id:model.id,transport},stage:'image_generation',durationMs:0,error});attempts.push({model:model.id,status:errorStatus(error)||null,code:isTimeoutFailure(error)?'PROVIDER_TIMEOUT':error?.code||null,error:redactProviderText(String(error?.message||error)).slice(0,160)});if([401,403,402].includes(errorStatus(error)))break;}
   }
   if(!attempts.length)return null;
   throw imageFailure(operation,attempts,last);
+}
+async function runOpenRouterImageWithFallback(prompt,options={}){
+  const attempts=[];let gatewayError=null;
+  if(openRouterGatewayConfig()){
+    try{return await runOpenRouterImage(prompt,{...options,transport:'gateway'});}
+    catch(error){gatewayError=error;attempts.push(...(error?.attempts||[]));}
+  }
+  if(openRouterDirectConfig()){
+    try{
+      const result=await runOpenRouterImage(prompt,{...options,transport:'openrouter_direct'});
+      if(result)return {...result,attempts:[...attempts,...(result.attempts||[])]};
+    }catch(error){
+      const combined=Object.assign(new Error(error?.message||'Image generation failed.'),{code:error?.code||'IMAGE_GENERATION_FAILED',status:error?.status||502,attempts:[...attempts,...(error?.attempts||[])]});
+      throw combined;
+    }
+  }
+  if(gatewayError)throw gatewayError;
+  return null;
 }
 function unavailableImageFamilyError(){return Object.assign(new Error('A different image model family is not available right now. No same-family alternative was used.'),{code:'IMAGE_COMPARE_FAMILY_UNAVAILABLE',status:409});}
 async function runImageModels(operation, label, buildRequest, budget, excludeModel=null, excludeFamily=null) {
@@ -1351,6 +1387,7 @@ async function runImageModels(operation, label, buildRequest, budget, excludeMod
   for (const model of alternatives) {
     if (!budget.canCall(8000)) break;
     try {
+      const callStartedAt=Date.now();
       budget.reserveCall(`${label}:${model}`);
       const { path, init } = buildRequest(model);
       const res = await fetch(`${base}${path}`, { method: 'POST', signal: budget.signal(imageCallTimeout(budget)), ...init, headers: { ...(init.headers || {}), Authorization: `Bearer ${key}` } });
@@ -1358,9 +1395,11 @@ async function runImageModels(operation, label, buildRequest, budget, excludeMod
       if (!res.ok) throw providerError(data.error?.message || `Image ${res.status}`, res.status);
       const bytes = await imageBytesFromResponse(data, budget);
       recordProviderSuccess('openai');
-      return { bytes, model, budget: budget.snapshot(), attempts };
+      recordProviderAttempt(budget,{model:{provider:'openai',id:model,transport:'gateway'},stage:'image_generation',durationMs:Date.now()-callStartedAt});
+      return { bytes, model, provider:'openai',transport:'gateway',budget: budget.snapshot(), attempts };
     } catch (error) {
       last = error;
+      recordProviderAttempt(budget,{model:{provider:'openai',id:model,transport:'gateway'},stage:'image_generation',durationMs:0,error});
       attempts.push({ model, status: errorStatus(error) || null, code: isTimeoutFailure(error) ? 'PROVIDER_TIMEOUT' : (error?.code || null), error: redactProviderText(String(error?.message || error)).slice(0, 180) });
       if (imageFailureTripsProvider(error)) { recordProviderFailure('openai', error); break; }
       if (isTimeoutFailure(error) && !budget.canCall(15000)) break;

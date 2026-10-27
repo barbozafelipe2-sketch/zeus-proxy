@@ -20,17 +20,14 @@ assert.equal(mixed.images.models['openrouter:qwen/qwen-image-2.1-pro'].likes,1,'
 assert.equal(mixed.code.standard,'test:model-4','feedback stays isolated to its tool');
 assert.equal(recordToolFeedback({},'code',['bad model key'],'up'),null,'invalid provider/model keys are ignored');
 
-const savedEnv={openrouter:process.env.OPENROUTER_API_KEY,openai:process.env.OPENAI_API_KEY,fetch:globalThis.fetch};
-process.env.OPENROUTER_API_KEY='test-openrouter-key';delete process.env.OPENAI_API_KEY;
-globalThis.fetch=async url=>{
-  assert.match(String(url),/\/images\/models$/);
-  const ids=['qwen/qwen-image-2.1-pro','bytedance-seed/seedream-5.0-flash','black-forest-labs/flux-3-image-klein','tencent/hy-image-3.5','recraft/recraft-v4','ideogram/ideogram-3.0','google/gemini-image','meta/muse-image'];
-  return Response.json({data:ids.map(id=>({id,name:id.split('/')[1],architecture:{input_modalities:['text'],output_modalities:['image']}}))});
-};
+const savedEnv={openrouter:process.env.OPENROUTER_API_KEY,base:process.env.OPENROUTER_BASE_URL,openai:process.env.OPENAI_API_KEY,fetch:globalThis.fetch};
+process.env.OPENROUTER_API_KEY='test-gateway-openrouter-key';process.env.OPENROUTER_BASE_URL='https://gateway.fixture/v1';delete process.env.OPENAI_API_KEY;
+globalThis.fetch=async()=>{throw Error('The fixed image roster must not perform catalog discovery.');};
 const imagePool=await imageGeneratorCandidates({limit:6});
-assert.deepEqual(imagePool.map(model=>model.id),['qwen/qwen-image-2.1-pro','bytedance-seed/seedream-5.0-flash','black-forest-labs/flux-3-image-klein','tencent/hy-image-3.5','recraft/recraft-v4','ideogram/ideogram-3.0'],'image roster discovers six diverse image providers including Qwen');
+assert.deepEqual(imagePool.map(model=>model.id),['openai/gpt-image-2.5-flare','x-ai/grok-imagine-image-2.0','qwen/qwen-image-3-pro','black-forest-labs/flux-3-image','recraft/recraft-v4.1-pro','google/gemini-3.1-flash-image'],'image roster presents the six fixed model families');
 assert.equal(new Set(imagePool.map(model=>model.family)).size,6,'image roster has no duplicate provider family');
 globalThis.fetch=savedEnv.fetch;
 if(savedEnv.openrouter===undefined)delete process.env.OPENROUTER_API_KEY;else process.env.OPENROUTER_API_KEY=savedEnv.openrouter;
+if(savedEnv.base===undefined)delete process.env.OPENROUTER_BASE_URL;else process.env.OPENROUTER_BASE_URL=savedEnv.base;
 if(savedEnv.openai===undefined)delete process.env.OPENAI_API_KEY;else process.env.OPENAI_API_KEY=savedEnv.openai;
 console.log('Tool workflow tests passed: one deity per tool, isolated preference learning, standard selection and exploration.');

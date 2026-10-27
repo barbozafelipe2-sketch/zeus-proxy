@@ -2,7 +2,7 @@ import {authorizeOlympusModelCall} from './_shared/olympus-budget.mjs';
 import {aiRouteFor} from './_shared/ai-router.mjs';
 import { requireUser } from './_shared/auth.mjs';
 import { json, readJson, cleanText, isUuid, getRequestId, errorJson } from './_shared/http.mjs';
-import { runZeus, runOlympus, runOlympusCompoundPlus, TURBO_LIMITS, generateImage, editImage, imageModelFamily, routeFor, roleCandidates, callModel } from './_shared/models.mjs';
+import { runZeus, runOlympus, runOlympusCompoundPlus, TURBO_LIMITS, generateImage, editImage, imageModelFamily, imageGenerationCallLimit, routeFor, roleCandidates, callModel } from './_shared/models.mjs';
 import { modelFamily } from './_shared/provider-routing.mjs';
 import { getToolWorkflow, toolConversationTitle } from './_shared/tool-workflows.mjs';
 import { runIndependentArtifactPair } from './_shared/compare-pair.mjs';
@@ -303,7 +303,7 @@ async function finalizeTurn({db,userId,projectId,conversationId,execution,mode,r
     await client.query(`UPDATE executions SET state='SAVING',lead_model=$1,trace=$2::jsonb WHERE id=$3 AND owner_id=$4`,[result.leadModel||null,JSON.stringify(result.trace||{}),execution.id,userId]);
     const assistant=(await client.query(
       `INSERT INTO messages(owner_id,conversation_id,execution_id,role,mode,content,metadata) VALUES($1,$2,$3,'assistant',$4,$5,$6::jsonb) RETURNING id,execution_id,role,mode,content,metadata,created_at`,
-      [userId,conversationId,execution.id,mode,result.content,JSON.stringify({artifacts:[...new Set([...artifacts.map(a=>a.id),...(isUuid(result.trace?.compareImageSourceId)?[result.trace.compareImageSourceId]:[])])],sources:Array.isArray(result.sources)?result.sources.slice(0,12):[],capabilities:Array.isArray(result.capabilities)?result.capabilities:[],leadModel:result.leadModel||null,fallback:Array.isArray(result.trace?.fallbacks)&&result.trace.fallbacks.length>0,modeExplanation:result.modeExplanation||null,executionLevel:result.executionLevel||null,pipelineLabel:result.pipelineLabel||null,toolId:result.toolId||null,toolGod:result.trace?.toolGod||null,comparePair:Boolean(result.trace?.comparePair),compareType:result.trace?.comparePair?result.trace.compareType:null,compareImageSourceId:isUuid(result.trace?.compareImageSourceId)?result.trace.compareImageSourceId:null,phases:Array.isArray(result.trace?.roles)?result.trace.roles.slice(0,3).map(role=>({label:String(role.role||'').slice(0,32),family:String(role.family||'').slice(0,32),model:String(role.provider||'')+':'+String(role.model||role.id||''),state:'COMPLETED',restored:Boolean(role.restored)})):[],traceCalls:Array.isArray(result.trace?.providerTelemetry?.attempts)?result.trace.providerTelemetry.attempts.slice(0,24).map(call=>({stage:String(call.stage||'').slice(0,48),transport:String(call.transport||'').slice(0,32),provider:String(call.provider||'').slice(0,36),family:String(call.family||'').slice(0,32),model:String(call.model||'').slice(0,100),outcome:call.outcome==='success'?'success':'failure',durationMs:Number.isFinite(Number(call.durationMs))?Number(call.durationMs):null,status:Number.isInteger(call.status)?call.status:null})):[],verificationLabel:result.verificationLabel||null,visionSummary:result.visionSummary||null,usage:result.usage||null})]
+      [userId,conversationId,execution.id,mode,result.content,JSON.stringify({artifacts:[...new Set([...artifacts.map(a=>a.id),...(isUuid(result.trace?.compareImageSourceId)?[result.trace.compareImageSourceId]:[])])],sources:Array.isArray(result.sources)?result.sources.slice(0,12):[],capabilities:Array.isArray(result.capabilities)?result.capabilities:[],leadModel:result.leadModel||null,fallback:Array.isArray(result.trace?.fallbacks)&&result.trace.fallbacks.length>0,modeExplanation:result.modeExplanation||null,executionLevel:result.executionLevel||null,pipelineLabel:result.pipelineLabel||null,toolId:result.toolId||null,toolGod:result.trace?.toolGod||null,comparePair:Boolean(result.trace?.comparePair),compareType:result.trace?.comparePair?result.trace.compareType:null,compareImageSourceId:isUuid(result.trace?.compareImageSourceId)?result.trace.compareImageSourceId:null,phases:Array.isArray(result.trace?.roles)?result.trace.roles.slice(0,3).map(role=>({label:String(role.role||'').slice(0,32),family:String(role.family||'').slice(0,32),model:String(role.provider||'')+':'+String(role.model||role.id||''),transport:String(role.transport||'gateway').slice(0,32),state:'COMPLETED',restored:Boolean(role.restored)})):[],traceCalls:Array.isArray(result.trace?.providerTelemetry?.attempts)?result.trace.providerTelemetry.attempts.slice(0,24).map(call=>({stage:String(call.stage||'').slice(0,48),transport:String(call.transport||'').slice(0,32),provider:String(call.provider||'').slice(0,36),family:String(call.family||'').slice(0,32),model:String(call.model||'').slice(0,100),outcome:call.outcome==='success'?'success':'failure',durationMs:Number.isFinite(Number(call.durationMs))?Number(call.durationMs):null,status:Number.isInteger(call.status)?call.status:null})):[],verificationLabel:result.verificationLabel||null,visionSummary:result.visionSummary||null,usage:result.usage||null})]
     )).rows[0];
     await client.query(`UPDATE executions SET state='COMPLETED',completed_at=now(),lease_expires_at=NULL,dispatch_token=NULL,worker_token=NULL WHERE id=$1 AND owner_id=$2`,[execution.id,userId]);
     await client.query(`UPDATE conversations SET updated_at=now() WHERE id=$1 AND owner_id=$2`,[conversationId,userId]);
@@ -464,7 +464,16 @@ async function chatHandler(req, context, startedAt){
     :liveTalkTurn
     ?{mode:'ZEUS',level:'SIMPLE',maxCalls:GEAR_CALL_CAPS.SIMPLE,workstreams:[],reason:'live_talk_fast_path'}
     :decideExecutionLevel(modelText,{mode:decision.mode,action:intent.action,route,hasFiles:attachmentRows.length>0,hasImage,requirementCount:requirementSpec.items.length,artifactType:intent.artifactType,requiresVerification:verificationSignal});
-  if(toolWorkflow&&!liveTalkTurn){levelDecision.mode='ZEUS';levelDecision.level='ZEUS_DIRECTED';levelDecision.maxCalls=GEAR_CALL_CAPS.ZEUS_DIRECTED;levelDecision.reason='owner_tool_level_3';}
+  if(toolWorkflow&&!liveTalkTurn){
+    levelDecision.mode='ZEUS';
+    if(intent.action==='IMAGE_CREATE'||intent.action==='IMAGE_EDIT'){
+      // Apollo produces one image with one selected image model. The separate
+      // A/B action makes a second generation; neither is the three-role L3 pipeline.
+      levelDecision.level='IMAGE_GENERATION';levelDecision.maxCalls=GEAR_CALL_CAPS.SIMPLE;levelDecision.reason='native_image_generation';
+    }else{
+      levelDecision.level='ZEUS_DIRECTED';levelDecision.maxCalls=GEAR_CALL_CAPS.ZEUS_DIRECTED;levelDecision.reason='owner_tool_level_3';
+    }
+  }
   if(!toolWorkflow&&levelDecision.mode==='ZEUS'&&Number.isInteger(body.maxZeusLevel)&&body.maxZeusLevel>=1&&body.maxZeusLevel<=3){
     const allowed=['SIMPLE','COMPOUND','ZEUS_DIRECTED'];
     const requestedMaximum=body.maxZeusLevel-1;
@@ -477,6 +486,7 @@ async function chatHandler(req, context, startedAt){
   const mode=levelDecision.mode||decision.mode,level=levelDecision.level; // router may downgrade Olympus to a Zeus gear
   const zeusCompound=mode==='ZEUS'&&level==='COMPOUND';
   let modeExplanation=explainExecutionLevel(levelDecision);
+  if(level==='IMAGE_GENERATION')modeExplanation='Apollo · one selected image model per generation. Compare creates an independent alternative.';
   const externalActions=externalMutationPolicy(modelText);
   const turboQuote=level==='COMPLEX_TURBO'?estimateTurboQuote({
     requirementCount:requirementSpec.items.length,
@@ -646,9 +656,12 @@ ${aiContext}`);
     const webIntent=shouldSearchWeb(modelText)&&!isImageOp;
     const githubIntent=hasGitHubRepoUrl(modelText);
     if(actualMode==='OLYMPUS'&&(isImageOp||webIntent))throw codedError('This Olympus media/research route requires a verified price reservation before it can run. Use Zeus for now.',409,'OLYMPUS_UNPRICED_ROUTE');
-    const zeusLevel=actualMode==='ZEUS'?(webIntent?'SIMPLE':gearLevel):null;
+    const zeusLevel=actualMode==='ZEUS'?(webIntent&&!toolWorkflow?'SIMPLE':gearLevel):null;
     const turboCreatorCount=turboHardCap?(webIntent?1:Number(turboQuote?.creatorCount||TURBO_LIMITS.maxCreators)):null;
-    const maxCalls=comparePair?2:isImageOp?GEAR_CALL_CAPS.SIMPLE:(actualMode==='ZEUS'&&webIntent?GEAR_CALL_CAPS.COMPOUND:GEAR_CALL_CAPS[gearLevel]||GEAR_CALL_CAPS.SIMPLE)+1; // compare spends exactly two independent creation calls
+    const maxCalls=comparePair?2:isImageOp?imageGenerationCallLimit():
+      actualMode==='ZEUS'&&webIntent
+        ?(toolWorkflow?GEAR_CALL_CAPS.ZEUS_DIRECTED+1:GEAR_CALL_CAPS.COMPOUND+1)
+        :(GEAR_CALL_CAPS[gearLevel]||GEAR_CALL_CAPS.SIMPLE)+(toolWorkflow?0:1); // tools run their declared three roles; regular turns reserve one routing call
     const timeoutMs=worker?150000:((webIntent||githubIntent||zeusLevel==='ZEUS_DIRECTED')?CHAT_WEB_TIMEOUT_MS:(route==='fast'&&zeusLevel==='SIMPLE'?FAST_CHAT_TIMEOUT_MS:CHAT_TIMEOUT_MS));
     executionBudget=createExecutionBudget({startedAt,timeoutMs,maxCalls,reserveMs:6500});
     if(actualMode==='OLYMPUS')executionBudget.authorizeProviderCall=info=>authorizeOlympusModelCall(db,{ownerId:user.id,executionId:execution.id,...info});
@@ -682,7 +695,7 @@ ${aiContext}`);
       const img=await editImage(modelText,new Uint8Array(sourceBytes),src.filename,src.mime_type,{budget:executionBudget,toolPreferences:prefRows?.[0]?.family_preferences||null});
       const imageMime=img.mimeType||'image/png';
       stagedArtifacts.push(await stageBinaryArtifact({ownerId:user.id,type:'image',mimeType:imageMime,filename:`OlyHub-Edited-${Date.now()}.${imageMime==='image/jpeg'?'jpg':imageMime==='image/webp'?'webp':'png'}`,bytes:img.bytes,metadata:{prompt:modelText,sourceFileId:src.id,toolId},provenance:{provider:img.provider||'openai',providerFamily:imageModelFamily({provider:img.provider||'openai',id:img.model}),model:img.model,toolId,operation:'edit'}}));
-      result={content:'Image edited and saved as a new OlyHub artifact. The original upload was preserved.',leadModel:`${img.provider||'openai'}:${img.model}`,trace:{imageEdit:true,toolId,toolGod:toolWorkflow?.god||null,sourceFileId:src.id,roles:[{role:'Image editor',provider:img.provider||'openai',family:imageModelFamily({provider:img.provider||'openai',id:img.model}),model:img.model}],budget:img.budget}};
+      result={content:'Image edited and saved as a new OlyHub artifact. The original upload was preserved.',leadModel:`${img.provider||'openai'}:${img.model}`,effectiveLevel:'IMAGE_GENERATION',modeExplanation:'Apollo · one selected image model per edit.',trace:{imageEdit:true,toolId,toolGod:toolWorkflow?.god||null,sourceFileId:src.id,roles:[{role:'Image editor',provider:img.provider||'openai',family:imageModelFamily({provider:img.provider||'openai',id:img.model}),model:img.model,transport:img.transport||'gateway'}],budget:img.budget}};
     }else if(intent.action==='IMAGE_CREATE'){
       await db.sql`UPDATE executions SET state='RUNNING' WHERE id=${execution.id} AND owner_id=${user.id}`;
       const referenceImages=vision.images.map(({mimeType,base64})=>({mimeType,base64}));
@@ -692,7 +705,7 @@ ${aiContext}`);
       const imageMime=img.mimeType||'image/png';
       const generatedFamily=imageModelFamily({provider:img.provider||'openai',id:img.model});
       stagedArtifacts.push(await stageBinaryArtifact({ownerId:user.id,type:'image',mimeType:imageMime,filename:`OlyHub-${Date.now()}.${imageMime==='image/jpeg'?'jpg':imageMime==='image/webp'?'webp':'png'}`,bytes:img.bytes,metadata:{prompt:modelText,toolId,referenceImageCount:referenceImages.length,...(compareImageSourceId?{comparePair:true,variant:'B',compareSourceArtifactId:compareImageSourceId}:{})},provenance:{provider:img.provider||'openai',providerFamily:generatedFamily,model:img.model,toolId,referenceImageCount:referenceImages.length,...(compareImageSourceId?{operation:'compare_alternative'}:{})}}));
-      result={content:compareImageSourceId?'Alternative B was generated from a different eligible image family. Compare it with A below, choose either one, or combine both into C.':referenceImages.length?'Image created using your reference images and saved to your OlyHub Files.':'Image created and saved to your OlyHub Files.',leadModel:`${img.provider||'openai'}:${img.model}`,trace:{image:true,referenceImageCount:referenceImages.length,toolId,toolGod:toolWorkflow?.god||null,...(compareImageSourceId?{comparePair:true,compareType:'image',compareImageSourceId}:{}),roles:[{role:'Image generator',provider:img.provider||'openai',family:generatedFamily,model:img.model}],budget:img.budget}};
+      result={content:compareImageSourceId?'Alternative B was generated from a different eligible image family. Compare it with A below, choose either one, or combine both into C.':referenceImages.length?'Image created using your reference images and saved to your OlyHub Files.':'Image created and saved to your OlyHub Files.',leadModel:`${img.provider||'openai'}:${img.model}`,effectiveLevel:compareImageSourceId?'IMAGE_COMPARE':'IMAGE_GENERATION',modeExplanation:compareImageSourceId?'Image compare · one independent model generated B from a different family.':'Apollo · one selected image model per generation. Compare creates an independent alternative.',trace:{image:true,referenceImageCount:referenceImages.length,toolId,toolGod:toolWorkflow?.god||null,...(compareImageSourceId?{comparePair:true,compareType:'image',compareImageSourceId}:{}),roles:[{role:'Image generator',provider:img.provider||'openai',family:generatedFamily,model:img.model,transport:img.transport||'gateway'}],budget:img.budget}};
     }else{
       await db.sql`UPDATE executions SET state='RUNNING' WHERE id=${execution.id} AND owner_id=${user.id}`;
       if(comparePair){
@@ -706,7 +719,7 @@ ${aiContext}`);
             metadata:{title,comparePair:true,variant:variant.label,toolId,validated:true},
             provenance:{generator:'independent_compare',variant:variant.label,provider:variant.model.provider,providerFamily:modelFamily(variant.model),model:variant.model.id,toolId}}));
         }
-        result={content:'Two independent alternatives were generated and saved as A and B. Open both files, then choose one, combine them into C, or try another pair.',
+        result={content:'Two independent alternatives were generated and saved as A and B. Open both files, then choose one, combine them into C, or try another pair.',effectiveLevel:'COMPARE_PAIR',modeExplanation:'Compare · two independent models created A and B.',
           leadModel:pair.variants.map(v=>`${v.model.provider}:${v.model.id}`).join(' + '),pipelineLabel:'Compare & Evolve · independent A/B',
           trace:{strategy:'independent_artifact_pair',comparePair:true,compareType,roles:pair.variants.map(v=>({role:`Variant ${v.label}`,provider:v.model.provider,model:v.model.id,family:modelFamily(v.model)}))}};
       }else if(actualMode==='OLYMPUS'){
@@ -765,7 +778,7 @@ ${aiContext}`);
     const finalLevel=result.effectiveLevel||(finalMode==='ZEUS'&&mode==='OLYMPUS'?'COMPOUND':level);
     if(finalMode==='OLYMPUS'&&level==='COMPLEX_TURBO'&&finalLevel==='COMPOUND_PLUS'&&result.trace?.olympusDescended){modeExplanation='Olympus Complex Turbo could not preserve its role-separation guarantees, so it safely downgraded to Compound Plus.';}
     result.executionLevel=finalLevel;{const providerTelemetry=snapshotProviderTelemetry(executionBudget);result.usage=summarizeRequestUsage(providerTelemetry,{maxCalls:executionBudget?.maxCalls,webTrace:webUsageTrace});result.trace={...(result.trace||{}),finalExecutionLevel:finalLevel,providerTelemetry,usage:result.usage};}
-    result.modeExplanation=modeExplanation;
+    result.modeExplanation=result.modeExplanation||modeExplanation;
     result.toolId=toolId;
     const final=await finalizeTurn({db,userId:user.id,projectId,conversationId,execution,mode:finalMode,result,stagedArtifacts});
     return json({conversationId,message:final.assistant,userMessage,artifacts:final.artifacts,mode:finalMode,level:finalLevel,modeExplanation,memorySaved,historySearched,execution:{id:execution.id,state:'COMPLETED'},requestId,replayed:false});

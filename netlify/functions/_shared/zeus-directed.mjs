@@ -4,7 +4,7 @@ export async function runDirectedPipeline(args, deps) {
   const { text, context='', images=[], history=[], requirements={items:[]},
     deliveryContract='', blockedProviders=[], budget, onStage=null, resumeStages=[],
     toolId=null,toolPreferences=null,routeHint=null }=args;
-  const { candidates, call, family }=deps;
+  const { candidates, call, execute=null, family }=deps;
   const needsVision=images.length>0 || /\b(ui|ux|visual|front.?end|layout|screen|interface|slides|presentation)\b/i.test(text);
   const domain=needsVision?'visual':/\b(code|backend|api|database|script|typescript)\b/i.test(text)?'coding':'content';
   const head='Request:\n'+text+'\nRequirements:\n'+JSON.stringify(requirements.items||[])+'\nProject context:\n'+context.slice(0,22000);
@@ -17,23 +17,29 @@ export async function runDirectedPipeline(args, deps) {
       const id=rest.join(':');
       used.push(previous.model);
       if(provider&&id)usedFamilies.push(family({provider,id}));
-      calls.push({role,provider,id,family:'restored',restored:true});
+      calls.push({role,provider,id,family:family({provider,id}),transport:'restored',restored:true});
       if(onStage)await onStage({phaseNumber:calls.length,phaseLabel:role,content:previous.content,model:previous.model});
       return previous.content;
     }
     let ranked=candidates(role,text,{vision:needsVision,blockedProviders,exclude:new Set(used),excludeProviders:usedFamilies,limit:6,toolId,toolPreferences,routeHint});
-    if(!ranked.length&&usedFamilies.length)ranked=candidates(role,text,{vision:needsVision,blockedProviders,exclude:new Set(used),limit:6,toolId,toolPreferences,routeHint});
-    if(!ranked.length)throw Object.assign(new Error('No compatible model for '+role),{code:'AI_NOT_CONFIGURED',status:503});
+    if(!ranked.length)throw Object.assign(new Error(`Level 3 cannot complete ${role}: no unused model family is available.`),{code:'AI_LEVEL3_FAMILY_UNAVAILABLE',status:503});
     for(const candidate of ranked)eligibleModels.add(`${candidate.provider}:${candidate.id}`);
-    const model=deps.pickCandidate?deps.pickCandidate(ranked,toolId,toolPreferences):ranked[0];
-    const content=await call(model,guide,input,{
+    const selected=deps.pickCandidate?deps.pickCandidate(ranked,toolId,toolPreferences):ranked[0];
+    if(!selected||usedFamilies.includes(family(selected)))throw Object.assign(new Error(`Level 3 cannot complete ${role} without reusing a model family.`),{code:'AI_LEVEL3_FAMILY_UNAVAILABLE',status:503});
+    const ordered=[selected,...ranked.filter(model=>model!==selected)];
+    const options={
       budget,images,history:includeHistory?history:[],reserveAfterMs:reserve,
       callTimeoutMs:Math.min(24000,Math.max(2500,budget.remaining()-budget.reserveMs-reserve-1000)),
       maxOutputTokens:tokens
-    });
+    };
+    const outcome=execute
+      ?await execute(ordered,guide,input,options)
+      :{model:selected,content:await call(selected,guide,input,options)};
+    const model=outcome.model||selected,content=outcome.content;
+    if(usedFamilies.includes(family(model)))throw Object.assign(new Error(`Level 3 fallback for ${role} reused a model family.`),{code:'AI_LEVEL3_FAMILY_UNAVAILABLE',status:503});
     used.push(model.provider+':'+model.id);
     usedFamilies.push(family(model));
-    calls.push({role,provider:model.provider,model:model.id,family:family(model)});
+    calls.push({role,provider:model.provider,model:model.id,family:family(model),transport:model.transport||'gateway',fallbacks:outcome.attempts||[]});
     if(onStage)await onStage({phaseNumber:calls.length,phaseLabel:role,content,model:model.provider+':'+model.id});
     return content;
   }

@@ -3,7 +3,7 @@ import {readFileSync} from 'node:fs';
 import {runDirectedPipeline} from '../netlify/functions/_shared/zeus-directed.mjs';
 const calls=[],saved=[];
 const b={reserveMs:6500,remaining:()=>51000,snapshot:()=>({calls:calls.length,maxCalls:3})};
-const deps={candidates:role=>[{provider:'mock',id:role}],call:async model=>{calls.push(model.id);return model.id+' response';},family:()=> 'mock'};
+const deps={candidates:role=>[{provider:`mock-${role.toLowerCase()}`,id:role}],call:async model=>{calls.push(model.id);return model.id+' response';},family:model=>model.provider};
 const done=await runDirectedPipeline({text:'Build the frontend',budget:b,onStage:s=>saved.push(s)},deps);
 assert.deepEqual(calls,['CREATOR','DIRECTOR','CEO']);
 assert.deepEqual(saved.map(x=>x.phaseNumber),[1,2,3]);
