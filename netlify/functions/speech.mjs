@@ -20,11 +20,11 @@ function speechRoutes({elevenLabsVoiceId=''}={}){
   if(elevenKey)routes.push({name:'elevenlabs',kind:'elevenlabs',key:elevenKey,voiceId:elevenVoice,fallbackVoiceId:elevenVoice!==fallbackVoice?fallbackVoice:''});
 
   const openaiKey=env('OPENAI_API_KEY');
-  const openaiBase=env('OPENAI_BASE_URL')||env('OPENAI_API_BASE')||(openaiKey?'https://api.openai.com/v1':'');
+  const openaiBase=env('OPENAI_BASE_URL');
   if(openaiKey&&openaiBase)routes.push({name:'openai_gateway',kind:'openai',key:openaiKey,base:openaiBase});
 
   const geminiKey=env('GEMINI_API_KEY');
-  const geminiBase=env('GOOGLE_GEMINI_BASE_URL')||(geminiKey?'https://generativelanguage.googleapis.com':'');
+  const geminiBase=env('GOOGLE_GEMINI_BASE_URL');
   if(geminiKey&&geminiBase)routes.push({name:'gemini_gateway',kind:'gemini',key:geminiKey,base:geminiBase});
   return routes;
 }

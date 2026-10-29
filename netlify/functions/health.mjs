@@ -76,11 +76,7 @@ async function persistedProviderReadiness(db,userId,configured,runtime,transport
     }
     return [provider,{status,configured:Boolean(configured[provider]),lastSuccessAt:ev.lastSuccessAt,lastFailureAt:ev.lastFailureAt,circuitOpen:Boolean(local.circuitOpen),retryAfterMs:Number(local.retryAfterMs||0)}];
   }));
-  const transportResults=summarizeTransportEvidence(rows,{
-    gateway:Object.values(configured).some(Boolean),
-    openrouter_direct:transports.openrouter_direct,
-    openai_direct:transports.openai_direct
-  },runtime);
+  const transportResults=summarizeTransportEvidence(rows,{gateway:Object.values(configured).some(Boolean)},runtime);
   return {providerResults,transportResults};
 }
 
@@ -100,10 +96,10 @@ async function handler(req,context){
   const providers=providerStatus();
   const transports=providerTransportStatus();
   const runtime=providerRuntimeHealth();
-  const configuredRoutes=Object.values(providers).filter(Boolean).length+Number(transports.openrouter_direct)+Number(transports.openai_direct);
+  const configuredRoutes=Object.values(providers).filter(Boolean).length;
   const configuredModels=availableModels({ignoreCircuit:true});
   const activeModels=availableModels();
-  const openRouterImageReady=Boolean((providers.openrouter||transports.openrouter_direct)&&!runtime.openrouter?.circuitOpen&&!runtime.openrouter_direct?.circuitOpen);
+  const openRouterImageReady=Boolean(providers.openrouter&&!runtime.openrouter?.circuitOpen);
   const warnings0=[];
   let readinessSection;
   try{readinessSection=await withTimeout(persistedProviderReadiness(db,user.id,providers,runtime,transports),5000,'providerReadiness');}

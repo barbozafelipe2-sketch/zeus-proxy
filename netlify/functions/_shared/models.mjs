@@ -18,12 +18,8 @@ function openRouterGatewayConfig(){
   if(gatewayKey&&gatewayUrl)return {key:gatewayKey,base:gatewayUrl,source:'netlify_ai_gateway'};
   return null;
 }
-function openRouterDirectConfig(){
-  const key=env('OPENROUTER_DIRECT_API_KEY');
-  return key?{key,base:env('OPENROUTER_DIRECT_BASE_URL')||'https://openrouter.ai/api/v1',source:'openrouter_direct'}:null;
-}
 function openRouterImageConfig(){
-  return openRouterGatewayConfig()||openRouterDirectConfig();
+  return openRouterGatewayConfig();
 }
 const MAX_SPECIALIST_CHARS = 24000;
 const CIRCUIT_FAILURE_THRESHOLD = 2;
@@ -68,7 +64,7 @@ export function modelCatalog() {
 }
 
 function openaiBase() {
-  return env('OPENAI_BASE_URL') || env('OPENAI_API_BASE') || '';
+  return env('OPENAI_BASE_URL') || '';
 }
 function anthropicBase() {
   return env('ANTHROPIC_BASE_URL') || '';
@@ -77,7 +73,7 @@ function geminiBase() {
   return env('GOOGLE_GEMINI_BASE_URL') || '';
 }
 function openrouterBase() {
-  return openRouterGatewayConfig()?.base || (env('OPENROUTER_DIRECT_API_KEY') ? env('OPENROUTER_DIRECT_BASE_URL')||'https://openrouter.ai/api/v1' : '');
+  return openRouterGatewayConfig()?.base || '';
 }
 export function serverTranscriptionConfigured() {
   return Boolean(env('ELEVENLABS_API_KEY')||env('ELEVEN_LABS_API_KEY'));
@@ -132,12 +128,11 @@ function recordProviderSuccess(provider) {
 
 export function providerRuntimeHealth() {
   const configured = providerStatus();
-  const direct={openrouter_direct:Boolean(env('OPENROUTER_DIRECT_API_KEY')),openai_direct:Boolean(env('OPENAI_DIRECT_API_KEY'))};
-  return Object.fromEntries(Object.keys({...configured,...direct}).map((provider) => {
+  return Object.fromEntries(Object.keys(configured).map((provider) => {
     const state = circuitState(provider);
     return [provider, {
-      configured: Boolean({...configured,...direct}[provider]),
-      circuitOpen: Boolean({...configured,...direct}[provider]) && state.openUntil > Date.now(),
+      configured: Boolean(configured[provider]),
+      circuitOpen: Boolean(configured[provider]) && state.openUntil > Date.now(),
       retryAfterMs: state.openUntil > Date.now() ? state.openUntil - Date.now() : 0,
       consecutiveFailures: state.failures,
       lastError: state.lastError,
@@ -146,10 +141,7 @@ export function providerRuntimeHealth() {
     }];
   }));
 }
-
-export function providerTransportStatus(){
-  return {gateway:providerStatus(),openrouter_direct:Boolean(env('OPENROUTER_DIRECT_API_KEY')),openai_direct:Boolean(env('OPENAI_DIRECT_API_KEY'))};
-}
+export function providerTransportStatus(){ return {gateway:providerStatus()}; }
 
 export function providerReadiness() {
   const runtime = providerRuntimeHealth();
@@ -170,11 +162,9 @@ export function __recordProviderFailureForTests(provider, message = 'test') { re
 
 export function availableModels({ vision = false, ignoreCircuit = false } = {}) {
   const status = providerStatus();
-  const routerDirect=Boolean(env('OPENROUTER_DIRECT_API_KEY'))&&(ignoreCircuit||!circuitOpen('openrouter_direct'));
-  const openaiDirect=Boolean(env('OPENAI_DIRECT_API_KEY'))&&(ignoreCircuit||!circuitOpen('openai_direct'));
   return modelCatalog().filter((m) => {
     const gatewayReady=status[m.provider] && (ignoreCircuit || !circuitOpen(m.provider,m.id));
-    if (!gatewayReady && !routerDirect && !(openaiDirect && modelFamily(m)==='openai')) return false;
+    if (!gatewayReady) return false;
     if (vision && !(m.roles || []).some((role) => role === 'vision' || role === 'multimodal')) return false;
     return true;
   });
@@ -297,9 +287,8 @@ function geminiParts(user, images = []) {
 }
 
 async function callOpenAI(model, system, user, { images = [], history = [], budget, reserveAfterMs = 0, callTimeoutMs = DEFAULT_CALL_TIMEOUT_MS, maxOutputTokens = 5000, transport = 'gateway' }) {
-  const direct=transport==='openai_direct';
-  const base = apiRoot(direct?(env('OPENAI_DIRECT_BASE_URL')||'https://api.openai.com/v1'):openaiBase());
-  const key = direct?env('OPENAI_DIRECT_API_KEY'):env('OPENAI_API_KEY');
+  const base = apiRoot(openaiBase());
+  const key = env('OPENAI_API_KEY');
   if (!base || !key) throw providerError('OpenAI is not configured.');
   const messages = [{ role: 'system', content: system }, ...chatTurns(history, openAIUserContent(user, images))];
   const res = await fetch(`${base}/chat/completions`, {
@@ -360,10 +349,9 @@ async function callGemini(model, system, user, { images = [], history = [], budg
   return content;
 }
 
-async function callOpenRouter(model, system, user, { images = [], history = [], budget, reserveAfterMs = 0, callTimeoutMs = DEFAULT_CALL_TIMEOUT_MS, maxOutputTokens = 5000, transport = 'gateway' }) {
-  const direct=transport==='openrouter_direct';
-  const base = (direct?(env('OPENROUTER_DIRECT_BASE_URL')||'https://openrouter.ai/api/v1'):openrouterBase()).replace(/\/$/, '');
-  const key = direct?env('OPENROUTER_DIRECT_API_KEY'):openRouterGatewayConfig()?.key;
+async function callOpenRouter(model, system, user, { images = [], history = [], budget, reserveAfterMs = 0, callTimeoutMs = DEFAULT_CALL_TIMEOUT_MS, maxOutputTokens = 5000, }) {
+  const base = openrouterBase().replace(/\/$/, '');
+  const key = openRouterGatewayConfig()?.key;
   if (!base || !key) throw providerError('OpenRouter is not configured.');
   const messages = [{ role: 'system', content: system }, ...chatTurns(history, openAIUserContent(user, images))];
   const res = await fetch(`${base}/chat/completions`, {
@@ -517,9 +505,8 @@ export async function executeWithFallback(text, system, prompt, { exclude = new 
   if (!first) { const error = new Error('No configured AI provider is currently available.'); error.code='AI_NOT_CONFIGURED'; throw error; }
   const native=providerStatus();
   const ordered=buildTransportRoutes(buildFallbackOrder(ranked,maxAttempts),{
-    limit:maxAttempts,gatewayEnabled:m=>Boolean(native[m.provider])&&!providerBlocks.has(m.provider)&&!circuitOpen(m.provider,m.id),
-    openrouterDirect:Boolean(env('OPENROUTER_DIRECT_API_KEY'))&&!circuitOpen('openrouter_direct')&&!providerBlocks.has('openrouter_direct'),
-    openaiDirect:Boolean(env('OPENAI_DIRECT_API_KEY'))&&!circuitOpen('openai_direct')&&!providerBlocks.has('openai_direct')
+    limit:Math.max(1,Math.min(maxAttempts,4)),
+    gatewayEnabled:m=>Boolean(native[m.provider])&&!providerBlocks.has(m.provider)&&!circuitOpen(m.provider,m.id)
   });
 
   const attempts = [];
@@ -559,7 +546,7 @@ function uniqueModelOrder(models=[]){
 // Zeus Compound's first stage is deliberately economical. Route relevance is
 // preserved, but premium GPT is reserved for the finalizer.
 function routeEligibleWhenGatewayBlocked(model,blocked){
-  return !blocked.has(model.provider)||(Boolean(env('OPENROUTER_DIRECT_API_KEY'))&&!blocked.has('openrouter_direct'))||(modelFamily(model)==='openai'&&Boolean(env('OPENAI_DIRECT_API_KEY'))&&!blocked.has('openai_direct'));
+  return !blocked.has(model.provider);
 }
 
 export function zeusBaseCandidates(text='', {vision=false,blockedProviders=[],routeHint=null}={}){
@@ -619,9 +606,8 @@ async function executeCandidateOrder(candidates, system, prompt, {
   const localBudget=budget||createExecutionBudget({maxCalls:maxAttempts}),providerBlocks=new Set(blockedProviders||[]);
   const native=providerStatus();
   const ordered=buildTransportRoutes(uniqueModelOrder(candidates||[]),{
-    limit:Math.max(1,Math.min(maxAttempts,4)),gatewayEnabled:m=>Boolean(native[m.provider])&&!providerBlocks.has(m.provider)&&!circuitOpen(m.provider,m.id),
-    openrouterDirect:Boolean(env('OPENROUTER_DIRECT_API_KEY'))&&!circuitOpen('openrouter_direct')&&!providerBlocks.has('openrouter_direct'),
-    openaiDirect:Boolean(env('OPENAI_DIRECT_API_KEY'))&&!circuitOpen('openai_direct')&&!providerBlocks.has('openai_direct')
+    limit:Math.max(1,Math.min(maxAttempts,4)),
+    gatewayEnabled:m=>Boolean(native[m.provider])&&!providerBlocks.has(m.provider)&&!circuitOpen(m.provider,m.id)
   });
   if(!ordered.length){const error=new Error('No compatible model is available for this Zeus stage.');error.code='AI_NOT_CONFIGURED';error.status=503;throw error;}
   const attempts=[];
@@ -846,7 +832,9 @@ export async function runOlympusCompoundPlus({
   const checklist=Array.isArray(requirements?.items)&&requirements.items.length
     ?requirements.items.map(x=>({...x}))
     :[{id:'R1',text:'Answer the owner request directly and completely.',evidence:String(text||'').slice(0,240),kind:'request',central:true}];
-  const authorCandidates=zeusBaseCandidates(text,{vision:images.length>0,blockedProviders,routeHint});
+  const rankedAuthorCandidates=zeusBaseCandidates(text,{vision:images.length>0,blockedProviders,routeHint});
+  const nonGptAuthors=rankedAuthorCandidates.filter(model=>modelFamily(model)!=='openai');
+  const authorCandidates=nonGptAuthors.length?nonGptAuthors:rankedAuthorCandidates;
   if(!authorCandidates.length){
     const zeus=await runZeus({text,context,images,history,requirements:{items:checklist,ambiguous:false},level:'COMPOUND',deliveryContract,blockedProviders,budget:localBudget});
     return {...zeus,effectiveMode:'ZEUS',trace:{...(zeus.trace||{}),olympusDescended:'compound_plus_author_unavailable'}};
@@ -1355,7 +1343,7 @@ function imagePromptFit(model,prompt=''){
 }
 async function runOpenRouterImage(prompt,{budget,toolPreferences=null,reference=null,references=null,operation='Image generation',excludeModel=null,excludeFamily=null,transport='gateway',imageOptions=null}={}){
   const inputReferences=Array.isArray(references)?references.filter(ref=>ref?.base64&&ref?.mimeType):reference?[reference]:[];
-  const config=transport==='openrouter_direct'?openRouterDirectConfig():openRouterGatewayConfig();
+  const config=openRouterGatewayConfig();
   if(!config)return null;
   const candidates=await imageGeneratorCandidates({limit:6});let pool=candidates.filter(model=>model.provider==='openrouter'&&(!inputReferences.length||model.inputImage));
   if(!pool.length)return null;
@@ -1388,22 +1376,8 @@ async function runOpenRouterImage(prompt,{budget,toolPreferences=null,reference=
   throw imageFailure(operation,attempts,last);
 }
 async function runOpenRouterImageWithFallback(prompt,options={}){
-  const attempts=[];let gatewayError=null;
-  if(openRouterGatewayConfig()){
-    try{return await runOpenRouterImage(prompt,{...options,transport:'gateway'});}
-    catch(error){gatewayError=error;attempts.push(...(error?.attempts||[]));}
-  }
-  if(openRouterDirectConfig()){
-    try{
-      const result=await runOpenRouterImage(prompt,{...options,transport:'openrouter_direct'});
-      if(result)return {...result,attempts:[...attempts,...(result.attempts||[])]};
-    }catch(error){
-      const combined=Object.assign(new Error(error?.message||'Image generation failed.'),{code:error?.code||'IMAGE_GENERATION_FAILED',status:error?.status||502,attempts:[...attempts,...(error?.attempts||[])]});
-      throw combined;
-    }
-  }
-  if(gatewayError)throw gatewayError;
-  return null;
+  if(!openRouterGatewayConfig())return null;
+  return runOpenRouterImage(prompt,{...options,transport:'gateway'});
 }
 function unavailableImageFamilyError(){return Object.assign(new Error('A different image model family is not available right now. No same-family alternative was used.'),{code:'IMAGE_COMPARE_FAMILY_UNAVAILABLE',status:409});}
 async function runImageModels(operation, label, buildRequest, budget, excludeModel=null, excludeFamily=null,outputFormat='png',imageOptions=null) {

@@ -4,7 +4,7 @@ import { priceFor } from './model-prices.mjs';
 // Per-execution audit events: no prompt, response body, files, personal data, raw errors or secrets.
 const attemptsByBudget=new WeakMap();
 const safe=(x,n=96)=>String(x||'').replace(/[^A-Za-z0-9_./:-]/g,'').slice(0,n);
-const transports=new Set(['gateway','openrouter_direct','openai_direct']);
+const transports=new Set(['gateway']);
 const clamp=(n,max)=>Math.min(max,Math.max(0,Number(n)||0));
 export function failureCategory(error){
   const code=safe(error?.code,48).toUpperCase();
@@ -54,13 +54,13 @@ export function snapshotProviderTelemetry(budget){
     inputTokens:events.length&&events.some(e=>!Number.isFinite(e.inputTokens))?null:events.reduce((n,e)=>n+(Number.isFinite(e.inputTokens)?e.inputTokens:0),0),
     outputTokens:events.length&&events.some(e=>!Number.isFinite(e.outputTokens))?null:events.reduce((n,e)=>n+(Number.isFinite(e.outputTokens)?e.outputTokens:0),0),
     byTransport:events.reduce((acc,e)=>{acc[e.transport]=(acc[e.transport]||0)+1;return acc;},{}),
-    independentFallbackUsed:success.some(e=>e.transport==='openrouter_direct'||e.transport==='openai_direct'),
+    independentFallbackUsed:false,
     attempts:events
   };
 }
 export function summarizeTransportEvidence(rows=[],configuration={},runtime={}){
   const result={};
-  for(const route of ['gateway','openrouter_direct','openai_direct']){
+  for(const route of ['gateway']){
     let successes=0,failures=0,lastOutcome=null,lastSeenAt=null,recoveredExecutions=0;
     for(const row of rows){
       const events=Array.isArray(row?.trace?.providerTelemetry?.attempts)?row.trace.providerTelemetry.attempts:[];
@@ -70,9 +70,8 @@ export function summarizeTransportEvidence(rows=[],configuration={},runtime={}){
       if(lastOutcome===null){lastOutcome=onRoute[onRoute.length-1].outcome;lastSeenAt=row.observed_at?new Date(row.observed_at).toISOString():null;}
       if(route!=='gateway'&&events.some(e=>e.transport==='gateway'&&e.outcome==='failure')&&onRoute.some(e=>e.outcome==='success'))recoveredExecutions++;
     }
-    const configured=Boolean(configuration[route]),circuitOpen=route==='gateway'
-      ?Object.entries(runtime).some(([name,data])=>!name.endsWith('_direct')&&data?.configured&&data?.circuitOpen)
-      :Boolean(runtime[route]?.circuitOpen);
+    const configured=Boolean(configuration[route]);
+    const circuitOpen=Object.values(runtime).some(data=>data?.configured&&data?.circuitOpen);
     const status=!configured?'not_configured':circuitOpen?'degraded':lastOutcome==='success'?'observed_healthy':lastOutcome==='failure'?'recent_failure':'configured_unverified';
     result[route]={configured,status,circuitOpen,attempts:successes+failures,successes,failures,lastOutcome,lastSeenAt,recoveredExecutions};
   }

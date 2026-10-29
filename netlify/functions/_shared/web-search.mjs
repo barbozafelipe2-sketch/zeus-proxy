@@ -10,7 +10,7 @@ export function shouldSearchWeb(text=''){
   return /(current|now|atual|agora|actual|ahora).{0,60}(president|ceo|price|rate|version|release|law|rule|weather|score|schedule|status|presidente|preço|taxa|versão|lançamento|lei|regra|clima|placar|agenda|precio|tasa|version|lanzamiento|ley|regla|marcador|horario|estado)/i.test(value);
 }
 
-export function webSearchConfigured(){return Boolean(env('OPENAI_API_KEY')&&apiRoot(env('OPENAI_BASE_URL')||env('OPENAI_API_BASE')));}
+export function webSearchConfigured(){return Boolean(env('OPENAI_API_KEY')&&apiRoot(env('OPENAI_BASE_URL')));}
 
 function responseText(data){
   return (Array.isArray(data?.output)?data.output:[])
@@ -34,7 +34,7 @@ export async function runWebSearch(text,{budget=null,reserveAfterMs=11000}={}){
   if(!webSearchConfigured())return {requested:true,context:'\n\nThe user requested current/web-verified information, but live web research is unavailable in this runtime. Do not claim current verification.',sources:[],trace:{name:'web_search',status:'not_configured'}};
   const localBudget=budget||createExecutionBudget({timeoutMs:28000,maxCalls:1});
   if(!localBudget.canCall(4000,reserveAfterMs))return {requested:true,context:'\n\nThe user requested current/web-verified information, but the execution budget could not safely run web research. Do not claim current verification.',sources:[],trace:{name:'web_search',status:'skipped',reason:'execution_budget'}};
-  const base=apiRoot(env('OPENAI_BASE_URL')||env('OPENAI_API_BASE'));
+  const base=apiRoot(env('OPENAI_BASE_URL'));
   const model=env('OPENAI_WEB_SEARCH_MODEL')||'gpt-5.5';
   let attempted=false;
   try{

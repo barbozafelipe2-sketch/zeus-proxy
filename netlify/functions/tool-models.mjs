@@ -20,7 +20,7 @@ export default async function(req,context){
     const imageFamilies=new Set(models.map(model=>model.family));
     const transports=providerTransportStatus();
     const imageHint=tool.id==='images'&&imageFamilies.size<6
-      ?transports.gateway.openrouter||transports.openrouter_direct
+      ?transports.gateway.openrouter
         ?'O Gateway OpenRouter está ativo, mas há menos de seis famílias de imagem disponíveis nesta configuração.'
         :'Ative o Netlify AI Gateway para disponibilizar as opções OpenRouter. Não é necessária uma chave OpenRouter separada.'
       :null;
