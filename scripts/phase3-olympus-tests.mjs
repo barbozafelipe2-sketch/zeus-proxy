@@ -19,13 +19,13 @@ globalThis.fetch=async(url,options={})=>{
   const system=anthropic?String(body.system||''):String(body.messages?.[0]?.content||'');
   const provider=anthropic?'anthropic':'openai';
   calls.push({provider,model:body.model,system});
-  if(/independent CRITIC/i.test(system)){
-    const review={verdict:'revise',findings:[{requirement_id:'R1',evidence:'BASE ANSWER',problem:'Missing a deployment caveat.',correction:'Add the caveat.'}],missing_requirements:[],notes:'One concrete correction.'};
-    return new Response(JSON.stringify(anthropic?{content:[{type:'text',text:JSON.stringify(review)}]}:{choices:[{message:{content:JSON.stringify(review)}}]}),{status:200,headers:{'content-type':'application/json'}});
-  }
   if(/GPT FINALIZER/i.test(system)){
     assert.equal(provider,'openai');
     return new Response(JSON.stringify({choices:[{message:{content:'FINAL OLYMPUS ANSWER'}}]}),{status:200,headers:{'content-type':'application/json'}});
+  }
+  if(/independent CRITIC/i.test(system)){
+    const review={verdict:'revise',findings:[{requirement_id:'R1',evidence:'BASE ANSWER',problem:'Missing a deployment caveat.',correction:'Add the caveat.'}],missing_requirements:[],notes:'One concrete correction.'};
+    return new Response(JSON.stringify(anthropic?{content:[{type:'text',text:JSON.stringify(review)}]}:{choices:[{message:{content:JSON.stringify(review)}}]}),{status:200,headers:{'content-type':'application/json'}});
   }
   assert.match(system,/AUTHOR stage of Olympus Compound Plus/i);
   return new Response(JSON.stringify(anthropic?{content:[{type:'text',text:'BASE ANSWER'}]}:{choices:[{message:{content:'BASE ANSWER'}}]}),{status:200,headers:{'content-type':'application/json'}});
