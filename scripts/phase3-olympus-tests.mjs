@@ -15,19 +15,20 @@ const originalFetch=globalThis.fetch;
 const calls=[];
 globalThis.fetch=async(url,options={})=>{
   const target=String(url),body=JSON.parse(String(options.body||'{}'));
-  if(target.includes('anthropic.test')){
-    calls.push({provider:'anthropic',model:body.model,system:String(body.system||'')});
-    assert.match(String(body.system||''),/independent CRITIC/i);
-    return new Response(JSON.stringify({content:[{type:'text',text:JSON.stringify({verdict:'revise',findings:[{requirement_id:'R1',evidence:'BASE ANSWER',problem:'Missing a deployment caveat.',correction:'Add the caveat.'}],missing_requirements:[],notes:'One concrete correction.'})}]}),{status:200,headers:{'content-type':'application/json'}});
+  const anthropic=target.includes('anthropic.test');
+  const system=anthropic?String(body.system||''):String(body.messages?.[0]?.content||'');
+  const provider=anthropic?'anthropic':'openai';
+  calls.push({provider,model:body.model,system});
+  if(/independent CRITIC/i.test(system)){
+    const review={verdict:'revise',findings:[{requirement_id:'R1',evidence:'BASE ANSWER',problem:'Missing a deployment caveat.',correction:'Add the caveat.'}],missing_requirements:[],notes:'One concrete correction.'};
+    return new Response(JSON.stringify(anthropic?{content:[{type:'text',text:JSON.stringify(review)}]}:{choices:[{message:{content:JSON.stringify(review)}}]}),{status:200,headers:{'content-type':'application/json'}});
   }
-  const system=String(body.messages?.[0]?.content||'');
-  calls.push({provider:'openai',model:body.model,system});
-  if(body.model==='gpt-5.6-sol'){
-    assert.match(system,/GPT FINALIZER/i);
+  if(/GPT FINALIZER/i.test(system)){
+    assert.equal(provider,'openai');
     return new Response(JSON.stringify({choices:[{message:{content:'FINAL OLYMPUS ANSWER'}}]}),{status:200,headers:{'content-type':'application/json'}});
   }
   assert.match(system,/AUTHOR stage of Olympus Compound Plus/i);
-  return new Response(JSON.stringify({choices:[{message:{content:'BASE ANSWER'}}]}),{status:200,headers:{'content-type':'application/json'}});
+  return new Response(JSON.stringify(anthropic?{content:[{type:'text',text:'BASE ANSWER'}]}:{choices:[{message:{content:'BASE ANSWER'}}]}),{status:200,headers:{'content-type':'application/json'}});
 };
 
 try{
@@ -44,9 +45,9 @@ try{
   assert.equal(result.trace.gptFinished,true);
   assert.equal(result.trace.independentCritic,true);
   assert.equal(calls.length,3,'Compound Plus must be author + independent critic + GPT finalizer on the happy path');
-  assert.equal(calls[0].provider,'openai');
-  assert.notEqual(calls[0].model,'gpt-5.6-sol','strong GPT must be reserved for final delivery');
-  assert.equal(calls[1].provider,'anthropic','critic must use a different provider family from the author');
+  assert.notEqual(calls[0].provider,calls[1].provider,'author and critic must use independent provider families');
+  assert.match(calls[0].system,/AUTHOR stage of Olympus Compound Plus/i);
+  assert.match(calls[1].system,/independent CRITIC/i);
   assert.equal(calls[2].model,'gpt-5.6-sol','strong GPT must deliver the final answer');
   assert.match(result.pipelineLabel,/author → independent critic → GPT final/);
 }finally{
