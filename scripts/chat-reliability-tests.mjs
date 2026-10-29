@@ -11,7 +11,7 @@ const runtime = await import('../netlify/functions/_shared/runtime.mjs');
 const sharp = (await import('sharp')).default;
 const imageFixture=await sharp({create:{width:2,height:2,channels:4,background:{r:20,g:30,b:40,alpha:1}}}).png().toBuffer();
 const { filesFromModelText, looksLikeFilePath, stripStructuredZipManifest } = await import('../netlify/functions/_shared/zip-output.mjs');
-const { parseGitHubRepoUrl, hasGitHubRepoUrl, shouldReadSystemRepository, shouldReadLatestSystemCommit, loadGitHubContext } = await import('../netlify/functions/_shared/github-context.mjs');
+const { parseGitHubRepoUrl, hasGitHubRepoUrl, resolveGitHubRequestText, shouldReadSystemRepository, shouldReadLatestSystemCommit, loadGitHubContext } = await import('../netlify/functions/_shared/github-context.mjs');
 const read = (p) => readFileSync(new URL(`../${p}`, import.meta.url), 'utf8');
 const zipCode = (fn) => { try { fn(); return null; } catch (e) { return e.code; } };
 const paths = (text) => filesFromModelText('App', text).map((f) => f.path);
@@ -38,6 +38,10 @@ assert.deepEqual(filesFromModelText('Structured',structured).map(f=>f.path),['RE
 assert.equal(stripStructuredZipManifest('Done\n'+structured),'Done');
 assert.equal(parseGitHubRepoUrl('Review https://github.com/acme/demo/tree/main/src').owner,'acme');
 assert.equal(hasGitHubRepoUrl('https://github.com/acme/demo'),true);
+const priorRepoQuestion=[{role:'user',content:'Can you see my repositories in GitHub?'},{role:'assistant',content:'I can check that now.'}];
+assert.match(resolveGitHubRequestText('Faça',priorRepoQuestion),/Can you see my repositories in GitHub\?/,'a short confirmation must preserve the immediately preceding GitHub request');
+assert.equal(resolveGitHubRequestText('Faça',[{role:'user',content:'What is the weather today?'}]),'','a generic confirmation must not trigger GitHub after an unrelated request');
+assert.equal(resolveGitHubRequestText('Review https://github.com/acme/demo',[]),'Review https://github.com/acme/demo','explicit GitHub requests do not depend on conversation history');
 
 // ---- Provider timeouts are transient and advance the fallback chain ----
 const timeoutErr = Object.assign(new Error('The operation was aborted due to timeout'), { name: 'TimeoutError' });

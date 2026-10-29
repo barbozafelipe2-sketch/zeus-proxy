@@ -1,3 +1,6 @@
+Warning: truncated output (original token count: 19659)
+Total output lines: 828
+
 import {authorizeOlympusModelCall} from './_shared/olympus-budget.mjs';
 import {aiRouteFor} from './_shared/ai-router.mjs';
 import { requireUser } from './_shared/auth.mjs';
@@ -29,7 +32,7 @@ import { queueBlobGc } from './_shared/storage.mjs';
 import { MEMORY_POLICY, selectMemoryContext, formatMemoryContext } from './_shared/memory.mjs';
 import { runWebSearch, shouldSearchWeb } from './_shared/web-search.mjs';
 import { extractRequirementChecklist, formatChecklist, isWhatMissingIntent, shouldVerifyDelivery } from './_shared/reliability.mjs';
-import { hasGitHubRepoUrl, loadGitHubContext } from './_shared/github-context.mjs';
+import { resolveGitHubRequestText, loadGitHubContext } from './_shared/github-context.mjs';
 import { stripStructuredZipManifest } from './_shared/zip-output.mjs';
 import { estimateTurboQuote, turboApprovalFingerprint, externalMutationPolicy } from './_shared/execution-policy.mjs';
 import { detectProjectTaskCommand, executeProjectTaskCommand } from './_shared/project-task-actions.mjs';
@@ -408,74 +411,7 @@ async function chatHandler(req, context, startedAt){
   if(scope.error)return errorJson(scope.error.message,scope.error.status,scope.error.code,requestId);
   projectId=scope.projectId;conversationId=scope.conversationId;
   if(!conversationId&&!projectId){
-    // A retry of a first message whose response was lost (timeout/backgrounded app) has no conversation id yet;
-    // reuse the conversation already bound to this request id instead of failing with REQUEST_ID_REUSED.
-    const prior=await db.sql`SELECT conversation_id FROM executions WHERE owner_id=${user.id} AND request_id=${requestId} LIMIT 1`;
-    if(prior.length&&prior[0].conversation_id)conversationId=prior[0].conversation_id;
-  }
-  let fileIds=normalizedIds(body.fileIds);
-  // Explicit continuation retrieves the original authorized deliverable request, not AI promises.
-  // The new turn uses its own request id, and prior file ids are revalidated against owner scope.
-  if(conversationId&&isArtifactContinuation(content)){
-    const recent=await db.sql`SELECT content,metadata FROM messages WHERE owner_id=${user.id} AND conversation_id=${conversationId} AND role='user' ORDER BY created_at DESC LIMIT 12`;
-    const prior=recent.find(row=>classifyIntent(row.content||'',{hasFiles:true}).action==='ARTIFACT_CREATE');
-    if(prior){
-      continuationOfArtifact=true;
-      modelText=redactSecrets(String(prior.content||'').slice(0,22000)+'\n\nUSER FOLLOW-UP: '+content+'\nDeliver the unfinished original files now, without further approval requests.');
-      if(!fileIds.length)fileIds=normalizedIds(prior.metadata?.attachments||[]);
-      secretsRedacted=secretsRedacted||modelText.includes('[REDACTED]');
-    }
-  }
-  const attachmentRows=await validateAttachedFiles(db,user.id,projectId,fileIds);
-  const hasImage=attachmentRows.some(r=>(r.mime_type||'').startsWith('image/'));
-  if(body.comparePair!==undefined&&typeof body.comparePair!=='boolean')return errorJson('comparePair must be a boolean.',400,'INVALID_COMPARE_REQUEST',requestId);
-  const compareImageSourceId=isUuid(body.compareImageSourceId)?body.compareImageSourceId:null;
-  if(body.compareImageSourceId!==undefined&&body.compareImageSourceId!==null&&!compareImageSourceId)return errorJson('A valid source image is required for image comparison.',400,'INVALID_IMAGE_COMPARE',requestId);
-  let imageCompareSource=null;
-  if(compareImageSourceId){
-    const source=await db.sql`SELECT id,metadata,provenance FROM artifacts WHERE id=${compareImageSourceId} AND owner_id=${user.id} AND conversation_id=${conversationId} AND project_id IS NOT DISTINCT FROM ${projectId} AND type='image' AND metadata->>'prompt' IS NOT NULL`;
-    imageCompareSource=source[0]||null;
-    if(!imageCompareSource||!attachmentRows.some(row=>row.metadata?.sourceArtifactId===compareImageSourceId))return errorJson('The generated source image is unavailable in this conversation. Reopen the conversation and try again.',404,'IMAGE_COMPARE_SOURCE_NOT_FOUND',requestId);
-  }
-  const comparePair=body.comparePair===true,compareType=String(body.compareType||'').toLowerCase();
-  const compareTypes=new Set(['pdf','docx','xlsx','pptx','csv','html']);
-  if(comparePair&&!compareTypes.has(compareType))return errorJson('Compare & Evolve currently supports independent PDF, DOCX, XLSX, PPTX, CSV and HTML pairs.',422,'COMPARE_FORMAT_UNSUPPORTED',requestId);
-  if(comparePair&&shouldSearchWeb(modelText))return errorJson('Compare & Evolve does not perform live web research. Research the source first, then request the A/B pair.',422,'COMPARE_LIVE_RESEARCH_UNSUPPORTED',requestId);
-  let intent=classifyIntent(modelText,{hasImage,hasFiles:attachmentRows.length>0});
-  // Typed chat and Live Talk turns share this endpoint. Handle explicit task
-  // mutations here so a model cannot merely promise an action it never ran.
-  const projectTaskCommand=detectProjectTaskCommand(content);
-  if(comparePair)intent={action:'ARTIFACT_CREATE',artifactType:compareType,artifactTypes:[compareType],reason:'independent_compare_pair'};
-  if(compareImageSourceId)intent={action:'IMAGE_CREATE',artifactType:'image',artifactTypes:['image'],reason:'image_compare_alternative'};
-  const requestedArtifacts=Array.isArray(intent.artifactTypes)?intent.artifactTypes:(intent.artifactType?[intent.artifactType]:[]);
-  if(intent.action==='ARTIFACT_CREATE'&&(requestedArtifacts.length>4||(requestedArtifacts.includes('zip')&&requestedArtifacts.length>1))){
-    return errorJson('Request up to four files at once. ZIP packages must be requested separately.',422,'ARTIFACT_FORMAT_UNSUPPORTED',requestId);
-  }
-  const requirementSpec=extractRequirementChecklist(modelText,{action:intent.action,artifactType:intent.artifactType,hasImage,hasFiles:attachmentRows.length>0});
-  if(body.liveTalk!==undefined&&typeof body.liveTalk!=='boolean')return errorJson('liveTalk must be a boolean.',400,'INVALID_LIVE_TALK',requestId);
-  const liveTalkTurn=body.liveTalk===true;
-  const route=liveTalkTurn?'fast':routeFor(modelText,{vision:hasImage});
-  const verificationSignal=shouldVerifyDelivery(modelText,{action:intent.action,route,hasFiles:attachmentRows.length>0,hasImage});
-  const requestedMode=normalizeRequestedMode(body.mode||'ZEUS');
-  if(!requestedMode)return errorJson('Mode must be ZEUS or OLYMPUS.',400,'INVALID_INTELLIGENCE_MODE',requestId);
-  const effectiveRequestedMode=liveTalkTurn?'ZEUS':requestedMode;
-  if(body.olympusAuto!==undefined&&typeof body.olympusAuto!=='boolean')return errorJson('olympusAuto must be a boolean.',400,'INVALID_AUTO_MODE',requestId);
-  const decision=projectTaskCommand
-    ?{mode:'ZEUS',reason:'verified_project_task_action',workstreams:[],router:'direct_action'}
-    :liveTalkTurn
-    ?{mode:'ZEUS',reason:'live_talk_fast_path',workstreams:[],router:'bypassed'}
-    :decideExecutionMode(modelText,{requestedMode:effectiveRequestedMode,olympusAuto:body.olympusAuto===true,action:intent.action,route,hasFiles:attachmentRows.length>0,hasImage,requirementCount:requirementSpec.items.length,artifactType:intent.artifactType,requiresVerification:verificationSignal});
-  const levelDecision=projectTaskCommand
-    ?{mode:'ZEUS',level:'SIMPLE',maxCalls:0,workstreams:[],reason:'verified_project_task_action'}
-    :liveTalkTurn
-    ?{mode:'ZEUS',level:'SIMPLE',maxCalls:GEAR_CALL_CAPS.SIMPLE,workstreams:[],reason:'live_talk_fast_path'}
-    :decideExecutionLevel(modelText,{mode:decision.mode,action:intent.action,route,hasFiles:attachmentRows.length>0,hasImage,requirementCount:requirementSpec.items.length,artifactType:intent.artifactType,requiresVerification:verificationSignal});
-  if(toolWorkflow&&!liveTalkTurn){
-    levelDecision.mode='ZEUS';
-    if(intent.action==='IMAGE_CREATE'||intent.action==='IMAGE_EDIT'){
-      // Apollo produces one image with one selected image model. The separate
-      // A/B action makes a second generation; neither is the three-role L3 pipeline.
-      levelDecision.level='IMAGE_GENERATION';levelDecision.maxCalls=GEAR_CALL_CAPS.SIMPLE;levelDecision.reason='native_image_generation';
+    // A retry of a first message whose response was lost (timeout/backgrounded app) has no conversation id ye…1659 tokens truncated…_image_generation';
     }else{
       levelDecision.level='ZEUS_DIRECTED';levelDecision.maxCalls=GEAR_CALL_CAPS.ZEUS_DIRECTED;levelDecision.reason='owner_tool_level_3';
     }
@@ -660,7 +596,8 @@ ${aiContext}`);
     const turboHardCap=actualMode==='OLYMPUS'&&level==='COMPLEX_TURBO';
     const isImageOp=intent.action==='IMAGE_CREATE'||intent.action==='IMAGE_EDIT';
     const webIntent=shouldSearchWeb(modelText)&&!isImageOp;
-    const githubIntent=hasGitHubRepoUrl(modelText);
+    const githubRequestText=resolveGitHubRequestText(modelText,history);
+    const githubIntent=Boolean(githubRequestText);
     if(actualMode==='OLYMPUS'&&(isImageOp||webIntent))throw codedError('This Olympus media/research route requires a verified price reservation before it can run. Use Zeus for now.',409,'OLYMPUS_UNPRICED_ROUTE');
     const zeusLevel=actualMode==='ZEUS'?(webIntent&&!toolWorkflow?'SIMPLE':gearLevel):null;
     const turboCreatorCount=turboHardCap?(webIntent?1:Number(turboQuote?.creatorCount||TURBO_LIMITS.maxCreators)):null;
@@ -684,7 +621,7 @@ ${aiContext}`);
         throw codedError('Live web research was unavailable or yielded no verifiable sources.',503,'WEB_RESEARCH_UNAVAILABLE');
       modeExplanation+=' Live web research replaces the independent critic to preserve the 3-call cap.';
     }
-    const github=githubIntent?await loadGitHubContext(modelText,{timeoutMs:worker?12000:7000,maxFiles:worker?14:10,maxChars:worker?62000:42000}):{requested:false,context:'',sources:[],trace:null};
+    const github=githubIntent?await loadGitHubContext(githubRequestText,{timeoutMs:worker?12000:7000,maxFiles:worker?14:10,maxChars:worker?62000:42000}):{requested:false,context:'',sources:[],trace:null};
     const deliveryContract=intent.action==='ARTIFACT_CREATE'&&intent.artifactType==='zip'
       ?'For a ZIP deliverable, include exactly one machine-readable block delimited by <olyhub_zip_manifest> and </olyhub_zip_manifest>. Inside it output valid JSON with shape {"files":[{"path":"relative/path.ext","content":"complete file contents"}]}. Include every file required to run/deploy the requested project, use safe relative paths, no placeholders, no omitted-file prose, and keep any human summary outside the manifest.'
       :intent.action==='ARTIFACT_CREATE'?artifactDeliveryContract(requestedArtifacts,modelText):'';

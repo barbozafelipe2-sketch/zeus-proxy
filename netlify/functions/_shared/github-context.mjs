@@ -3,6 +3,7 @@ const SYSTEM_REPOSITORY=Object.freeze({owner:'barbozafelipe2-sketch',repo:'zeus-
 const SYSTEM_REPO_REQUEST=/\b(?:your|its|the) own (?:code|repo(?:sitory)?|commit|source)|\bseu(?:\s+pr[oó]prio)?\s+(?:c[oó]digo|reposit[oó]rio|commit|fonte)|\b(?:c[oó]digo|reposit[oó]rio|commit) do (?:zeus|zeus proxy|olympus hub)|\b(?:zeus proxy|olympus hub)(?:'s)? (?:code|repo(?:sitory)?|commit|implementation)|\bhow (?:does|is) (?:this app|zeus proxy) (?:work|implemented)|\bcomo (?:esse sistema|o zeus|o zeus proxy) (?:funciona|foi implementado)|\b(?:what|which) (?:tools|features|capabilities) (?:do you|does zeus) (?:have|support)\b/i;
 const GITHUB_REPO_LIST_REQUEST=/\b(?:my|all my|meus?|minhas?|mis)\b.{0,80}\b(?:repo(?:s|sitory|sitories)?|reposit[oó]rio(?:s)?)\b|\b(?:list|show|see|access|listar|ver|acessar)\b.{0,60}\b(?:my|meus?|minhas?|mis)\b.{0,50}\b(?:repo(?:s|sitory|sitories)?|reposit[oó]rio(?:s)?)\b/i;
 const LATEST_COMMIT_REQUEST=/\b(latest|last|recent|own) commit\b|\bseu(?:\s+pr[oó]prio)?\s+commit\b|\b(?:ultimo|último|mais recente) commit\b|\bcommit (?:do|da) (?:zeus|zeus proxy|sistema)\b/i;
+const GITHUB_FOLLOW_UP=/^(?:fa[cç]a(?:\s+isso)?|faz(?:\s+isso)?|pode(?:\s+fazer)?|sim|isso|segue|vai|continua|prossiga|do it|go ahead|please do|yes|continue|proceed|search them|list them)[.!?\s]*$/i;
 
 
 export function parseGitHubRepoUrl(text=''){
@@ -14,6 +15,18 @@ export function shouldReadSystemRepository(text=''){return SYSTEM_REPO_REQUEST.t
 export function shouldListGitHubRepositories(text=''){return GITHUB_REPO_LIST_REQUEST.test(String(text||''));}
 export function shouldReadLatestSystemCommit(text=''){return shouldReadSystemRepository(text)&&LATEST_COMMIT_REQUEST.test(String(text||''));}
 export function hasGitHubRepoUrl(text=''){return Boolean(parseGitHubRepoUrl(text)||shouldReadSystemRepository(text)||shouldListGitHubRepositories(text));}
+// Short confirmations such as "Faça" should continue the immediately preceding
+// GitHub request. Do not mine older conversation turns: a new substantive user
+// message replaces the previous intent, which prevents surprising API reads.
+export function resolveGitHubRequestText(text='',history=[]){
+  const current=String(text||'').trim();
+  if(hasGitHubRepoUrl(current))return current;
+  if(current.length>80||!GITHUB_FOLLOW_UP.test(current)||!Array.isArray(history))return '';
+  const previousUser=[...history].reverse().find(turn=>turn?.role==='user');
+  const previous=String(previousUser?.content||'').trim();
+  if(!previous||!hasGitHubRepoUrl(previous))return '';
+  return `${previous}\n\nUSER FOLLOW-UP: ${current}`;
+}
 const TEXT_EXT=/\.(?:[cm]?[jt]sx?|py|rb|go|rs|java|kt|swift|php|css|scss|html?|md|txt|json|ya?ml|toml|sql|graphql|gql|env|ini|conf|sh|bash)$/i;
 const BARE=/^(?:Dockerfile|Makefile|Procfile|README|LICENSE|CHANGELOG|netlify\.toml|package\.json|tsconfig\.json|vite\.config\.[cm]?[jt]s)$/i;
 function requestHeaders(raw=false){
