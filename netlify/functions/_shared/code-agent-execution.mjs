@@ -4,6 +4,7 @@ import { commitCodeAgentWorkspace, dangerousPath } from './github-write.mjs';
 import { checkpointCodeAgentJob, completeCodeAgentJob, renewCodeAgentJobLease } from './code-agent-jobs.mjs';
 import { loadCodeAgentWorkspaceSnapshot, saveCodeAgentWorkspaceSnapshot } from './code-agent-workspace.mjs';
 import { safeZipPath } from './zip-output.mjs';
+import { runGitHubSandbox } from './github-sandbox.mjs';
 
 const MAX_PHASES=12,MAX_FILES=200,MAX_FILE_BYTES=2*1024*1024,MAX_TOTAL_BYTES=12*1024*1024;
 function fail(message,code='CODE_AGENT_EXECUTION_FAILED',status=422){return Object.assign(new Error(message),{code,status});}
@@ -46,13 +47,13 @@ function workspaceChanges(base,current){
   const deletes=[...new Set(current.deletedPaths||[])].filter(path=>baseline.has(path));
   return {changed,deletes};
 }
-async function commitWorkspace({db,ownerId,job,workerToken,snapshot,baseSnapshot}){
+async function commitWorkspace({db,ownerId,job,workerToken,snapshot,baseSnapshot,verification=null}){
   const {changed,deletes}=workspaceChanges(baseSnapshot,snapshot);
   await checkpointCodeAgentJob(db,{ownerId,jobId:job.id,workerToken,status:'COMMITTING',phase:job.plan.phases.length,plan:job.plan,
     event:{type:'COMMIT_STARTED',phase:job.plan.phases.length,summary:`Creating one commit with ${changed.length} changed and ${deletes.length} deleted files.`}});
   const result=await commitCodeAgentWorkspace({repoUrl:`https://github.com/${job.repo_owner}/${job.repo_name}`,branch:job.target_branch,
     expectedBaseSha:job.base_commit_sha,message:`OlyHub: ${job.plan.title||'approved implementation'}`,requestId:job.request_id,changes:changed,deletes});
-  const summary=result.noChange?'The approved phases produced no changes to commit.':`Pushed one commit to ${result.repository}@${result.branch}: ${result.sha}${result.replayed?' (recovered an earlier push)':''}. ${result.filesCommitted} paths included.`;
+  const summary=result.noChange?'The approved phases produced no changes to commit.':`Pushed one commit to ${result.repository}@${result.branch}: ${result.sha}${result.replayed?' (recovered an earlier push)':''}. ${result.filesCommitted} paths included.${verification?.url?` GitHub-hosted checks passed: ${verification.url}.`:''}`;
   await completeCodeAgentJob(db,{ownerId,jobId:job.id,workerToken,status:'COMPLETED',commitSha:result.noChange?null:result.sha,resultSummary:summary});
   return result;
 }
@@ -98,6 +99,14 @@ export async function executeApprovedCodeAgentJob({db,ownerId,job}){
       if(!done)throw fail('The coding job lease expired while saving a phase.','CODE_AGENT_LEASE_CONFLICT',409);
       snapshot=nextSnapshot;
     }
-    await commitWorkspace({db,ownerId,job,workerToken,snapshot,baseSnapshot});
+    await checkpointCodeAgentJob(db,{ownerId,jobId:job.id,workerToken,status:'RUNNING',phase:phases.length,plan:job.plan,
+      event:{type:'PROGRESS',phase:phases.length,summary:'Running repository checks in an isolated GitHub Actions container before committing.',metadata:{sandbox:'github-actions',network:'disabled-during-checks'}}});
+    const verification=await runGitHubSandbox({jobId:job.id,onProgress:progress=>{
+      checkpointCodeAgentJob(db,{ownerId,jobId:job.id,workerToken,status:'RUNNING',phase:phases.length,plan:job.plan,
+        event:{type:'PROGRESS',phase:phases.length,summary:clean(progress.summary,500),metadata:{sandbox:'github-actions',state:progress.state}}}).catch(()=>{});
+    }});
+    await checkpointCodeAgentJob(db,{ownerId,jobId:job.id,workerToken,status:'RUNNING',phase:phases.length,plan:job.plan,
+      event:{type:'PROGRESS',phase:phases.length,summary:`Checks passed in GitHub Actions. ${verification.checks.join(', ')||'Repository checks'}.`,metadata:{sandbox:'github-actions',runId:verification.runId,url:verification.url,checks:verification.checks,durationMs:verification.durationMs}}});
+    await commitWorkspace({db,ownerId,job,workerToken,snapshot,baseSnapshot,verification});
   }finally{clearInterval(heartbeat);}
 }

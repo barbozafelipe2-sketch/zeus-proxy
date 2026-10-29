@@ -1,0 +1,21 @@
+import { mkdir, writeFile } from 'node:fs/promises';
+import { dirname, resolve } from 'node:path';
+
+const jobId=process.env.OLYHUB_JOB_ID||'';
+const requestUrl=process.env.ACTIONS_ID_TOKEN_REQUEST_URL||'';
+const requestToken=process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN||'';
+const outputValue=process.env.OLYHUB_SNAPSHOT_PATH||'';
+const outputPath=resolve(outputValue||'.');
+const apiUrl='https://zeus-olyhub.netlify.app/api/code-agent-sandbox-snapshot';
+if(!/^[0-9a-f-]{36}$/i.test(jobId)||!requestUrl||!requestToken||!outputValue.startsWith('/'))throw new Error('Required GitHub Actions sandbox environment is missing.');
+const oidcUrl=new URL(requestUrl);oidcUrl.searchParams.set('audience','olyhub-code-agent-sandbox');
+const identityResponse=await fetch(oidcUrl,{headers:{Authorization:`Bearer ${requestToken}`},signal:AbortSignal.timeout(15_000)});
+const identity=await identityResponse.json().catch(()=>null);
+if(!identityResponse.ok||typeof identity?.value!=='string')throw new Error(`GitHub Actions identity request failed (HTTP ${identityResponse.status}).`);
+const response=await fetch(apiUrl,{method:'POST',headers:{Authorization:`Bearer ${identity.value}`,'Content-Type':'application/json'},body:JSON.stringify({jobId}),signal:AbortSignal.timeout(45_000)});
+if(!response.ok)throw new Error(`OlyHub rejected the sandbox workspace (HTTP ${response.status}).`);
+const archive=Buffer.from(await response.arrayBuffer());
+if(!archive.length||archive.length>4_500_000)throw new Error('Sandbox workspace archive is empty or larger than 4.5 MB.');
+await mkdir(dirname(outputPath),{recursive:true});
+await writeFile(outputPath,archive,{mode:0o600});
+console.log(`Workspace snapshot prepared (${archive.length} compressed bytes).`);

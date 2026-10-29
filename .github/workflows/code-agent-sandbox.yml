@@ -1,0 +1,82 @@
+name: OlyHub Code Agent Sandbox
+run-name: OlyHub Sandbox ${{ inputs.job_id }}
+on:
+  workflow_dispatch:
+    inputs:
+      job_id:
+        description: OlyHub coding job identifier
+        required: true
+        type: string
+permissions: {}
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions:
+      contents: read
+      id-token: write
+      actions: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Download the active OlyHub workspace
+        env:
+          OLYHUB_JOB_ID: ${{ inputs.job_id }}
+          OLYHUB_SNAPSHOT_PATH: ${{ runner.temp }}/olyhub-workspace.zip
+        run: node scripts/code-agent-sandbox-download.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: olyhub-workspace-${{ inputs.job_id }}
+          path: ${{ runner.temp }}/olyhub-workspace.zip
+          if-no-files-found: error
+          retention-days: 1
+  verify:
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions: {}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: olyhub-workspace-${{ inputs.job_id }}
+          path: ${{ runner.temp }}/olyhub-sandbox
+      - name: Install locked Node dependencies without lifecycle scripts
+        env:
+          OLYHUB_SNAPSHOT_PATH: ${{ runner.temp }}/olyhub-sandbox/olyhub-workspace.zip
+          OLYHUB_PROJECT_PATH: ${{ runner.temp }}/olyhub-project
+        run: |
+          set -euo pipefail
+          mkdir -p "$OLYHUB_PROJECT_PATH"
+          unzip -q "$OLYHUB_SNAPSHOT_PATH" -d "$OLYHUB_PROJECT_PATH"
+          if [ ! -f "$OLYHUB_PROJECT_PATH/package.json" ]; then
+            echo "This sandbox currently requires a Node.js project with package.json." >&2
+            exit 2
+          fi
+          if [ -f "$OLYHUB_PROJECT_PATH/package-lock.json" ] || [ -f "$OLYHUB_PROJECT_PATH/npm-shrinkwrap.json" ]; then
+            (cd "$OLYHUB_PROJECT_PATH" && npm ci --ignore-scripts --no-audit --no-fund)
+          else
+            (cd "$OLYHUB_PROJECT_PATH" && npm install --ignore-scripts --no-audit --no-fund)
+          fi
+      - name: Run repository checks in an offline resource-limited container
+        env:
+          OLYHUB_PROJECT_PATH: ${{ runner.temp }}/olyhub-project
+        run: |
+          set -euo pipefail
+          node_version_image="node:22-bookworm"
+          docker pull "$node_version_image"
+          docker run --rm --network none --cpus=2 --memory=3g --pids-limit=256 \
+            --cap-drop=ALL --security-opt=no-new-privileges --read-only \
+            --tmpfs /tmp:rw,nosuid,nodev,size=256m \
+            --user "$(id -u):$(id -g)" --env CI=1 --env HOME=/tmp \
+            --volume "$OLYHUB_PROJECT_PATH:/workspace:rw" --workdir /workspace \
+            "$node_version_image" bash -euc '
+              node -e "JSON.parse(require(\"fs\").readFileSync(\"package.json\",\"utf8\"))"
+              scripts=$(node -e "const s=require(\"./package.json\").scripts||{}; console.log([\"test\",\"release:check\",\"build\",\"lint\",\"typecheck\"].filter(k=>s[k]).join(\" \"))")
+              if [ -z "$scripts" ]; then echo "No supported verification scripts are defined in package.json." >&2; exit 2; fi
+              for script in $scripts; do npm run "$script"; done
+            '
