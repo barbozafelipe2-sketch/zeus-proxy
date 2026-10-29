@@ -1,6 +1,3 @@
-Warning: truncated output (original token count: 19659)
-Total output lines: 828
-
 import {authorizeOlympusModelCall} from './_shared/olympus-budget.mjs';
 import {aiRouteFor} from './_shared/ai-router.mjs';
 import { requireUser } from './_shared/auth.mjs';
@@ -411,7 +408,74 @@ async function chatHandler(req, context, startedAt){
   if(scope.error)return errorJson(scope.error.message,scope.error.status,scope.error.code,requestId);
   projectId=scope.projectId;conversationId=scope.conversationId;
   if(!conversationId&&!projectId){
-    // A retry of a first message whose response was lost (timeout/backgrounded app) has no conversation id ye…1659 tokens truncated…_image_generation';
+    // A retry of a first message whose response was lost (timeout/backgrounded app) has no conversation id yet;
+    // reuse the conversation already bound to this request id instead of failing with REQUEST_ID_REUSED.
+    const prior=await db.sql`SELECT conversation_id FROM executions WHERE owner_id=${user.id} AND request_id=${requestId} LIMIT 1`;
+    if(prior.length&&prior[0].conversation_id)conversationId=prior[0].conversation_id;
+  }
+  let fileIds=normalizedIds(body.fileIds);
+  // Explicit continuation retrieves the original authorized deliverable request, not AI promises.
+  // The new turn uses its own request id, and prior file ids are revalidated against owner scope.
+  if(conversationId&&isArtifactContinuation(content)){
+    const recent=await db.sql`SELECT content,metadata FROM messages WHERE owner_id=${user.id} AND conversation_id=${conversationId} AND role='user' ORDER BY created_at DESC LIMIT 12`;
+    const prior=recent.find(row=>classifyIntent(row.content||'',{hasFiles:true}).action==='ARTIFACT_CREATE');
+    if(prior){
+      continuationOfArtifact=true;
+      modelText=redactSecrets(String(prior.content||'').slice(0,22000)+'\n\nUSER FOLLOW-UP: '+content+'\nDeliver the unfinished original files now, without further approval requests.');
+      if(!fileIds.length)fileIds=normalizedIds(prior.metadata?.attachments||[]);
+      secretsRedacted=secretsRedacted||modelText.includes('[REDACTED]');
+    }
+  }
+  const attachmentRows=await validateAttachedFiles(db,user.id,projectId,fileIds);
+  const hasImage=attachmentRows.some(r=>(r.mime_type||'').startsWith('image/'));
+  if(body.comparePair!==undefined&&typeof body.comparePair!=='boolean')return errorJson('comparePair must be a boolean.',400,'INVALID_COMPARE_REQUEST',requestId);
+  const compareImageSourceId=isUuid(body.compareImageSourceId)?body.compareImageSourceId:null;
+  if(body.compareImageSourceId!==undefined&&body.compareImageSourceId!==null&&!compareImageSourceId)return errorJson('A valid source image is required for image comparison.',400,'INVALID_IMAGE_COMPARE',requestId);
+  let imageCompareSource=null;
+  if(compareImageSourceId){
+    const source=await db.sql`SELECT id,metadata,provenance FROM artifacts WHERE id=${compareImageSourceId} AND owner_id=${user.id} AND conversation_id=${conversationId} AND project_id IS NOT DISTINCT FROM ${projectId} AND type='image' AND metadata->>'prompt' IS NOT NULL`;
+    imageCompareSource=source[0]||null;
+    if(!imageCompareSource||!attachmentRows.some(row=>row.metadata?.sourceArtifactId===compareImageSourceId))return errorJson('The generated source image is unavailable in this conversation. Reopen the conversation and try again.',404,'IMAGE_COMPARE_SOURCE_NOT_FOUND',requestId);
+  }
+  const comparePair=body.comparePair===true,compareType=String(body.compareType||'').toLowerCase();
+  const compareTypes=new Set(['pdf','docx','xlsx','pptx','csv','html']);
+  if(comparePair&&!compareTypes.has(compareType))return errorJson('Compare & Evolve currently supports independent PDF, DOCX, XLSX, PPTX, CSV and HTML pairs.',422,'COMPARE_FORMAT_UNSUPPORTED',requestId);
+  if(comparePair&&shouldSearchWeb(modelText))return errorJson('Compare & Evolve does not perform live web research. Research the source first, then request the A/B pair.',422,'COMPARE_LIVE_RESEARCH_UNSUPPORTED',requestId);
+  let intent=classifyIntent(modelText,{hasImage,hasFiles:attachmentRows.length>0});
+  // Typed chat and Live Talk turns share this endpoint. Handle explicit task
+  // mutations here so a model cannot merely promise an action it never ran.
+  const projectTaskCommand=detectProjectTaskCommand(content);
+  if(comparePair)intent={action:'ARTIFACT_CREATE',artifactType:compareType,artifactTypes:[compareType],reason:'independent_compare_pair'};
+  if(compareImageSourceId)intent={action:'IMAGE_CREATE',artifactType:'image',artifactTypes:['image'],reason:'image_compare_alternative'};
+  const requestedArtifacts=Array.isArray(intent.artifactTypes)?intent.artifactTypes:(intent.artifactType?[intent.artifactType]:[]);
+  if(intent.action==='ARTIFACT_CREATE'&&(requestedArtifacts.length>4||(requestedArtifacts.includes('zip')&&requestedArtifacts.length>1))){
+    return errorJson('Request up to four files at once. ZIP packages must be requested separately.',422,'ARTIFACT_FORMAT_UNSUPPORTED',requestId);
+  }
+  const requirementSpec=extractRequirementChecklist(modelText,{action:intent.action,artifactType:intent.artifactType,hasImage,hasFiles:attachmentRows.length>0});
+  if(body.liveTalk!==undefined&&typeof body.liveTalk!=='boolean')return errorJson('liveTalk must be a boolean.',400,'INVALID_LIVE_TALK',requestId);
+  const liveTalkTurn=body.liveTalk===true;
+  const route=liveTalkTurn?'fast':routeFor(modelText,{vision:hasImage});
+  const verificationSignal=shouldVerifyDelivery(modelText,{action:intent.action,route,hasFiles:attachmentRows.length>0,hasImage});
+  const requestedMode=normalizeRequestedMode(body.mode||'ZEUS');
+  if(!requestedMode)return errorJson('Mode must be ZEUS or OLYMPUS.',400,'INVALID_INTELLIGENCE_MODE',requestId);
+  const effectiveRequestedMode=liveTalkTurn?'ZEUS':requestedMode;
+  if(body.olympusAuto!==undefined&&typeof body.olympusAuto!=='boolean')return errorJson('olympusAuto must be a boolean.',400,'INVALID_AUTO_MODE',requestId);
+  const decision=projectTaskCommand
+    ?{mode:'ZEUS',reason:'verified_project_task_action',workstreams:[],router:'direct_action'}
+    :liveTalkTurn
+    ?{mode:'ZEUS',reason:'live_talk_fast_path',workstreams:[],router:'bypassed'}
+    :decideExecutionMode(modelText,{requestedMode:effectiveRequestedMode,olympusAuto:body.olympusAuto===true,action:intent.action,route,hasFiles:attachmentRows.length>0,hasImage,requirementCount:requirementSpec.items.length,artifactType:intent.artifactType,requiresVerification:verificationSignal});
+  const levelDecision=projectTaskCommand
+    ?{mode:'ZEUS',level:'SIMPLE',maxCalls:0,workstreams:[],reason:'verified_project_task_action'}
+    :liveTalkTurn
+    ?{mode:'ZEUS',level:'SIMPLE',maxCalls:GEAR_CALL_CAPS.SIMPLE,workstreams:[],reason:'live_talk_fast_path'}
+    :decideExecutionLevel(modelText,{mode:decision.mode,action:intent.action,route,hasFiles:attachmentRows.length>0,hasImage,requirementCount:requirementSpec.items.length,artifactType:intent.artifactType,requiresVerification:verificationSignal});
+  if(toolWorkflow&&!liveTalkTurn){
+    levelDecision.mode='ZEUS';
+    if(intent.action==='IMAGE_CREATE'||intent.action==='IMAGE_EDIT'){
+      // Apollo produces one image with one selected image model. The separate
+      // A/B action makes a second generation; neither is the three-role L3 pipeline.
+      levelDecision.level='IMAGE_GENERATION';levelDecision.maxCalls=GEAR_CALL_CAPS.SIMPLE;levelDecision.reason='native_image_generation';
     }else{
       levelDecision.level='ZEUS_DIRECTED';levelDecision.maxCalls=GEAR_CALL_CAPS.ZEUS_DIRECTED;levelDecision.reason='owner_tool_level_3';
     }
