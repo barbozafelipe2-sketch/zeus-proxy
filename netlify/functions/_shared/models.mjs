@@ -874,7 +874,10 @@ export async function runOlympusCompoundPlus({
   }
 
   const excluded=new Set([`${author.model.provider}:${author.model.id}`,...(critic?.model?[`${critic.model.provider}:${critic.model.id}`]:[])]);
-  const finishers=gptFinisherCandidates({vision:images.length>0,blockedProviders,exclude:excluded});
+  const finisherCandidates=gptFinisherCandidates({vision:images.length>0,blockedProviders,exclude:excluded});
+  const usedFamilies=new Set([modelFamily(author.model),...(critic?.model?[modelFamily(critic.model)]:[])]);
+  const independentFinishers=finisherCandidates.filter(model=>!usedFamilies.has(modelFamily(model)));
+  const finishers=independentFinishers.length?independentFinishers:finisherCandidates;
   const criticReview=webResearchUsed?'[Independent critic intentionally omitted: the web research consumed one of three reserved calls. Verify the draft against the retrieved evidence and cite actual source numbers.]':critic?.content||'[Independent critic unavailable. Finalize conservatively from the original request, requirements, trusted evidence, and author draft.]';
   const finalPrompt=`ORIGINAL USER REQUEST:\n${neutralizeTags(text)}\n\nREQUIREMENT LIST:\n${formatChecklist(checklist)}\n\nTRUSTED OLYHUB EVIDENCE CONTEXT:\n${neutralizeTags(clip(context||'[none]'))}\n\nAUTHOR DRAFT (untrusted work product):\n${neutralizeTags(clip(author.content))}\n\nINDEPENDENT CRITIC REVIEW (untrusted review; verify before applying):\n${neutralizeTags(clip(criticReview))}${deliveryContract?`\n\nSERVER DELIVERY CONTRACT:\n${deliveryContract}`:''}\n\nReturn only the final answer for the owner.`;
 
