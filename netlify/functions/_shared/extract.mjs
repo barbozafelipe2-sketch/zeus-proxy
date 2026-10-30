@@ -12,7 +12,19 @@ export async function extractFile(buffer,mime='',filename=''){
   if(isSensitiveFilename(lower))return result('[Sensitive configuration/credential file omitted from AI context.]','omitted_sensitive',{reason:'sensitive_filename'});
   try{
     if(mime.startsWith('text/')||/\.(txt|md|csv|json|xml|log|ini|cfg)$/i.test(lower))return safeResult(decode(buffer),filename);
-    if(mime==='application/pdf'||lower.endsWith('.pdf')){const mod=await import('pdf-parse'),parse=mod.default||mod,out=await parse(Buffer.from(buffer));return safeResult(out.text||'',filename);}
+    if(mime==='application/pdf'||lower.endsWith('.pdf')){
+      const bytes=Buffer.from(buffer);
+      if(bytes.length<8||!bytes.subarray(0,1024).includes(Buffer.from('%PDF-')))return result('','failed',{reason:'invalid_pdf'});
+      try{
+        const mod=await import('pdf-parse'),parse=mod.default||mod;
+        const out=await parse(bytes,{max:0});
+        const extracted=safeResult(out.text||'',filename);
+        return extracted.status==='empty'?result('','vision_only',{reason:'pdf_no_text_layer'}):extracted;
+      }catch(pdfError){
+        console.error('PDF text extraction failed',pdfError?.message||pdfError);
+        return result('','failed',{reason:'pdf_parser_failed'});
+      }
+    }
     if(lower.endsWith('.docx')||mime.includes('wordprocessingml')){const inspection=assertSafeZip(buffer,'office');verifyZipEntries(buffer,inspection,{names:['word/document.xml'],maxEntryOutput:12*1024*1024,maxTotalOutput:12*1024*1024});const zip=await JSZip.loadAsync(buffer),xml=await zip.file('word/document.xml')?.async('string');return safeResult(xml?stripXml(xml):'',filename);}
     if(lower.endsWith('.pptx')||mime.includes('presentationml')){const inspection=assertSafeZip(buffer,'office'),allSlides=inspection.manifest.map(x=>x.name).filter(k=>/^ppt\/slides\/slide\d+\.xml$/.test(k)).sort(),slideNames=allSlides.slice(0,100);verifyZipEntries(buffer,inspection,{names:slideNames,maxEntryOutput:2*1024*1024,maxTotalOutput:16*1024*1024});const zip=await JSZip.loadAsync(buffer),texts=[];for(const k of slideNames){const file=zip.file(k);if(file)texts.push(stripXml(await file.async('string')));}return safeResult(texts.join('\n\n'),filename,120000,{truncated:allSlides.length>slideNames.length});}
     if(lower.endsWith('.zip')||mime==='application/zip'||mime==='application/x-zip-compressed'){const inspection=assertSafeZip(buffer,'generic'),zip=await JSZip.loadAsync(buffer),textExt=/\.(?:txt|md|json|js|mjs|cjs|ts|tsx|jsx|css|scss|html|htm|xml|yml|yaml|toml|sql|py|java|go|rs|sh|ini|cfg|csv)$/i,eligible=inspection.manifest.map(x=>x.name).filter(Boolean).filter(name=>zip.files[name]&&!zip.files[name].dir&&textExt.test(name)&&!isSensitiveFilename(name)&&!/(^|\/)(node_modules|\.git|dist|build|coverage|\.next)(\/|$)/i.test(name)),names=eligible.slice(0,90);verifyZipEntries(buffer,inspection,{names,maxEntryOutput:350000,maxTotalOutput:12*1024*1024});const chunks=[];let total=0,truncated=eligible.length>names.length;for(const name of names){if(total>=115000){truncated=true;break;}const entry=zip.file(name);if(!entry)continue;const raw=await entry.async('uint8array');if(raw.byteLength>350000){truncated=true;continue;}const text=safeExtractedText(decode(raw).replace(/\0/g,''),name).slice(0,18000);if(!text.trim())continue;const chunk=`FILE: ${name}\n${text}`;chunks.push(chunk);total+=chunk.length;}const omittedSensitive=Object.keys(zip.files).some(name=>!zip.files[name].dir&&isSensitiveFilename(name));if(omittedSensitive)chunks.unshift('[Sensitive credential/configuration files were omitted from AI context.]');return safeResult(chunks.join('\n\n---\n\n'),filename,120000,{truncated});}
