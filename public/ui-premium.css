@@ -1557,3 +1557,5 @@ body .message.user .message-body{border-color:#d4b66e55!important;background:lin
  .chat-scroll details,.chat-scroll summary{width:100%;overflow-wrap:anywhere;word-break:normal;writing-mode:horizontal-tb}
  .chat-scroll .message,.chat-scroll .message-content{overflow-wrap:anywhere;word-break:normal}
 }
+
+.tool-model-chip.unavailable{opacity:.48}.tool-model-chip.unavailable i{background:#667080;box-shadow:none}

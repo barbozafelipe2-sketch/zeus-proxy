@@ -43,7 +43,10 @@ const BUILTIN = [
   { id: env('ANTHROPIC_STRONG_MODEL') || 'claude-sonnet-5', provider: 'anthropic', tier: 'premium', roles: ['general','reasoning','writing','coding','critic','architecture','security','review','vision','multimodal'], quality: 10, speed: 7, cost: 5, latency: 3, reliability: 0.97 },
   { id: env('GEMINI_STRONG_MODEL') || 'gemini-3.5-flash', provider: 'gemini', tier: 'balanced', roles: ['general','fast','multimodal','critic','vision','files'], quality: 8, speed: 10, cost: 2, latency: 1, reliability: 0.95 },
   { id: 'deepseek/deepseek-v4-pro', provider: 'openrouter', tier: 'premium', roles: ['coding','reasoning','critic','implementation'], quality: 9, speed: 6, cost: 3, latency: 3, reliability: 0.93 },
+  { id: 'deepseek/deepseek-v4.1-flash', provider: 'openrouter', tier: 'economy', roles: ['general','fast','coding','reasoning','critic','implementation','vision','multimodal','files'], quality: 9, speed: 9, cost: 1, latency: 1, reliability: 0.95 },
   { id: 'x-ai/grok-4.5', provider: 'openrouter', tier: 'premium', roles: ['general','research','critic','reasoning','writing'], quality: 9, speed: 7, cost: 3, latency: 3, reliability: 0.94 },
+  { id: 'x-ai/grok-4', provider: 'openrouter', tier: 'premium', roles: ['general','research','critic','reasoning','writing','vision','multimodal','files'], quality: 9, speed: 7, cost: 4, latency: 3, reliability: 0.94 },
+  { id: 'qwen/qwen3.5-plus-20260420', provider: 'openrouter', tier: 'balanced', roles: ['general','fast','coding','reasoning','critic','writing','implementation','vision','multimodal','files'], quality: 9, speed: 8, cost: 2, latency: 2, reliability: 0.94 },
 ];
 
 function externalCatalog() {
@@ -59,8 +62,12 @@ function externalCatalog() {
 }
 
 export function modelCatalog() {
-  const ext = externalCatalog();
-  return ext.length ? ext : BUILTIN;
+  const merged=new Map(BUILTIN.map(model=>[`${model.provider}:${model.id}`,model]));
+  for(const model of externalCatalog()){
+    const key=`${model.provider}:${model.id}`;
+    merged.set(key,{...(merged.get(key)||{}),...model});
+  }
+  return [...merged.values()];
 }
 
 function openaiBase() {
@@ -84,8 +91,7 @@ export function providerStatus() {
     openai: Boolean(env('OPENAI_API_KEY') && openaiBase()),
     anthropic: Boolean(env('ANTHROPIC_API_KEY') && anthropicBase()),
     gemini: Boolean(env('GEMINI_API_KEY') && geminiBase()),
-    // Direct credentials are separate break-glass transports. They must not
-    // make the Gateway provider appear configured or be mistaken for it.
+    // OpenRouter is enabled only when Netlify AI Gateway supplies its base URL and token.
     openrouter: Boolean(openRouterGatewayConfig()),
   };
 }
@@ -997,13 +1003,17 @@ export function roleCandidates(role,text='',{
   return uniqueModelOrder(pool.sort((a,b)=>(roleScore(role,b,text,route)+toolPreferenceScore(b,preference))-(roleScore(role,a,text,route)+toolPreferenceScore(a,preference)))).slice(0,Math.max(1,Math.min(Number(limit)||4,6)));
 }
 
+const FIXED_TOOL_MODEL_FAMILIES=new Set(['openai','anthropic','gemini','deepseek','x-ai','qwen']);
 export function toolModelCandidates(toolId,text='',options={}){
   const tool=getToolWorkflow(toolId);if(!tool)return [];
-  const vision=options.vision===true||tool.vision===true;
+  const vision=options.vision===true||tool.vision===true,includeUnavailable=options.includeUnavailable===true;
   const role=tool.route==='writing'?'CREATOR':tool.route==='vision'?'DIRECTOR':'CREATOR';
   const blocked=new Set(options.blockedProviders||[]),excluded=new Set(options.excludeProviders||[]),skip=options.exclude instanceof Set?options.exclude:new Set(options.exclude||[]);
   const preference=options.toolPreferences?.[toolId]||null;
-  const pool=availableModels({vision}).filter(model=>routeEligibleWhenGatewayBlocked(model,blocked)&&!excluded.has(modelFamily(model))&&!skip.has(`${model.provider}:${model.id}`));
+  const source=includeUnavailable
+    ?modelCatalog().filter(model=>!vision||(model.roles||[]).some(role=>role==='vision'||role==='multimodal'))
+    :availableModels({vision});
+  const pool=source.filter(model=>(includeUnavailable||routeEligibleWhenGatewayBlocked(model,blocked))&&FIXED_TOOL_MODEL_FAMILIES.has(modelFamily(model))&&!excluded.has(modelFamily(model))&&!skip.has(`${model.provider}:${model.id}`));
   const ranked=uniqueModelOrder(pool.sort((a,b)=>(roleScore(role,b,text,tool.route)+toolPreferenceScore(b,preference))-(roleScore(role,a,text,tool.route)+toolPreferenceScore(a,preference))));
   const families=new Set(),diverse=[];
   for(const model of ranked){const family=modelFamily(model);if(!family||families.has(family))continue;families.add(family);diverse.push({...model,family});if(diverse.length===6)break;}
@@ -1278,6 +1288,10 @@ export function imageGeneratorCandidates({limit=6}={}){
   }
   if(openRouterImageConfig())candidates.push(...OPENROUTER_IMAGE_MODELS.map(item=>({...item,provider:'openrouter',description:'Image generation model routed through the configured OpenRouter gateway.'})));
   const seen=new Set();return candidates.filter(item=>{const family=imageModelFamily(item);if(!family||seen.has(family))return false;seen.add(family);return true;}).slice(0,Math.max(1,Math.min(6,Number(limit)||6)));
+}
+export function fixedImageModelCatalog(){
+  const active=new Set(imageGeneratorCandidates({limit:6}).map(item=>`${item.provider}:${item.id}`));
+  return OPENROUTER_IMAGE_MODELS.map(item=>({...item,provider:'openrouter',family:imageModelFamily(item),available:active.has(`openrouter:${item.id}`)}));
 }
 export function __resetImageModelsCacheForTests(){}
 export function imageRequestFields(model,imageOptions=null) {

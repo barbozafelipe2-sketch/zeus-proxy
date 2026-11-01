@@ -59,6 +59,17 @@ try{
   assert.ok(calls.every(call=>call.url.includes('.test/')),'Olympus must use Gateway endpoints only');
   assert.ok(!calls.some(call=>call.url.includes('openai.com')||call.url.includes('openrouter.ai')),'no direct provider API may be called');
 
+  const textTools=['web','code','documents'];
+  for(const toolId of textTools){
+    const roster=models.toolModelCandidates(toolId,`fixed roster ${toolId}`,{toolId,includeUnavailable:true});
+    assert.equal(roster.length,6,`${toolId} must expose six fixed model families`);
+    assert.equal(new Set(roster.map(modelFamily)).size,6,`${toolId} must use six independent model families`);
+  }
+  const analysisRoster=models.toolModelCandidates('analysis','analyze an attached file',{toolId:'analysis',includeUnavailable:true});
+  assert.equal(analysisRoster.length,6,'file analysis must expose six multimodal model families');
+  assert.equal(new Set(analysisRoster.map(modelFamily)).size,6,'file analysis families must be independent');
+  assert.equal(models.fixedImageModelCatalog().length,6,'image tools must expose six fixed image families');
+
   const source=readFileSync('netlify/functions/_shared/models.mjs','utf8');
   const speech=readFileSync('netlify/functions/speech.mjs','utf8');
   for(const forbidden of ['OPENROUTER_DIRECT_API_KEY','OPENAI_DIRECT_API_KEY','https://api.openai.com','https://openrouter.ai/api/v1','https://generativelanguage.googleapis.com'])
