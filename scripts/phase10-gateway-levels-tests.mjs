@@ -68,7 +68,10 @@ try{
   const analysisRoster=models.toolModelCandidates('analysis','analyze an attached file',{toolId:'analysis',includeUnavailable:true});
   assert.equal(analysisRoster.length,6,'file analysis must expose six multimodal model families');
   assert.equal(new Set(analysisRoster.map(modelFamily)).size,6,'file analysis families must be independent');
-  assert.equal(models.fixedImageModelCatalog().length,6,'image tools must expose six fixed image families');
+  const fixedImages=models.fixedImageModelCatalog();
+  assert.equal(fixedImages.length,6,'image tools must expose six fixed image families');
+  assert.equal(new Set(fixedImages.map(modelFamily)).size,6,'image families must be independent');
+  assert.equal(fixedImages.filter(model=>model.available).length,6,'the configured OpenAI and OpenRouter gateways must activate all six image families');
 
   const source=readFileSync('netlify/functions/_shared/models.mjs','utf8');
   const speech=readFileSync('netlify/functions/speech.mjs','utf8');

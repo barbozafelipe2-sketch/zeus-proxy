@@ -1290,8 +1290,12 @@ export function imageGeneratorCandidates({limit=6}={}){
   const seen=new Set();return candidates.filter(item=>{const family=imageModelFamily(item);if(!family||seen.has(family))return false;seen.add(family);return true;}).slice(0,Math.max(1,Math.min(6,Number(limit)||6)));
 }
 export function fixedImageModelCatalog(){
-  const active=new Set(imageGeneratorCandidates({limit:6}).map(item=>`${item.provider}:${item.id}`));
-  return OPENROUTER_IMAGE_MODELS.map(item=>({...item,provider:'openrouter',family:imageModelFamily(item),available:active.has(`openrouter:${item.id}`)}));
+  const active=imageGeneratorCandidates({limit:6});
+  const activeFamilies=new Set(active.map(imageModelFamily));
+  const openai=active.find(item=>imageModelFamily(item)==='openai')
+    ||{...OPENROUTER_IMAGE_MODELS.find(item=>item.family==='openai'),provider:'openrouter'};
+  const roster=[openai,...OPENROUTER_IMAGE_MODELS.filter(item=>item.family!=='openai').map(item=>({...item,provider:'openrouter'}))];
+  return roster.map(item=>({...item,family:imageModelFamily(item),available:activeFamilies.has(imageModelFamily(item))}));
 }
 export function __resetImageModelsCacheForTests(){}
 export function imageRequestFields(model,imageOptions=null) {
