@@ -1003,7 +1003,7 @@ export function roleCandidates(role,text='',{
   return uniqueModelOrder(pool.sort((a,b)=>(roleScore(role,b,text,route)+toolPreferenceScore(b,preference))-(roleScore(role,a,text,route)+toolPreferenceScore(a,preference)))).slice(0,Math.max(1,Math.min(Number(limit)||4,6)));
 }
 
-const FIXED_TOOL_MODEL_FAMILIES=new Set(['openai','anthropic','gemini','deepseek','x-ai','qwen']);
+const FIXED_TOOL_MODEL_FAMILIES=new Set(['openai','anthropic','gemini','deepseek','xai','qwen']);
 export function toolModelCandidates(toolId,text='',options={}){
   const tool=getToolWorkflow(toolId);if(!tool)return [];
   const vision=options.vision===true||tool.vision===true,includeUnavailable=options.includeUnavailable===true;
