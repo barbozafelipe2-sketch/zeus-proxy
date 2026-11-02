@@ -1926,10 +1926,24 @@ function liveProjectClientTools(){
       try{
         await state.liveAgentLogQueue.catch(()=>{});
         const normalize=value=>String(value||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
+        const normalizedCommand=normalize(command);
+        const createProjectIntent=!/^(?:how|como|what is|o que e|is it possible|e possivel)\b/.test(normalizedCommand)&&/\b(create|start|make) (?:a )?project\b|\b(cria|crie|criar|inicia|inicie) (?:um )?projeto\b/.test(normalizedCommand);
+        if(createProjectIntent){
+          const quotedName=command.match(/\b(?:called|named|chamado|chamada|com o nome de)\s+["“']([^"”']{1,120})["”']/i);
+          const namedMatch=command.match(/\b(?:called|named|chamado|chamada|com o nome de)\s+(.+?)(?=\s+\b(?:with|for|goal|description|para|objetivo|descri[cç][aã]o)\b|[.!?\n]|$)/i);
+          const projectName=String(quotedName?.[1]||namedMatch?.[1]||'').trim().replace(/[“”"']/g,'').slice(0,120);
+          if(!projectName)return JSON.stringify({ok:false,needsInput:true,error:'What should I name the project? Say “create a project called …”.'});
+          const created=await api('/api/projects',{method:'POST',body:JSON.stringify({name:projectName})});
+          await loadProjects();
+          const createdProject=state.projects.find(item=>item.id===created.project?.id);
+          if(!createdProject)return JSON.stringify({ok:false,error:'The project API returned success, but the new project could not be loaded.'});
+          await openProjectWorkspace(createdProject.id);
+          refreshLiveTalkContext();render();
+          return JSON.stringify({ok:true,created:true,project:{id:createdProject.id,name:createdProject.name},workspace:'project'});
+        }
         // Project-specific spoken commands sometimes arrive here before the
         // agent has completed the separate list/open/context tool sequence.
         // Resolve an explicitly named project deterministically before routing.
-        const normalizedCommand=normalize(command);
         if(/\b(project|projeto|task|tarefa)\b/.test(normalizedCommand)||!(state.projects||[]).length)await loadProjects();
         const namedProjects=(state.projects||[]).filter(item=>normalize(item.name).length>=2&&normalizedCommand.includes(normalize(item.name)));
         if(namedProjects.length>1)return JSON.stringify({ok:false,error:'More than one project name appears in the request. Ask which project Felipe means.',projects:namedProjects.map(item=>item.name)});
@@ -2023,7 +2037,8 @@ function liveProjectClientTools(){
       try{
         const result=await api('/api/tasks',{method:'POST',body:JSON.stringify(items.length===1&&!Array.isArray(parameters?.items)?{projectId:project.id,title,description:String(parameters?.description||'').trim().slice(0,2000),priority:items[0].priority,dueAt:items[0].dueAt}:{projectId:project.id,items})});
         await Promise.all([loadTasks(project.id),loadProjects()]);
-        state.currentProject=state.projects.find(item=>item.id===project.id)||project;render();
+        state.currentProject=state.projects.find(item=>item.id===project.id)||project;
+        refreshLiveTalkContext();render();
         return JSON.stringify({created:true,count:result.tasks?.length||1,project:project.name,tasks:(result.tasks||[result.task]).map(task=>({title:task.title,status:task.status,priority:task.priority,due_at:task.due_at}))});
       }catch(error){return `Task not created: ${String(error?.message||'request failed').slice(0,180)}`;}
     }

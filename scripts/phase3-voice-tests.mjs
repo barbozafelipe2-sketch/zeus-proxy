@@ -108,4 +108,12 @@ assert.match(log,/resolveOwnedScope/,'transcript persistence must verify convers
 assert.match(log,/metadata->>'eventId'/,'transcript events must be idempotent');
 assert.match(ui,/api\('\/api\/voice-log'/,'Realtime conversation transcript must persist to OlyHub history');
 assert.match(chat,/const decision=/,'chat endpoint remains available for regular text chat');
+const projectTools=ui.slice(ui.indexOf('function liveProjectClientTools(){'),ui.indexOf('\nfunction sendLiveTalkText'));
+assert.match(projectTools,/createProjectIntent/,'explicit Live Talk project-creation requests must be handled as a workspace action');
+assert.match(projectTools,/!\/\^\(\?:how\|como\|what is/,'how-to questions must not create projects as a side effect');
+assert.match(projectTools,/api\('\/api\/projects'/,'Live Talk project creation must use the authenticated projects API');
+assert.match(projectTools,/await openProjectWorkspace\(createdProject\.id\)/,'a project created from Live Talk must open its new workspace');
+const createTaskTool=projectTools.slice(projectTools.indexOf('create_project_task:'),projectTools.indexOf('\n  };'));
+assert.ok(createTaskTool.indexOf('refreshLiveTalkContext()')>=0&&createTaskTool.indexOf('refreshLiveTalkContext()')<createTaskTool.indexOf('return JSON.stringify({created:true'),'creating tasks must refresh the ongoing Live Talk project context');
+assert.match(projectTools,/Array\.isArray\(parameters\?\.items\)/,'the Live Talk task tool must accept a checklist as separate task items');
 console.log('Phase 3 voice, ElevenLabs Realtime agent, mute, transcript history, and no-fallback regressions PASS');
