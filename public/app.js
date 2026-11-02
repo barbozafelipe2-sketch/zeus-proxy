@@ -1977,7 +1977,7 @@ function liveProjectClientTools(){
         const mentionsProject=/\b(project|projeto)\b/.test(normalizedCommand);
         const mentionsConversation=/\b(conversation|conversa|chat)\b/.test(normalizedCommand);
         const asksCurrent=/\b(this|current|essa|esta|atual)\b/.test(normalizedCommand);
-        if(!isQuestion&&deleteIntent&&mentionsProject){
+        if(!isQuestion&&deleteIntent&&mentionsProject&&!mentionsConversation){
           await loadProjects();
           const matches=(state.projects||[]).filter(item=>normalize(item.name).length>=2&&normalizedCommand.includes(normalize(item.name)));
           const currentRequested=asksCurrent&&state.currentProject?.id;
@@ -1992,7 +1992,8 @@ function liveProjectClientTools(){
           await Promise.all([loadProjects(),loadConversations()]);
           const projectMatches=(state.projects||[]).filter(item=>normalize(item.name).length>=2&&normalizedCommand.includes(normalize(item.name)));
           if(projectMatches.length!==1)return JSON.stringify({ok:false,needsInput:true,error:projectMatches.length?'More than one destination project matches. Ask which project to use.':'Name the destination project.'});
-          const titleMatches=(state.conversations||[]).filter(item=>normalize(item.title).length>=2&&normalizedCommand.includes(normalize(item.title)));
+          const commandWithoutProject=projectMatches.reduce((text,item)=>text.replace(normalize(item.name),''),normalizedCommand);
+          const titleMatches=(state.conversations||[]).filter(item=>normalize(item.title).length>=2&&commandWithoutProject.includes(normalize(item.title)));
           const source=titleMatches.length===1?titleMatches[0]:(titleMatches.length===0&&state.currentConversation?(state.conversations||[]).find(item=>item.id===state.currentConversation):null);
           if(titleMatches.length>1)return JSON.stringify({ok:false,error:'More than one conversation matches. Ask Felipe which conversation to move.',conversations:titleMatches.map(item=>item.title)});
           if(!source)return JSON.stringify({ok:false,needsInput:true,error:'I could not identify the conversation. Open it or say its exact title first.'});

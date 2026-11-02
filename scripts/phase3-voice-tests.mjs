@@ -123,6 +123,10 @@ assert.match(ui,/api\('\/api\/conversations',\{method:'PATCH',body:JSON\.stringi
 assert.match(ui,/api\('\/api\/conversations',\{method:'DELETE'/,'deleting a conversation by voice must use the existing authenticated delete endpoint');
 assert.match(ui,/api\('\/api\/projects',\{method:'DELETE'/,'deleting a project by voice must use the existing authenticated delete endpoint');
 assert.match(projectTools,/needsConfirmation:true/,'voice must ask for an explicit confirmation before destructive or transfer mutations');
+assert.match(projectTools,/deleteIntent&&mentionsProject&&!mentionsConversation/,'deleting a project conversation must never be misread as deleting the whole project');
+assert.match(ui,/state\.livePendingMutation=null;state\.currentConversation=null/,'starting a new chat must clear any unconfirmed voice mutation');
+assert.match(ui,/state\.livePendingMutation=null;\s*try\{/,'changing project workspace must clear any unconfirmed voice mutation');
+assert.match(projectTools,/commandWithoutProject=projectMatches\.reduce/,'conversation matching must exclude the destination project name to avoid selecting the wrong chat');
 assert.match(ui,/Only call send_olyhub_command again to execute after Felipe explicitly says yes/,'the Realtime agent prompt must require a second, explicit confirmation tool call');
 assert.match(ui,/For source\/file analysis, use send_olyhub_command/,'Live Talk must route project file analysis through the project-aware chat engine');
 console.log('Phase 3 voice, ElevenLabs Realtime agent, mute, transcript history, and no-fallback regressions PASS');
