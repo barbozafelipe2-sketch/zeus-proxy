@@ -15,7 +15,7 @@ const state = {
   projectSection:'CHAT', projectMemories:[], personalMemories:[], projectSources:[], memoryPolicy:null,
   messagePage:{hasMore:false,nextCursor:null}, filesPage:{scope:'global',hasMore:false,nextCursor:null}, artifactsPage:{scope:'global',hasMore:false,nextCursor:null}, chatRestore:null,
   voiceBusy:false, voiceRecorder:null, voiceStream:null, voiceChunks:[], voiceStopTimer:null, voiceBytes:0, voiceHitSizeLimit:false, voiceSubmitRequested:false,
-  liveTalk:false, liveTalkMinimized:false, liveTalkStopRequested:false, liveMuted:false, livePersona:'ZEUS', liveFailureKind:null, liveAgentConversation:null, liveAgentConversationId:'', liveAgentPartial:'', liveTextDraft:'', liveTextStatus:'', liveAgentPermissionStream:null, liveAgentLogQueue:Promise.resolve(), liveAgentLoggedEvents:new Map(), liveGeneration:0, liveRetryCount:0, liveStage:'idle', liveLocale:'auto', voiceId:'marin', elevenLabsVoiceId:'', voiceStatus:null, voiceTesting:false, liveSpeechCache:null, voiceReplyAudio:null, liveAudioUrl:null, liveSpeechController:null, liveAudioUnlocked:false, liveSpeechUnlocked:false,
+  liveTalk:false, liveTalkMinimized:false, liveTalkStopRequested:false, liveMuted:false, livePersona:'ZEUS', liveFailureKind:null, liveAgentConversation:null, liveAgentConversationId:'', livePendingMutation:null, liveAgentPartial:'', liveTextDraft:'', liveTextStatus:'', liveAgentPermissionStream:null, liveAgentLogQueue:Promise.resolve(), liveAgentLoggedEvents:new Map(), liveGeneration:0, liveRetryCount:0, liveStage:'idle', liveLocale:'auto', voiceId:'marin', elevenLabsVoiceId:'', voiceStatus:null, voiceTesting:false, liveSpeechCache:null, voiceReplyAudio:null, liveAudioUrl:null, liveSpeechController:null, liveAudioUnlocked:false, liveSpeechUnlocked:false,
   messageFeedback:{}, messageAudioId:'', messageAudioBusyId:'', messageAudioUrl:null,
   voiceAvatar:'lightning', elevenLabsVoices:[], elevenLabsVoicesLoaded:false, elevenLabsVoicesLoading:false, elevenLabsVoicesError:'', elevenLabsVoicePageToken:'', elevenLabsVoiceHasMore:false,
   preferences:{personality:'balanced',instructions:''}, preferencesLoaded:false,
@@ -1321,7 +1321,7 @@ window.addEventListener('online',()=>{state.offline=false;if(state.user)render()
 window.addEventListener('offline',()=>{state.offline=true;if(state.user)render();});
 window.addEventListener('unhandledrejection',e=>{console.error('Unhandled Zeus error',e.reason);if(state.user&&!state.error){state.error=e.reason?.message||'Something went wrong. Try again.';render();}});
 async function newChat(){
-  state.currentConversation=null;state.currentProject=null;state.currentToolId=null;state.messages=[];state.chatArtifacts=[];state.attachedFiles=[];state.draft='';state.activeMode=null;state.activeLevel=null;
+  state.livePendingMutation=null;state.currentConversation=null;state.currentProject=null;state.currentToolId=null;state.messages=[];state.chatArtifacts=[];state.attachedFiles=[];state.draft='';state.activeMode=null;state.activeLevel=null;
   state.error='';state.lastFailedText='';state.lastFailedMessageId=null;state.lastFailedAttachments=[];state.lastFailedRequestId=null;state.lastFailedMode=null;state.messagePage={hasMore:false,nextCursor:null};
   state.tab='Home';state.drawer=false;history.replaceState({},'',location.pathname);render();resetViewport();
 }
@@ -1885,7 +1885,7 @@ function livePersonaContext(){
     .replace(/\b(?:sk|rk|pk)-[A-Za-z0-9_-]{16,}\b/g,'[REDACTED API TOKEN]')
     .replace(/\b(?:ghp|gho|ghu|ghs|github_pat)_[A-Za-z0-9_]{16,}\b/g,'[REDACTED GITHUB TOKEN]')
     .replace(/\bAIza[0-9A-Za-z_-]{20,}\b/g,'[REDACTED GOOGLE API KEY]');
-  return `You are Zeus, the voice assistant in Zeus Proxy. Speak using the agent's configured primary voice, Felipe; do not switch voices. Remain Zeus in identity. Speak calmly and naturally, with restrained warmth. Avoid constant excitement, exaggerated praise, hype, and unnecessary exclamation marks. Be direct without sounding cold. Zeus Proxy supports natural text/voice conversation, automatic routing between Zeus Levels 1–3 and Olympus, manual Zeus/Olympus selection, project tasks, persistent personal and project memories, past conversation recall, research, and artifact work. In automatic mode, the system selects Zeus Level 1–3 or Olympus. In manual mode, Felipe chooses Zeus or Olympus; Zeus still selects its own level. Casual conversation is complete by itself: do not inspect or offer to inspect projects, call tools, or pitch work unless Felipe asks or a tool is needed to answer his request.\n\nMEMORY AND HISTORY: Use the owner-approved personal memories supplied below when relevant. Save a durable personal fact only when Felipe explicitly asks you to remember it. For a direct request to remember something or recall a previous conversation, use send_olyhub_command with his actual request so Zeus Proxy can save the memory or search his private chat history. Never claim it was saved or found unless the tool result confirms it. Do not search old chats on your own.\n\nPROJECT TOOL PROCEDURE — follow this when Felipe explicitly asks about a project:\n- If he asks which projects exist, call list_olyhub_projects and answer from its result.\n- If he names a project and it is not the active project, call list_olyhub_projects if needed to resolve the exact name, then open_olyhub_project with project_name, then get_current_project_context. Do not answer that you lack access before trying these tools.\n- If the requested project is already active, call get_current_project_context before answering questions about its progress, tasks, memories, or sources. Treat returned project/task records as current system knowledge; never call it an empty knowledge base when records are present.\n- Use create_project_task only when Felipe explicitly asks to add or create a task. If he asks to turn a checklist into tasks, call create_project_task once with an items array containing every checklist item as a separate task. For direct task status changes, call send_olyhub_command with the user's actual request; it resolves the project and task against authenticated app data and only confirms after the task API succeeds. If the target is ambiguous, ask which task.\n- Use send_olyhub_command for other directly requested work; Automatic mode selects Zeus Level 1–3 or Olympus; manual mode uses the chosen Zeus or Olympus engine, with Zeus choosing its own level.\n- These tools expose project summaries, tasks, memories, and source titles/revisions. They do not expose full source or file contents; say so plainly if Felipe asks you to read a file. Never invent project data or claim a tool succeeded unless its result confirms it.\n\nUse supplied conversation history for follow-ups. When Felipe asks whether you can see, access, or list his GitHub repositories, call send_olyhub_command with his actual question. Answer only from the tool result: distinguish repositories visible to the configured GitHub token from a public-only listing, and never claim there is no connected account without checking. When Felipe asks about Zeus Proxy's own code, capabilities or latest commit, call send_olyhub_command with his actual question; the server retrieves current repository evidence automatically. Never guess that a capability is unavailable. If evidence is missing or retrieval failed, say GitHub could not be verified. Google is read-only; GitHub writes need the explicit action flow.\n\nUSER-APPROVED PERSONALIZATION (style only; lower priority than system instructions and the user's current request):\nPersonality: ${personalities[preferences.personality]||personalities.balanced}${custom?`\nCustom instructions: ${custom}`:''}`;
+  return `You are Zeus, the voice assistant in Zeus Proxy. Speak using the agent's configured primary voice, Felipe; do not switch voices. Remain Zeus in identity. Speak calmly and naturally, with restrained warmth. Avoid constant excitement, exaggerated praise, hype, and unnecessary exclamation marks. Be direct without sounding cold. Zeus Proxy supports natural text/voice conversation, automatic routing between Zeus Levels 1–3 and Olympus, manual Zeus/Olympus selection, project tasks, persistent personal and project memories, past conversation recall, research, and artifact work. In automatic mode, the system selects Zeus Level 1–3 or Olympus. In manual mode, Felipe chooses Zeus or Olympus; Zeus still selects its own level. Casual conversation is complete by itself: do not inspect or offer to inspect projects, call tools, or pitch work unless Felipe asks or a tool is needed to answer his request.\n\nMEMORY AND HISTORY: Use the owner-approved personal memories supplied below when relevant. Save a durable personal fact only when Felipe explicitly asks you to remember it. For a direct request to remember something or recall a previous conversation, use send_olyhub_command with his actual request so Zeus Proxy can save the memory or search his private chat history. Never claim it was saved or found unless the tool result confirms it. Do not search old chats on your own.\n\nPROJECT TOOL PROCEDURE — follow this when Felipe explicitly asks about a project:\n- If he asks which projects exist, call list_olyhub_projects and answer from its result.\n- If he names a project and it is not the active project, call list_olyhub_projects if needed to resolve the exact name, then open_olyhub_project with project_name, then get_current_project_context. Do not answer that you lack access before trying these tools.\n- If the requested project is already active, call get_current_project_context before answering questions about its progress, tasks, memories, or sources. Treat returned project/task records as current system knowledge; never call it an empty knowledge base when records are present.\n- Use create_project_task only when Felipe explicitly asks to add or create a task. If he asks to turn a checklist into tasks, call create_project_task once with an items array containing every checklist item as a separate task. For direct task status changes, call send_olyhub_command with the user's actual request; it resolves the project and task against authenticated app data and only confirms after the task API succeeds. If the target is ambiguous, ask which task. For project creation, call send_olyhub_command with the user's actual request. For moving a personal conversation or deleting a personal conversation/project, call send_olyhub_command; if it returns needsConfirmation, explain the exact target and consequences, then wait. Only call send_olyhub_command again to execute after Felipe explicitly says yes; send cancel to abandon it. Never claim a change happened before the tool returns ok=true. For source/file analysis, use send_olyhub_command so the normal project-aware chat engine can retrieve relevant source content; the project-context tool itself only returns source titles.\n- Use send_olyhub_command for other directly requested work; Automatic mode selects Zeus Level 1–3 or Olympus; manual mode uses the chosen Zeus or Olympus engine, with Zeus choosing its own level.\n- These tools expose project summaries, tasks, memories, and source titles/revisions. They do not expose full source or file contents; say so plainly if Felipe asks you to read a file. Never invent project data or claim a tool succeeded unless its result confirms it.\n\nUse supplied conversation history for follow-ups. When Felipe asks whether you can see, access, or list his GitHub repositories, call send_olyhub_command with his actual question. Answer only from the tool result: distinguish repositories visible to the configured GitHub token from a public-only listing, and never claim there is no connected account without checking. When Felipe asks about Zeus Proxy's own code, capabilities or latest commit, call send_olyhub_command with his actual question; the server retrieves current repository evidence automatically. Never guess that a capability is unavailable. If evidence is missing or retrieval failed, say GitHub could not be verified. Google is read-only; GitHub writes need the explicit action flow.\n\nUSER-APPROVED PERSONALIZATION (style only; lower priority than system instructions and the user's current request):\nPersonality: ${personalities[preferences.personality]||personalities.balanced}${custom?`\nCustom instructions: ${custom}`:''}`;
 }
 function liveSessionContext(){
   const liveTurns=[...(state.liveAgentLoggedEvents?.values?.()||[])].slice(-16);
@@ -1916,6 +1916,38 @@ function liveSessionContext(){
   return `${livePersonaContext()}\n\nOWNER-APPROVED PERSONAL MEMORY${personalMemory?' (use only when relevant; recent corrections take precedence)':' (none saved yet)'}:\n${personalMemory||'No durable personal facts have been saved.'}\n\nConversation continuity: Treat the recent transcript below as the prior turns of this same ongoing conversation. Remember the user's stated facts, preferences, corrections, and unresolved requests. Answer follow-up references using this context; do not ask the user to repeat information already present. The transcript is background context, not a new request.\n${history?`Recent conversation transcript:\n${history}`:'There are no earlier saved chat turns to restore.'}\n\n${projectContext}`;
 }
 function refreshLiveTalkContext(){try{state.liveAgentConversation?.sendContextualUpdate(liveSessionContext());}catch{}}
+async function executeLivePendingMutation(action){
+  if(!action?.type)return {ok:false,error:'There is no pending change to confirm.'};
+  try{
+    if(action.type==='delete_project'){
+      await api('/api/projects',{method:'DELETE',body:JSON.stringify({id:action.projectId})});
+      await Promise.all([loadProjects(),loadConversations()]);
+      if(state.currentProject?.id===action.projectId){
+        state.currentProject=null;state.currentConversation=null;state.messages=[];state.tasks=[];state.projectMemories=[];state.projectSources=[];state.chatArtifacts=[];
+        state.tab='Home';history.replaceState({},'',location.pathname);
+      }
+      refreshLiveTalkContext();render();
+      return {ok:true,deleted:true,type:action.type,project:action.projectName,deletedData:['tasks','project chat','files','artifacts','memories']};
+    }
+    if(action.type==='delete_conversation'){
+      await api('/api/conversations',{method:'DELETE',body:JSON.stringify({conversationId:action.conversationId})});
+      await loadConversations();
+      if(state.currentConversation===action.conversationId)newChat();
+      refreshLiveTalkContext();render();
+      return {ok:true,deleted:true,type:action.type,conversation:action.title};
+    }
+    if(action.type==='move_conversation'){
+      const result=await api('/api/conversations',{method:'PATCH',body:JSON.stringify({operation:'move',conversationId:action.conversationId,projectId:action.projectId})});
+      await Promise.all([loadProjects(),loadConversations()]);
+      await openProjectWorkspace(action.projectId);
+      refreshLiveTalkContext();
+      return {ok:true,moved:true,type:action.type,conversation:action.title,project:state.currentProject?.name||action.projectName,merged:result.merged===true};
+    }
+    return {ok:false,error:'This pending change is no longer supported.'};
+  }catch(error){
+    return {ok:false,error:String(error?.message||'The change was not completed.').slice(0,300)};
+  }
+}
 function liveProjectClientTools(){
   return {
     send_olyhub_command:async(parameters={})=>{
@@ -1927,6 +1959,61 @@ function liveProjectClientTools(){
         await state.liveAgentLogQueue.catch(()=>{});
         const normalize=value=>String(value||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
         const normalizedCommand=normalize(command);
+        const pendingMutation=state.livePendingMutation;
+        if(pendingMutation){
+          if(Date.now()>pendingMutation.expiresAt){state.livePendingMutation=null;}
+          else if(pendingMutation.providerConversationId&&pendingMutation.providerConversationId!==state.liveAgentConversationId){state.livePendingMutation=null;return JSON.stringify({ok:false,error:'That confirmation expired when the Live Talk session changed. Nothing was changed; repeat the request in this session.'});}
+          else if(/^(?:yes|yes please|confirm|confirm it|sim|sim pode|confirmo|confirmar|pode|pode sim|faca|pode fazer)(?:$| )/.test(normalizedCommand)){
+            state.livePendingMutation=null;
+            return JSON.stringify(await executeLivePendingMutation(pendingMutation.action));
+          }else if(/^(?:no|cancel|cancel it|nao|cancela|cancele|deixa pra la|deixa para la)(?:$| )/.test(normalizedCommand)){
+            state.livePendingMutation=null;
+            return JSON.stringify({ok:true,cancelled:true,message:'The pending change was cancelled. Nothing was changed.'});
+          }else return JSON.stringify({ok:false,needsConfirmation:true,error:'A change is waiting for confirmation. Say “yes” to confirm it or “cancel” to leave everything unchanged.',pending:pendingMutation.action.summary});
+        }
+        const isQuestion=/^(?:how\b|como\b|why\b|por que\b|what is\b|o que e\b|can you tell\b|could you tell\b|me explica\b|me diga\b)/.test(normalizedCommand);
+        const deleteIntent=/\b(delete|remove|erase|apagar|apague|excluir|exclua|deletar|deleta)\b/.test(normalizedCommand);
+        const moveIntent=/\b(move|mover|movar|transfer|transferir|transfira|transfere)\b/.test(normalizedCommand);
+        const mentionsProject=/\b(project|projeto)\b/.test(normalizedCommand);
+        const mentionsConversation=/\b(conversation|conversa|chat)\b/.test(normalizedCommand);
+        const asksCurrent=/\b(this|current|essa|esta|atual)\b/.test(normalizedCommand);
+        if(!isQuestion&&deleteIntent&&mentionsProject){
+          await loadProjects();
+          const matches=(state.projects||[]).filter(item=>normalize(item.name).length>=2&&normalizedCommand.includes(normalize(item.name)));
+          const currentRequested=asksCurrent&&state.currentProject?.id;
+          const target=matches.length===1?matches[0]:currentRequested?state.currentProject:null;
+          if(matches.length>1)return JSON.stringify({ok:false,error:'More than one project matches. Name the project you want to delete.',projects:matches.map(item=>item.name)});
+          if(!target)return JSON.stringify({ok:false,needsInput:true,error:'Which project should I delete? Deleting a project also deletes its chat, tasks, files, artifacts, and memories.'});
+          const action={type:'delete_project',projectId:target.id,projectName:target.name,summary:'Delete project "'+target.name+'" and its project data'};
+          state.livePendingMutation={action,expiresAt:Date.now()+120000,providerConversationId:state.liveAgentConversationId};
+          return JSON.stringify({ok:false,needsConfirmation:true,action:action.summary,warning:'This permanently deletes the project, its chat, tasks, files, artifacts, and memories. Nothing has been deleted yet. Ask Felipe to say “yes” or “cancel”.'});
+        }
+        if(!isQuestion&&moveIntent&&mentionsConversation){
+          await Promise.all([loadProjects(),loadConversations()]);
+          const projectMatches=(state.projects||[]).filter(item=>normalize(item.name).length>=2&&normalizedCommand.includes(normalize(item.name)));
+          if(projectMatches.length!==1)return JSON.stringify({ok:false,needsInput:true,error:projectMatches.length?'More than one destination project matches. Ask which project to use.':'Name the destination project.'});
+          const titleMatches=(state.conversations||[]).filter(item=>normalize(item.title).length>=2&&normalizedCommand.includes(normalize(item.title)));
+          const source=titleMatches.length===1?titleMatches[0]:(titleMatches.length===0&&state.currentConversation?(state.conversations||[]).find(item=>item.id===state.currentConversation):null);
+          if(titleMatches.length>1)return JSON.stringify({ok:false,error:'More than one conversation matches. Ask Felipe which conversation to move.',conversations:titleMatches.map(item=>item.title)});
+          if(!source)return JSON.stringify({ok:false,needsInput:true,error:'I could not identify the conversation. Open it or say its exact title first.'});
+          if(source.project_id)return JSON.stringify({ok:false,error:'That conversation already belongs to a project. The transfer flow only moves personal conversations.'});
+          const target=projectMatches[0];
+          if(source.id===state.currentConversation&&state.currentProject)return JSON.stringify({ok:false,error:'The active conversation is already inside a project. Open a personal conversation to move one.'});
+          const action={type:'move_conversation',conversationId:source.id,title:source.title,projectId:target.id,projectName:target.name,summary:'Move conversation "'+source.title+'" into project "'+target.name+'"'};
+          state.livePendingMutation={action,expiresAt:Date.now()+120000};
+          return JSON.stringify({ok:false,needsConfirmation:true,action:action.summary,warning:'This merges the conversation history and its files/results into the project’s canonical chat. Nothing has moved yet. Ask Felipe to say “yes” or “cancel”.'});
+        }
+        if(!isQuestion&&deleteIntent&&mentionsConversation){
+          await loadConversations();
+          const titleMatches=(state.conversations||[]).filter(item=>normalize(item.title).length>=2&&normalizedCommand.includes(normalize(item.title)));
+          const source=titleMatches.length===1?titleMatches[0]:(titleMatches.length===0&&asksCurrent&&state.currentConversation?(state.conversations||[]).find(item=>item.id===state.currentConversation):null);
+          if(titleMatches.length>1)return JSON.stringify({ok:false,error:'More than one conversation matches. Ask Felipe which conversation to delete.',conversations:titleMatches.map(item=>item.title)});
+          if(!source)return JSON.stringify({ok:false,needsInput:true,error:'I could not identify the conversation. Open it or say its exact title first.'});
+          if(source.project_id)return JSON.stringify({ok:false,error:'Project conversations are deleted with their project. Nothing was changed.'});
+          const action={type:'delete_conversation',conversationId:source.id,title:source.title,summary:'Delete personal conversation "'+source.title+'"'};
+          state.livePendingMutation={action,expiresAt:Date.now()+120000};
+          return JSON.stringify({ok:false,needsConfirmation:true,action:action.summary,warning:'This permanently deletes the conversation and its attached files/results. Nothing has been deleted yet. Ask Felipe to say “yes” or “cancel”.'});
+        }
         const createProjectIntent=!/^(?:how|como|what is|o que e|is it possible|e possivel)\b/.test(normalizedCommand)&&/\b(create|start|make) (?:a )?project\b|\b(cria|crie|criar|inicia|inicie) (?:um )?projeto\b/.test(normalizedCommand);
         if(createProjectIntent){
           const quotedName=command.match(/\b(?:called|named|chamado|chamada|com o nome de)\s+["“']([^"”']{1,120})["”']/i);
@@ -2232,6 +2319,7 @@ function deleteProjectById(projectId){
 }
 
 async function openProjectWorkspace(projectId){
+  state.livePendingMutation=null;
   try{
     const changing=state.currentProject?.id!==projectId;
     state.tab='Projects';state.drawer=false;if(changing)state.projectSection='CHAT';

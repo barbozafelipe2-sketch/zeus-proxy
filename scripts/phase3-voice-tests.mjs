@@ -116,4 +116,13 @@ assert.match(projectTools,/await openProjectWorkspace\(createdProject\.id\)/,'a 
 const createTaskTool=projectTools.slice(projectTools.indexOf('create_project_task:'),projectTools.indexOf('\n  };'));
 assert.ok(createTaskTool.indexOf('refreshLiveTalkContext()')>=0&&createTaskTool.indexOf('refreshLiveTalkContext()')<createTaskTool.indexOf('return JSON.stringify({created:true'),'creating tasks must refresh the ongoing Live Talk project context');
 assert.match(projectTools,/Array\.isArray\(parameters\?\.items\)/,'the Live Talk task tool must accept a checklist as separate task items');
+assert.match(ui,/providerConversationId!==state\.liveAgentConversationId/,'pending confirmations must be scoped to the Live Talk session that requested them');
+assert.match(ui,/async function executeLivePendingMutation\(action\)/,'voice mutations must have a single execution path after confirmation');
+assert.match(ui,/state\.livePendingMutation=\{action,expiresAt:Date\.now\(\)\+120000,providerConversationId:state\.liveAgentConversationId\}/,'destructive or transferring voice actions must expire if not confirmed promptly');
+assert.match(ui,/api\('\/api\/conversations',\{method:'PATCH',body:JSON\.stringify\(\{operation:'move'/,'moving a conversation by voice must use the existing authenticated merge endpoint');
+assert.match(ui,/api\('\/api\/conversations',\{method:'DELETE'/,'deleting a conversation by voice must use the existing authenticated delete endpoint');
+assert.match(ui,/api\('\/api\/projects',\{method:'DELETE'/,'deleting a project by voice must use the existing authenticated delete endpoint');
+assert.match(projectTools,/needsConfirmation:true/,'voice must ask for an explicit confirmation before destructive or transfer mutations');
+assert.match(ui,/Only call send_olyhub_command again to execute after Felipe explicitly says yes/,'the Realtime agent prompt must require a second, explicit confirmation tool call');
+assert.match(ui,/For source\/file analysis, use send_olyhub_command/,'Live Talk must route project file analysis through the project-aware chat engine');
 console.log('Phase 3 voice, ElevenLabs Realtime agent, mute, transcript history, and no-fallback regressions PASS');
