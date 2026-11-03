@@ -1,0 +1,12 @@
+import assert from 'node:assert/strict';
+import {retrieveConversationMemory} from '../netlify/functions/_shared/olympus-memory-retrieval.mjs';
+const policy={candidateLimit:20,maxItems:5,maxChars:2000,perItemChars:300};
+const personal=[{id:'p1',project_id:null,approved:true,type:'fact',content:'Preferred language Portuguese'}];
+const project=[{id:'a',project_id:'project-a',approved:true,type:'decision',content:'Project A private decision'},{id:'b',project_id:'project-b',approved:true,type:'decision',content:'Project B private decision'},{id:'c',project_id:'project-a',approved:false,type:'fact',content:'Unapproved private memory'}];
+const a=retrieveConversationMemory({personalRows:personal,projectRows:project,query:'private decision',projectId:'project-a',personalPolicy:policy,projectPolicy:policy});
+assert.match(a.personalText,/Portuguese/);
+assert.match(a.projectText,/Project A/);
+assert.doesNotMatch(a.projectText,/Project B|Unapproved/);
+const noProject=retrieveConversationMemory({personalRows:personal,projectRows:project,query:'private',personalPolicy:policy,projectPolicy:policy});
+assert.equal(noProject.projectText,'');
+console.log('Shared scoped memory tests passed');
