@@ -2,7 +2,7 @@
 // Every dispatch has a nonce; every claimed worker has an independent fencing token.
 // All acquisition writes happen while holding the same transaction lock as initializeTurn.
 export const OLYMPUS_QUEUE_LEASE_MS=240_000;
-export const OLYMPUS_WORKER_LEASE_MS=210_000;
+export const OLYMPUS_WORKER_LEASE_MS=600_000;
 export const OLYMPUS_LEGACY_STALE_MS=960_000; // 16 minutes for unleased legacy background runs.
 export const ZEUS_SYNC_STALE_MS=90_000;
 
@@ -42,7 +42,7 @@ export async function claimOlympusWorker(client,{executionId,ownerId,dispatchTok
   if(!validDispatchToken(dispatchToken))return null;
   const result=await client.query(`UPDATE executions
     SET state='UNDERSTANDING',worker_token=gen_random_uuid(),
-        lease_expires_at=now()+interval '210 seconds',started_at=now()
+        lease_expires_at=now()+interval '600 seconds',started_at=now()
     WHERE id=$1 AND owner_id=$2 AND mode IN ('OLYMPUS','ZEUS')
       AND state='QUEUED' AND dispatch_token=$3::uuid
       AND worker_token IS NULL AND lease_expires_at>now()

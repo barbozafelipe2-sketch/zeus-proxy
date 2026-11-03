@@ -65,6 +65,6 @@ export function publicExecutionFailure(error){
              :code==='AI_NOT_CONFIGURED'
                ?'No AI provider is configured for this request.'
                :'The AI provider could not complete this request. Please retry.')
-    :'Zeus could not complete this request. Please retry or check the service status.';
+    :`Zeus could not complete this request (error ${code}). Check the execution trace or retry.`;
   return {status:safeStatus,code,message,traceError:code};
 }
