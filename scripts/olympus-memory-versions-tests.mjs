@@ -1,0 +1,11 @@
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+const sql=readFileSync(new URL('../netlify/database/migrations/20261103230000_olympus_memory_versions/migration.sql',import.meta.url),'utf8');
+assert.match(sql,/CREATE TABLE IF NOT EXISTS olympus_memory_versions/);
+assert.match(sql,/REFERENCES memories\(id\) ON DELETE CASCADE/);
+assert.match(sql,/REFERENCES users\(id\) ON DELETE CASCADE/);
+assert.match(sql,/NEW\.owner_id IS DISTINCT FROM OLD\.owner_id/);
+assert.match(sql,/BEFORE UPDATE ON memories/);
+assert.match(sql,/IF \(OLD\.content,OLD\.type/);
+assert.match(sql,/UNIQUE\(memory_id,version\)/);
+console.log('Memory revision migration contract tests passed');
