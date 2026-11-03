@@ -6,7 +6,7 @@ import { runZeus, runOlympus, runOlympusCompoundPlus, TURBO_LIMITS, generateImag
 import { modelFamily } from './_shared/provider-routing.mjs';
 import { getToolWorkflow, toolConversationTitle } from './_shared/tool-workflows.mjs';
 import { executeThreeModelTool } from './_shared/tool-executor.mjs';
-import { SKILL_REGISTRY, authorizeSkillInvocation } from './_shared/skill-engine.mjs';
+import { SKILL_REGISTRY, authorizeSkillInvocation, proposeAutomaticSkill } from './_shared/skill-engine.mjs';
 import { runIndependentArtifactPair } from './_shared/compare-pair.mjs';
 import { detectGoogleServiceRequests, encryptionKeyFromHex, resolveGoogleAccessToken, searchGoogleService } from './_shared/google-service.mjs';
 import { readPublicUrls, extractPublicUrls } from './_shared/public-url-reader.mjs';
@@ -406,8 +406,17 @@ async function chatHandler(req, context, startedAt){
   if(body.toolId!==undefined&&body.toolId!==null&&!getToolWorkflow(body.toolId))return errorJson('Choose a supported OlyHub tool.',400,'INVALID_TOOL_ID',requestId);
   // Preserve validated tool context when Zeus Level 3 resumes in the
   // background Function; otherwise dedicated tool requests become generic.
-  const toolId=getToolWorkflow(body.toolId)?.id||null,toolWorkflow=getToolWorkflow(toolId);
   const content=cleanText(body.content,40000); if(!content)return errorJson('Message is required.',400,'MESSAGE_REQUIRED',requestId);
+  // Recompute from the same user text on background resume; never trust
+  // external content, project files or model output for automatic selection.
+  const autoSkill=body.toolId==null?proposeAutomaticSkill({message:content,hasFiles:Array.isArray(body.fileIds)&&body.fileIds.length>0}):null;
+  const proposedToolId=autoSkill?.toolId||null;
+  const autoPermission=autoSkill?authorizeSkillInvocation({
+    skillId:autoSkill.skillId,allowedToolIds:[proposedToolId],
+    remainingCalls:1,depth:0,delegations:0
+  }):null;
+  const toolId=getToolWorkflow(body.toolId)?.id||(autoPermission?.allowed?proposedToolId:null);
+  const toolWorkflow=getToolWorkflow(toolId);
   let modelText=redactSecrets(content);
   const historySearched=explicitHistoryIntent(modelText);
   let continuationOfArtifact=false;
