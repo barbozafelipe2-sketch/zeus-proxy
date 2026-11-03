@@ -1,0 +1,10 @@
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+const source=readFileSync(new URL('../netlify/functions/chat.mjs',import.meta.url),'utf8');
+const dispatch=source.indexOf('const backgroundEligible=');
+assert.ok(dispatch>0);
+for(const name of ['backgroundImageIntent','backgroundWebIntent','backgroundGithubIntent'])assert.ok(source.indexOf('const '+name+'=')<dispatch);
+const block=source.slice(dispatch,source.indexOf('if(backgroundEligible&&!worker)',dispatch));
+for(const name of ['webIntent','githubIntent','isImageOp'])assert.ok(!new RegExp('(?<!background)\\b'+name+'\\b').test(block),'Premature reference to '+name);
+assert.ok(source.includes('callTimeoutMs:worker?90000:32000'));
+console.log('Background dispatch and tool timeout regression checks passed');
