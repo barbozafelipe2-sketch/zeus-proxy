@@ -27,8 +27,25 @@ export function artifactTypeFromText(text = '') {
   return artifactTypesFromText(text)[0]||null;
 }
 
+function explicitVisualAction(text,hasImage=false){
+ const value=String(text||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
+ const t=value.replace(/^(?:por favor[, ]*|please[, ]*|pode(?:ria)? (?:voce |vc )?|can you |could you |quero que (?:voce |vc )?|i want you to )+/,'');
+ const subject='(?:uma? |a |o |an? |the |this |that |essa? |esta? |mi |un |una )?(?:nova? |new |outra? |different )?(?:imagem|image|picture|foto|photo|logo|logotipo|ilustracao|illustration|poster|cartaz|arte|artwork|graphic|grafico|imagen)';
+ const create=/^(?:crie|criar|cria|gere|gerar|gera|desenhe|desenhar|create|generate|draw|design|crea|crear|genera|generar|dibuja|dibujar|faca|fazer|make|produce|produza|produzir)\b/;
+ const edit=/^(?:edite|editar|edita|edit|mude|mudar|change|altere|alterar|transforme|transformar|transform|remova|remover|remove|substitua|substituir|replace|retocar|retouch|recorte|crop)\b/;
+ const noun=new RegExp('\\b'+subject+'\\b');
+ const request=/^(?:quero|preciso|i want|i need|quiero|necesito)\s+(?:que\s+)?(?:uma? |an? |the |un |una )?(?:imagem|image|picture|foto|photo|logo|logotipo|ilustracao|illustration|imagen)\b/;
+ const editReference=hasImage&&edit.test(t)&&/\b(?:essa|esta|this|that|foto|imagem|photo|image|rosto|face|roupa|fundo|background)\b/.test(t);
+ if(request.test(t))return 'create';
+ if(create.test(t)&&noun.test(t))return 'create';
+ if(editReference||(edit.test(t)&&noun.test(t)))return 'edit';
+ return null;
+}
 export function classifyIntent(text = '', { hasImage = false, hasFiles = false } = {}) {
   const t = normalize(text);
+  const visualAction=explicitVisualAction(text,hasImage);
+  if(visualAction==='create')return {action:'IMAGE_CREATE',artifactType:null,reason:'explicit_visual_request'};
+  if(visualAction==='edit')return {action:'IMAGE_EDIT',artifactType:null,reason:'explicit_visual_edit'};
   const analysis = ANALYZE.test(t);
   const create = CREATE.test(t);
   const edit = EDIT.test(t);
@@ -36,33 +53,12 @@ export function classifyIntent(text = '', { hasImage = false, hasFiles = false }
   const artifactTypes = artifactTypesFromText(t);
   const artifactType = artifactTypes[0]||null;
 
-  const imageSubject=IMAGE_SUBJECT.test(t);
-  const explicitNewImage=EXPLICIT_NEW_IMAGE.test(t);
-  const newImageRequest=create&&imageMention&&!artifactType&&!explicitNewImage&&!DIRECT_IMAGE_EDIT.test(t);
-
-  // A create verb plus "image/logo" is a new-image request even when source
-  // images are attached for inspiration. Do not reinterpret it as editing the
-  // first upload just because the user says "better than these".
-  if(newImageRequest)return { action: 'IMAGE_CREATE', artifactType: null, reason: hasImage?'image_create_with_references':'explicit_image_create' };
-  // When an image is attached, requests to dress/style/transform the depicted
-  // person often omit the words "edit this photo". Treat that visual request
-  // as an edit so it reaches the image-edit provider instead of a chat model.
-  if (!analysis && !explicitNewImage && (
-    (edit && (imageMention || (hasImage && (imageSubject || VISUAL_TRANSFORM.test(t))))) ||
-    (hasImage && create && (imageMention || imageSubject || VISUAL_TRANSFORM.test(t))) ||
-    (hasImage && imageSubject && VISUAL_TRANSFORM.test(t)) ||
-    (!hasImage && edit && imageMention)
-  )) {
-    return { action: 'IMAGE_EDIT', artifactType: null, reason: 'explicit_image_edit' };
-  }
-
+  // Mentions of image creation in a question, explanation, code or quote
+  // are not permission to generate or edit an image.
   if (analysis && !create) {
     return { action: 'ANALYZE', artifactType: null, reason: hasFiles ? 'analyze_attached_material' : 'analysis_request' };
   }
 
-  if (create && imageMention && !artifactType) {
-    return { action: 'IMAGE_CREATE', artifactType: null, reason: 'explicit_image_create' };
-  }
 
   if (create && artifactType) {
     return { action: 'ARTIFACT_CREATE', artifactType, artifactTypes, reason: `explicit_${artifactType}_create` };

@@ -1464,15 +1464,23 @@ async function pollForReply(conversationId, executionId, mode='OLYMPUS'){
   }
   throw apiError(`${mode==='OLYMPUS'?'Olympus':'Zeus Level 3'} is still working. Wait a moment, then tap Retry to collect the reply.`,503,'REQUEST_IN_PROGRESS');
 }
+function explicitVisualAction(text,hasImage=false){
+ const value=String(text||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
+ const t=value.replace(/^(?:por favor[, ]*|please[, ]*|pode(?:ria)? (?:voce |vc )?|can you |could you |quero que (?:voce |vc )?|i want you to )+/,'');
+ const subject='(?:uma? |a |o |an? |the |this |that |essa? |esta? |mi |un |una )?(?:nova? |new |outra? |different )?(?:imagem|image|picture|foto|photo|logo|logotipo|ilustracao|illustration|poster|cartaz|arte|artwork|graphic|grafico|imagen)';
+ const create=/^(?:crie|criar|cria|gere|gerar|gera|desenhe|desenhar|create|generate|draw|design|crea|crear|genera|generar|dibuja|dibujar|faca|fazer|make|produce|produza|produzir)\b/;
+ const edit=/^(?:edite|editar|edita|edit|mude|mudar|change|altere|alterar|transforme|transformar|transform|remova|remover|remove|substitua|substituir|replace|retocar|retouch|recorte|crop)\b/;
+ const noun=new RegExp('\\b'+subject+'\\b');
+ const request=/^(?:quero|preciso|i want|i need|quiero|necesito)\s+(?:que\s+)?(?:uma? |an? |the |un |una )?(?:imagem|image|picture|foto|photo|logo|logotipo|ilustracao|illustration|imagen)\b/;
+ const editReference=hasImage&&edit.test(t)&&/\b(?:essa|esta|this|that|foto|imagem|photo|image|rosto|face|roupa|fundo|background)\b/.test(t);
+ if(request.test(t))return 'create';
+ if(create.test(t)&&noun.test(t))return 'create';
+ if(editReference||(edit.test(t)&&noun.test(t)))return 'edit';
+ return null;
+}
 function shouldAskImageOptions(text,attachments=[]){
-  const value=String(text||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
-  const image=/\b(image|picture|photo|logo|illustration|poster|graphic|artwork|imagem|foto|logotipo|ilustracao|cartaz|grafico|imagen)\b/.test(value);
-  const create=/\b(create|generate|draw|design|crie|criar|cria|gere|gerar|gera|desenhe|desenhar|crea|crear|genera|generar|dibuja|dibujar|disena|disenar)\b/.test(value);
-  const edit=/\b(edit|change|remove|replace|enhance|transform|restyle|erase|crop|retouch|edite|editar|mude|mudar|remova|remover|substitua|substituir|melhore|melhorar|transforme|transformar|recorte|retocar)\b/.test(value);
-  const generic=/\b(make|build|produce|faca|fazer|produza|produzir|monte|montar|haz|hacer)\b/.test(value);
-  const hasImage=(attachments||[]).some(item=>String(item?.mime_type||item?.type||'').startsWith('image/'));
-  const visualEdit=hasImage&&edit&&/\b(this|that|it|essa|esta|isso|ela|ele|foto|imagem|photo|image|background|fundo|roupa|cabelo|face|rosto)\b/.test(value);
-  return (image&&(create||edit||generic))||visualEdit;
+ const hasImage=(attachments||[]).some(item=>String(item?.mime_type||item?.type||'').startsWith('image/'));
+ return explicitVisualAction(text,hasImage)!==null;
 }
 function imageOptionsModal(){
   return new Promise(resolve=>{
