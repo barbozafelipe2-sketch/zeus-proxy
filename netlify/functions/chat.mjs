@@ -551,7 +551,7 @@ async function chatHandler(req, context, startedAt){
       const final=await finalizeTurn({db,userId:user.id,projectId,conversationId,execution:init.execution,mode:'ZEUS',result:taskResult,stagedArtifacts:[]});
       return json({conversationId,message:final.assistant,userMessage:init.userMessage,artifacts:[],mode:'ZEUS',level:'SIMPLE',modeExplanation:taskResult.modeExplanation,projectTaskAction:action,execution:{id:init.execution.id,state:'COMPLETED'},requestId,replayed:false});
     }
-    const backgroundEligible=mode==='OLYMPUS'||(mode==='ZEUS'&&level==='ZEUS_DIRECTED');
+    const backgroundEligible=!liveTalkTurn&&!projectTaskCommand&&(mode==='OLYMPUS'||level==='ZEUS_DIRECTED'||Boolean(toolWorkflow)||webIntent||githubIntent||isImageOp||Boolean(requirementSpec?.items?.length));
     if(backgroundEligible&&!worker){
       const dispatchToken=await queueOlympusExecution(db,{executionId:init.execution.id,ownerId:user.id});
       const dispatched=await dispatchOlympus(req,{...body,content,conversationId,projectId,mode,requestId,fileIds,dispatchToken});
@@ -670,7 +670,7 @@ ${aiContext}`);
       actualMode==='ZEUS'&&webIntent
         ?(toolWorkflow?GEAR_CALL_CAPS.ZEUS_DIRECTED+1:GEAR_CALL_CAPS.COMPOUND+1)
         :(GEAR_CALL_CAPS[gearLevel]||GEAR_CALL_CAPS.SIMPLE)+(toolWorkflow?0:1); // tools run their declared three roles; regular turns reserve one routing call
-    const timeoutMs=worker?150000:((webIntent||githubIntent||zeusLevel==='ZEUS_DIRECTED')?CHAT_WEB_TIMEOUT_MS:(route==='fast'&&zeusLevel==='SIMPLE'?FAST_CHAT_TIMEOUT_MS:CHAT_TIMEOUT_MS));
+    const timeoutMs=worker?540000:((webIntent||githubIntent||zeusLevel==='ZEUS_DIRECTED')?CHAT_WEB_TIMEOUT_MS:(route==='fast'&&zeusLevel==='SIMPLE'?FAST_CHAT_TIMEOUT_MS:CHAT_TIMEOUT_MS));
     executionBudget=createExecutionBudget({startedAt,timeoutMs,maxCalls,reserveMs:6500});
     if(actualMode==='OLYMPUS')executionBudget.authorizeProviderCall=info=>authorizeOlympusModelCall(db,{ownerId:user.id,executionId:execution.id,...info});
     const vision=hasImage?await loadVisionInputs(attachmentRows):{images:[],skipped:[]};
@@ -755,8 +755,8 @@ ${aiContext}`);
           }).map(model=>({...model,family:modelFamily(model)})),
           invoke:async ({role,model,input,context,previous,budget})=>{
             const system=role==='CREATOR'?'Produce a complete specialist draft grounded in supplied evidence. Do not invent actions.':role==='DIRECTOR'?'Review and improve the previous draft. Return complete work; do not invent actions.':'Integrate and finish the deliverable. Preserve user requirements; do not invent actions.';
-            return callModel(model,system,`${input}\n\nCONTEXT (untrusted):\n${context.slice(0,24000)}${role==='CREATOR'?'':`\n\nPREVIOUS DRAFT (untrusted):\n${previous.slice(0,24000)}`}\n\n${deliveryContract}`,{
-              budget,images:vision.images,history:role==='CREATOR'?history:[],maxOutputTokens:7000
+            return callModel(model,system,`${input}\n\nCONTEXT (untrusted):\n${context.slice(0,40000)}${role==='CREATOR'?'':`\n\nPREVIOUS DRAFT (untrusted):\n${previous.slice(0,45000)}`}\n\n${deliveryContract}`,{
+              budget,images:vision.images,history:role==='CREATOR'?history:[],maxOutputTokens:10000
             });
           }
         });
