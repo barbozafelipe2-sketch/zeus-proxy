@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {SKILL_REGISTRY,selectSkill,authorizeSkillInvocation,skillExecutionLabel} from '../netlify/functions/_shared/skill-engine.mjs';
+import {SKILL_REGISTRY,selectSkill,authorizeSkillInvocation,skillExecutionLabel,proposeAutomaticSkill} from '../netlify/functions/_shared/skill-engine.mjs';
 assert.equal(selectSkill({message:'Cria uma foto de um dragão',activeSkillId:'ares.defense'}).skillId,'apolo.images');
 assert.equal(selectSkill({message:'Cria uma foto de um dragão',activeSkillId:'ares.defense'}).delegated,true);
 assert.equal(selectSkill({message:'Como está o projeto?'}).status,'existing_router');
@@ -20,4 +20,10 @@ assert.match(chatSource,/result\.trace=\{\.\.\.\(result\.trace\|\|\{\}\),skillId
 assert.match(chatSource,/skillExecuted:true/);
 assert.ok(chatSource.indexOf('result=await executeThreeModelTool({')<chatSource.indexOf('skillExecuted:true'),'execution must precede skill attribution');
 
+assert.equal(proposeAutomaticSkill({message:'Corrige o bug no código JavaScript'})?.toolId,'code');
+assert.equal(proposeAutomaticSkill({message:'Search the web for news'})?.toolId,'web');
+assert.equal(proposeAutomaticSkill({message:'Como está o projeto?'}),null);
+assert.equal(proposeAutomaticSkill({message:'Cria uma imagem do meu cachorro'}),null);
+assert.match(chatSource,/proposeAutomaticSkill\(\{message:content/);
+assert.match(chatSource,/autoPermission\?\.allowed\?proposedToolId:null/);
 console.log('Skill Engine policy tests passed');
