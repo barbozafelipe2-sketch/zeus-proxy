@@ -11,14 +11,19 @@ export async function extractFile(buffer,mime='',filename=''){
   const lower=(filename||'').toLowerCase();
   if(isSensitiveFilename(lower))return result('[Sensitive configuration/credential file omitted from AI context.]','omitted_sensitive',{reason:'sensitive_filename'});
   try{
-    if(mime.startsWith('text/')||/\.(txt|md|csv|json|xml|log|ini|cfg)$/i.test(lower))return safeResult(decode(buffer),filename);
+    if(mime.startsWith('text/')||/\.(txt|md|csv|json|xml|log|ini|cfg|yaml|yml|toml|sql|js|mjs|cjs|ts|tsx|jsx|css|html|htm|svg|py|sh|java|go|rs)$/i.test(lower))return safeResult(decode(buffer),filename);
     if(mime==='application/pdf'||lower.endsWith('.pdf')){
       const bytes=Buffer.from(buffer);
       if(bytes.length<8||!bytes.subarray(0,1024).includes(Buffer.from('%PDF-')))return result('','failed',{reason:'invalid_pdf'});
       try{
         const mod=await import('pdf-parse'),parse=mod.default||mod;
-        const out=await parse(bytes,{max:0});
-        const extracted=safeResult(out.text||'',filename);
+        let out,partial=false;
+        try { out=await parse(bytes,{max:0}); }
+        catch (fullError) {
+          console.warn('PDF full parse failed; retrying first 10 pages',fullError?.message||fullError);
+          out=await parse(bytes,{max:10});partial=true;
+        }
+        const extracted=safeResult(out.text||'',filename,120000,{truncated:partial&&Number(out.numpages)>10});
         return extracted.status==='empty'?result('','vision_only',{reason:'pdf_no_text_layer'}):extracted;
       }catch(pdfError){
         console.error('PDF text extraction failed',pdfError?.message||pdfError);
