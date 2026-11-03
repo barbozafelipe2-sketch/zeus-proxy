@@ -418,7 +418,7 @@ const liveSmoke=read('.github/workflows/smoke-live.yml');
 if(!deliveryEngine.includes('parseArtifactDelivery')||!deliveryEngine.includes('validateWorkbook'))throw new Error('Artifact Engine contract missing.');
 if(!chat.includes('for(const file of bundle.artifacts)')||!artifact.includes('readback.xlsx.load(Buffer.from(bytes))'))throw new Error('Multi-file verification missing.');
 if(securityLimits.includes('DEFAULT_AI_HOURLY_LIMITS')||!securityLimits.includes('OLYHUB_ZEUS_CONCURRENCY')||!githubWrites.includes('GITHUB_ALLOWLIST_REQUIRED'))throw new Error('Cost/security controls missing.');
-if(/^\s*schedule\s*:/m.test(liveSmoke))throw new Error('Scheduled paid AI smoke must be disabled.');
+if(/^\s*schedule\s*:/m.test(liveSmoke) && !liveSmoke.includes("github.event_name == 'workflow_dispatch' && inputs.confirm_paid_ai == 'yes-spend-credits'"))throw new Error('Scheduled smoke must never enable paid AI requests.');
 
 
 // Phase 1/7: model-bound history is scrubbed even when persisted owner messages are raw.
