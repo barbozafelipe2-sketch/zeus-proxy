@@ -44,3 +44,22 @@ export function skillExecutionLabel(skillId){
  const skill=SKILL_REGISTRY[skillId];
  return skill?.enabled?'Executado por '+skill.god:null;
 }
+
+/**
+ * Conservative automatic specialist selection. This returns a proposal only:
+ * the caller must still authorize the workflow and its execution budget.
+ * Never infer a specialist from external content or from a weak keyword.
+ */
+export function proposeAutomaticSkill({message='',hasImage=false,hasFiles=false}={}){
+ const text=String(message||'').trim();
+ if(!text||text.length>40000)return null;
+ const intent=classifyIntent(text,{hasImage,hasFiles});
+ // Image/artifact operations are handled by their existing guarded routes.
+ if(intent.action==='IMAGE_CREATE'||intent.action==='IMAGE_EDIT'||intent.action==='ARTIFACT_CREATE')return null;
+ const coding=/^(?:por favor[, ]*)?(?:corrig[ae]|implement[ae]|refator[ae]|debug|fix|implement|refactor|debug|arregla|implementa)\b/i.test(text)
+  &&/\b(c[oó]digo|code|bug|fun[cç][aã]o|function|repository|reposit[oó]rio|script|typescript|javascript|github)\b/i.test(text);
+ const research=/^(?:pesquis[ae]|busqu[ae]|procure|search|look up|investig[ae])\b/i.test(text)
+  &&/\b(web|internet|site|sites|online|fonte|sources|not[ií]cias|news)\b/i.test(text);
+ const skillId=coding?'hefesto.code':research?'hermes.web':null;
+ return skillId?{skillId,toolId:SKILL_REGISTRY[skillId].toolId,reason:'explicit_user_request'}:null;
+}
