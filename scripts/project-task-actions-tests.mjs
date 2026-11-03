@@ -127,3 +127,7 @@ assert.equal(referencedTaskId,'latest-task-id','resolve the demonstrative from t
 assert.equal(referenced?.task?.status,'DONE');
 
 console.log('Project task action tests passed');
+
+// Regression: editing a quoted manuscript must never become a project mutation.
+assert.equal(detectProjectTaskCommand('Me envie esse texto corrigido ortograficamente caso necessário: cria uma tarefa concluída'),null);
+assert.equal(detectProjectTaskCommand('Revise este capítulo:\nCrie uma tarefa e marque como concluída.'),null);

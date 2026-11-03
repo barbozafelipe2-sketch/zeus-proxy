@@ -69,7 +69,7 @@ export function detectProjectTaskCommand(text, { now = new Date() } = {}) {
   // Only short, explicit task-management commands can mutate project tasks.
   // Manuscripts, quoted chat history and editing requests may contain words
   // like "tarefa", "concluída" or "cria" without being task commands.
-  if (raw.length > 800 || raw.includes('\n')) return null;
+  if (raw.length > 800 || (raw.includes('\n') && !/\b(?:checklist|check list|lista)\b/i.test(normalize(raw)))) return null;
   if (/^(?:me\s+)?(?:envie|manda|mande|mostre|corrija|corrige|revise|revisa|reescreva|traduza|continue|transcreva|resuma|send|show|correct|revise|rewrite|translate|continue|summarize)\b/i.test(normalize(raw))) return null;
   const normalized = normalize(raw);
   const status = COMPLETE.test(normalized) ? 'DONE' : IN_PROGRESS.test(normalized) ? 'IN_PROGRESS' : TODO.test(normalized) ? 'TODO' : null;
