@@ -349,11 +349,16 @@ async function loadSharedProviderBlocks(db,userId){
 async function dispatchOlympus(req, payload){
   try{
     const url=new URL('/api/olympus-background', req.url);
+    // The site's Netlify SSO gate checks the visitor session before invoking
+    // background functions. Forward only the authenticated request's session
+    // cookie to this same-origin endpoint; never send it to model providers.
+    const sessionCookie=req.headers.get('cookie');
     const res=await fetch(url,{
       method:'POST',
       headers:{
         'content-type':'application/json',
         'x-olyhub-request-id':payload.requestId,
+        ...(sessionCookie?{cookie:sessionCookie}:{}),
       },
       body:JSON.stringify(payload),
       signal:AbortSignal.timeout(4000),
