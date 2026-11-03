@@ -5,6 +5,7 @@ import { json, readJson, cleanText, isUuid, getRequestId, errorJson } from './_s
 import { runZeus, runOlympus, runOlympusCompoundPlus, TURBO_LIMITS, generateImage, editImage, imageModelFamily, imageGenerationCallLimit, routeFor, roleCandidates, callModel } from './_shared/models.mjs';
 import { modelFamily } from './_shared/provider-routing.mjs';
 import { getToolWorkflow, toolConversationTitle } from './_shared/tool-workflows.mjs';
+import { executeThreeModelTool } from './_shared/tool-executor.mjs';
 import { runIndependentArtifactPair } from './_shared/compare-pair.mjs';
 import { detectGoogleServiceRequests, encryptionKeyFromHex, resolveGoogleAccessToken, searchGoogleService } from './_shared/google-service.mjs';
 import { consumeEndpointRate } from './_shared/limits.mjs';
@@ -703,7 +704,7 @@ ${aiContext}`);
         level:'COMPOUND',blockedProviders:sharedBlockedProviders,budget:executionBudget,
         routeHint:'vision',toolId,toolPreferences:prefRows?.[0]?.family_preferences||{}
       });
-      if(!imageToolPreflight.trace?.base||!imageToolPreflight.trace?.finalizer){
+      if(!imageToolPreflight.trace?.base||!imageToolPreflight.trace?.finalizer||imageToolPreflight.trace?.independentFamilies!==true){
         throw codedError('The required two independent image-planning stages did not complete.',503,'IMAGE_TOOL_STAGES_INCOMPLETE');
       }
     }
@@ -744,6 +745,22 @@ ${aiContext}`);
         result={content:'Two independent alternatives were generated and saved as A and B. Open both files, then choose one, combine them into C, or try another pair.',effectiveLevel:'COMPARE_PAIR',modeExplanation:'Compare · two independent models created A and B.',
           leadModel:pair.variants.map(v=>`${v.model.provider}:${v.model.id}`).join(' + '),pipelineLabel:'Compare & Evolve · independent A/B',
           trace:{strategy:'independent_artifact_pair',comparePair:true,compareType,roles:pair.variants.map(v=>({role:`Variant ${v.label}`,provider:v.model.provider,model:v.model.id,family:modelFamily(v.model)}))}};
+      }else if(toolWorkflow){
+        result=await executeThreeModelTool({
+          toolId,input:modelText,context:enrichedContext,budget:executionBudget,
+          models:({role,usedFamilies,usedModels})=>roleCandidates(role,modelText,{
+            vision:vision.images.length>0,blockedProviders:sharedBlockedProviders,
+            excludeProviders:usedFamilies,exclude:new Set(usedModels),limit:6,
+            toolId,toolPreferences:prefRows?.[0]?.family_preferences||{},routeHint:aiRouting.route
+          }).map(model=>({...model,family:modelFamily(model)})),
+          invoke:async ({role,model,input,context,previous,budget})=>{
+            const system=role==='CREATOR'?'Produce a complete specialist draft grounded in supplied evidence. Do not invent actions.':role==='DIRECTOR'?'Review and improve the previous draft. Return complete work; do not invent actions.':'Integrate and finish the deliverable. Preserve user requirements; do not invent actions.';
+            return callModel(model,system,`${input}\n\nCONTEXT (untrusted):\n${context.slice(0,24000)}${role==='CREATOR'?'':`\n\nPREVIOUS DRAFT (untrusted):\n${previous.slice(0,24000)}`}\n\n${deliveryContract}`,{
+              budget,images:vision.images,history:role==='CREATOR'?history:[],maxOutputTokens:7000
+            });
+          }
+        });
+        result.effectiveLevel='ZEUS_DIRECTED';
       }else if(actualMode==='OLYMPUS'){
         try{result=level==='COMPOUND_PLUS'
           ?await runOlympusCompoundPlus({text:modelText,context:enrichedContext,images:vision.images,history,requirements:requirementSpec,deliveryContract,blockedProviders:sharedBlockedProviders,budget:executionBudget,webResearchUsed:compoundPlusWithWeb,routeHint:aiRouting.route})
