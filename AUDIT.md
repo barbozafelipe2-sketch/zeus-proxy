@@ -1,3 +1,5 @@
+> Historical audit for OH-004.2.7; not a current production verification. See current source and CI for the active implementation.
+
 # OH-004.2.7 audit
 
 ## Verdict

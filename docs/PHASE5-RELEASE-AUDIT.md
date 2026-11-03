@@ -6,7 +6,7 @@
 
 - Level 3, Olympus Compound Plus/Turbo, adaptive routing, phase checkpoints, resumable execution, and transactional per-job Olympus budget authorization/extension are implemented and covered by structural or mocked tests.
 - Manager/Agents navigation is now present while `/api/projects` and internal project state remain compatible.
-- API access is gated by `ZEUS_PROXY_ACCESS_TOKEN`; token comparison is constant-time, missing configuration fails closed, and the optional previous key works only inside a bounded rotation window.
+- Historical note: the legacy application access-token gate was removed; current deployment access depends on Netlify site protection and the application's present authentication implementation.
 - Live Talk now gracefully finalizes the in-progress utterance when stopped so the final browser transcript or captured audio can be sent before the spoken reply completes. Silence remains unbilled.
 - `npm test`, `npm run release:check`, `npm run build`, the voice capture checks, and the access-gate checks pass in this workspace.
 
@@ -20,6 +20,6 @@
 
 ## Before enabling production access
 
-- Configure a random `ZEUS_PROXY_ACCESS_TOKEN` of at least 32 characters in Netlify and enter the same value on the unlock screen. Keep it server-only.
+- Historical token setup instructions are obsolete. Do not configure the removed legacy token.
 - In the Netlify dashboard, set **Project configuration → General → Visitor access → Project visibility → Private**. Netlify does not expose this setting through the available API/CLI path.
 - After the one final commit, run the supported-runtime and integration checks, then deploy only after confirming the production environment and mobile voice behavior.
