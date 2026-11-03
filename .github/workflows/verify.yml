@@ -19,4 +19,4 @@ jobs:
       - run: npm ci --ignore-scripts --no-audit --no-fund
       - run: npm test
       - run: npm run release:check
-      - run: npm run build
+      # npm test already builds and verifies the client; avoid a duplicate production build.

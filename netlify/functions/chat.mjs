@@ -573,7 +573,7 @@ async function chatHandler(req, context, startedAt){
       // invocation. Retry the same fenced dispatch once before reporting trouble.
       const redispatched=await dispatchOlympus(req,{...body,content,conversationId,projectId,mode,requestId,fileIds,dispatchToken});
       if(redispatched)return json({pending:true,mode,level,modeExplanation,conversationId,userMessage:init.userMessage,execution:{id:init.execution.id,state:'QUEUED'},requestId,replayed:false},202);
-      if(mode==='ZEUS')return errorJson('Zeus Level 3 was queued, but Netlify did not acknowledge its background worker. Wait a few seconds and retry to recover it; do not resend as a new request.',503,'BACKGROUND_DISPATCH_FAILED',requestId,{conversationId,executionId:init.execution.id});
+      if(mode==='ZEUS')return json({pending:true,mode,level,modeExplanation,conversationId,userMessage:init.userMessage,execution:{id:init.execution.id,state:'QUEUED'},requestId,replayed:false,dispatchAcknowledged:false},202);
       // A lost HTTP acknowledgement does NOT prove the background worker failed.
       // Claim the queue atomically only if no worker started in the meantime.
       const inlineClaim=await claimInlineFallback(db,{executionId:init.execution.id,ownerId:user.id,dispatchToken});

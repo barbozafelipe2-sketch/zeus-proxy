@@ -1,5 +1,7 @@
 name: Zeus Proxy Live Smoke
 on:
+  schedule:
+    - cron: '17 */6 * * *'
   workflow_dispatch:
     inputs:
       confirm_paid_ai:
