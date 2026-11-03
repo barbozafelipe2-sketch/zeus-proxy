@@ -6,6 +6,7 @@ import { runZeus, runOlympus, runOlympusCompoundPlus, TURBO_LIMITS, generateImag
 import { modelFamily } from './_shared/provider-routing.mjs';
 import { getToolWorkflow, toolConversationTitle } from './_shared/tool-workflows.mjs';
 import { executeThreeModelTool } from './_shared/tool-executor.mjs';
+import { SKILL_REGISTRY, authorizeSkillInvocation } from './_shared/skill-engine.mjs';
 import { runIndependentArtifactPair } from './_shared/compare-pair.mjs';
 import { detectGoogleServiceRequests, encryptionKeyFromHex, resolveGoogleAccessToken, searchGoogleService } from './_shared/google-service.mjs';
 import { readPublicUrls, extractPublicUrls } from './_shared/public-url-reader.mjs';
@@ -791,6 +792,19 @@ ${aiContext}`);
             });
           }
         });
+        // Dedicated tool execution remains the authority. Skills may annotate
+        // only an explicitly authorized, actually executed matching workflow.
+        const matchingSkill=Object.values(SKILL_REGISTRY).find(skill=>skill.enabled&&skill.toolId===toolId);
+        if(matchingSkill){
+          const permission=authorizeSkillInvocation({
+            skillId:matchingSkill.id,allowedToolIds:[toolId],
+            remainingCalls:1,depth:0,delegations:0
+          });
+          if(permission.allowed){
+            result.trace={...(result.trace||{}),skillId:matchingSkill.id,
+              skillGod:permission.executorGod,skillExecuted:true};
+          }
+        }
         result.effectiveLevel='ZEUS_DIRECTED';
       }else if(actualMode==='OLYMPUS'){
         try{result=level==='COMPOUND_PLUS'
