@@ -29,6 +29,7 @@ import { lockAiExecutionOwner, guardAiExecution, recordAiExecutionAttempt } from
 import { pageLimit, decodeCursor, pageResult } from './_shared/pagination.mjs';
 import { queueBlobGc } from './_shared/storage.mjs';
 import { MEMORY_POLICY, selectMemoryContext, formatMemoryContext } from './_shared/memory.mjs';
+import { retrieveApprovedMemory } from './_shared/olympus-memory-retrieval.mjs';
 import { runWebSearch, shouldSearchWeb } from './_shared/web-search.mjs';
 import { extractRequirementChecklist, formatChecklist, isWhatMissingIntent, shouldVerifyDelivery } from './_shared/reliability.mjs';
 import { resolveGitHubRequestText, loadGitHubContext } from './_shared/github-context.mjs';
@@ -74,17 +75,17 @@ function sameIds(a,b){const aa=normalizedIds(a).sort(),bb=normalizedIds(b).sort(
 
 async function buildContext({db,userId,projectId,conversationId,currentMessageId,currentText,attachmentRows=[]}){
   let identity='',tasksText='',memoriesText='',projectFilesText='';
-  const personalMemoryRows=await db.sql`SELECT id,type,content,source,confidence,created_at FROM memories WHERE owner_id=${userId} AND project_id IS NULL AND approved=true ORDER BY created_at DESC LIMIT ${MEMORY_POLICY.candidateLimit}`;
+  const personalMemoryRows=await db.sql`SELECT id,project_id,type,content,source,confidence,approved,created_at FROM memories WHERE owner_id=${userId} AND project_id IS NULL AND approved=true ORDER BY created_at DESC LIMIT ${MEMORY_POLICY.candidateLimit}`;
   const personalMemoryPolicy={...MEMORY_POLICY,maxItems:12,maxChars:4000,perItemChars:600};
-  const personalMemorySelection=selectMemoryContext(personalMemoryRows,personalMemoryPolicy);
+  const personalMemorySelection=retrieveApprovedMemory(personalMemoryRows,currentText,personalMemoryPolicy).selection;
   if(personalMemorySelection.selected.length)memoriesText=`PERSONAL MEMORY — durable facts and preferences Felipe asked Zeus to remember. Use only when relevant; newer corrections take precedence.\n${formatMemoryContext(personalMemorySelection)}`;
   if(projectId){
     const projects=await db.sql`SELECT id,name,description,goal,status,progress FROM projects WHERE id=${projectId} AND owner_id=${userId}`;
     if(projects.length){const p=projects[0];identity=`Name: ${p.name}\nGoal: ${p.goal||'[not set]'}\nDescription: ${p.description||'[not set]'}\nStatus: ${p.status}\nProgress: ${p.progress}%`;}
     const tasks=await db.sql`SELECT title,description,status,priority,due_at FROM tasks WHERE project_id=${projectId} AND owner_id=${userId} ORDER BY completed_at NULLS FIRST, due_at NULLS LAST, created_at DESC LIMIT 40`;
     if(tasks.length)tasksText=tasks.map(t=>`- [${t.status}] ${t.title} | priority=${t.priority}${t.due_at?` | due=${new Date(t.due_at).toISOString()}`:''}${t.description?` | ${clip(t.description,1000)}`:''}`).join('\n');
-    const memories=await db.sql`SELECT id,type,content,source,confidence,created_at FROM memories WHERE project_id=${projectId} AND owner_id=${userId} AND approved=true ORDER BY created_at DESC LIMIT ${MEMORY_POLICY.candidateLimit}`;
-    if(memories.length){const projectMemoryText=`PROJECT MEMORY — scoped to this project.\n${formatMemoryContext(selectMemoryContext(memories))}`;memoriesText=[memoriesText,projectMemoryText].filter(Boolean).join('\n\n');}
+    const memories=await db.sql`SELECT id,project_id,type,content,source,confidence,approved,created_at FROM memories WHERE project_id=${projectId} AND owner_id=${userId} AND approved=true ORDER BY created_at DESC LIMIT ${MEMORY_POLICY.candidateLimit}`;
+    if(memories.length){const projectMemoryText=`PROJECT MEMORY — scoped to this project.\n${retrieveApprovedMemory(memories,currentText,MEMORY_POLICY,{projectId}).text}`;memoriesText=[memoriesText,projectMemoryText].filter(Boolean).join('\n\n');}
 
     const attachedIds=new Set(attachmentRows.map(r=>String(r.id)));
     const projectFiles=await db.sql`SELECT id,filename,mime_type,extracted_text,metadata,created_at FROM files WHERE project_id=${projectId} AND owner_id=${userId} ORDER BY created_at DESC LIMIT 30`;
