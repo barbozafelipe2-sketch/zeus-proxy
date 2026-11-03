@@ -558,7 +558,7 @@ async function chatHandler(req, context, startedAt){
     failureStage='dispatch_decision';
     const backgroundImageIntent=intent.action==='IMAGE_CREATE'||intent.action==='IMAGE_EDIT';
     const backgroundWebIntent=shouldSearchWeb(modelText)&&!backgroundImageIntent;
-    const backgroundGithubIntent=Boolean(resolveGitHubRequestText(modelText,history));
+    const backgroundGithubIntent=Boolean(resolveGitHubRequestText(modelText,[])); // history is built only after dispatch
     const backgroundEligible=!liveTalkTurn&&!projectTaskCommand&&(
       mode==='OLYMPUS'||level==='ZEUS_DIRECTED'||Boolean(toolWorkflow)||
       backgroundWebIntent||backgroundGithubIntent||backgroundImageIntent||
