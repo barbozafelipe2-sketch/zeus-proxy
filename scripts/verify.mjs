@@ -283,7 +283,9 @@ if (!app.includes('await hydrateProjectWorkspace(state.currentProject.id,{loadCo
 if (models.includes('level >= 2 && lead.attempts.length === 0')) throw new Error('Zeus review is still disabled after a lead fallback.');
 if (!models.includes('deterministicTurboPlan') || !models.includes('requirement_ids')) throw new Error('Olympus Turbo no longer assigns persisted requirements to bounded creator tasks.');
 if (models.includes("ui_ux: 'writing'")) throw new Error('UI/UX specialist routing regressed to writing-only need.');
-if (!chat.includes('selectMemoryContext(memories)')) throw new Error('Project memory no longer uses deterministic selection policy.');
+if (!chat.includes('retrieveApprovedMemory(memories,currentText,MEMORY_POLICY,{projectId})') || !chat.includes('owner_id=${userId} AND approved=true') || !chat.includes('project_id=${projectId} AND owner_id=${userId} AND approved=true')) throw new Error('Project memory must retain owner/project scope and approved-memory retrieval.');
+const memoryRetrieval = read('netlify/functions/_shared/olympus-memory-retrieval.mjs');
+if (!memoryRetrieval.includes('selectMemoryContext(ranked,policy)') || !memoryRetrieval.includes('r.approved===true') || !memoryRetrieval.includes('r.project_id===projectId')) throw new Error('Query-aware memory retrieval must preserve deterministic selection and approval/project gates.');
 if (!storage.includes("attempts < 8") || !storage.includes("interval '5 minutes' * LEAST(attempts,6)")) throw new Error('Blob GC retry bound/backoff missing.');
 if (!fileDownload.includes('X-OlyHub-Request-Id') || !artifactDownload.includes('X-OlyHub-Request-Id')) throw new Error('Download success responses are missing correlation ids.');
 
