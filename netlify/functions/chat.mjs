@@ -532,9 +532,11 @@ async function chatHandler(req, context, startedAt){
   let init=null;let olympusDispatchFallback=false;
   const stagedArtifacts=[];
   let executionBudget=null,webUsageTrace=null;
+  let failureStage='initialization';
   const googleRequests=detectGoogleServiceRequests(modelText);
   const googleCapabilities=[],googleSources=[];
   try{
+    failureStage='workspace_initialize';
     init=await initializeTurn({db,userId:user.id,conversationId,projectId,mode,level,content,fileIds,requestId,toolId,worker,dispatchToken:body.dispatchToken});
     if(init.kind==='replay')return replayCompleted(db,user.id,conversationId,init.execution,init.userMessage,requestId);
     if(init.kind==='in_progress')return errorJson('This request is already running.',409,'REQUEST_IN_PROGRESS',requestId,{conversationId,executionId:init.execution.id});
@@ -553,6 +555,7 @@ async function chatHandler(req, context, startedAt){
     }
     // Classify expensive work before dispatch; these values must be initialized
     // here, not after the worker decision (which previously caused a TDZ crash).
+    failureStage='dispatch_decision';
     const backgroundImageIntent=intent.action==='IMAGE_CREATE'||intent.action==='IMAGE_EDIT';
     const backgroundWebIntent=shouldSearchWeb(modelText)&&!backgroundImageIntent;
     const backgroundGithubIntent=Boolean(resolveGitHubRequestText(modelText,history));
@@ -562,6 +565,7 @@ async function chatHandler(req, context, startedAt){
       (verificationSignal&&requirementSpec.items.length>1)
     );
     if(backgroundEligible&&!worker){
+      failureStage='background_queue';
       const dispatchToken=await queueOlympusExecution(db,{executionId:init.execution.id,ownerId:user.id});
       const dispatched=await dispatchOlympus(req,{...body,content,conversationId,projectId,mode,requestId,fileIds,dispatchToken});
       if(dispatched)return json({pending:true,mode,level,modeExplanation,conversationId,userMessage:init.userMessage,execution:{id:init.execution.id,state:'QUEUED'},requestId,replayed:false},202);
@@ -682,9 +686,12 @@ ${aiContext}`);
     const timeoutMs=worker?540000:((webIntent||githubIntent||zeusLevel==='ZEUS_DIRECTED')?CHAT_WEB_TIMEOUT_MS:(route==='fast'&&zeusLevel==='SIMPLE'?FAST_CHAT_TIMEOUT_MS:CHAT_TIMEOUT_MS));
     executionBudget=createExecutionBudget({startedAt,timeoutMs,maxCalls:toolWorkflow&&!isImageOp?Math.max(maxCalls,webIntent?5:4):maxCalls,reserveMs:6500});
     if(actualMode==='OLYMPUS')executionBudget.authorizeProviderCall=info=>authorizeOlympusModelCall(db,{ownerId:user.id,executionId:execution.id,...info});
+    failureStage='model_preparation';
     const vision=hasImage?await loadVisionInputs(attachmentRows):{images:[],skipped:[]};
     const sharedBlockedProviders=await loadSharedProviderBlocks(db,user.id);
+    failureStage='model_router';
     const aiRouting=liveTalkTurn?{route:'fast',source:'live_talk_fast_path',model:null}:toolWorkflow?{route:toolWorkflow.route,source:'tool_workflow',model:null}:comparePair?{route,source:'owner_requested_compare',model:null}:isImageOp?{route,source:'rules_fallback',model:null}:await aiRouteFor(modelText,{budget:executionBudget,vision:hasImage,blockedProviders:sharedBlockedProviders});
+    failureStage='model_execution';
     const web=webIntent?await runWebSearch(modelText,{budget:executionBudget,reserveAfterMs:actualMode==='OLYMPUS'?17000:12000}):{requested:false,context:'',sources:[],trace:null};
     webUsageTrace=web.trace||null;
     const compoundPlusWithWeb=actualMode==='OLYMPUS'&&level==='COMPOUND_PLUS'&&webIntent;
@@ -834,6 +841,8 @@ ${aiContext}`);
     for(const staged of stagedArtifacts){const removed=await discardStagedArtifact(staged);if(!removed){try{await queueBlobGc(db,user.id,'olyhub-artifacts',staged.blobKey,'failed-chat-artifact');}catch{}}}
     // Persist only the failure code for provider-chain errors; raw upstream text may echo prompts or credentials.
     const publicFailure=publicExecutionFailure(error);
+    const safeStage=/^[a-z_]{3,40}$/.test(failureStage)?failureStage:'unknown';
+    console.error('Zeus execution failure',requestId,{stage:safeStage,code:publicFailure.code,status:publicFailure.status,name:String(error?.name||'').slice(0,60),causeCode:String(error?.cause?.code||'').slice(0,30)});
     // Never persist/return provider error prose, raw SQL, request parameters, or credentials.
     const safeAttempts=(Array.isArray(error?.attempts)?error.attempts:[]).slice(0,10).map(item=>({
       provider:String(item?.provider||'').replace(/[^a-z0-9_-]/gi,'').slice(0,32),
@@ -844,7 +853,7 @@ ${aiContext}`);
     }));
     const providerTelemetry=snapshotProviderTelemetry(executionBudget);
     const failedUsage=summarizeRequestUsage(providerTelemetry,{maxCalls:executionBudget?.maxCalls,webTrace:webUsageTrace});
-    const trace={error:publicFailure.traceError,attempts:safeAttempts,budget:executionBudget?.snapshot?.()||null,providerTelemetry,usage:failedUsage,
+    const trace={error:publicFailure.traceError,stage:safeStage,attempts:safeAttempts,budget:executionBudget?.snapshot?.()||null,providerTelemetry,usage:failedUsage,
       webSearch:webUsageTrace?{status:webUsageTrace.status,attempted:Boolean(webUsageTrace.attempted),provider:webUsageTrace.provider||null,model:webUsageTrace.model||null}:null};
     if(init?.execution?.id){
       // The fenced execution update and original-message failure marker are
@@ -853,7 +862,7 @@ ${aiContext}`);
         workerToken:init.execution.worker_token||null,errorCode:error?.code||'EXECUTION_FAILED',
         trace,userMessageId:init.userMessage?.id||null});}catch{}
     }
-    return errorJson(publicFailure.message,publicFailure.status,publicFailure.code,requestId,{conversationId,executionId:init?.execution?.id||null,attempts:trace.attempts,...(error?.retryAfter?{retryAfter:error.retryAfter}:{})});
+    return errorJson(publicFailure.message,publicFailure.status,publicFailure.code,requestId,{conversationId,executionId:init?.execution?.id||null,attempts:trace.attempts,stage:safeStage,...(error?.retryAfter?{retryAfter:error.retryAfter}:{})});
   }
 }
 
