@@ -36,6 +36,11 @@ function explicitVisualAction(text,hasImage=false){
  const noun=new RegExp('\\b'+subject+'\\b');
  const request=/^(?:quero|preciso|i want|i need|quiero|necesito)\s+(?:que\s+)?(?:uma? |an? |the |un |una )?(?:imagem|image|picture|foto|photo|logo|logotipo|ilustracao|illustration|imagen)\b/;
  const editReference=hasImage&&edit.test(t)&&/\b(?:essa|esta|this|that|foto|imagem|photo|image|rosto|face|roupa|fundo|background)\b/.test(t);
+ // An attached image with a direct styling request is an edit, unless the
+ // user explicitly requests a new image. Questions remain analysis/chat.
+ if(hasImage&&!EXPLICIT_NEW_IMAGE.test(t)&&
+    /^(?:faz|faca|make|edit|edite|editar|edita|change|mude|mudar|transform|transforme)\b/.test(t)&&
+    /\b(?:nela|nele|ela|ele|it|this|that|fantasia|costume|realistic|realista|roupa|visual|estilo|style|background|fundo)\b/.test(t))return 'edit';
  if(request.test(t))return 'create';
  if(create.test(t)&&noun.test(t))return 'create';
  if(editReference||(edit.test(t)&&noun.test(t)))return 'edit';
