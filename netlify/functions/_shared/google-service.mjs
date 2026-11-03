@@ -6,6 +6,8 @@ const GOOGLE_API_TIMEOUT_MS=8000;
 export function detectGoogleServiceRequests(text=''){
   const source=String(text||'').replace(/[\u0000-\u001f\u007f]/g,' ').replace(/\s+/g,' ').trim().slice(0,20000);
   const action=/\b(search|find|look(?:\s+up)?|show|check|read|summari[sz]e|who\s+(?:sent|emailed))\b|\bwhat(?:'s|\s+is)\s+(?:on|in)\s+(?:my\s+)?(?:calendar|schedule|agenda|inbox|gmail)\b|\bwhen(?:'s|\s+is)\s+(?:my\s+)?(?:next\s+)?(?:calendar|schedule|agenda|meeting|event)\b/i;
+  const folder=source.match(/https:\/\/drive\.google\.com\/drive\/folders\/([A-Za-z0-9_-]{15,})/i);
+  if(folder)return [{service:'drive',query:`folder:${folder[1]}`}];
   const direct=source.match(/https:\/\/(?:docs|drive)\.google\.com\/(?:document\/d\/|spreadsheets\/d\/|presentation\/d\/|file\/d\/|open\?id=)([A-Za-z0-9_-]{15,})/i);
   if(direct)return [{service:'drive',query:`id:${direct[1]}`}];
   if(!action.test(source))return [];
@@ -145,6 +147,19 @@ async function readDriveById(id,token,fetchImpl){
   return {service:'drive',items:[{id,name:boundedString(meta.name,300),mimeType:mime,webViewLink:safeDriveLink(meta.webViewLink),readStatus:'read',...content}]};
 }
 async function readDrive({query,token,page,fetchImpl}){
+  if(/^folder:[A-Za-z0-9_-]{15,}$/.test(query)){
+    const folderId=query.slice(7);
+    const meta=await googleJson(googleUrl(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(folderId)}`,{fields:'id,name,mimeType,webViewLink',supportsAllDrives:true}),token,fetchImpl);
+    if(meta.mimeType!=='application/vnd.google-apps.folder')throw new GoogleServiceError('GOOGLE_QUERY_INVALID','The supplied Drive link is not a folder.',400);
+    const data=await googleJson(googleUrl('https://www.googleapis.com/drive/v3/files',{q:`'${folderId}' in parents and trashed = false`,pageSize:100,pageToken:page,supportsAllDrives:true,includeItemsFromAllDrives:true,fields:'nextPageToken,files(id,name,mimeType,modifiedTime,size,webViewLink)',orderBy:'name'}),token,fetchImpl);
+    const items=(Array.isArray(data.files)?data.files:[]).slice(0,100).map(item=>({id:boundedString(item.id,256),name:boundedString(item.name,300),mimeType:boundedString(item.mimeType,200),webViewLink:safeDriveLink(item.webViewLink),modifiedTime:boundedString(item.modifiedTime,80)}));
+    // Read a bounded sample of native documents; never claim unread files were inspected.
+    for(const item of items.filter(x=>['application/vnd.google-apps.document','application/vnd.google-apps.spreadsheet','application/vnd.google-apps.presentation'].includes(x.mimeType)).slice(0,5)){
+      try{const file=await readDriveById(item.id,token,fetchImpl);const read=file.items?.[0];item.readStatus=read?.readStatus||'unavailable';if(read?.text)item.text=read.text.slice(0,16000);}
+      catch(error){item.readStatus='unavailable';item.readError=error?.code||'GOOGLE_READ_FAILED';}
+    }
+    return {service:'drive',folder:{id:folderId,name:boundedString(meta.name,300)},items,nextPageToken:pageToken(data.nextPageToken)};
+  }
   if(/^id:[A-Za-z0-9_-]{15,}$/.test(query))return readDriveById(query.slice(3),token,fetchImpl);
   const data=await googleJson(googleUrl('https://www.googleapis.com/drive/v3/files',{q:driveSearchQuery(query),pageSize:20,pageToken:page,orderBy:'modifiedTime desc',supportsAllDrives:true,includeItemsFromAllDrives:true,fields:'files(id,name,mimeType,modifiedTime,size,webViewLink),nextPageToken'}),token,fetchImpl);
   const items=(Array.isArray(data.files)?data.files:[]).slice(0,20).map(item=>({id:boundedString(item.id,256),name:boundedString(item.name,300)||'(unnamed file)',mimeType:boundedString(item.mimeType,200),modifiedTime:boundedString(item.modifiedTime,80),size:boundedString(item.size,32),webViewLink:safeDriveLink(item.webViewLink)}));
