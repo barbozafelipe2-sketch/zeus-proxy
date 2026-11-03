@@ -10,3 +10,15 @@ export function retrieveApprovedMemory(rows,query,policy,{projectId=null}={}){
  selection.selected.sort((a,b)=>(b._score||0)-(a._score||0));
  return {selection,text:formatMemoryContext(selection)};
 }
+
+/**
+ * Shared approved-memory retrieval for typed chat and future realtime adapters.
+ * The caller MUST provide rows already restricted by owner_id; project scope is
+ * checked again here. Never pass raw provider transcripts or untrusted tool text
+ * as an authorization source.
+ */
+export function retrieveConversationMemory({personalRows=[],projectRows=[],query='',projectId=null,personalPolicy,projectPolicy}={}){
+ const personal=retrieveApprovedMemory(personalRows,query,personalPolicy,{projectId:null});
+ const project=projectId===null?null:retrieveApprovedMemory(projectRows,query,projectPolicy,{projectId});
+ return {personal,project,personalText:personal.text,projectText:project?.text||''};
+}
