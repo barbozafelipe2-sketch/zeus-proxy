@@ -8,7 +8,7 @@ const env=k=>globalThis.Netlify?.env?.get?.(k)||process.env?.[k]||'';
 const SCOPES=Object.freeze({
  gmail:'https://www.googleapis.com/auth/gmail.readonly',
  calendar:'https://www.googleapis.com/auth/calendar.readonly',
- drive:'https://www.googleapis.com/auth/drive.metadata.readonly'
+ drive:'https://www.googleapis.com/auth/drive.readonly'
 });
 const services=new Set(Object.keys(SCOPES));
 const path='/api/google-integration';

@@ -6,6 +6,8 @@ const GOOGLE_API_TIMEOUT_MS=8000;
 export function detectGoogleServiceRequests(text=''){
   const source=String(text||'').replace(/[\u0000-\u001f\u007f]/g,' ').replace(/\s+/g,' ').trim().slice(0,20000);
   const action=/\b(search|find|look(?:\s+up)?|show|check|read|summari[sz]e|who\s+(?:sent|emailed))\b|\bwhat(?:'s|\s+is)\s+(?:on|in)\s+(?:my\s+)?(?:calendar|schedule|agenda|inbox|gmail)\b|\bwhen(?:'s|\s+is)\s+(?:my\s+)?(?:next\s+)?(?:calendar|schedule|agenda|meeting|event)\b/i;
+  const direct=source.match(/https:\/\/(?:docs|drive)\.google\.com\/(?:document\/d\/|spreadsheets\/d\/|presentation\/d\/|file\/d\/|open\?id=)([A-Za-z0-9_-]{15,})/i);
+  if(direct)return [{service:'drive',query:`id:${direct[1]}`}];
   if(!action.test(source))return [];
   const output=[];
   const add=(service,pattern)=>{
@@ -122,7 +124,28 @@ function driveSearchQuery(query){
 }
 function safeDriveLink(value){try{const u=new URL(String(value||''));return u.protocol==='https:'&&['drive.google.com','docs.google.com'].includes(u.hostname)?u.toString():'';}catch{return '';}}
 function safeCalendarLink(value){try{const u=new URL(String(value||''));return u.protocol==='https:'&&u.hostname==='calendar.google.com'?u.toString():'';}catch{return '';}}
+async function driveText(url,token,fetchImpl){
+  let response;
+  try{response=await fetchImpl(url,{headers:{Authorization:`Bearer ${token}`},signal:AbortSignal.timeout(GOOGLE_API_TIMEOUT_MS)});}
+  catch{throw new GoogleServiceError('GOOGLE_UPSTREAM_UNAVAILABLE','Google document could not be downloaded.');}
+  if(response.status===401||response.status===403)throw new GoogleServiceError('GOOGLE_SCOPE_REQUIRED','Reconnect Google Drive and approve document read access.',403);
+  if(!response.ok)throw new GoogleServiceError('GOOGLE_DOCUMENT_UNAVAILABLE','Google document could not be read.',response.status===404?404:503);
+  const size=Number(response.headers?.get?.('content-length')||0);
+  if(size>750000)throw new GoogleServiceError('GOOGLE_DOCUMENT_TOO_LARGE','Document exceeds the safe reading limit.',413);
+  const content=await response.text();
+  return {text:content.slice(0,60000),truncated:content.length>60000};
+}
+async function readDriveById(id,token,fetchImpl){
+  const meta=await googleJson(googleUrl(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(id)}`,{fields:'id,name,mimeType,webViewLink',supportsAllDrives:true}),token,fetchImpl);
+  const mime=String(meta.mimeType||'');
+  const exportMime={'application/vnd.google-apps.document':'text/plain','application/vnd.google-apps.spreadsheet':'text/csv','application/vnd.google-apps.presentation':'text/plain'}[mime];
+  if(!exportMime)return {service:'drive',items:[{id,name:meta.name,mimeType:mime,readStatus:'unsupported_binary',webViewLink:safeDriveLink(meta.webViewLink)}]};
+  const url=googleUrl(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(id)}/export`,{mimeType:exportMime});
+  const content=await driveText(url,token,fetchImpl);
+  return {service:'drive',items:[{id,name:boundedString(meta.name,300),mimeType:mime,webViewLink:safeDriveLink(meta.webViewLink),readStatus:'read',...content}]};
+}
 async function readDrive({query,token,page,fetchImpl}){
+  if(/^id:[A-Za-z0-9_-]{15,}$/.test(query))return readDriveById(query.slice(3),token,fetchImpl);
   const data=await googleJson(googleUrl('https://www.googleapis.com/drive/v3/files',{q:driveSearchQuery(query),pageSize:20,pageToken:page,orderBy:'modifiedTime desc',supportsAllDrives:true,includeItemsFromAllDrives:true,fields:'files(id,name,mimeType,modifiedTime,size,webViewLink),nextPageToken'}),token,fetchImpl);
   const items=(Array.isArray(data.files)?data.files:[]).slice(0,20).map(item=>({id:boundedString(item.id,256),name:boundedString(item.name,300)||'(unnamed file)',mimeType:boundedString(item.mimeType,200),modifiedTime:boundedString(item.modifiedTime,80),size:boundedString(item.size,32),webViewLink:safeDriveLink(item.webViewLink)}));
   return {service:'drive',items,nextPageToken:pageToken(data.nextPageToken)};
