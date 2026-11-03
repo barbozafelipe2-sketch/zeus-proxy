@@ -1465,14 +1465,14 @@ async function pollForReply(conversationId, executionId, mode='OLYMPUS'){
   throw apiError(`${mode==='OLYMPUS'?'Olympus':'Zeus Level 3'} is still working. Wait a moment, then tap Retry to collect the reply.`,503,'REQUEST_IN_PROGRESS');
 }
 function shouldAskImageOptions(text,attachments=[]){
-  if(state.currentToolId==='images')return true;
   const value=String(text||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
-  const image=/\b(image|picture|photo|logo|illustration|poster|graphic|artwork|imagem|foto|logotipo|ilustracao|cartaz|grafico|arte|imagen)\b/.test(value);
+  const image=/\b(image|picture|photo|logo|illustration|poster|graphic|artwork|imagem|foto|logotipo|ilustracao|cartaz|grafico|imagen)\b/.test(value);
+  const create=/\b(create|generate|draw|design|crie|criar|cria|gere|gerar|gera|desenhe|desenhar|crea|crear|genera|generar|dibuja|dibujar|disena|disenar)\b/.test(value);
+  const edit=/\b(edit|change|remove|replace|enhance|transform|restyle|erase|crop|retouch|edite|editar|mude|mudar|remova|remover|substitua|substituir|melhore|melhorar|transforme|transformar|recorte|retocar)\b/.test(value);
+  const generic=/\b(make|build|produce|faca|fazer|produza|produzir|monte|montar|haz|hacer)\b/.test(value);
   const hasImage=(attachments||[]).some(item=>String(item?.mime_type||item?.type||'').startsWith('image/'));
-  if(!image&&!hasImage)return false;
-  const create=/\b(create|generate|make|build|produce|draw|design|crie|criar|cria|gere|gerar|gera|faca|fazer|produza|produzir|desenhe|desenhar|monte|montar|crea|crear|genera|generar|dibuja|dibujar|diseña|diseñar)\b/.test(value);
-  const edit=/\b(edit|change|remove|replace|improve|enhance|transform|restyle|erase|add|crop|retouch|edite|editar|mude|mudar|remova|remover|substitua|substituir|melhore|melhorar|transforme|transformar|adicione|adicionar|recorte|retocar)\b/.test(value);
-  return create||(hasImage&&edit);
+  const visualEdit=hasImage&&edit&&/\b(this|that|it|essa|esta|isso|ela|ele|foto|imagem|photo|image|background|fundo|roupa|cabelo|face|rosto)\b/.test(value);
+  return (image&&(create||edit||generic))||visualEdit;
 }
 function imageOptionsModal(){
   return new Promise(resolve=>{
@@ -1500,7 +1500,7 @@ async function sendText(text,pendingAttachments=[],requestId=crypto.randomUUID()
     if(!imageOptions)return;
     return sendText(text,pendingAttachments,requestId,requestedMode,turboApproval,resumeExecutionId,{...options,imageOptions});
   }
-  const pending=[...(pendingAttachments||[])],liveTalkTurn=options?.liveTalk===true,toolRun=Boolean(state.currentToolId&&!liveTalkTurn),automatic=state.routingMode!=='MANUAL'&&!toolRun,mode=liveTalkTurn||toolRun||automatic?'ZEUS':requestedMode==='OLYMPUS'?'OLYMPUS':'ZEUS',compareType=liveTalkTurn||voiceCommand?null:state.compareType;
+  const pending=[...(pendingAttachments||[])],liveTalkTurn=options?.liveTalk===true,toolRun=Boolean(state.currentToolId&&!liveTalkTurn&&(state.currentToolId!=='images'||shouldAskImageOptions(text,pendingAttachments))),automatic=state.routingMode!=='MANUAL'&&!toolRun,mode=liveTalkTurn||toolRun||automatic?'ZEUS':requestedMode==='OLYMPUS'?'OLYMPUS':'ZEUS',compareType=liveTalkTurn||voiceCommand?null:state.compareType;
   // In typed chat, a direct request to work inside a named project should use
   // that project's permanent conversation and server-injected project context.
   if(!options?.projectResolved&&!voiceCommand&&!liveTalkTurn&&!state.currentToolId&&/\b(project|projeto|projetos|workspace)\b/i.test(text)){
@@ -1537,7 +1537,7 @@ async function sendText(text,pendingAttachments=[],requestId=crypto.randomUUID()
       // chooses the engine; Zeus still selects its own level.
       olympusAuto:Boolean(automatic),
       ...(toolRun?{maxZeusLevel:3}:{}),
-      ...(state.currentToolId&&!liveTalkTurn?{toolId:state.currentToolId}:{}),
+      ...(toolRun?{toolId:state.currentToolId}:{}),
       ...(liveTalkTurn?{liveTalk:true}:{}),
       ...(options?.imageOptions?{imageOptions:options.imageOptions}:{}),
       ...(/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(options?.compareImageSourceId||''))?{compareImageSourceId:options.compareImageSourceId}:{}),
