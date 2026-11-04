@@ -114,7 +114,9 @@ async function handler(req,context){
     SELECT COALESCE(SUM(CASE WHEN (trace->'usage'->>'estimatedUsd') ~ '^[0-9]{1,12}([.][0-9]{1,12})?$'
       THEN (trace->'usage'->>'estimatedUsd')::numeric ELSE 0 END),0)::float8 AS known_usd,
       count(*) FILTER (WHERE trace->'usage'->>'estimateCoverage' IN ('partial','none') OR trace->'usage' IS NULL)::int AS incomplete_count,
-      count(*) FILTER (WHERE (trace->'usage'->>'estimatedUsd') ~ '^[0-9]{1,12}([.][0-9]{1,12})? WHERE owner_id=${user.id}
+      count(*) FILTER (WHERE (trace->'usage'->>'estimatedUsd') ~ '^[0-9]{1,12}([.][0-9]{1,12})?$')::int AS priced_count,
+      count(*)::int AS execution_count
+    FROM executions WHERE owner_id=${user.id}
       AND started_at >= date_trunc('month',now())
       AND started_at < date_trunc('month',now()) + interval '1 month'
   `;
