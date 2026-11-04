@@ -1929,7 +1929,7 @@ async function connectGeminiLive(){
     const issued=await api('/api/voice/gemini-live-token',{method:'POST',body:JSON.stringify({projectId:state.currentProject?.id||null,conversationId:state.currentConversation||null,voice:state.geminiLiveVoice})});
     if(!state.liveTalk||generation!==state.liveGeneration){stream.getTracks().forEach(t=>t.stop());return;}
     if(typeof issued.token!=='string'||!issued.token||issued.token.length>4096||!String(issued.model||'').startsWith('models/'))throw new Error('Invalid Gemini Live session credentials');
-    const socket=new WebSocket('wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?access_token='+encodeURIComponent(issued.token));
+    const socket=new WebSocket('wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?access_token='+encodeURIComponent(issued.token));
     const transport={socket,closed:false,processor:null,source:null,audio:null,output:null,queue:[],playingAt:0,turnIndex:0};
     state.geminiLiveTransport=transport;
     const decodeAudio=async(encoded)=>{
