@@ -10,6 +10,12 @@ assert.ok(/AS priced_count,\s*count\(\*\)::int AS execution_count/.test(sql),'mo
 assert.ok(sql.includes('FROM executions WHERE owner_id=${user.id}'),'monthly monitor must aggregate owner-scoped executions');
 assert.ok(src.includes("degrade('monthlyBudget',error,null)"),'database failure must not masquerade as zero spend');
 assert.ok(src.includes('knownTextUsd:usd===null?null'),'unknown monthly spend must remain null');
+assert.ok(sql.includes('AS image_execution_count'),'image activity must be counted');
+assert.ok(sql.includes('AS web_execution_count'),'web activity must be counted');
+assert.ok(sql.includes('AS tool_execution_count'),'tool activity must be counted');
+assert.ok(sql.includes('AS unknown_cost_count'),'unknown cost executions must be counted');
+const ui=fs.readFileSync(new URL('../public/app.js',import.meta.url),'utf8');
+assert.ok(ui.includes('unknownCostExecutionCount'),'UI must display unknown cost coverage');
 assert.ok(src.includes('toolReadiness:Object.fromEntries(Object.values(TOOL_WORKFLOWS)'), 'health must expose each backend tool workflow');
 assert.ok(src.includes("verified:false"),'configuration alone must not claim tool verification');
 assert.ok(src.includes("warnings.push({section"),'health must report degraded sections');
