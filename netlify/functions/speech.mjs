@@ -6,7 +6,7 @@ const env=name=>globalThis.Netlify?.env?.get?.(name)||process.env?.[name]||'';
 const validId=id=>/^[A-Za-z0-9_-]{2,120}$/.test(String(id||''));
 const OPENAI_VOICES=new Set(['alloy','ash','ballad','coral','echo','fable','nova','onyx','sage','shimmer','verse','marin','cedar']);
 const MAX_AUDIO_BYTES=8*1024*1024;
-const PROVIDER_TIMEOUT_MS=12000;
+const PROVIDER_TIMEOUT_MS=30000;
 const DEFAULT_ELEVENLABS_VOICE_ID='EXAVITQu4vr4xnSDxMaL'; // Sarah (premade)
 const RETRYABLE_VOICE_STATUSES=new Set([401,404,422]);
 
@@ -106,7 +106,7 @@ async function callGemini(route,text,signal,fetchImpl,googleVoice='Kore'){
     method:'POST',signal,headers:{'x-goog-api-key':route.key,'Content-Type':'application/json'},
     body:JSON.stringify({contents:[{parts:[{text}]}],generationConfig:{responseModalities:['AUDIO'],speechConfig:{voiceConfig:{prebuiltVoiceConfig:{voiceName:googleVoice||env('GEMINI_SPEECH_VOICE')||'Kore'}}}}})
   });
-  if(!response.ok)throw providerError(response.status);
+  if(!response.ok){const detail=await response.text().catch(()=> '');throw providerError(response.status,safeDetail(detail,[route.key]));}
   const data=await response.json().catch(()=>({}));
   const audio=data?.candidates?.[0]?.content?.parts?.find(p=>p?.inlineData?.data)?.inlineData;
   if(!audio?.data)throw providerError(502);
@@ -241,6 +241,12 @@ export async function generateSpeech(text,{voice='marin',elevenLabsVoiceId='',pr
     }catch(error){
       const entry=record(failureEntry(route.name,error));
       if(entry.status===413)throw error;
+      if(route.kind==='gemini'&&googleVoice&&googleVoice!=='Kore'&&![401,403,429].includes(entry.status)){
+        try{
+          const fallback=await attempt(route,signal=>callGemini(route,text,signal,fetchImpl,'Kore'));
+          return {...fallback,route:route.name,voiceFallback:true,voiceId:'Kore'};
+        }catch(retryError){record(failureEntry(route.name,retryError,{voice:'Kore fallback'}));}
+      }
     }
   }
   const primary=providerFailures.find(f=>f.provider==='elevenlabs');
@@ -299,7 +305,7 @@ export default async function(req,context){
   }catch(error){
     const status=error?.status||503;
     const code=error?.code||'SPEECH_FAILED';
-    const message=error?.code==='INVALID_ELEVENLABS_VOICE_ID'?'The ElevenLabs Voice ID is invalid. Check it in Voice settings and try again.':(error?.elevenLabs?`ElevenLabs ${error.elevenLabs.status}${error.elevenLabs.detail?`: ${error.elevenLabs.detail}`:''}`:'Zeus replied in chat, but speech audio is unavailable. Check the server voice configuration and try again.');
+    const message=error?.code==='INVALID_ELEVENLABS_VOICE_ID'?'The ElevenLabs Voice ID is invalid. Check it in Voice settings and try again.':(error?.elevenLabs?`ElevenLabs ${error.elevenLabs.status}${error.elevenLabs.detail?`: ${error.elevenLabs.detail}`:''}`:error?.providerFailures?.some(f=>f.provider==='gemini')?('Google speech could not generate audio. '+(error.providerFailures.some(f=>f.status===429)?'Google rate limit reached; try again shortly.':'Try another voice or retry with a shorter passage.')):'Zeus replied in chat, but speech audio is unavailable. Check the server voice configuration and try again.');
     return errorJson(message,status,code,requestId,{providerFailures:Array.isArray(error?.providerFailures)?error.providerFailures:[],...(error?.elevenLabs?{elevenLabs:error.elevenLabs}:{})});
   }
 }
