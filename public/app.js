@@ -15,7 +15,7 @@ const state = {
   projectSection:'CHAT', projectMemories:[], personalMemories:[], projectSources:[], memoryPolicy:null,
   messagePage:{hasMore:false,nextCursor:null}, filesPage:{scope:'global',hasMore:false,nextCursor:null}, artifactsPage:{scope:'global',hasMore:false,nextCursor:null}, chatRestore:null,
   voiceBusy:false, voiceRecorder:null, voiceStream:null, voiceChunks:[], voiceStopTimer:null, voiceBytes:0, voiceHitSizeLimit:false, voiceSubmitRequested:false,
-  liveTalk:false, liveTalkMinimized:false, liveTalkStopRequested:false, liveMuted:false, livePersona:'ZEUS', liveFailureKind:null, liveAgentConversation:null, liveAgentConversationId:'', livePendingMutation:null, liveAgentPartial:'', liveTextDraft:'', liveTextStatus:'', liveAgentPermissionStream:null, liveAgentLogQueue:Promise.resolve(), liveAgentLoggedEvents:new Map(), liveGeneration:0, liveRetryCount:0, liveStage:'idle', liveLocale:'auto', voiceId:'marin', elevenLabsVoiceId:'', voiceStatus:null, voiceTesting:false, liveSpeechCache:null, voiceReplyAudio:null, liveAudioUrl:null, liveSpeechController:null, liveAudioUnlocked:false, liveSpeechUnlocked:false,
+  liveTalk:false, liveTalkMinimized:false, liveTalkStopRequested:false, liveMuted:false, livePersona:'ZEUS', liveAgentSelection:'zeus', liveFailureKind:null, liveAgentConversation:null, liveAgentConversationId:'', livePendingMutation:null, liveAgentPartial:'', liveTextDraft:'', liveTextStatus:'', liveAgentPermissionStream:null, liveAgentLogQueue:Promise.resolve(), liveAgentLoggedEvents:new Map(), liveGeneration:0, liveRetryCount:0, liveStage:'idle', liveLocale:'auto', voiceId:'marin', elevenLabsVoiceId:'', voiceStatus:null, voiceTesting:false, liveSpeechCache:null, voiceReplyAudio:null, liveAudioUrl:null, liveSpeechController:null, liveAudioUnlocked:false, liveSpeechUnlocked:false,
   messageFeedback:{}, messageAudioId:'', messageAudioBusyId:'', messageAudioUrl:null,
   voiceAvatar:'lightning', elevenLabsVoices:[], elevenLabsVoicesLoaded:false, elevenLabsVoicesLoading:false, elevenLabsVoicesError:'', elevenLabsVoicePageToken:'', elevenLabsVoiceHasMore:false,
   preferences:{personality:'balanced',instructions:''}, preferencesLoaded:false,
@@ -382,7 +382,7 @@ const VOICE_AVATARS=new Set(['lightning','classic','olympus','liquid']);
 function initVoicePrefs(){
  try{const l=localStorage.getItem('zeus-live-locale');state.liveLocale=Object.prototype.hasOwnProperty.call(LIVE_LOCALES,l)?l:'auto';
  const routing=localStorage.getItem('zeus-routing-mode.v1');state.routingMode=routing==='MANUAL'?'MANUAL':'AUTO';const savedMode=localStorage.getItem('zeus-manual-mode.v1');state.mode=savedMode==='OLYMPUS'?'OLYMPUS':'ZEUS';
- state.livePersona='ZEUS';try{localStorage.removeItem('zeus-live-persona')}catch{}
+ state.livePersona='ZEUS';state.liveAgentSelection=localStorage.getItem('zeus-live-agent.v1')==='athena'?'athena':'zeus';try{localStorage.removeItem('zeus-live-persona')}catch{}
  const a=localStorage.getItem('zeus-voice-avatar');state.voiceAvatar=VOICE_AVATARS.has(a)?a:'lightning';
  const savedVoice=String(localStorage.getItem('zeus-voice-id')||'marin').toLowerCase();
  state.voiceId=['alloy','ash','ballad','coral','echo','fable','nova','onyx','sage','shimmer','verse','marin','cedar'].includes(savedVoice)?savedVoice:'marin';
@@ -911,7 +911,7 @@ function settingsView(){const providers=state.health?.providerReadiness||{};cons
   <div class="diag-row"><span>Tracked executions</span><strong>${state.health?.monthlyBudget?.executionCount??'Unavailable'}</strong></div><div class="diag-row"><span>Unpriced executions</span><strong>${state.health?.monthlyBudget?.unpricedExecutionCount??'Unknown'}</strong></div><div class="diag-row"><span>Media usage</span><strong>Not yet metered</strong></div></div>
   <p class="muted tiny">Known text estimates are not your actual bill. Unknown means no priced usage was recorded or the monitor query failed. Media, web fees, and provider billing are not yet fully metered.</p>
   ${state.health?.monthlyBudget?.targetReached?'<p class="status-warn">Target reached in known estimates. Services remain available.</p>':''}
-</article>${preferencesSettings()}${personalMemorySettings()}${googleIntegrationSettings()}<article class="card settings-card"><h3>Voice settings</h3>
+</article>${preferencesSettings()}${personalMemorySettings()}${googleIntegrationSettings()}<article class="card settings-card"><h3>Live Talk Settings</h3><p class="muted tiny">Select the ElevenLabs conversation agent. Changes take effect on the next Live Talk session.</p><div class="field"><label for="live-agent-selection">Live Talk agent</label><select id="live-agent-selection"><option value="zeus" ${state.liveAgentSelection==="zeus"?"selected":""}>Zeus · current agent</option><option value="athena" ${state.liveAgentSelection==="athena"?"selected":""}>Athena · new agent</option></select></div><div class="field"><label for="live-language">Live Talk language</label><select id="live-language">${[['auto','Automatic (agent detects language)'],['pt','Português (Brasil)'],['en','English (US)'],['es','Español']].map(([v,label])=>`<option value="${v}" ${state.liveLocale===v?'selected':''}>${label}</option>`).join('')}</select></div><div class="field"><label for="voice-avatar">Live Talk avatar</label><select id="voice-avatar">${[['lightning','Lightning plasma'],['classic','Classic orb'],['olympus','Olympus'],['liquid','Liquid metal']].map(([v,label])=>`<option value="${v}" ${state.voiceAvatar===v?'selected':''}>${label}</option>`).join('')}</select></div><p class="muted tiny">The agent controls its primary speaking voice, interruption timing and microphone behavior. Audio playback voices below do not change the Live Talk agent.</p></article><article class="card settings-card"><h3>Audio Settings</h3>
 <p class="muted tiny">Live Talk speaks with ElevenLabs. If no voice is saved in this browser, the server default voice is used. The browser’s system voice is not used as a silent fallback.</p>
 <div class="field"><label for="elevenlabs-voice-preset">Choose an ElevenLabs voice from your account</label><select id="elevenlabs-voice-preset">
 <option value="">${state.elevenLabsVoicesLoading?'Loading ElevenLabs voices…':state.elevenLabsVoicesLoaded&&!state.elevenLabsVoices.length?'No voices found':'Choose a voice'}</option>
@@ -926,12 +926,6 @@ ${state.elevenLabsVoicesError?`<p class="status-warn" role="status">${esc(state.
 ${['marin','cedar','coral','alloy','ash','ballad','echo','fable','nova','onyx','sage','shimmer','verse'].map(v=>`<option value="${v}" ${(state.voiceId||'marin')===v?'selected':''}>${v[0].toUpperCase()+v.slice(1)}</option>`).join('')}
 </select>
 <p class="muted tiny">Find the ID in ElevenLabs under Voices. Your Voice ID is saved in this browser; the ElevenLabs API key stays on the server in Netlify.</p>
-<div class="field"><label for="live-language">Live Talk language</label><select id="live-language">
-${[['auto','Automatic (agent detects language)'],['pt','Português (Brasil)'],['en','English (US)'],['es','Español']].map(([v,label])=>`<option value="${v}" ${state.liveLocale===v?'selected':''}>${label}</option>`).join('')}
-</select></div><div class="field"><label for="voice-avatar">Live Talk avatar</label><select id="voice-avatar">
-${[['lightning','Lightning plasma'],['classic','Classic orb'],['olympus','Olympus'],['liquid','Liquid metal']].map(([v,label])=>`<option value="${v}" ${state.voiceAvatar===v?'selected':''}>${label}</option>`).join('')}</select></div>
-<p class="muted tiny" id="live-audio-controls-note">Live Talk connects directly to the ElevenLabs Realtime agent. Microphone sensitivity, turn timing, and interruptions are controlled in that agent’s settings. If Realtime fails, OlyHub shows an error and does not switch to another speech provider.</p>
-<p class="muted tiny">Automatic language switching requires Portuguese, English, and Spanish to be enabled on the agent with its language-detection tool.</p>
 <p class="muted tiny" id="voice-saved-line">${storedElevenLabsVoiceId()?esc(`Voice saved in this browser: ${elevenLabsVoiceLabel(storedElevenLabsVoiceId())}`):'No voice saved in this browser; the server default voice is used.'}</p>
 <div class="row"><button type="button" class="secondary compact" id="save-voice-id">Save voice</button><button type="button" class="secondary compact" id="test-voice" ${state.voiceTesting?'disabled':''}>${state.voiceTesting?'Testing voice…':'Test voice'}</button></div>
 <p class="${state.voiceStatus?.kind==='error'?'status-warn':state.voiceStatus?.kind==='warn'?'status-warn':'status-good'}" id="voice-save-status" role="status" aria-live="polite">${state.voiceStatus?esc(state.voiceStatus.text):''}</p>
@@ -1037,7 +1031,7 @@ function codeAgentJobCard(job){
 }
 
 function liveTalkExperience(){
-  const persona='ZEUS';
+  const persona=state.liveAgentSelection==='athena'?'ATHENA':'ZEUS';
   const stage=state.liveTalkStopRequested?'Finishing your turn':state.liveMuted?'Microphone muted':state.liveStage==='error'?'Live Talk paused':state.liveStage==='speaking'?`${persona} is speaking`:state.liveStage==='processing'?'Preparing your reply':state.liveStage==='connecting'?'Connecting to ElevenLabs Realtime':state.liveStage==='listening'?'Listening':'Live Talk connected';
   const latest=[...(state.messages||[])].reverse().find(m=>['assistant','user'].includes(m.role));
   const excerpt=latest?String(latest.content||'').replace(/\s+/g,' ').trim().slice(0,220):'';
@@ -1149,6 +1143,7 @@ function bind(){
     }finally{if(button)button.disabled=false;}
   });
   $('#voice-avatar')?.addEventListener('change',e=>{const v=e.target.value;if(VOICE_AVATARS.has(v)){state.voiceAvatar=v;localStorage.setItem('zeus-voice-avatar',v);render();}});
+  $('#live-agent-selection')?.addEventListener('change',e=>{const v=e.target.value;if(v==='zeus'||v==='athena'){state.liveAgentSelection=v;localStorage.setItem('zeus-live-agent.v1',v);render();}});
   $('#live-language')?.addEventListener('change',e=>{const v=e.target.value;if(Object.prototype.hasOwnProperty.call(LIVE_LOCALES,v)){state.liveLocale=v;localStorage.setItem('zeus-live-locale',v);render();}});
   $('#elevenlabs-voice-preset')?.addEventListener('change',e=>{const value=String(e.target.value||'');if(value){const input=$('#elevenlabs-voice-id');if(input)input.value=value;saveVoiceSettings({elevenLabsVoiceId:value,source:'preset'});}});
   $('#reload-elevenlabs-voices')?.addEventListener('click',()=>loadElevenLabsVoices());
@@ -1807,7 +1802,7 @@ async function connectLiveTalkAgent(){
     if(!state.liveTalk||generation!==state.liveGeneration){releaseLiveAgentPermissionStream(permissionStream);for(const track of permissionStream.getTracks())try{track.stop()}catch{}return;}
     state.liveAgentPermissionStream=permissionStream;
     const isIosWebKit=/iPad|iPhone|iPod/i.test(navigator.userAgent)||(/MacIntel/.test(navigator.platform||'')&&navigator.maxTouchPoints>1);
-    const issued=await api(isIosWebKit?'/api/voice/realtime-signed-url':'/api/voice/realtime-token',{method:'POST',body:JSON.stringify({projectId:state.currentProject?.id||null,conversationId:state.currentConversation||null})});
+    const issued=await api(isIosWebKit?'/api/voice/realtime-signed-url':'/api/voice/realtime-token',{method:'POST',body:JSON.stringify({projectId:state.currentProject?.id||null,conversationId:state.currentConversation||null,agent:state.liveAgentSelection})});
     if(!state.liveTalk||generation!==state.liveGeneration)return;
     state.liveServerMemoryContext=String(issued.memoryContext||'').slice(0,8000);
     const {Conversation}=await import('/assets/elevenlabs-agent.js');
