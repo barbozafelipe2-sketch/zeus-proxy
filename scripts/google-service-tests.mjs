@@ -18,7 +18,7 @@ assert.match(route,/resolveGoogleAccessToken/);assert.match(route,/searchGoogleS
 assert.match(route,/consumeEndpointRate\(db,user\.id,'google_read',requestId\)/,'direct Google searches must reserve an owner-scoped rate slot before accessing Google');
 assert.match(chat,/consumeEndpointRate\(db,user\.id,'google_read',requestId\)/,'chat-triggered Google searches must share the same read budget');
 assert.match(route,/error\?\.code==='RATE_LIMIT'[\s\S]*?429/,'rate-limit failures from Google searches must return HTTP 429');
-assert.match(route,/gmail\.readonly/);assert.match(route,/calendar\.readonly/);assert.match(route,/drive\.metadata\.readonly/);
+assert.match(route,/gmail\.readonly/);assert.match(route,/calendar\.readonly/);assert.match(route,/drive\.readonly/);
 assert.match(chat,/OWNER-REQUESTED GOOGLE READ-ONLY CONTEXT/,'Google records supplied to AI must be labelled and treated as untrusted data');
 assert.match(ui,/data-google-search/);assert.match(ui,/data-google-next/);assert.match(ui,/requiresReconnect/);
 
