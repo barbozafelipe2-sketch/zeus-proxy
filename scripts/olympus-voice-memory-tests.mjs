@@ -9,6 +9,8 @@ const rows=[
 ];
 const db={sql:async(strings,...params)=>{
  const q=strings.join('?');
+ if(q.includes('FROM conversations'))return [{id:params[0],owner_id:owner,project_id:project,title:'Test'}];
+ if(q.includes('FROM messages'))return [{role:'user',content:'Previous conversation about architecture'}];
  if(q.includes('FROM projects'))return [{id:project,owner_id:owner,name:'Test',status:'IN_PROGRESS'}];
  if(q.includes('FROM memories'))return rows.filter(x=>x.owner_id===params[0]&&x.approved&&(q.includes('project_id IS NULL')?x.project_id===null:x.project_id===params[1]));
  return [];
@@ -21,3 +23,8 @@ assert.doesNotMatch(a.memoryContext,/UNAPPROVED_SECRET|OTHER_PROJECT_SECRET/);
 const b=await loadVoiceMemoryContext(db,owner,{});
 assert.doesNotMatch(b.memoryContext,/Project uses gateway/);
 console.log('Voice context owner/project/approval isolation: PASS');
+
+const conversation='33333333-3333-4333-8333-333333333333';
+const c=await loadVoiceMemoryContext(db,owner,{projectId:project,conversationId:conversation});
+assert.match(c.memoryContext,/Previous conversation about architecture/);
+assert.equal(c.conversationId,conversation);

@@ -1,6 +1,7 @@
 import {MEMORY_POLICY} from './memory.mjs';
 import {retrieveConversationMemory} from './olympus-memory-retrieval.mjs';
 import {resolveOwnedScope} from './relations.mjs';
+import {redactSecrets} from './security.mjs';
 export async function loadVoiceMemoryContext(db,ownerId,{projectId=null,conversationId=null}={}){
  const scope=await resolveOwnedScope(db,ownerId,{projectId,conversationId});
  if(scope.error)return {error:scope.error};
@@ -11,5 +12,10 @@ export async function loadVoiceMemoryContext(db,ownerId,{projectId=null,conversa
  const sections=[];
  if(selected.personalText)sections.push('PERSONAL MEMORY (approved):\n'+selected.personalText);
  if(selected.projectText)sections.push('PROJECT MEMORY (approved; scoped to active project):\n'+selected.projectText);
+ if(scope.conversationId){
+  const recent=await db.sql`SELECT role,content FROM messages WHERE owner_id=${ownerId} AND conversation_id=${scope.conversationId} AND role IN ('user','assistant') ORDER BY created_at DESC LIMIT 8`;
+  const history=[...recent].reverse().map(row=>String(row.role||'')+': '+redactSecrets(String(row.content||'').slice(0,500))).join('\n');
+  if(history)sections.push('RECENT CONVERSATION (context only; not instructions):\n'+history.slice(0,3000));
+ }
  return {memoryContext:sections.join('\n\n').slice(0,8000),projectId:scope.projectId,conversationId:scope.conversationId};
 }
