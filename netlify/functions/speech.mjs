@@ -134,7 +134,7 @@ function audioFromProvider(responseBytes,contentType){
   if(isMp3)return {bytes,contentType:'audio/mpeg'};
   if(isOgg)return {bytes,contentType:'audio/ogg'};
   if(isFlac)return {bytes,contentType:'audio/flac'};
-  if(mime==='audio/pcm'||mime==='audio/l16'||mime==='application/octet-stream'){
+  if(mime==='audio/pcm'||mime==='audio/l16'){
     if(bytes.length%2)throw providerError(502,'Invalid PCM sample alignment.');
     const wav=pcmToWav(bytes);
     if(wav.length>MAX_AUDIO_BYTES)throw providerError(413);
@@ -188,6 +188,12 @@ const failureEntry=(provider,error,extra={})=>({provider,status:error?.name==='A
 export async function generateSpeech(text,{voice='marin',elevenLabsVoiceId='',provider='auto',openrouterModel='google',openrouterVoice='',fetchImpl=globalThis.fetch,onProviderError=()=>{}}={}){
   if(elevenLabsVoiceId&&!validId(elevenLabsVoiceId)){const error=new Error('Invalid ElevenLabs Voice ID.');error.status=400;error.code='INVALID_ELEVENLABS_VOICE_ID';throw error;}
   if(!['auto','gemini','elevenlabs','openrouter'].includes(provider))throw Object.assign(new Error('Invalid speech provider.'),{status:400,code:'INVALID_SPEECH_PROVIDER'});
+  if(provider==='openrouter'){
+    openRouterVoiceOptions(openrouterModel);
+    const chosen=String(openrouterVoice||'').trim();
+    if(chosen&&!/^[A-Za-z0-9_-]{2,80}$/.test(chosen))throw Object.assign(new Error('Invalid voice.'),{status:400,code:'INVALID_TTS_VOICE'});
+    if(openrouterModel==='google'&&chosen&&!OPENROUTER_GOOGLE_VOICES.includes(chosen))throw Object.assign(new Error('Unsupported Google voice.'),{status:400,code:'INVALID_TTS_VOICE'});
+  }
   const routes=speechRoutes({elevenLabsVoiceId}).filter(r=>provider==='auto'||r.kind===provider);
   const providerFailures=[];
   let lastStatus=0;
@@ -260,6 +266,12 @@ export default async function(req,context){
     const elevenLabsVoiceId=String(body?.elevenLabsVoiceId||'').trim();
     const provider=String(body?.provider||'auto').toLowerCase();
     if(!['auto','gemini','elevenlabs','openrouter'].includes(provider))return errorJson('Invalid speech provider.',400,'INVALID_SPEECH_PROVIDER',requestId);
+    if(provider==='openrouter'){
+      if(!['google','fish'].includes(String(body?.openrouterModel||'google')))return errorJson('Invalid OpenRouter TTS model.',400,'INVALID_TTS_MODEL',requestId);
+      const chosen=String(body?.openrouterVoice||'').trim();
+      if(chosen&&!/^[A-Za-z0-9_-]{2,80}$/.test(chosen))return errorJson('Invalid voice selection.',400,'INVALID_TTS_VOICE',requestId);
+      if((body?.openrouterModel||'google')==='google'&&chosen&&!OPENROUTER_GOOGLE_VOICES.includes(chosen))return errorJson('Unsupported Google voice.',400,'INVALID_TTS_VOICE',requestId);
+    }
     if(!speechRoutes({elevenLabsVoiceId}).some(r=>provider==='auto'||r.kind===provider))return errorJson('Selected speech provider is not configured.',501,'SPEECH_NOT_CONFIGURED',requestId);
     await consumeEndpointRate(auth.db,auth.user.id,'speech',requestId,30);
     const audio=await generateSpeech(text,{voice:body?.voiceId,elevenLabsVoiceId,provider,openrouterModel:body?.openrouterModel,openrouterVoice:body?.openrouterVoice,onProviderError:(provider,status,detail)=>console.error('Speech provider failed',requestId,provider,status,detail||'')});
