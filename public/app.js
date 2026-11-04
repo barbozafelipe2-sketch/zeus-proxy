@@ -1781,8 +1781,8 @@ function restoreLiveTalk(){if(!state.liveTalk)return;state.liveTalkMinimized=fal
 function pauseLiveTalkOnError(message,kind='agent'){
   if(!state.liveTalk)return;
   const detail=String(message||'ElevenLabs Realtime could not complete this voice session.');
-  state.error=/operation is insecure|securityerror|secure context/i.test(detail)
-    ? `${window.isSecureContext===false?'Esta página precisa ser aberta diretamente por HTTPS.':'O Safari não conseguiu inicializar o áudio da sessão. Feche outras sessões de voz, toque em Reconectar e, se persistir, recarregue a página.'} Você ainda pode digitar abaixo.`
+  state.error=/operation is insecure|securityerror|secure context/i.test(detail)&&window.isSecureContext===false
+    ? 'Esta página precisa ser aberta diretamente por HTTPS. Você ainda pode digitar abaixo.'
     : /notallowederror|permission denied|microphone.*denied/i.test(detail)
       ? 'Microphone permission is off for this site. Allow it in Safari settings and reconnect. You can still type below; Zeus will answer by voice.'
       : /The connection was closed due to a socket error|Realtime transport failed/i.test(detail)
@@ -1929,16 +1929,23 @@ async function connectGeminiLive(){
   const generation=state.liveGeneration;state.liveStage='connecting';render();
   let stream=null;
   try{
-    // iOS Safari requires audio activation from the user's Start/Retry gesture.
-    // Create and resume the input/output contexts before network awaits.
-    const AudioContextCtor=window.AudioContext||window.webkitAudioContext;
-    const inputContext=new AudioContextCtor({sampleRate:16000});
-    const outputContext=new AudioContextCtor({sampleRate:24000});
-    const inputResume=inputContext.resume();
-    const outputResume=outputContext.resume();
-    state.geminiLiveTransport={socket:null,closed:false,processor:null,source:null,audio:inputContext,output:outputContext,queue:[],playingAt:0,turnIndex:0};
-    stream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:true,noiseSuppression:true}});
-    await Promise.all([inputResume,outputResume]);
+    // Safari can throw SecurityError when AudioContext is created before
+    // microphone permission is granted. Acquire mic first, then unlock audio
+    // before the first network await. Keep the actual error stage visible.
+    let stage='microphone';
+    try{
+      stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true}});
+      stage='audio-context';
+      const AudioContextCtor=window.AudioContext||window.webkitAudioContext;
+      const inputContext=new AudioContextCtor();
+      const outputContext=new AudioContextCtor();
+      state.geminiLiveTransport={socket:null,closed:false,processor:null,source:null,audio:inputContext,output:outputContext,queue:[],playingAt:0,turnIndex:0};
+      stage='audio-resume';
+      await Promise.all([inputContext.resume(),outputContext.resume()]);
+    }catch(startupError){
+      startupError.liveStage=stage;
+      throw startupError;
+    }
     if(!state.liveTalk||generation!==state.liveGeneration){stream.getTracks().forEach(t=>t.stop());return;}
     state.geminiLiveInput=stream;
     const issued=await api('/api/voice/gemini-live-token',{method:'POST',body:JSON.stringify({projectId:state.currentProject?.id||null,conversationId:state.currentConversation||null,voice:state.geminiLiveVoice})});
@@ -1953,7 +1960,7 @@ async function connectGeminiLive(){
       const raw=atob(encoded),bytes=new Uint8Array(raw.length);
       for(let i=0;i<raw.length;i++)bytes[i]=raw.charCodeAt(i);
       const pcm=new Int16Array(bytes.buffer,bytes.byteOffset,Math.floor(bytes.byteLength/2));
-      const context=transport.output||(transport.output=new (window.AudioContext||window.webkitAudioContext)({sampleRate:24000}));
+      const context=transport.output||(transport.output=new (window.AudioContext||window.webkitAudioContext)());
       const buffer=context.createBuffer(1,pcm.length,24000),samples=buffer.getChannelData(0);
       for(let i=0;i<pcm.length;i++)samples[i]=pcm[i]/32768;
       const source=context.createBufferSource();source.buffer=buffer;source.connect(context.destination);
@@ -1988,8 +1995,10 @@ async function connectGeminiLive(){
   }catch(error){
     if(generation===state.liveGeneration){
       const reason=String(error?.message||'Could not start audio session');
-      const microphoneDenied=error?.name==='NotAllowedError'||/permission denied|microphone.*denied/i.test(reason);
-      pauseLiveTalkOnError(microphoneDenied?'Microphone permission was denied. Allow microphone access for this site and reconnect.':'Gemini Live: '+reason,'agent');
+      const stage=String(error?.liveStage||'connection');
+      const microphoneDenied=stage==='microphone'&&(error?.name==='NotAllowedError'||/permission denied/i.test(reason));
+      const safeReason=reason.replace(/access_token=[^\s&]+/gi,'access_token=[REDACTED]').slice(0,180);
+      pauseLiveTalkOnError(microphoneDenied?'Permissão do microfone negada. Autorize o microfone deste site no Safari e reconecte.':`Gemini Live (${stage}; ${error?.name||'Error'}): ${safeReason}`,'agent');
     }
     closeGeminiLive();
     if(stream)stream.getTracks().forEach(t=>t.stop());
