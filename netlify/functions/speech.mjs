@@ -118,20 +118,42 @@ async function callGemini(route,text,signal,fetchImpl){
 
 
 const OPENROUTER_TTS_MODELS=Object.freeze({google:'google/gemini-3.8-flash-tts',fish:'fish-audio/s2.1-pro'});
+const OPENROUTER_GOOGLE_VOICES=Object.freeze(['Zephyr','Puck','Charon','Kore','Fenrir','Leda','Orus','Aoede','Callirrhoe','Autonoe','Enceladus','Iapetus','Umbriel','Algieba','Despina','Erinome','Algenib','Rasalgethi','Laomedeia','Achernar','Alnilam','Schedar','Gacrux','Pulcherrima','Achird','Zubenelgenubi','Vindemiatrix','Sadachbia','Sadaltager','Sulafat']);
+export function openRouterVoiceOptions(model='google'){
+  if(!Object.hasOwn(OPENROUTER_TTS_MODELS,model))throw Object.assign(new Error('Invalid OpenRouter model.'),{status:400,code:'INVALID_TTS_MODEL'});
+  return {model,modelId:OPENROUTER_TTS_MODELS[model],voices:model==='google'?OPENROUTER_GOOGLE_VOICES.map(name=>({id:name,name})):[],voiceSource:model==='google'?'google-prebuilt':'provider-dependent',customVoiceSupported:false};
+}
+function audioFromProvider(responseBytes,contentType){
+  const bytes=Buffer.from(responseBytes);
+  const mime=String(contentType||'').split(';')[0].toLowerCase();
+  const isWav=bytes.toString('ascii',0,4)==='RIFF'&&bytes.toString('ascii',8,12)==='WAVE';
+  const isMp3=bytes.toString('ascii',0,3)==='ID3'||(bytes.length>2&&bytes[0]===0xff&&(bytes[1]&0xe0)===0xe0);
+  const isOgg=bytes.toString('ascii',0,4)==='OggS';
+  const isFlac=bytes.toString('ascii',0,4)==='fLaC';
+  if(isWav)return {bytes,contentType:'audio/wav'};
+  if(isMp3)return {bytes,contentType:'audio/mpeg'};
+  if(isOgg)return {bytes,contentType:'audio/ogg'};
+  if(isFlac)return {bytes,contentType:'audio/flac'};
+  if(mime==='audio/pcm'||mime==='audio/l16'||mime==='application/octet-stream'){
+    if(bytes.length%2)throw providerError(502,'Invalid PCM sample alignment.');
+    const wav=pcmToWav(bytes);
+    if(wav.length>MAX_AUDIO_BYTES)throw providerError(413);
+    return {bytes:wav,contentType:'audio/wav'};
+  }
+  throw providerError(502,'Unsupported or unrecognized audio format.');
+}
 async function callOpenRouterTts(route,text,model,voice,signal,fetchImpl){
-  if(!Object.hasOwn(OPENROUTER_TTS_MODELS,model))throw Object.assign(new Error('Invalid OpenRouter TTS model.'),{status:400,code:'INVALID_TTS_MODEL'});
-  const google=model==='google';
+  const options=openRouterVoiceOptions(model);
   const chosen=String(voice||'').trim();
-  if(chosen&&!/^[\\w-]{2,80}$/.test(chosen))throw Object.assign(new Error('Invalid voice.'),{status:400,code:'INVALID_TTS_VOICE'});
+  if(chosen&&!/^[A-Za-z0-9_-]{2,80}$/.test(chosen))throw Object.assign(new Error('Invalid voice.'),{status:400,code:'INVALID_TTS_VOICE'});
+  if(model==='google'&&chosen&&!options.voices.some(v=>v.id===chosen))throw Object.assign(new Error('Unsupported Google voice.'),{status:400,code:'INVALID_TTS_VOICE'});
   const response=await fetchImpl('https://openrouter.ai/api/v1/audio/speech',{
-    method:'POST',signal,headers:{Authorization:'Bearer '+route.key,'Content-Type':'application/json'},
-    body:JSON.stringify({model:OPENROUTER_TTS_MODELS[model],input:text,...(google?{voice:chosen||'Kore'}:chosen?{voice:chosen}:{}),
-      response_format:google?'pcm':'mp3',instructions:'Read naturally in the language of the text.'})
+    method:'POST',signal,headers:{Authorization:'Bearer '+route.key,'Content-Type':'application/json','Accept':'audio/mpeg, audio/wav, audio/pcm'},
+    body:JSON.stringify({model:options.modelId,input:text,...(model==='google'?{voice:chosen||'Kore'}:chosen?{voice:chosen}:{}),response_format:'mp3'})
   });
   if(!response.ok)throw providerError(response.status);
   const audio=await readAudioResponse(response);
-  if(google){const pcm=Buffer.from(audio.bytes);const bytes=pcmToWav(pcm);if(bytes.length>MAX_AUDIO_BYTES)throw providerError(413);return {bytes,contentType:'audio/wav'};}
-  return audio;
+  return audioFromProvider(audio.bytes,audio.contentType);
 }
 
 export function configuredSpeechProviders({elevenLabsVoiceId=''}={}){return speechRoutes({elevenLabsVoiceId}).map(({name})=>name);}
@@ -213,6 +235,11 @@ export default async function(req,context){
     const auth=await requireUser(req,requestId);
     if(auth.error)return auth.error;
     const url=new URL(req.url);
+    if(url.pathname==='/api/speech/openrouter/voices'){
+      if(req.method!=='GET')return errorJson('Method not allowed.',405,'METHOD_NOT_ALLOWED',requestId);
+      await consumeEndpointRate(auth.db,auth.user.id,'speech-voices',requestId,20);
+      try{return Response.json(openRouterVoiceOptions(url.searchParams.get('model')||'google'),{headers:{'Cache-Control':'no-store'}})}catch{return errorJson('Invalid OpenRouter model.',400,'INVALID_TTS_MODEL',requestId)}
+    }
     if(url.pathname==='/api/speech/voices'){
       if(req.method!=='GET')return errorJson('Method not allowed.',405,'METHOD_NOT_ALLOWED',requestId);
       try{
@@ -244,4 +271,4 @@ export default async function(req,context){
     return errorJson(message,status,code,requestId,{providerFailures:Array.isArray(error?.providerFailures)?error.providerFailures:[],...(error?.elevenLabs?{elevenLabs:error.elevenLabs}:{})});
   }
 }
-export const config={path:['/api/speech','/api/speech/voices']};
+export const config={path:['/api/speech','/api/speech/voices','/api/speech/openrouter/voices']};
