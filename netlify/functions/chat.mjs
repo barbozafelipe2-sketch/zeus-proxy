@@ -923,7 +923,12 @@ ${aiContext}`);
     // Persist only the failure code for provider-chain errors; raw upstream text may echo prompts or credentials.
     const publicFailure=publicExecutionFailure(error);
     const safeStage=/^[a-z_]{3,40}$/.test(failureStage)?failureStage:'unknown';
-    console.error('Zeus execution failure',requestId,{stage:safeStage,code:publicFailure.code,status:publicFailure.status,name:String(error?.name||'').slice(0,60),causeCode:String(error?.cause?.code||'').slice(0,30)});
+    // ReferenceError identifiers are safe to log, unlike arbitrary provider or SQL error messages.
+    // This makes dispatch-time TDZ/missing-symbol crashes actionable without exposing secrets.
+    const referenceIdentifier=error instanceof ReferenceError
+      ?String(error.message||'').match(/^([A-Za-z_$][\\w$]{0,80}) (?:is not defined|before initialization|before it is initialized)/)?.[1]||null
+      :null;
+    console.error('Zeus execution failure',requestId,{stage:safeStage,code:publicFailure.code,status:publicFailure.status,name:String(error?.name||'').slice(0,60),referenceIdentifier,causeCode:String(error?.cause?.code||'').slice(0,30)});
     // Never persist/return provider error prose, raw SQL, request parameters, or credentials.
     const safeAttempts=(Array.isArray(error?.attempts)?error.attempts:[]).slice(0,10).map(item=>({
       provider:String(item?.provider||'').replace(/[^a-z0-9_-]/gi,'').slice(0,32),
