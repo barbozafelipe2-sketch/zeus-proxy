@@ -386,7 +386,7 @@ function initVoicePrefs(){
  const a=localStorage.getItem('zeus-voice-avatar');state.voiceAvatar=VOICE_AVATARS.has(a)?a:'lightning';
  const savedVoice=String(localStorage.getItem('zeus-voice-id')||'marin').toLowerCase();
  state.voiceId=['alloy','ash','ballad','coral','echo','fable','nova','onyx','sage','shimmer','verse','marin','cedar'].includes(savedVoice)?savedVoice:'marin';
- state.speechProvider=['auto','gemini','elevenlabs','openrouter'].includes(localStorage.getItem('zeus-speech-provider'))?localStorage.getItem('zeus-speech-provider'):'auto';
+ state.speechProvider=['gemini','elevenlabs'].includes(localStorage.getItem('zeus-speech-provider'))?localStorage.getItem('zeus-speech-provider'):'gemini';
  state.openrouterModel=['google','fish'].includes(localStorage.getItem('zeus-openrouter-tts-model'))?localStorage.getItem('zeus-openrouter-tts-model'):'google';
  state.openrouterVoice=String(localStorage.getItem('zeus-openrouter-tts-voice')||'').slice(0,80);
  const customVoice=String(localStorage.getItem('zeus-elevenlabs-voice-id')||'').trim();state.elevenLabsVoiceId=/^[A-Za-z0-9_-]{2,120}$/.test(customVoice)?customVoice:'';}catch{}
@@ -406,7 +406,7 @@ function persistVoicePrefs(openaiVoice,elevenLabsVoiceId){
     return true;
   }catch{return false;}
 }
-async async function loadOpenRouterVoices(){
+async function loadOpenRouterVoices(){
   const model=state.openrouterModel||'google';
   state.openrouterVoicesLoading=true;
   state.openrouterVoicesLoaded=true;
@@ -423,16 +423,15 @@ const GOOGLE_TTS_VOICES=['Zephyr','Puck','Charon','Kore','Fenrir','Leda','Orus',
 function saveVoiceSettings({elevenLabsVoiceId,source='button'}={}){
   const openaiVoice=String(state.voiceId||'marin').toLowerCase();
   if(!OPENAI_VOICE_NAMES.includes(openaiVoice)){setVoiceStatus('error','Choose a supported OpenAI fallback voice.');return false;}
-  const id=String(elevenLabsVoiceId||'').trim();
+  const id=String(elevenLabsVoiceId||state.elevenLabsVoiceId||'').trim();
   if(id&&!ELEVENLABS_VOICE_PATTERN.test(id)){setVoiceStatus('error','Enter a valid ElevenLabs Voice ID (letters, numbers, hyphens, or underscores).');return false;}
   const speechProvider=String($('#zeus-speech-provider')?.value||state.speechProvider||'gemini');
   const openrouterModel=String($('#zeus-openrouter-model')?.value||state.openrouterModel||'google');
   const openrouterVoice=String($('#zeus-openrouter-voice')?.value??state.openrouterVoice??'').trim();
-  if(!['gemini','elevenlabs','openrouter'].includes(speechProvider)||!['google','fish'].includes(openrouterModel)||openrouterVoice.length>80||!/^[A-Za-z0-9_-]*$/.test(openrouterVoice)){setVoiceStatus('error','Invalid speech configuration.');return false;}
+  if(!['gemini','elevenlabs'].includes(speechProvider)){setVoiceStatus('error','Invalid speech provider.');return false;}
   state.googleVoice=String($('#zeus-google-voice')?.value||state.googleVoice||'Kore');
   if(!GOOGLE_TTS_VOICES.includes(state.googleVoice)){setVoiceStatus('error','Invalid Google voice.');return false;}
   state.speechProvider=speechProvider;const previousModel=state.openrouterModel;state.openrouterModel=openrouterModel;state.openrouterVoice=openrouterVoice;
-  if(previousModel!==openrouterModel&&speechProvider==='openrouter'){state.openrouterVoicesLoaded=false;loadOpenRouterVoices();}
   try{localStorage.setItem('zeus-google-tts-voice',state.googleVoice);localStorage.setItem('zeus-speech-provider',speechProvider);localStorage.setItem('zeus-openrouter-tts-model',openrouterModel);localStorage.setItem('zeus-openrouter-tts-voice',openrouterVoice);}catch{}
   const stored=persistVoicePrefs(openaiVoice,id);
   state.voiceId=openaiVoice;state.elevenLabsVoiceId=id;state.error='';
@@ -508,8 +507,9 @@ async function toggleMessageSpeech(messageId){
 }
 async function testElevenLabsVoice(){
   if(state.voiceTesting)return;
-  const typed=String(state.elevenLabsVoiceId||'').trim();
+  const typed=String(state.speechProvider==='elevenlabs'?state.elevenLabsVoiceId:'').trim();
   if(typed&&!ELEVENLABS_VOICE_PATTERN.test(typed)){setVoiceStatus('error','Enter a valid ElevenLabs Voice ID (letters, numbers, hyphens, or underscores).');return;}
+  if(state.speechProvider==='elevenlabs'&&!typed){setVoiceStatus('error','Select an ElevenLabs voice first.');return;}
   if(!saveVoiceSettings({elevenLabsVoiceId:typed,source:'test'}))return;
   state.voiceTesting=true;
   unlockLiveAudioFromGesture();
@@ -940,11 +940,8 @@ function settingsView(){const providers=state.health?.providerReadiness||{};cons
   ${state.health?.monthlyBudget?.targetReached?'<p class="status-warn">Target reached in known estimates. Services remain available.</p>':''}
 </article>${preferencesSettings()}${personalMemorySettings()}${googleIntegrationSettings()}<article class="card settings-card"><h3>Live Talk Settings</h3><p class="muted tiny">Select the ElevenLabs conversation agent. Selection saves automatically in this browser. End an existing Live Talk session and start a new one to switch agents.</p><div class="field"><label for="live-agent-selection">Live Talk agent</label><select id="live-agent-selection"><option value="zeus" ${state.liveAgentSelection==="zeus"?"selected":""}>Zeus · current agent</option><option value="athena" ${state.liveAgentSelection==="athena"?"selected":""}>Athena · new agent</option></select></div><div class="field"><label for="live-language">Live Talk language</label><select id="live-language">${[['auto','Automatic (agent detects language)'],['pt','Português (Brasil)'],['en','English (US)'],['es','Español']].map(([v,label])=>`<option value="${v}" ${state.liveLocale===v?'selected':''}>${label}</option>`).join('')}</select></div><div class="field"><label for="voice-avatar">Live Talk avatar</label><select id="voice-avatar">${[['lightning','Lightning plasma'],['classic','Classic orb'],['olympus','Olympus'],['liquid','Liquid metal']].map(([v,label])=>`<option value="${v}" ${state.voiceAvatar===v?'selected':''}>${label}</option>`).join('')}</select></div><p class="muted tiny">Zeus and Athena are app labels. Their spoken identities are Felipe and Helen, respectively. Each ElevenLabs agent controls its own primary speaking voice, interruption timing and microphone behavior. Audio playback voices below do not change the Live Talk agent.</p><p class="muted tiny" id="live-agent-save-status">Selected agent: ${state.liveAgentSelection==="athena"?"Athena":"Zeus"} · saved automatically</p></article><article class="card settings-card"><h3>Audio Settings</h3>
 <p class="muted tiny">Choose the provider and voice for read-aloud replies. Live Talk has separate settings.</p>
-<div class="field"><label for="zeus-speech-provider">Read-aloud provider</label><select id="zeus-speech-provider">${[['gemini','Google Gemini'],['elevenlabs','ElevenLabs'],['openrouter','OpenRouter']].map(([v,l])=>`<option value="${v}" ${state.speechProvider===v?'selected':''}>${l}</option>`).join('')}</select></div>
+<div class="field"><label for="zeus-speech-provider">Read-aloud provider</label><select id="zeus-speech-provider">${[['gemini','Google Gemini'],['elevenlabs','ElevenLabs']].map(([v,l])=>`<option value="${v}" ${state.speechProvider===v?'selected':''}>${l}</option>`).join('')}</select></div>
 ${state.speechProvider==='gemini'?`<div class="field"><label for="zeus-google-voice">Google voice</label><select id="zeus-google-voice">${GOOGLE_TTS_VOICES.map(v=>`<option value="${v}" ${state.googleVoice===v?'selected':''}>${v}</option>`).join('')}</select></div>`:''}
-${state.speechProvider==='openrouter'?`<div class="field"><label for="zeus-openrouter-model">OpenRouter provider</label><select id="zeus-openrouter-model">${[['google','Google'],['fish','Fish Audio']].map(([v,l])=>`<option value="${v}" ${state.openrouterModel===v?'selected':''}>${l}</option>`).join('')}</select></div>
-<div class="field"><label for="zeus-openrouter-voice">OpenRouter ${state.openrouterModel==='google'?'Google':'Fish'} voice</label><select id="zeus-openrouter-voice"><option value="">${state.openrouterVoicesLoading?'Loading voices…':'Choose available voice'}</option>${state.openrouterVoices.map(v=>`<option value="${esc(v.id)}" ${state.openrouterVoice===v.id?'selected':''}>${esc(v.name)}</option>`).join('')}</select></div>
-${!state.openrouterVoicesLoading&&!state.openrouterVoices.length?'<p class="muted tiny">No verified voices available for this OpenRouter model.</p>':''}`:''}
 ${state.speechProvider==='elevenlabs'?`<div class="field"><label for="elevenlabs-voice-preset">ElevenLabs voice</label><select id="elevenlabs-voice-preset">
 <option value="">${state.elevenLabsVoicesLoading?'Loading voices…':'Choose a voice'}</option>
 ${state.elevenLabsVoices.map(v=>`<option value="${esc(v.voice_id)}" ${state.elevenLabsVoiceId===v.voice_id?'selected':''}>${esc(v.name)}${v.category?` · ${esc(v.category)}`:''}</option>`).join('')}</select></div>
@@ -1174,23 +1171,12 @@ function bind(){
   if($('#elevenlabs-voice-preset')&&!state.elevenLabsVoicesLoaded&&!state.elevenLabsVoicesLoading)loadElevenLabsVoices();
   $('#zeus-speech-provider')?.addEventListener('change',e=>{
     state.speechProvider=e.target.value;
-    if(state.speechProvider==='openrouter'&&!state.openrouterVoicesLoaded)loadOpenRouterVoices();
     try{localStorage.setItem('zeus-speech-provider',state.speechProvider)}catch{}
     if(state.speechProvider==='elevenlabs'&&!state.elevenLabsVoicesLoaded)loadElevenLabsVoices();
     render();
   });
   $('#zeus-google-voice')?.addEventListener('change',e=>{state.googleVoice=e.target.value;try{localStorage.setItem('zeus-google-tts-voice',state.googleVoice)}catch{}});
-  $('#zeus-openrouter-model')?.addEventListener('change',e=>{
-    state.openrouterModel=e.target.value;state.openrouterVoice='';state.openrouterVoices=[];state.openrouterVoicesLoaded=false;
-    try{localStorage.setItem('zeus-openrouter-tts-model',state.openrouterModel);localStorage.removeItem('zeus-openrouter-tts-voice')}catch{}
-    loadOpenRouterVoices();render();
-  });
-  $('#zeus-openrouter-voice')?.addEventListener('change',e=>{
-    state.openrouterVoice=e.target.value;
-    try{localStorage.setItem('zeus-openrouter-tts-voice',state.openrouterVoice)}catch{}
-  });
-  if($('#zeus-openrouter-model')&&!state.openrouterVoicesLoaded&&!state.openrouterVoicesLoading)loadOpenRouterVoices();
-  $('#save-voice-id')?.addEventListener('click',()=>{saveVoiceSettings({elevenLabsVoiceId:state.elevenLabsVoiceId,source:'button'});});
+  $('#save-voice-id')?.addEventListener('click',()=>{saveVoiceSettings({elevenLabsVoiceId:state.speechProvider==='elevenlabs'?state.elevenLabsVoiceId:'',source:'button'});});
   $('#test-voice')?.addEventListener('click',()=>{testElevenLabsVoice();});
   $$('[data-tab]').forEach(b=>b.addEventListener('click',async()=>{
     const next=b.dataset.tab;state.drawer=false;
