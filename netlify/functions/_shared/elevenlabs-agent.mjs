@@ -7,7 +7,7 @@ export function elevenLabsRealtimeAgentConfigured(){
 
 export const ATHENA_ELEVENLABS_AGENT_ID='agent_6901m6je5434fhmbseer8bnjafdw';
 function agentId(selection='zeus'){
-  return String(selection==='athena'?(env('ELEVENLABS_ATHENA_AGENT_ID')||ATHENA_ELEVENLABS_AGENT_ID):(env('ELEVENLABS_AGENT_ID')||DEFAULT_ELEVENLABS_AGENT_ID)).trim();
+  return String(selection==='athena'?(ATHENA_ELEVENLABS_AGENT_ID):(env('ELEVENLABS_AGENT_ID')||DEFAULT_ELEVENLABS_AGENT_ID)).trim();
 }
 
 export async function createElevenLabsRealtimeConversationToken({fetchImpl=globalThis.fetch,agent='zeus'}={}){
