@@ -30,7 +30,11 @@ try{
  assert.throws(()=>assertGithubRepoAllowed('https://github.com/acme/evil'),e=>e.code==='GITHUB_REPO_NOT_ALLOWED');
  for(const item of ['.env','.env.local','.npmrc','service_account.json','.aws/credentials','key.pem','terraform.tfstate'])assert.ok(dangerousPath(item));
  const workflow=readFileSync('.github/workflows/smoke-live.yml','utf8');
- assert.ok(!/^\s*schedule\s*:/m.test(workflow));
+ // Scheduled smoke runs are allowed, but paid AI must be gated by an
+ // explicit manual dispatch and the exact opt-in confirmation phrase.
+ assert.match(workflow,/schedule:/);
+ assert.match(workflow,/github\.event_name == 'workflow_dispatch' && inputs\.confirm_paid_ai == 'yes-spend-credits'/);
+ assert.match(workflow,/ZEUS_PROXY_SMOKE_AI:/);
  assert.ok(workflow.includes('confirm_paid_ai')&&workflow.includes('yes-spend-credits'));
  const gi=readFileSync('.gitignore','utf8');
  for(const name of ['.env','.env.*','!.env.example','*.pem'])assert.ok(gi.split('\n').includes(name));
