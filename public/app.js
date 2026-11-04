@@ -426,7 +426,7 @@ function saveVoiceSettings({elevenLabsVoiceId,source='button'}={}){
   const speechProvider=String($('#zeus-speech-provider')?.value||state.speechProvider||'auto');
   const openrouterModel=String($('#zeus-openrouter-model')?.value||state.openrouterModel||'google');
   const openrouterVoice=String($('#zeus-openrouter-voice')?.value||'').trim();
-  if(!['auto','gemini','elevenlabs','openrouter'].includes(speechProvider)||!['google','fish'].includes(openrouterModel)||openrouterVoice.length>80||!/^[\\w-]*$/.test(openrouterVoice)){setVoiceStatus('error','Invalid speech configuration.');return false;}
+  if(!['auto','gemini','elevenlabs','openrouter'].includes(speechProvider)||!['google','fish'].includes(openrouterModel)||openrouterVoice.length>80||!/^[A-Za-z0-9_-]*$/.test(openrouterVoice)){setVoiceStatus('error','Invalid speech configuration.');return false;}
   state.speechProvider=speechProvider;const previousModel=state.openrouterModel;state.openrouterModel=openrouterModel;state.openrouterVoice=openrouterVoice;
   if(previousModel!==openrouterModel)loadOpenRouterVoices();
   try{localStorage.setItem('zeus-speech-provider',speechProvider);localStorage.setItem('zeus-openrouter-tts-model',openrouterModel);localStorage.setItem('zeus-openrouter-tts-voice',openrouterVoice);}catch{}
@@ -506,6 +506,7 @@ async function testElevenLabsVoice(){
   if(state.voiceTesting)return;
   const typed=String($('#elevenlabs-voice-id')?.value??state.elevenLabsVoiceId).trim();
   if(typed&&!ELEVENLABS_VOICE_PATTERN.test(typed)){setVoiceStatus('error','Enter a valid ElevenLabs Voice ID (letters, numbers, hyphens, or underscores).');return;}
+  if(!saveVoiceSettings({elevenLabsVoiceId:typed,source:'test'}))return;
   state.voiceTesting=true;
   unlockLiveAudioFromGesture();
   setVoiceStatus('info','Testing voice…');
@@ -1171,6 +1172,21 @@ function bind(){
   $('#reload-elevenlabs-voices')?.addEventListener('click',()=>loadElevenLabsVoices());
   $('#load-more-elevenlabs-voices')?.addEventListener('click',()=>loadElevenLabsVoices({append:true}));
   if($('#elevenlabs-voice-preset')&&!state.elevenLabsVoicesLoaded&&!state.elevenLabsVoicesLoading)loadElevenLabsVoices();
+  $('#zeus-speech-provider')?.addEventListener('change',e=>{
+    state.speechProvider=e.target.value;
+    try{localStorage.setItem('zeus-speech-provider',state.speechProvider)}catch{}
+    render();
+  });
+  $('#zeus-openrouter-model')?.addEventListener('change',e=>{
+    state.openrouterModel=e.target.value;state.openrouterVoice='';
+    try{localStorage.setItem('zeus-openrouter-tts-model',state.openrouterModel);localStorage.removeItem('zeus-openrouter-tts-voice')}catch{}
+    loadOpenRouterVoices();render();
+  });
+  $('#zeus-openrouter-voice')?.addEventListener('change',e=>{
+    state.openrouterVoice=e.target.value;
+    try{localStorage.setItem('zeus-openrouter-tts-voice',state.openrouterVoice)}catch{}
+  });
+  if($('#zeus-openrouter-model')&&state.openrouterModel==='google'&&!state.openrouterVoices.length&&!state.openrouterVoicesLoading)loadOpenRouterVoices();
   $('#save-voice-id')?.addEventListener('click',()=>{saveVoiceSettings({elevenLabsVoiceId:$('#elevenlabs-voice-id')?.value||'',source:'button'});});
   $('#test-voice')?.addEventListener('click',()=>{testElevenLabsVoice();});
   $$('[data-tab]').forEach(b=>b.addEventListener('click',async()=>{
