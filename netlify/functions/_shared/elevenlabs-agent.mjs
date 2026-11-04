@@ -5,13 +5,14 @@ export function elevenLabsRealtimeAgentConfigured(){
   return Boolean((env('ELEVENLABS_API_KEY')||env('ELEVEN_LABS_API_KEY'))&&agentId());
 }
 
-function agentId(){
-  return String(env('ELEVENLABS_AGENT_ID')||DEFAULT_ELEVENLABS_AGENT_ID).trim();
+export const ATHENA_ELEVENLABS_AGENT_ID='agent_6901m6je5434fhmbseer8bnjafdw';
+function agentId(selection='zeus'){
+  return String(selection==='athena'?(env('ELEVENLABS_ATHENA_AGENT_ID')||ATHENA_ELEVENLABS_AGENT_ID):(env('ELEVENLABS_AGENT_ID')||DEFAULT_ELEVENLABS_AGENT_ID)).trim();
 }
 
-export async function createElevenLabsRealtimeConversationToken({fetchImpl=globalThis.fetch}={}){
+export async function createElevenLabsRealtimeConversationToken({fetchImpl=globalThis.fetch,agent='zeus'}={}){
   const key=env('ELEVENLABS_API_KEY')||env('ELEVEN_LABS_API_KEY');
-  const id=agentId();
+  const id=agentId(agent);
   if(!key){const error=new Error('ElevenLabs Realtime is not configured. Add ELEVENLABS_API_KEY to Netlify Functions.');error.status=501;error.code='ELEVENLABS_API_KEY_MISSING';throw error;}
   if(!/^agent_[A-Za-z0-9]{8,80}$/.test(id)){const error=new Error('The ElevenLabs Agent ID is invalid.');error.status=500;error.code='ELEVENLABS_AGENT_ID_INVALID';throw error;}
   const response=await fetchImpl(`https://api.elevenlabs.io/v1/convai/conversation/token?agent_id=${encodeURIComponent(id)}`,{headers:{'xi-api-key':key,'Accept':'application/json'}});
@@ -25,9 +26,9 @@ export async function createElevenLabsRealtimeConversationToken({fetchImpl=globa
   return {token,conversationId};
 }
 
-export async function createElevenLabsRealtimeSignedUrl({fetchImpl=globalThis.fetch}={}){
+export async function createElevenLabsRealtimeSignedUrl({fetchImpl=globalThis.fetch,agent='zeus'}={}){
   const key=env('ELEVENLABS_API_KEY')||env('ELEVEN_LABS_API_KEY');
-  const id=agentId();
+  const id=agentId(agent);
   if(!key){const error=new Error('ElevenLabs Realtime is not configured. Add ELEVENLABS_API_KEY to Netlify Functions.');error.status=501;error.code='ELEVENLABS_API_KEY_MISSING';throw error;}
   if(!/^agent_[A-Za-z0-9]{8,80}$/.test(id)){const error=new Error('The ElevenLabs Agent ID is invalid.');error.status=500;error.code='ELEVENLABS_AGENT_ID_INVALID';throw error;}
   const response=await fetchImpl(`https://api.elevenlabs.io/v1/convai/conversation/get-signed-url?agent_id=${encodeURIComponent(id)}`,{headers:{'xi-api-key':key,'Accept':'application/json'}});
