@@ -11,10 +11,12 @@ export async function voiceRealtimeHandler(req,context,kind){
  try{
   const body=await readJson(req);
   if(!body||typeof body!=='object'||Array.isArray(body))return errorJson('Invalid JSON.',400,'INVALID_JSON',requestId);
+  const agent=body.agent===undefined?'zeus':body.agent;
+  if(agent!=='zeus'&&agent!=='athena')return errorJson('Invalid Live Talk agent.',400,'INVALID_AGENT',requestId);
   const memory=await loadVoiceMemoryContext(db,user.id,{projectId:body.projectId||null,conversationId:body.conversationId||null});
   if(memory.error)return errorJson(memory.error.message,memory.error.status,memory.error.code,requestId);
   await consumeEndpointRate(db,user.id,'voice_realtime_session',requestId,60);
-  const credentials=kind==='signed'?await createElevenLabsRealtimeSignedUrl():await createElevenLabsRealtimeConversationToken();
+  const credentials=kind==='signed'?await createElevenLabsRealtimeSignedUrl({agent}):await createElevenLabsRealtimeConversationToken({agent});
   return json({...credentials,memoryContext:memory.memoryContext,projectId:memory.projectId,conversationId:memory.conversationId,requestId});
  }catch(error){return errorJson('Could not initialize realtime voice.',Number(error?.status)||500,error?.code||'VOICE_REALTIME_FAILED',requestId);}
 }
