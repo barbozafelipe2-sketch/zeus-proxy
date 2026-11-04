@@ -6,6 +6,10 @@ const start=src.indexOf('const spendRows=db.sql`')+'const spendRows=db.sql`'.len
 const sql=src.slice(start,src.indexOf('`',start));
 assert.ok(!/return json|export |console\./.test(sql),'spend SQL template must not contain JavaScript');
 assert.ok(/\$'\s*\n\s*THEN/.test(sql),'numeric cast must be guarded by an anchored regex');
+assert.ok(/AS priced_count,\s*count\(\*\)::int AS execution_count/.test(sql),'monthly monitor must count priced and total executions');
+assert.ok(sql.includes('FROM executions WHERE owner_id=${user.id}'),'monthly monitor must aggregate owner-scoped executions');
+assert.ok(src.includes("degrade('monthlyBudget',error,null)"),'database failure must not masquerade as zero spend');
+assert.ok(src.includes('knownTextUsd:usd===null?null'),'unknown monthly spend must remain null');
 assert.ok(src.includes("warnings.push({section"),'health must report degraded sections');
 const {safeDbError}=await import('../netlify/functions/health.mjs');
 const fake='postgres'+'ql://u:p@h/db';
