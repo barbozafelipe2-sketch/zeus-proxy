@@ -116,7 +116,11 @@ async function handler(req,context){
       THEN (trace->'usage'->>'estimatedUsd')::numeric ELSE 0 END),0)::float8 AS known_usd,
       count(*) FILTER (WHERE trace->'usage'->>'estimateCoverage' IN ('partial','none') OR trace->'usage' IS NULL)::int AS incomplete_count,
       count(*) FILTER (WHERE (trace->'usage'->>'estimatedUsd') ~ '^[0-9]{1,12}([.][0-9]{1,12})?$')::int AS priced_count,
-      count(*)::int AS execution_count
+      count(*)::int AS execution_count,
+      count(*) FILTER (WHERE trace->>'image' = 'true' OR trace->>'imageEdit' = 'true')::int AS image_execution_count,
+      count(*) FILTER (WHERE trace->'usage'->'webSearch' IS NOT NULL AND trace->'usage'->'webSearch' != 'null'::jsonb)::int AS web_execution_count,
+      count(*) FILTER (WHERE trace->>'toolId' IS NOT NULL)::int AS tool_execution_count,
+      count(*) FILTER (WHERE trace->'usage'->>'estimatedUsd' IS NULL)::int AS unknown_cost_count
     FROM executions WHERE owner_id=${user.id}
       AND started_at >= date_trunc('month',now())
       AND started_at < date_trunc('month',now()) + interval '1 month'
@@ -126,7 +130,7 @@ async function handler(req,context){
   return json({
     degraded:warnings.length>0,
     warnings,
-    monthlyBudget:{targetUsd:monthlyTarget,knownTextUsd:usd===null?null:Number(usd.toFixed(4)),unpricedExecutionCount:spendRowsSafe?Number(spendRowsSafe[0]?.incomplete_count||0):null,pricedExecutionCount:spendRowsSafe?pricedCount:null,executionCount:spendRowsSafe?executionCount:null,available:Boolean(spendRowsSafe),targetReached:usd!==null&&usd>=monthlyTarget,policy:'advisory_only',coverage:'partial_text_only',mediaIncluded:false},
+    monthlyBudget:{targetUsd:monthlyTarget,knownTextUsd:usd===null?null:Number(usd.toFixed(4)),unpricedExecutionCount:spendRowsSafe?Number(spendRowsSafe[0]?.incomplete_count||0):null,pricedExecutionCount:spendRowsSafe?pricedCount:null,executionCount:spendRowsSafe?executionCount:null,imageExecutionCount:spendRowsSafe?Number(spendRowsSafe[0]?.image_execution_count||0):null,webExecutionCount:spendRowsSafe?Number(spendRowsSafe[0]?.web_execution_count||0):null,toolExecutionCount:spendRowsSafe?Number(spendRowsSafe[0]?.tool_execution_count||0):null,unknownCostExecutionCount:spendRowsSafe?Number(spendRowsSafe[0]?.unknown_cost_count||0):null,available:Boolean(spendRowsSafe),targetReached:usd!==null&&usd>=monthlyTarget,policy:'advisory_only',coverage:'partial_text_only',mediaIncluded:false},
     requestId,
     providers,
     transports,
