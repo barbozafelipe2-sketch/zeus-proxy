@@ -5,6 +5,7 @@ import { json, getRequestId, errorJson } from './_shared/http.mjs';
 import { opportunisticDrainBlobGc } from './_shared/storage.mjs';
 import { githubWriteConfigured } from './_shared/github-write.mjs';
 import { elevenLabsRealtimeAgentConfigured } from './_shared/elevenlabs-agent.mjs';
+import { TOOL_WORKFLOWS } from './_shared/tool-workflows.mjs';
 
 const PROVIDERS=['openai','anthropic','gemini','openrouter'];
 
@@ -133,6 +134,12 @@ async function handler(req,context){
     providerReadiness:readiness,
     transportReadiness,
     models:configuredModels.map(m=>({provider:m.provider,id:m.id,roles:m.roles})),
+    // Configuration and backend routing evidence only: never advertise an unexercised tool as verified.
+    toolReadiness:Object.fromEntries(Object.values(TOOL_WORKFLOWS).map(tool=>{
+      const image=tool.id==='images';
+      const eligible=image?Boolean((providers.openai&&!runtime.openai?.circuitOpen)||openRouterImageReady):activeModels.length>0;
+      return [tool.id,{id:tool.id,god:tool.god,backendRoute:image?'chat:image_generation_or_edit':'chat:three_model_tool',configured:eligible,status:eligible?'configured_unverified':'unavailable',verified:false}];
+    })),
     capabilityReadiness:{
       chat:chatState,
       documents:chatState,
