@@ -1804,6 +1804,7 @@ async function connectLiveTalkAgent(){
     const isIosWebKit=/iPad|iPhone|iPod/i.test(navigator.userAgent)||(/MacIntel/.test(navigator.platform||'')&&navigator.maxTouchPoints>1);
     const issued=await api(isIosWebKit?'/api/voice/realtime-signed-url':'/api/voice/realtime-token',{method:'POST',body:JSON.stringify({projectId:state.currentProject?.id||null,conversationId:state.currentConversation||null,agent:state.liveAgentSelection})});
     if(!state.liveTalk||generation!==state.liveGeneration)return;
+    if(issued.selectedAgent!==state.liveAgentSelection)throw new Error('Selected Live Talk agent was not confirmed by the server.');
     state.liveServerMemoryContext=String(issued.memoryContext||'').slice(0,8000);
     const {Conversation}=await import('/assets/elevenlabs-agent.js');
     const selectedLanguage=state.liveLocale==='auto'?'':({pt:'pt',en:'en',es:'es'}[state.liveLocale]||'');
