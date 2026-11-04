@@ -123,6 +123,22 @@ export function openRouterVoiceOptions(model='google'){
   if(!Object.hasOwn(OPENROUTER_TTS_MODELS,model))throw Object.assign(new Error('Invalid OpenRouter model.'),{status:400,code:'INVALID_TTS_MODEL'});
   return {model,modelId:OPENROUTER_TTS_MODELS[model],voices:model==='google'?OPENROUTER_GOOGLE_VOICES.map(name=>({id:name,name})):[],voiceSource:model==='google'?'google-prebuilt':'provider-dependent',customVoiceSupported:false};
 }
+async function discoverOpenRouterVoiceOptions(model,{fetchImpl=globalThis.fetch}={}){
+  const configured=openRouterVoiceOptions(model);
+  const controller=new AbortController();
+  const timeout=setTimeout(()=>controller.abort(),5000);
+  try{
+    const response=await fetchImpl('https://openrouter.ai/api/v1/models?output_modalities=speech',{signal:controller.signal,headers:{Accept:'application/json'}});
+    if(!response.ok)throw providerError(502,'OpenRouter model catalog unavailable.');
+    const payload=await response.json();
+    const found=(Array.isArray(payload?.data)?payload.data:[]).find(item=>item?.id===configured.modelId);
+    if(!found)return {...configured,available:false,voices:[],voiceSource:'openrouter-live-catalog',reason:'Model not listed in OpenRouter speech catalog'};
+    const supported=Array.isArray(found.supported_voices)?found.supported_voices:[];
+    const voices=supported.map(v=>typeof v==='string'?{id:v,name:v}:v&&typeof v==='object'?{id:String(v.id||v.name||''),name:String(v.name||v.id||'')}:null)
+      .filter(v=>v&&/^[A-Za-z0-9_:-]{2,120}$/.test(v.id)).slice(0,150);
+    return {...configured,available:true,voices,voiceSource:'openrouter-live-catalog',customVoiceSupported:false};
+  }finally{clearTimeout(timeout);}
+}
 function audioFromProvider(responseBytes,contentType){
   const bytes=Buffer.from(responseBytes);
   const mime=String(contentType||'').split(';')[0].toLowerCase();
@@ -244,7 +260,10 @@ export default async function(req,context){
     if(url.pathname==='/api/speech/openrouter/voices'){
       if(req.method!=='GET')return errorJson('Method not allowed.',405,'METHOD_NOT_ALLOWED',requestId);
       await consumeEndpointRate(auth.db,auth.user.id,'speech-voices',requestId,20);
-      try{return Response.json(openRouterVoiceOptions(url.searchParams.get('model')||'google'),{headers:{'Cache-Control':'no-store'}})}catch{return errorJson('Invalid OpenRouter model.',400,'INVALID_TTS_MODEL',requestId)}
+      const model=url.searchParams.get('model')||'google';
+      if(!Object.hasOwn(OPENROUTER_TTS_MODELS,model))return errorJson('Invalid OpenRouter model.',400,'INVALID_TTS_MODEL',requestId);
+      try{return Response.json(await discoverOpenRouterVoiceOptions(model),{headers:{'Cache-Control':'no-store'}})}
+      catch{return errorJson('OpenRouter voice catalog is unavailable.',502,'OPENROUTER_CATALOG_UNAVAILABLE',requestId)}
     }
     if(url.pathname==='/api/speech/voices'){
       if(req.method!=='GET')return errorJson('Method not allowed.',405,'METHOD_NOT_ALLOWED',requestId);
