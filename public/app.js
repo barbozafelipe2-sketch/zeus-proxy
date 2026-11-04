@@ -1807,7 +1807,7 @@ async function connectLiveTalkAgent(){
     if(!state.liveTalk||generation!==state.liveGeneration){releaseLiveAgentPermissionStream(permissionStream);for(const track of permissionStream.getTracks())try{track.stop()}catch{}return;}
     state.liveAgentPermissionStream=permissionStream;
     const isIosWebKit=/iPad|iPhone|iPod/i.test(navigator.userAgent)||(/MacIntel/.test(navigator.platform||'')&&navigator.maxTouchPoints>1);
-    const issued=await api(isIosWebKit?'/api/voice/realtime-signed-url':'/api/voice/realtime-token',{method:'POST',body:'{}'});
+    const issued=await api(isIosWebKit?'/api/voice/realtime-signed-url':'/api/voice/realtime-token',{method:'POST',body:JSON.stringify({projectId:state.currentProject?.id||null,conversationId:state.currentConversation||null})});
     if(!state.liveTalk||generation!==state.liveGeneration)return;
     const {Conversation}=await import('/assets/elevenlabs-agent.js');
     const selectedLanguage=state.liveLocale==='auto'?'':({pt:'pt',en:'en',es:'es'}[state.liveLocale]||'');
@@ -1816,6 +1816,7 @@ async function connectLiveTalkAgent(){
     const overrides=selectedLanguage?{agent:{language:selectedLanguage}}:{};
     const conversation=await Conversation.startSession({
       ...(isIosWebKit?{signedUrl:issued.signedUrl,connectionType:'websocket'}:{conversationToken:issued.token,connectionType:'webrtc'}),
+      dynamicVariables:{olympus_memory_context:issued.memoryContext||''},
       clientTools:liveProjectClientTools(),
       workletPaths:{
         rawAudioProcessor:'/assets/elevenlabs-worklets/raw-audio-processor.js',

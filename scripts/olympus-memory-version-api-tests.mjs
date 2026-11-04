@@ -1,0 +1,12 @@
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+const api=readFileSync('netlify/functions/memory-versions.mjs','utf8');
+const sql=readFileSync('netlify/database/migrations/20261104010000_olympus_memory_revision_hardening/migration.sql','utf8');
+assert.match(api,/requireUser\(req,requestId\)/);
+assert.match(api,/owner_id=\$2 FOR UPDATE/);
+assert.match(api,/memory_id=\$1 AND owner_id=\$2 AND version=\$3/);
+assert.match(api,/previous\.project_id/);
+assert.match(api,/withTransaction\(db/);
+assert.match(sql,/IF NEW\.owner_id IS DISTINCT FROM OLD\.owner_id THEN/);
+assert.ok(sql.indexOf('IF NEW.owner_id')<sql.indexOf('IF (OLD.content'));
+console.log('Memory version API static contract PASS');
