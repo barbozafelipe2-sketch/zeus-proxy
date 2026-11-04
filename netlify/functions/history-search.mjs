@@ -10,7 +10,7 @@ export function parseHistorySearchParams(url){
  const projectId=params.get('projectId')||null;
  if(projectId&&!isUuid(projectId))return {error:'INVALID_PROJECT'};
  const from=params.get('from')||null,to=params.get('to')||null;
- const validDate=s=>/^\\d{4}-\\d{2}-\\d{2}$/.test(s)&&!Number.isNaN(Date.parse(s+'T00:00:00Z'))&&new Date(s+'T00:00:00Z').toISOString().slice(0,10)===s;
+ const validDate=s=>s.length===10&&s[4]==='-'&&s[7]==='-'&&s.slice(0,4).split('').every(c=>c>='0'&&c<='9')&&[...s.slice(5,7),...s.slice(8,10)].every(c=>c>='0'&&c<='9')&&!Number.isNaN(Date.parse(s+'T00:00:00Z'))&&new Date(s+'T00:00:00Z').toISOString().slice(0,10)===s;
  if((from&&!validDate(from))||(to&&!validDate(to))||(from&&to&&from>to))return {error:'INVALID_DATE'};
  const limit=Math.min(30,Math.max(1,Number.parseInt(params.get('limit')||'10',10)||10));
  const scope=params.get('scope')||'all';
