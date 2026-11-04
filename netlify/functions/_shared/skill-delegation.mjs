@@ -10,3 +10,14 @@ export async function executeSkillDelegation({sourceSkillId,targetSkillId,allowe
  const trace=result?.trace||{};
  return {executed:true,skillId:targetSkillId,toolId:authorization.toolId,trace:{sourceSkillId,targetSkillId,toolId:authorization.toolId,depth:depth+1,delegations:delegations+1,modelStagesCompleted:Number(trace.completedStages)||0,externalActionConfirmed:trace.capabilityExecuted===true,modelRoles:Array.isArray(trace.roles)?trace.roles.map(({role,provider,model,status})=>({role,provider,model,status})):[]},result};
 }
+
+export function requestedSkillDelegation(message,sourceSkillId){
+ const text=String(message||'').slice(0,40000);
+ if(!/(?:delegue|delegar|delegate|passe para|hand off to)/i.test(text))return null;
+ const requested=Object.values(SKILL_REGISTRY).filter(skill=>skill.enabled&&skill.id!==sourceSkillId&&(
+  new RegExp('\\b'+skill.god+'\\b','i').test(text)||
+  (skill.id==='hermes.web'&&/\bhermes\b/i.test(text))||
+  (skill.id==='hefesto.code'&&/\bhefesto\b/i.test(text))
+ ));
+ return requested.length===1?requested[0]:null;
+}

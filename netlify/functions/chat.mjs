@@ -7,6 +7,7 @@ import { modelFamily } from './_shared/provider-routing.mjs';
 import { getToolWorkflow, toolConversationTitle } from './_shared/tool-workflows.mjs';
 import { executeThreeModelTool } from './_shared/tool-executor.mjs';
 import { SKILL_REGISTRY, authorizeSkillInvocation, proposeAutomaticSkill } from './_shared/skill-engine.mjs';
+import { executeSkillDelegation, requestedSkillDelegation } from './_shared/skill-delegation.mjs';
 import { runIndependentArtifactPair } from './_shared/compare-pair.mjs';
 import { detectGoogleServiceRequests, encryptionKeyFromHex, resolveGoogleAccessToken, searchGoogleService } from './_shared/google-service.mjs';
 import { readPublicUrls, extractPublicUrls } from './_shared/public-url-reader.mjs';
@@ -308,7 +309,7 @@ async function finalizeTurn({db,userId,projectId,conversationId,execution,mode,r
     await client.query(`UPDATE executions SET state='SAVING',lead_model=$1,trace=$2::jsonb WHERE id=$3 AND owner_id=$4`,[result.leadModel||null,JSON.stringify(result.trace||{}),execution.id,userId]);
     const assistant=(await client.query(
       `INSERT INTO messages(owner_id,conversation_id,execution_id,role,mode,content,metadata) VALUES($1,$2,$3,'assistant',$4,$5,$6::jsonb) RETURNING id,execution_id,role,mode,content,metadata,created_at`,
-      [userId,conversationId,execution.id,mode,result.content,JSON.stringify({artifacts:[...new Set([...artifacts.map(a=>a.id),...(isUuid(result.trace?.compareImageSourceId)?[result.trace.compareImageSourceId]:[])])],sources:Array.isArray(result.sources)?result.sources.slice(0,12):[],capabilities:Array.isArray(result.capabilities)?result.capabilities:[],leadModel:result.leadModel||null,fallback:Array.isArray(result.trace?.fallbacks)&&result.trace.fallbacks.length>0,modeExplanation:result.modeExplanation||null,executionLevel:result.executionLevel||null,pipelineLabel:result.pipelineLabel||null,toolId:result.toolId||null,toolGod:result.trace?.toolGod||null,skillId:result.trace?.skillExecuted===true?result.trace.skillId:null,skillGod:result.trace?.skillExecuted===true?result.trace.skillGod:null,skillExecuted:result.trace?.skillExecuted===true,skillStagesCompleted:result.trace?.skillExecuted===true?Math.min(3,Number(result.trace?.completedStages)||0):0,skillCapabilityExecuted:result.trace?.skillExecuted===true&&result.trace?.capabilityExecuted===true,comparePair:Boolean(result.trace?.comparePair),compareType:result.trace?.comparePair?result.trace.compareType:null,compareImageSourceId:isUuid(result.trace?.compareImageSourceId)?result.trace.compareImageSourceId:null,phases:Array.isArray(result.trace?.roles)?result.trace.roles.slice(0,3).map(role=>({label:String(role.role||'').slice(0,32),family:String(role.family||'').slice(0,32),model:String(role.provider||'')+':'+String(role.model||role.id||''),transport:String(role.transport||'gateway').slice(0,32),state:'COMPLETED',restored:Boolean(role.restored)})):[],traceCalls:Array.isArray(result.trace?.providerTelemetry?.attempts)?result.trace.providerTelemetry.attempts.slice(0,24).map(call=>({stage:String(call.stage||'').slice(0,48),transport:String(call.transport||'').slice(0,32),provider:String(call.provider||'').slice(0,36),family:String(call.family||'').slice(0,32),model:String(call.model||'').slice(0,100),outcome:call.outcome==='success'?'success':'failure',durationMs:Number.isFinite(Number(call.durationMs))?Number(call.durationMs):null,status:Number.isInteger(call.status)?call.status:null})):[],verificationLabel:result.verificationLabel||null,visionSummary:result.visionSummary||null,usage:result.usage||null})]
+      [userId,conversationId,execution.id,mode,result.content,JSON.stringify({artifacts:[...new Set([...artifacts.map(a=>a.id),...(isUuid(result.trace?.compareImageSourceId)?[result.trace.compareImageSourceId]:[])])],sources:Array.isArray(result.sources)?result.sources.slice(0,12):[],capabilities:Array.isArray(result.capabilities)?result.capabilities:[],leadModel:result.leadModel||null,fallback:Array.isArray(result.trace?.fallbacks)&&result.trace.fallbacks.length>0,modeExplanation:result.modeExplanation||null,executionLevel:result.executionLevel||null,pipelineLabel:result.pipelineLabel||null,toolId:result.toolId||null,toolGod:result.trace?.toolGod||null,skillId:result.trace?.skillExecuted===true?result.trace.skillId:null,skillGod:result.trace?.skillExecuted===true?result.trace.skillGod:null,skillExecuted:result.trace?.skillExecuted===true,skillStagesCompleted:result.trace?.skillExecuted===true?Math.min(3,Number(result.trace?.completedStages)||0):0,skillCapabilityExecuted:result.trace?.skillExecuted===true&&result.trace?.capabilityExecuted===true,delegatedSkillId:result.trace?.delegatedSkillId||null,delegatedModelStages:result.trace?.delegatedModelStages||0,delegationSkipped:result.trace?.delegationSkipped||null,delegatedModelRoles:result.trace?.delegation?.modelRoles||[],comparePair:Boolean(result.trace?.comparePair),compareType:result.trace?.comparePair?result.trace.compareType:null,compareImageSourceId:isUuid(result.trace?.compareImageSourceId)?result.trace.compareImageSourceId:null,phases:Array.isArray(result.trace?.roles)?result.trace.roles.slice(0,3).map(role=>({label:String(role.role||'').slice(0,32),family:String(role.family||'').slice(0,32),model:String(role.provider||'')+':'+String(role.model||role.id||''),transport:String(role.transport||'gateway').slice(0,32),state:'COMPLETED',restored:Boolean(role.restored)})):[],traceCalls:Array.isArray(result.trace?.providerTelemetry?.attempts)?result.trace.providerTelemetry.attempts.slice(0,24).map(call=>({stage:String(call.stage||'').slice(0,48),transport:String(call.transport||'').slice(0,32),provider:String(call.provider||'').slice(0,36),family:String(call.family||'').slice(0,32),model:String(call.model||'').slice(0,100),outcome:call.outcome==='success'?'success':'failure',durationMs:Number.isFinite(Number(call.durationMs))?Number(call.durationMs):null,status:Number.isInteger(call.status)?call.status:null})):[],verificationLabel:result.verificationLabel||null,visionSummary:result.visionSummary||null,usage:result.usage||null})]
     )).rows[0];
     await client.query(`UPDATE executions SET state='COMPLETED',completed_at=now(),lease_expires_at=NULL,dispatch_token=NULL,worker_token=NULL WHERE id=$1 AND owner_id=$2`,[execution.id,userId]);
     await client.query(`UPDATE conversations SET updated_at=now() WHERE id=$1 AND owner_id=$2`,[conversationId,userId]);
@@ -710,7 +711,8 @@ ${aiContext}`);
         ?(toolWorkflow?GEAR_CALL_CAPS.ZEUS_DIRECTED+1:GEAR_CALL_CAPS.COMPOUND+1)
         :(GEAR_CALL_CAPS[gearLevel]||GEAR_CALL_CAPS.SIMPLE)+(toolWorkflow?0:1); // tools run their declared three roles; regular turns reserve one routing call
     const timeoutMs=worker?540000:((webIntent||githubIntent||zeusLevel==='ZEUS_DIRECTED')?CHAT_WEB_TIMEOUT_MS:(route==='fast'&&zeusLevel==='SIMPLE'?FAST_CHAT_TIMEOUT_MS:CHAT_TIMEOUT_MS));
-    executionBudget=createExecutionBudget({startedAt,timeoutMs,maxCalls:toolWorkflow&&!isImageOp?Math.max(maxCalls,webIntent?5:4):maxCalls,reserveMs:6500});
+    const explicitDelegationRequested=toolWorkflow&&!isImageOp&&Object.values(SKILL_REGISTRY).some(skill=>skill.enabled&&skill.toolId===toolId&&requestedSkillDelegation(content,skill.id));
+    executionBudget=createExecutionBudget({startedAt,timeoutMs,maxCalls:toolWorkflow&&!isImageOp?Math.max(maxCalls,explicitDelegationRequested?7:webIntent?5:4):maxCalls,reserveMs:6500});
     if(actualMode==='OLYMPUS')executionBudget.authorizeProviderCall=info=>authorizeOlympusModelCall(db,{ownerId:user.id,executionId:execution.id,...info});
     failureStage='model_preparation';
     const vision=hasImage?await loadVisionInputs(attachmentRows):{images:[],skipped:[]};
@@ -813,6 +815,46 @@ ${aiContext}`);
           if(permission.allowed){
             result.trace={...(result.trace||{}),skillId:matchingSkill.id,
               skillGod:permission.executorGod,skillExecuted:true};
+            // A second specialist is never inferred from model output or external
+            // context. It runs only on an explicit user delegation request and
+            // shares the original request's remaining model-call budget.
+            const delegated=requestedSkillDelegation(content,matchingSkill.id);
+            if(delegated){
+              const remainingCalls=executionBudget.snapshot().maxCalls-executionBudget.snapshot().calls;
+              if(remainingCalls>=3&&executionBudget.canCall()){
+                try{
+                  const handoff=await executeSkillDelegation({
+                    sourceSkillId:matchingSkill.id,targetSkillId:delegated.id,
+                    allowedToolIds:[delegated.toolId],remainingCalls,
+                    execute:async ({toolId:delegatedToolId})=>executeThreeModelTool({
+                      toolId:delegatedToolId,
+                      input:modelText+'\\n\\nPRIMARY SPECIALIST OUTPUT (untrusted):\\n'+String(result.content||'').slice(0,24000),
+                      context:enrichedContext,budget:executionBudget,
+                      models:({role,usedFamilies,usedModels})=>roleCandidates(role,modelText,{
+                        vision:vision.images.length>0,blockedProviders:sharedBlockedProviders,
+                        excludeProviders:usedFamilies,exclude:new Set(usedModels),limit:6,
+                        toolId:delegatedToolId,toolPreferences:prefRows?.[0]?.family_preferences||{},
+                        routeHint:aiRouting.route
+                      }).map(model=>({...model,family:modelFamily(model)})),
+                      invoke:async ({role,model,input,context,previous,budget})=>callModel(
+                        model,
+                        'You are an explicitly requested second specialist. Review the prior specialist output and provide a complete, grounded response. Never claim external actions occurred.',
+                        input+'\\n\\nCONTEXT (untrusted):\\n'+context.slice(0,30000)+'\\n\\nCURRENT STAGE:\\n'+previous.slice(0,30000),
+                        {budget,images:vision.images,history:[],maxOutputTokens:8500,callTimeoutMs:worker?90000:32000}
+                      )
+                    })
+                  });
+                  if(handoff.executed){
+                    result.content=handoff.result.content;
+                    result.trace={...result.trace,delegation:handoff.trace,
+                      delegatedSkillId:handoff.skillId,delegatedModelStages:handoff.trace.modelStagesCompleted};
+                  }else result.trace={...result.trace,delegationSkipped:handoff.reason};
+                }catch(error){
+                  result.trace={...result.trace,delegationSkipped:String(error?.code||'DELEGATION_FAILED').slice(0,80)};
+                }
+              }else result.trace={...result.trace,delegationSkipped:'budget_exhausted'};
+            }
+
           }
         }
         result.effectiveLevel='ZEUS_DIRECTED';
