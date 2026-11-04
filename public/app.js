@@ -15,7 +15,7 @@ const state = {
   projectSection:'CHAT', projectMemories:[], personalMemories:[], projectSources:[], memoryPolicy:null,
   messagePage:{hasMore:false,nextCursor:null}, filesPage:{scope:'global',hasMore:false,nextCursor:null}, artifactsPage:{scope:'global',hasMore:false,nextCursor:null}, chatRestore:null,
   voiceBusy:false, voiceRecorder:null, voiceStream:null, voiceChunks:[], voiceStopTimer:null, voiceBytes:0, voiceHitSizeLimit:false, voiceSubmitRequested:false,
-  liveTalk:false, liveTalkMinimized:false, liveTalkStopRequested:false, liveMuted:false, livePersona:'ZEUS', liveAgentSelection:'zeus', liveProvider:'elevenlabs', geminiLiveVoice:'Kore', liveFailureKind:null, liveAgentConversation:null, liveAgentConversationId:'', livePendingMutation:null, liveAgentPartial:'', liveTextDraft:'', liveTextStatus:'', liveAgentPermissionStream:null, liveAgentLogQueue:Promise.resolve(), liveAgentLoggedEvents:new Map(), liveGeneration:0, liveRetryCount:0, liveStage:'idle', liveLocale:'auto', voiceId:'marin', speechProvider:'gemini', openrouterModel:'google', openrouterVoice:'', openrouterVoices:[], openrouterVoicesLoading:false, openrouterVoicesLoaded:false, googleVoice:storageGet('zeus-google-tts-voice')||'Kore', elevenLabsVoiceId:'', voiceStatus:null, voiceTesting:false, liveSpeechCache:null, voiceReplyAudio:null, liveAudioUrl:null, liveSpeechController:null, liveAudioUnlocked:false, liveSpeechUnlocked:false,
+  liveTalk:false, liveTalkMinimized:false, liveTalkStopRequested:false, liveMuted:false, livePersona:'ZEUS', liveAgentSelection:'zeus', liveProvider:'elevenlabs', openaiLiveVoice:'marin', geminiLiveVoice:'Kore', liveFailureKind:null, liveAgentConversation:null, liveAgentConversationId:'', livePendingMutation:null, liveAgentPartial:'', liveTextDraft:'', liveTextStatus:'', liveAgentPermissionStream:null, liveAgentLogQueue:Promise.resolve(), liveAgentLoggedEvents:new Map(), liveGeneration:0, liveRetryCount:0, liveStage:'idle', liveLocale:'auto', voiceId:'marin', speechProvider:'gemini', openrouterModel:'google', openrouterVoice:'', openrouterVoices:[], openrouterVoicesLoading:false, openrouterVoicesLoaded:false, googleVoice:storageGet('zeus-google-tts-voice')||'Kore', elevenLabsVoiceId:'', voiceStatus:null, voiceTesting:false, liveSpeechCache:null, voiceReplyAudio:null, liveAudioUrl:null, liveSpeechController:null, liveAudioUnlocked:false, liveSpeechUnlocked:false,
   messageFeedback:{}, messageAudioId:'', messageAudioBusyId:'', messageAudioUrl:null,
   voiceAvatar:'lightning', elevenLabsVoices:[], elevenLabsVoicesLoaded:false, elevenLabsVoicesLoading:false, elevenLabsVoicesError:'', elevenLabsVoicePageToken:'', elevenLabsVoiceHasMore:false,
   preferences:{personality:'balanced',instructions:''}, preferencesLoaded:false,
@@ -382,11 +382,11 @@ const VOICE_AVATARS=new Set(['lightning','classic','olympus','liquid']);
 function initVoicePrefs(){
  try{const l=localStorage.getItem('zeus-live-locale');state.liveLocale=Object.prototype.hasOwnProperty.call(LIVE_LOCALES,l)?l:'auto';
  const routing=localStorage.getItem('zeus-routing-mode.v1');state.routingMode=routing==='MANUAL'?'MANUAL':'AUTO';const savedMode=localStorage.getItem('zeus-manual-mode.v1');state.mode=savedMode==='OLYMPUS'?'OLYMPUS':'ZEUS';
- state.livePersona='ZEUS';state.liveProvider=localStorage.getItem('zeus-live-provider.v1')==='gemini'?'gemini':'elevenlabs';state.geminiLiveVoice=GOOGLE_LIVE_VOICES.includes(localStorage.getItem('zeus-gemini-live-voice.v1'))?localStorage.getItem('zeus-gemini-live-voice.v1'):'Kore';state.liveAgentSelection=localStorage.getItem('zeus-live-agent.v1')==='athena'?'athena':'zeus';try{localStorage.removeItem('zeus-live-persona')}catch{}
+ state.livePersona='ZEUS';state.liveProvider=['gemini','openai'].includes(localStorage.getItem('zeus-live-provider.v1'))?localStorage.getItem('zeus-live-provider.v1'):'elevenlabs';state.openaiLiveVoice=OPENAI_VOICE_NAMES.includes(localStorage.getItem('zeus-openai-live-voice.v1'))?localStorage.getItem('zeus-openai-live-voice.v1'):'marin';state.geminiLiveVoice=GOOGLE_LIVE_VOICES.includes(localStorage.getItem('zeus-gemini-live-voice.v1'))?localStorage.getItem('zeus-gemini-live-voice.v1'):'Kore';state.liveAgentSelection=localStorage.getItem('zeus-live-agent.v1')==='athena'?'athena':'zeus';try{localStorage.removeItem('zeus-live-persona')}catch{}
  const a=localStorage.getItem('zeus-voice-avatar');state.voiceAvatar=VOICE_AVATARS.has(a)?a:'lightning';
  const savedVoice=String(localStorage.getItem('zeus-voice-id')||'marin').toLowerCase();
  state.voiceId=['alloy','ash','ballad','coral','echo','fable','nova','onyx','sage','shimmer','verse','marin','cedar'].includes(savedVoice)?savedVoice:'marin';
- state.speechProvider=['gemini','elevenlabs'].includes(localStorage.getItem('zeus-speech-provider'))?localStorage.getItem('zeus-speech-provider'):'gemini';
+ state.speechProvider=['gemini','elevenlabs','openai'].includes(localStorage.getItem('zeus-speech-provider'))?localStorage.getItem('zeus-speech-provider'):'gemini';
  state.openrouterModel=['google','fish'].includes(localStorage.getItem('zeus-openrouter-tts-model'))?localStorage.getItem('zeus-openrouter-tts-model'):'google';
  state.openrouterVoice=String(localStorage.getItem('zeus-openrouter-tts-voice')||'').slice(0,80);
  const customVoice=String(localStorage.getItem('zeus-elevenlabs-voice-id')||'').trim();state.elevenLabsVoiceId=/^[A-Za-z0-9_-]{2,120}$/.test(customVoice)?customVoice:'';}catch{}
@@ -422,14 +422,14 @@ async function loadOpenRouterVoices(){
 const GOOGLE_LIVE_VOICES=['Zephyr','Puck','Charon','Kore','Fenrir','Leda','Orus','Aoede'];
 const GOOGLE_TTS_VOICES=['Zephyr','Puck','Charon','Kore','Fenrir','Leda','Orus','Aoede','Callirrhoe','Autonoe','Enceladus','Iapetus','Umbriel','Algieba','Despina','Erinome','Algenib','Rasalgethi','Laomedeia','Achernar','Alnilam','Schedar','Gacrux','Pulcherrima','Achird','Zubenelgenubi','Vindemiatrix','Sadachbia','Sadaltager','Sulafat'];
 function saveVoiceSettings({elevenLabsVoiceId,source='button'}={}){
-  const openaiVoice=String(state.voiceId||'marin').toLowerCase();
+  const openaiVoice=String($('#zeus-openai-voice')?.value||state.voiceId||'marin').toLowerCase();
   if(!OPENAI_VOICE_NAMES.includes(openaiVoice)){setVoiceStatus('error','Choose a supported OpenAI fallback voice.');return false;}
   const id=String(elevenLabsVoiceId||state.elevenLabsVoiceId||'').trim();
   if(id&&!ELEVENLABS_VOICE_PATTERN.test(id)){setVoiceStatus('error','Enter a valid ElevenLabs Voice ID (letters, numbers, hyphens, or underscores).');return false;}
   const speechProvider=String($('#zeus-speech-provider')?.value||state.speechProvider||'gemini');
   const openrouterModel=String($('#zeus-openrouter-model')?.value||state.openrouterModel||'google');
   const openrouterVoice=String($('#zeus-openrouter-voice')?.value??state.openrouterVoice??'').trim();
-  if(!['gemini','elevenlabs'].includes(speechProvider)){setVoiceStatus('error','Invalid speech provider.');return false;}
+  if(!['gemini','elevenlabs','openai'].includes(speechProvider)){setVoiceStatus('error','Invalid speech provider.');return false;}
   state.googleVoice=String($('#zeus-google-voice')?.value||state.googleVoice||'Kore');
   if(!GOOGLE_TTS_VOICES.includes(state.googleVoice)){setVoiceStatus('error','Invalid Google voice.');return false;}
   state.speechProvider=speechProvider;const previousModel=state.openrouterModel;state.openrouterModel=openrouterModel;state.openrouterVoice=openrouterVoice;
@@ -515,7 +515,7 @@ async function testElevenLabsVoice(){
   state.voiceTesting=true;
   unlockLiveAudioFromGesture();
   setVoiceStatus('info','Testing voice…');
-  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),25000);
+  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),45000);
   try{
     const {blob,voiceFallback}=await requestSpeechAudio('Olá, eu sou o Zeus. Este é um teste de voz.',{elevenLabsVoiceId:typed,signal:controller.signal});
     const url=URL.createObjectURL(blob),audio=state.voiceReplyAudio||new Audio();
@@ -939,11 +939,13 @@ function settingsView(){const providers=state.health?.providerReadiness||{};cons
   <div class="diag-row"><span>Tracked executions</span><strong>${state.health?.monthlyBudget?.executionCount??'Unavailable'}</strong></div><div class="diag-row"><span>Unpriced executions</span><strong>${state.health?.monthlyBudget?.unpricedExecutionCount??'Unknown'}</strong></div><div class="diag-row"><span>Image executions</span><strong>${state.health?.monthlyBudget?.imageExecutionCount??"Unknown"}</strong></div><div class="diag-row"><span>Web executions</span><strong>${state.health?.monthlyBudget?.webExecutionCount??"Unknown"}</strong></div><div class="diag-row"><span>Tool executions</span><strong>${state.health?.monthlyBudget?.toolExecutionCount??"Unknown"}</strong></div><div class="diag-row"><span>Executions without a known price</span><strong>${state.health?.monthlyBudget?.unknownCostExecutionCount??"Unknown"}</strong></div><div class="diag-row"><span>Audio/video billing</span><strong>Not integrated</strong></div></div>
   <p class="muted tiny">Known text estimates are not your actual bill. Unknown means no priced usage was recorded or the monitor query failed. Media, web fees, and provider billing are not yet fully metered.</p>
   ${state.health?.monthlyBudget?.targetReached?'<p class="status-warn">Target reached in known estimates. Services remain available.</p>':''}
-</article>${preferencesSettings()}${personalMemorySettings()}${googleIntegrationSettings()}<article class="card settings-card"><h3>Live Talk Settings</h3><p class="muted tiny">Select the ElevenLabs conversation agent. Selection saves automatically in this browser. End an existing Live Talk session and start a new one to switch agents.</p><div class="field"><label for="live-provider">Live Talk provider</label><select id="live-provider" ${state.liveTalk?'disabled':''}><option value="elevenlabs" ${state.liveProvider==='elevenlabs'?'selected':''}>ElevenLabs</option><option value="gemini" ${state.liveProvider==='gemini'?'selected':''}>Google Gemini Live</option></select></div>
-${state.liveProvider==='elevenlabs'? `<div class="field"><label for="live-agent-selection">ElevenLabs agent</label><select id="live-agent-selection" ${state.liveTalk?'disabled':''}><option value="zeus" ${state.liveAgentSelection==='zeus'?'selected':''}>Zeus</option><option value="athena" ${state.liveAgentSelection==='athena'?'selected':''}>Athena</option></select></div>` : `<div class="field"><label for="gemini-live-voice">Google Live voice</label><select id="gemini-live-voice" ${state.liveTalk?'disabled':''}>${GOOGLE_LIVE_VOICES.map(v=>`<option value="${v}" ${state.geminiLiveVoice===v?'selected':''}>${v}</option>`).join('')}</select></div><p class="muted tiny" role="status">Gemini Live uses a separate real-time Google connection. End the current session before changing providers.</p>`}
+</article>${preferencesSettings()}${personalMemorySettings()}${googleIntegrationSettings()}<article class="card settings-card"><h3>Live Talk Settings</h3><p class="muted tiny">Select the ElevenLabs conversation agent. Selection saves automatically in this browser. End an existing Live Talk session and start a new one to switch agents.</p><div class="field"><label for="live-provider">Live Talk provider</label><select id="live-provider" ${state.liveTalk?'disabled':''}><option value="elevenlabs" ${state.liveProvider==='elevenlabs'?'selected':''}>ElevenLabs</option><option value="gemini" ${state.liveProvider==='gemini'?'selected':''}>Google Gemini Live</option><option value="openai" ${state.liveProvider==='openai'?'selected':''}>OpenAI Realtime</option></select></div>
+${state.liveProvider==='openai'?`<div class="field"><label for="openai-live-voice">OpenAI Live voice</label><select id="openai-live-voice" ${state.liveTalk?'disabled':''}>${OPENAI_VOICE_NAMES.map(v=>`<option value="${v}" ${state.openaiLiveVoice===v?'selected':''}>${v}</option>`).join('')}</select></div>`:''}
+${state.liveProvider==='elevenlabs'? `<div class="field"><label for="live-agent-selection">ElevenLabs agent</label><select id="live-agent-selection" ${state.liveTalk?'disabled':''}><option value="zeus" ${state.liveAgentSelection==='zeus'?'selected':''}>Zeus</option><option value="athena" ${state.liveAgentSelection==='athena'?'selected':''}>Athena</option></select></div>` : state.liveProvider==='gemini'?`<div class="field"><label for="gemini-live-voice">Google Live voice</label><select id="gemini-live-voice" ${state.liveTalk?'disabled':''}>${GOOGLE_LIVE_VOICES.map(v=>`<option value="${v}" ${state.geminiLiveVoice===v?'selected':''}>${v}</option>`).join('')}</select></div><p class="muted tiny" role="status">Gemini Live uses a separate real-time Google connection. End the current session before changing providers.</p>`:''}
 <div class="field"><label for="live-language">Live Talk language</label><select id="live-language">${[['auto','Automatic (agent detects language)'],['pt','Português (Brasil)'],['en','English (US)'],['es','Español']].map(([v,label])=>`<option value="${v}" ${state.liveLocale===v?'selected':''}>${label}</option>`).join('')}</select></div><div class="field"><label for="voice-avatar">Live Talk avatar</label><select id="voice-avatar">${[['lightning','Lightning plasma'],['classic','Classic orb'],['olympus','Olympus'],['liquid','Liquid metal']].map(([v,label])=>`<option value="${v}" ${state.voiceAvatar===v?'selected':''}>${label}</option>`).join('')}</select></div><p class="muted tiny">Zeus and Athena are app labels. Their spoken identities are Felipe and Helen, respectively. Each ElevenLabs agent controls its own primary speaking voice, interruption timing and microphone behavior. Audio playback voices below do not change the Live Talk agent.</p><p class="muted tiny" id="live-agent-save-status">Selected agent: ${state.liveAgentSelection==="athena"?"Athena":"Zeus"} · saved automatically</p></article><article class="card settings-card"><h3>Audio Settings</h3>
 <p class="muted tiny">Choose the provider and voice for read-aloud replies. Live Talk has separate settings.</p>
-<div class="field"><label for="zeus-speech-provider">Read-aloud provider</label><select id="zeus-speech-provider">${[['gemini','Google Gemini'],['elevenlabs','ElevenLabs']].map(([v,l])=>`<option value="${v}" ${state.speechProvider===v?'selected':''}>${l}</option>`).join('')}</select></div>
+<div class="field"><label for="zeus-speech-provider">Read-aloud provider</label><select id="zeus-speech-provider">${[['gemini','Google Gemini'],['elevenlabs','ElevenLabs'],['openai','OpenAI']].map(([v,l])=>`<option value="${v}" ${state.speechProvider===v?'selected':''}>${l}</option>`).join('')}</select></div>
+${state.speechProvider==='openai'?`<div class="field"><label for="zeus-openai-voice">OpenAI voice</label><select id="zeus-openai-voice">${OPENAI_VOICE_NAMES.map(v=>`<option value="${v}" ${state.voiceId===v?'selected':''}>${v}</option>`).join('')}</select></div>`:''}
 ${state.speechProvider==='gemini'?`<div class="field"><label for="zeus-google-voice">Google voice</label><select id="zeus-google-voice">${GOOGLE_TTS_VOICES.map(v=>`<option value="${v}" ${state.googleVoice===v?'selected':''}>${v}</option>`).join('')}</select></div>`:''}
 ${state.speechProvider==='elevenlabs'?`<div class="field"><label for="elevenlabs-voice-preset">ElevenLabs voice</label><select id="elevenlabs-voice-preset">
 <option value="">${state.elevenLabsVoicesLoading?'Loading voices…':'Choose a voice'}</option>
@@ -1166,7 +1168,8 @@ function bind(){
     }finally{if(button)button.disabled=false;}
   });
   $('#voice-avatar')?.addEventListener('change',e=>{const v=e.target.value;if(VOICE_AVATARS.has(v)){state.voiceAvatar=v;localStorage.setItem('zeus-voice-avatar',v);render();}});
-  $('#live-provider')?.addEventListener('change',e=>{if(state.liveTalk)return;const v=e.target.value;if(v==='elevenlabs'||v==='gemini'){state.liveProvider=v;try{localStorage.setItem('zeus-live-provider.v1',v)}catch{}render();}});
+  $('#live-provider')?.addEventListener('change',e=>{if(state.liveTalk)return;const v=e.target.value;if(['elevenlabs','gemini','openai'].includes(v)){state.liveProvider=v;try{localStorage.setItem('zeus-live-provider.v1',v)}catch{}render();}});
+  $('#openai-live-voice')?.addEventListener('change',e=>{if(state.liveTalk)return;const v=e.target.value;if(OPENAI_VOICE_NAMES.includes(v)){state.openaiLiveVoice=v;try{localStorage.setItem('zeus-openai-live-voice.v1',v)}catch{}render();}});
   $('#gemini-live-voice')?.addEventListener('change',e=>{if(state.liveTalk)return;const v=e.target.value;if(GOOGLE_LIVE_VOICES.includes(v)){state.geminiLiveVoice=v;try{localStorage.setItem('zeus-gemini-live-voice.v1',v)}catch{}render();}});
   $('#live-agent-selection')?.addEventListener('change',e=>{const v=e.target.value;if(v==='zeus'||v==='athena'){state.liveAgentSelection=v;localStorage.setItem('zeus-live-agent.v1',v);render();}});
   $('#live-language')?.addEventListener('change',e=>{const v=e.target.value;if(Object.prototype.hasOwnProperty.call(LIVE_LOCALES,v)){state.liveLocale=v;localStorage.setItem('zeus-live-locale',v);render();}});
@@ -1180,6 +1183,7 @@ function bind(){
     if(state.speechProvider==='elevenlabs'&&!state.elevenLabsVoicesLoaded)loadElevenLabsVoices();
     render();
   });
+  $('#zeus-openai-voice')?.addEventListener('change',e=>{state.voiceId=e.target.value;try{localStorage.setItem('zeus-voice-id',state.voiceId)}catch{}});
   $('#zeus-google-voice')?.addEventListener('change',e=>{state.googleVoice=e.target.value;try{localStorage.setItem('zeus-google-tts-voice',state.googleVoice)}catch{}});
   $('#save-voice-id')?.addEventListener('click',()=>{saveVoiceSettings({elevenLabsVoiceId:state.speechProvider==='elevenlabs'?state.elevenLabsVoiceId:'',source:'button'});});
   $('#test-voice')?.addEventListener('click',()=>{testElevenLabsVoice();});
@@ -1757,7 +1761,7 @@ function finishLiveTalkSession(){
   releaseLiveAgentPermissionStream();
   const connection=state.liveAgentConversation;state.liveAgentConversation=null;state.liveAgentConversationId='';state.liveAgentPartial='';
   try{void connection?.endSession?.()}catch{}
-  closeGeminiLive();
+  closeGeminiLive();closeOpenAILive();
   try{state.liveSpeechController?.abort()}catch{}
   state.liveSpeechController=null;discardLiveAudio();try{window.speechSynthesis?.cancel()}catch{}render();
 }
@@ -1777,7 +1781,7 @@ function pauseLiveTalkOnError(message,kind='agent'){
   releaseLiveAgentPermissionStream();
   const connection=state.liveAgentConversation;state.liveAgentConversation=null;state.liveAgentPartial='';
   try{void connection?.endSession?.()}catch{}
-  closeGeminiLive();
+  closeGeminiLive();closeOpenAILive();
   try{state.liveSpeechController?.abort()}catch{}
   discardLiveAudio({keepElement:true});try{window.speechSynthesis?.cancel()}catch{}render();
 }
@@ -1796,7 +1800,7 @@ function saveLiveAgentMessage(payload,generation,providerConversationId){
   let local=state.liveAgentLoggedEvents.get(key);
   if(local){local.content=content;}
   else{
-    local={id:`live-${generation}-${key}`,role,mode:'ZEUS',content,artifacts:[],attachments:[],metadata:{source:state.liveProvider==='gemini'?'gemini_live':'elevenlabs_realtime'}};
+    local={id:`live-${generation}-${key}`,role,mode:'ZEUS',content,artifacts:[],attachments:[],metadata:{source:state.liveProvider==='gemini'?'gemini_live':state.liveProvider==='openai'?'openai_realtime':'elevenlabs_realtime'}};
     state.liveAgentLoggedEvents.set(key,local);state.messages.push(local);
   }
   if(role==='user')state.liveAgentPartial=content;
@@ -1848,6 +1852,46 @@ async function handleGeminiLiveTools(calls,transport,generation){
  if(responses.length&&transport.socket?.readyState===WebSocket.OPEN&&!transport.closed&&generation===state.liveGeneration)
   transport.socket.send(JSON.stringify({toolResponse:{functionResponses:responses}}));
 }
+
+function closeOpenAILive(){const t=state.openaiLiveTransport;state.openaiLiveTransport=null;if(!t)return;t.closed=true;try{t.channel.close()}catch{}try{t.pc.close()}catch{}try{t.audio.pause();t.audio.srcObject=null}catch{}try{t.stream.getTracks().forEach(x=>x.stop())}catch{}}
+const OPENAI_LIVE_TOOLS=GEMINI_LIVE_TOOL_DECLARATIONS.map(t=>({type:'function',name:t.name,description:t.description,parameters:{type:'object',properties:Object.fromEntries(Object.entries(t.parameters?.properties||{}).map(([k,v])=>[k,{type:'string',description:v.description||''}])),required:t.parameters?.required||[]}}));
+async function connectOpenAILive(){
+ if(!state.liveTalk||state.liveTalkStopRequested)return;closeOpenAILive();
+ const generation=state.liveGeneration;state.liveStage='connecting';render();let stream,pc;
+ try{
+  stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true}});
+  if(generation!==state.liveGeneration||!state.liveTalk){stream.getTracks().forEach(t=>t.stop());return;}
+  const issued=await api('/api/voice/openai-live-token',{method:'POST',body:JSON.stringify({projectId:state.currentProject?.id||null,conversationId:state.currentConversation||null,voice:state.openaiLiveVoice})});
+  if(!issued.clientSecret)throw new Error('OpenAI Realtime session token unavailable');
+  if(generation!==state.liveGeneration||!state.liveTalk){stream.getTracks().forEach(t=>t.stop());return;}
+  state.liveServerMemoryContext=String(issued.memoryContext||'').slice(0,8000);
+  pc=new RTCPeerConnection();const audio=new Audio();audio.autoplay=true;audio.playsInline=true;
+  const channel=pc.createDataChannel('oai-events'),t={pc,stream,audio,channel,closed:false,calls:new Set()};state.openaiLiveTransport=t;
+  pc.ontrack=e=>{audio.srcObject=e.streams[0];void audio.play().catch(()=>{});};
+  pc.onconnectionstatechange=()=>{if(!t.closed&&generation===state.liveGeneration&&pc.connectionState==='failed')pauseLiveTalkOnError('OpenAI Live connection failed','agent');};
+  stream.getTracks().forEach(track=>pc.addTrack(track,stream));
+  channel.onopen=()=>{if(t.closed||generation!==state.liveGeneration)return;channel.send(JSON.stringify({type:'session.update',session:{instructions:liveSessionContext().slice(0,14000),tools:OPENAI_LIVE_TOOLS,tool_choice:'auto',audio:{input:{transcription:{model:'gpt-4o-mini-transcribe'}}}}}));state.liveStage=state.liveMuted?'muted':'listening';render();};
+  channel.onmessage=async event=>{
+   if(t.closed||generation!==state.liveGeneration)return;let m;try{m=JSON.parse(event.data)}catch{return;}
+   if(m.type==='error'){state.error='OpenAI Live: '+String(m.error?.message||'Session error').slice(0,250);render();}
+   if(m.type==='conversation.item.input_audio_transcription.completed'&&m.transcript)saveLiveAgentMessage({message:m.transcript,role:'user',event_id:m.item_id||'user-'+Date.now()},generation,'openai-'+generation);
+   if((m.type==='response.output_audio_transcript.done')&&m.transcript)saveLiveAgentMessage({message:m.transcript,role:'assistant',event_id:m.item_id||'assistant-'+Date.now()},generation,'openai-'+generation);
+   if(m.type==='response.audio.delta'){state.liveStage='speaking';render();}
+   if(m.type==='response.done'){state.liveStage=state.liveMuted?'muted':'listening';render();}
+   if(m.type==='response.function_call_arguments.done'){
+    const id=String(m.call_id||'');if(!id||t.calls.has(id))return;t.calls.add(id);
+    const handlers=liveProjectClientTools(),name=String(m.name||'');let result={ok:false,error:'Unsupported voice tool'};
+    if(Object.prototype.hasOwnProperty.call(handlers,name))try{const value=await handlers[name](JSON.parse(m.arguments||'{}'));result=typeof value==='string'?JSON.parse(value):value}catch{result={ok:false,error:'Voice tool failed'};}
+    if(!t.closed&&channel.readyState==='open'&&generation===state.liveGeneration){channel.send(JSON.stringify({type:'conversation.item.create',item:{type:'function_call_output',call_id:id,output:JSON.stringify(result)}}));channel.send(JSON.stringify({type:'response.create'}));}
+   }
+  };
+  const offer=await pc.createOffer();await pc.setLocalDescription(offer);
+  const response=await fetch('https://api.openai.com/v1/realtime/calls',{method:'POST',headers:{Authorization:'Bearer '+issued.clientSecret,'Content-Type':'application/sdp'},body:offer.sdp});
+  if(!response.ok)throw new Error('OpenAI Realtime connection rejected (HTTP '+response.status+')');
+  await pc.setRemoteDescription({type:'answer',sdp:await response.text()});
+ }catch(error){if(generation===state.liveGeneration)pauseLiveTalkOnError('OpenAI Live: '+String(error?.message||'Failed to connect'),'agent');closeOpenAILive();try{pc?.close()}catch{}try{stream?.getTracks().forEach(t=>t.stop())}catch{}}
+}
+
 function closeGeminiLive(){
   const g=state.geminiLiveTransport;state.geminiLiveTransport=null;
   if(g){g.closed=true;try{g.socket?.close()}catch{}try{g.processor?.disconnect()}catch{}try{g.source?.disconnect()}catch{}try{g.audio?.close()}catch{}try{g.output?.close()}catch{}}
@@ -2000,11 +2044,12 @@ function toggleLiveTalk(){
   if(window.isSecureContext===false){state.error='Live Talk requires a secure HTTPS page. Open OlyHub using its HTTPS address and reconnect.';render();return;}
   if(!liveTalkSupported()){state.error='Live Talk requires microphone access, audio playback, and a supported browser.';render();return;}
   state.voiceId=localStorage.getItem('zeus-voice-id')||'marin';unlockLiveAudioFromGesture();
-  state.error='';state.liveMuted=false;state.liveTalkMinimized=false;state.liveFailureKind=null;state.liveRetryCount=0;state.liveTalkStopRequested=false;state.liveAgentPartial='';state.liveTalk=true;state.liveStage='connecting';state.liveGeneration++;state.liveAgentLoggedEvents=new Map();state.liveAgentLogQueue=Promise.resolve();render();if(state.liveProvider==='gemini')connectGeminiLive();else connectLiveTalkAgent();
+  state.error='';state.liveMuted=false;state.liveTalkMinimized=false;state.liveFailureKind=null;state.liveRetryCount=0;state.liveTalkStopRequested=false;state.liveAgentPartial='';state.liveTalk=true;state.liveStage='connecting';state.liveGeneration++;state.liveAgentLoggedEvents=new Map();state.liveAgentLogQueue=Promise.resolve();render();if(state.liveProvider==='gemini')connectGeminiLive();else if(state.liveProvider==='openai')connectOpenAILive();else connectLiveTalkAgent();
 }
 function toggleLiveTalkMute(){
   if(!state.liveTalk)return;
   const connection=state.liveAgentConversation;
+  if(state.liveProvider==='openai'){const t=state.openaiLiveTransport;if(!t||t.closed){state.error='OpenAI Live is not connected.';render();return;}state.liveMuted=!state.liveMuted;t.stream?.getAudioTracks().forEach(track=>{track.enabled=!state.liveMuted});state.liveStage=state.liveMuted?'muted':'listening';render();return;}
   if(state.liveProvider==='gemini'){if(!state.geminiLiveTransport||state.geminiLiveTransport.closed){state.error='Gemini Live is not connected.';render();return;}state.liveMuted=!state.liveMuted;state.geminiLiveInput?.getAudioTracks().forEach(track=>{track.enabled=!state.liveMuted});state.liveStage=state.liveMuted?'muted':'listening';render();return;}
   try{
     // ElevenLabs setMicMuted mutes the input pipeline only; agent audio output stays audible.
@@ -2062,6 +2107,7 @@ async function refreshLiveTalkContext(){
   state.liveServerMemoryContext=String(result.memoryContext||'').slice(0,8000);
   const context=liveSessionContext();
   if(state.liveProvider==='elevenlabs')state.liveAgentConversation?.sendContextualUpdate(context);
+  else if(state.liveProvider==='openai'){const t=state.openaiLiveTransport;if(t&&!t.closed&&t.channel?.readyState==='open')t.channel.send(JSON.stringify({type:'session.update',session:{instructions:context.slice(0,14000)}}));}
   else {
    const transport=state.geminiLiveTransport;
    if(transport&&!transport.closed&&transport.socket?.readyState===WebSocket.OPEN)
@@ -2313,7 +2359,7 @@ function sendLiveTalkText(event){
 async function retryLiveTalk(){
   if(!state.liveTalk)return;
   state.error='';state.liveRetryCount=0;state.liveFailureKind=null;
-  if(state.liveProvider==='gemini')await connectGeminiLive();else await connectLiveTalkAgent();
+  if(state.liveProvider==='gemini')await connectGeminiLive();else if(state.liveProvider==='openai')await connectOpenAILive();else await connectLiveTalkAgent();
 }
 
 async function startVoice(){

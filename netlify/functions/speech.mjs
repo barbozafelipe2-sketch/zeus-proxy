@@ -21,7 +21,7 @@ function speechRoutes({elevenLabsVoiceId=''}={}){
 
   const openaiKey=env('OPENAI_API_KEY');
   const openaiBase=env('OPENAI_BASE_URL');
-  if(openaiKey&&openaiBase)routes.push({name:'openai_gateway',kind:'openai',key:openaiKey,base:openaiBase});
+  if(openaiKey)routes.push({name:'openai_gateway',kind:'openai',key:openaiKey,base:openaiBase||'https://api.openai.com'});
 
   const geminiKey=env('GEMINI_API_KEY');
   const geminiBase=env('GOOGLE_GEMINI_BASE_URL');
@@ -71,7 +71,7 @@ async function elevenLabsErrorDetail(response,key){
   }catch{return '';}
 }
 async function readAudioResponse(response){
-  if(!response.ok)throw providerError(response.status);
+  if(!response.ok)throw providerError(response.status,await response.text().then(v=>safeDetail(v)).catch(() => ''));
   const claimed=Number(response.headers.get('content-length')||0);
   if(claimed>MAX_AUDIO_BYTES){const error=new Error('Speech response exceeds 8 MB.');error.status=413;throw error;}
   const bytes=await response.arrayBuffer();
@@ -203,7 +203,7 @@ const failureEntry=(provider,error,extra={})=>({provider,status:error?.name==='A
 
 export async function generateSpeech(text,{voice='marin',elevenLabsVoiceId='',provider='auto',openrouterModel='google',openrouterVoice='',googleVoice='',fetchImpl=globalThis.fetch,onProviderError=()=>{}}={}){
   if(elevenLabsVoiceId&&!validId(elevenLabsVoiceId)){const error=new Error('Invalid ElevenLabs Voice ID.');error.status=400;error.code='INVALID_ELEVENLABS_VOICE_ID';throw error;}
-  if(!['auto','gemini','elevenlabs','openrouter'].includes(provider))throw Object.assign(new Error('Invalid speech provider.'),{status:400,code:'INVALID_SPEECH_PROVIDER'});
+  if(!['auto','gemini','elevenlabs','openai','openrouter'].includes(provider))throw Object.assign(new Error('Invalid speech provider.'),{status:400,code:'INVALID_SPEECH_PROVIDER'});
   if(provider==='openrouter'){
     openRouterVoiceOptions(openrouterModel);
     const chosen=String(openrouterVoice||'').trim();
@@ -291,7 +291,7 @@ export default async function(req,context){
     if(!text||text.length>2500)return errorJson('Speech text must be 1 to 2500 characters.',400,'INVALID_SPEECH_TEXT',requestId);
     const elevenLabsVoiceId=String(body?.elevenLabsVoiceId||'').trim();
     const provider=String(body?.provider||'auto').toLowerCase();
-    if(!['auto','gemini','elevenlabs','openrouter'].includes(provider))return errorJson('Invalid speech provider.',400,'INVALID_SPEECH_PROVIDER',requestId);
+    if(!['auto','gemini','elevenlabs','openai','openrouter'].includes(provider))return errorJson('Invalid speech provider.',400,'INVALID_SPEECH_PROVIDER',requestId);
     if(provider==='openrouter'){
       if(!['google','fish'].includes(String(body?.openrouterModel||'google')))return errorJson('Invalid OpenRouter TTS model.',400,'INVALID_TTS_MODEL',requestId);
       const chosen=String(body?.openrouterVoice||'').trim();
@@ -305,7 +305,7 @@ export default async function(req,context){
   }catch(error){
     const status=error?.status||503;
     const code=error?.code||'SPEECH_FAILED';
-    const message=error?.code==='INVALID_ELEVENLABS_VOICE_ID'?'The ElevenLabs Voice ID is invalid. Check it in Voice settings and try again.':(error?.elevenLabs?`ElevenLabs ${error.elevenLabs.status}${error.elevenLabs.detail?`: ${error.elevenLabs.detail}`:''}`:error?.providerFailures?.some(f=>f.provider==='gemini')?('Google speech could not generate audio. '+(error.providerFailures.some(f=>f.status===429)?'Google rate limit reached; try again shortly.':'Try another voice or retry with a shorter passage.')):'Zeus replied in chat, but speech audio is unavailable. Check the server voice configuration and try again.');
+    const message=error?.code==='INVALID_ELEVENLABS_VOICE_ID'?'The ElevenLabs Voice ID is invalid. Check it in Voice settings and try again.':(error?.elevenLabs?`ElevenLabs ${error.elevenLabs.status}${error.elevenLabs.detail?`: ${error.elevenLabs.detail}`:''}`:error?.providerFailures?.some(f=>f.provider==='openai_gateway')?('OpenAI speech failed. '+(error.providerFailures.some(f=>f.status===429)?'OpenAI quota or rate limit reached.':'Check OpenAI API billing and configuration.')):error?.providerFailures?.some(f=>f.provider==='gemini')?('Google speech could not generate audio. '+(error.providerFailures.some(f=>f.status===429)?'Google rate limit reached; try again shortly.':'Try another voice or retry with a shorter passage.')):'Zeus replied in chat, but speech audio is unavailable. Check the server voice configuration and try again.');
     return errorJson(message,status,code,requestId,{providerFailures:Array.isArray(error?.providerFailures)?error.providerFailures:[],...(error?.elevenLabs?{elevenLabs:error.elevenLabs}:{})});
   }
 }
