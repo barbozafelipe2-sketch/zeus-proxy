@@ -17,10 +17,16 @@ export default async function handler(req,context){
   const memory=await loadVoiceMemoryContext(auth.db,auth.user.id,{projectId:body.projectId||null,conversationId:body.conversationId||null});
   if(memory.error)return errorJson(memory.error.message,memory.error.status,memory.error.code,id);
   await consumeEndpointRate(auth.db,auth.user.id,'voice_realtime_session',id,60);
-  const model=globalThis.Netlify?.env?.get?.('OPENAI_REALTIME_MODEL')||process.env.OPENAI_REALTIME_MODEL||'gpt-realtime-mini';
+  const model=globalThis.Netlify?.env?.get?.('OPENAI_REALTIME_MODEL')||process.env.OPENAI_REALTIME_MODEL||'gpt-realtime-2.1-mini';
   if(!/^[a-zA-Z0-9._-]{3,80}$/.test(model))return errorJson('Invalid realtime model',500,'INVALID_REALTIME_MODEL',id);
   const response=await fetch('https://api.openai.com/v1/realtime/client_secrets',{method:'POST',headers:{Authorization:'Bearer '+key,'Content-Type':'application/json'},body:JSON.stringify({session:{type:'realtime',model,audio:{output:{voice}}}})});
-  if(!response.ok)return errorJson(response.status===429?'OpenAI quota or rate limit reached':response.status===401||response.status===403?'OpenAI rejected API key or model access':'OpenAI session request failed',response.status===429?429:502,'OPENAI_LIVE_TOKEN_FAILED',id);
+  if(!response.ok){
+    let upstreamCode='';try{const failure=await response.json();upstreamCode=String(failure?.error?.code||failure?.error?.type||'').replace(/[^a-z0-9_-]/gi,'').slice(0,60)}catch{}
+    const status=response.status;
+    const message=status===429?'OpenAI quota or rate limit reached':status===401||status===403?'OpenAI rejected API key or model access':status===400||status===404?'OpenAI rejected the Realtime model or session configuration':status===402?'OpenAI billing is required':'OpenAI session request failed';
+    console.warn('OpenAI Realtime session rejected',id,status,upstreamCode);
+    return errorJson(message+(upstreamCode?' ('+upstreamCode+')':''),status===429?429:status===401?401:status===403?403:502,'OPENAI_LIVE_TOKEN_FAILED',id);
+  }
   const data=await response.json(),clientSecret=typeof data.value==='string'?data.value:data.client_secret?.value;
   if(!clientSecret)return errorJson('No OpenAI session token returned',502,'OPENAI_LIVE_TOKEN_INVALID',id);
   return json({clientSecret,model,memoryContext:memory.memoryContext,requestId:id});

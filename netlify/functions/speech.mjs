@@ -57,7 +57,7 @@ function providerError(status,detail=''){
 function safeDetail(value,secrets=[]){
   let text=String(value||'').replace(/\s+/g,' ').trim();
   for(const secret of secrets)if(secret&&secret.length>=6)text=text.split(secret).join('[redacted]');
-  return text.replace(/xi-api-key\S*/gi,'[redacted]').slice(0,200);
+  return text.replace(/xi-api-key\S*/gi,'[redacted]').replace(/\bBearer\s+[^\s"']+/gi,'Bearer [redacted]').replace(/\b(?:sk|rk|pk)-[A-Za-z0-9_-]{12,}\b/g,'[redacted]').replace(/\bAIza[A-Za-z0-9_-]{18,}\b/g,'[redacted]').slice(0,200);
 }
 async function elevenLabsErrorDetail(response,key){
   try{

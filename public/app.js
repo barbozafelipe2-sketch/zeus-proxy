@@ -506,6 +506,7 @@ async function toggleMessageSpeech(messageId){
     state.error=`Could not read this answer aloud: ${error?.message||'voice service unavailable'}`;render();
   }
 }
+const voiceTestAudioCache=new Map();
 async function testElevenLabsVoice(){
   if(state.voiceTesting)return;
   const typed=String(state.speechProvider==='elevenlabs'?state.elevenLabsVoiceId:'').trim();
@@ -517,11 +518,16 @@ async function testElevenLabsVoice(){
   setVoiceStatus('info','Testing voice…');
   const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),45000);
   try{
-    const {blob,voiceFallback}=await requestSpeechAudio('Olá, eu sou o Zeus. Este é um teste de voz.',{elevenLabsVoiceId:typed,signal:controller.signal});
+    const cacheKey=JSON.stringify([state.speechProvider,state.speechProvider==='elevenlabs'?typed:state.speechProvider==='openai'?state.voiceId:state.googleVoice]);
+    const cached=voiceTestAudioCache.get(cacheKey);
+    const {blob,voiceFallback}=cached||await requestSpeechAudio('Olá, eu sou o Zeus. Este é um teste de voz.',{elevenLabsVoiceId:typed,signal:controller.signal});
+    if(!cached){if(voiceTestAudioCache.size>=8)voiceTestAudioCache.delete(voiceTestAudioCache.keys().next().value);voiceTestAudioCache.set(cacheKey,{blob,voiceFallback});}
     const url=URL.createObjectURL(blob),audio=state.voiceReplyAudio||new Audio();
+    if(state.voiceTestUrl){URL.revokeObjectURL(state.voiceTestUrl);state.voiceTestUrl=null;}
+    state.voiceTestUrl=url;
     state.voiceReplyAudio=audio;audio.muted=false;audio.volume=1;audio.playsInline=true;audio.src=url;
-    audio.onended=()=>URL.revokeObjectURL(url);
-    try{await audio.play();}catch{URL.revokeObjectURL(url);setVoiceStatus('error','The voice audio was generated, but the browser blocked playback. Tap Test voice again.');return;}
+    audio.onended=()=>{URL.revokeObjectURL(url);if(state.voiceTestUrl===url)state.voiceTestUrl=null;};
+    try{await audio.play();}catch{URL.revokeObjectURL(url);if(state.voiceTestUrl===url)state.voiceTestUrl=null;setVoiceStatus('error','The voice audio was generated, but the browser blocked playback. Tap Test voice again.');return;}
     setVoiceStatus(voiceFallback?'warn':'ok',voiceFallback?'The saved voice was rejected by ElevenLabs; the default voice was used.':'Voice test played.');
   }catch(error){
     setVoiceStatus('error',error?.name==='AbortError'?'Voice test timed out. Check the voice provider and try again.':`Voice test failed: ${String(error?.message||'unknown error').slice(0,360)}`);
@@ -1853,7 +1859,7 @@ async function handleGeminiLiveTools(calls,transport,generation){
   transport.socket.send(JSON.stringify({toolResponse:{functionResponses:responses}}));
 }
 
-function closeOpenAILive(){const t=state.openaiLiveTransport;state.openaiLiveTransport=null;if(!t)return;t.closed=true;try{t.channel.close()}catch{}try{t.pc.close()}catch{}try{t.audio.pause();t.audio.srcObject=null}catch{}try{t.stream.getTracks().forEach(x=>x.stop())}catch{}}
+function closeOpenAILive(){const t=state.openaiLiveTransport;state.openaiLiveTransport=null;if(!t)return;t.closed=true;clearTimeout(t.openTimer);try{t.channel.close()}catch{}try{t.pc.close()}catch{}try{t.audio.pause();t.audio.srcObject=null}catch{}try{t.stream.getTracks().forEach(x=>x.stop())}catch{}}
 const OPENAI_LIVE_TOOLS=GEMINI_LIVE_TOOL_DECLARATIONS.map(t=>({type:'function',name:t.name,description:t.description,parameters:{type:'object',properties:Object.fromEntries(Object.entries(t.parameters?.properties||{}).map(([k,v])=>[k,{type:'string',description:v.description||''}])),required:t.parameters?.required||[]}}));
 async function connectOpenAILive(){
  if(!state.liveTalk||state.liveTalkStopRequested)return;closeOpenAILive();
@@ -1865,18 +1871,21 @@ async function connectOpenAILive(){
   if(!issued.clientSecret)throw new Error('OpenAI Realtime session token unavailable');
   if(generation!==state.liveGeneration||!state.liveTalk){stream.getTracks().forEach(t=>t.stop());return;}
   state.liveServerMemoryContext=String(issued.memoryContext||'').slice(0,8000);
+  if(state.liveMuted)stream.getAudioTracks().forEach(track=>{track.enabled=false});
   pc=new RTCPeerConnection();const audio=new Audio();audio.autoplay=true;audio.playsInline=true;
-  const channel=pc.createDataChannel('oai-events'),t={pc,stream,audio,channel,closed:false,calls:new Set()};state.openaiLiveTransport=t;
-  pc.ontrack=e=>{audio.srcObject=e.streams[0];void audio.play().catch(()=>{});};
-  pc.onconnectionstatechange=()=>{if(!t.closed&&generation===state.liveGeneration&&pc.connectionState==='failed')pauseLiveTalkOnError('OpenAI Live connection failed','agent');};
+  const channel=pc.createDataChannel('oai-events'),t={pc,stream,audio,channel,closed:false,calls:new Set(),openTimer:null};state.openaiLiveTransport=t;
+  pc.ontrack=e=>{audio.srcObject=e.streams[0];void audio.play().catch(()=>{if(!t.closed){state.error='Safari blocked OpenAI audio playback. Tap the screen, then reconnect Live Talk.';render();}});};
+  pc.onconnectionstatechange=()=>{if(!t.closed&&generation===state.liveGeneration&&['failed','closed'].includes(pc.connectionState))pauseLiveTalkOnError('OpenAI Live connection failed. Tap retry.','agent');};
   stream.getTracks().forEach(track=>pc.addTrack(track,stream));
-  channel.onopen=()=>{if(t.closed||generation!==state.liveGeneration)return;channel.send(JSON.stringify({type:'session.update',session:{instructions:liveSessionContext().slice(0,14000),tools:OPENAI_LIVE_TOOLS,tool_choice:'auto',audio:{input:{transcription:{model:'gpt-4o-mini-transcribe'}}}}}));state.liveStage=state.liveMuted?'muted':'listening';render();};
+  channel.onopen=()=>{clearTimeout(t.openTimer);if(t.closed||generation!==state.liveGeneration)return;channel.send(JSON.stringify({type:'session.update',session:{instructions:liveSessionContext().slice(0,14000),tools:OPENAI_LIVE_TOOLS,tool_choice:'auto',audio:{input:{transcription:{model:'gpt-4o-mini-transcribe'}}}}}));state.liveStage=state.liveMuted?'muted':'listening';render();};
+  channel.onclose=()=>{if(!t.closed&&generation===state.liveGeneration&&state.liveTalk)pauseLiveTalkOnError('OpenAI Realtime data channel closed. Tap retry.','agent');};
+  channel.onerror=()=>{if(!t.closed&&generation===state.liveGeneration&&state.liveTalk)pauseLiveTalkOnError('OpenAI Realtime data channel error. Tap retry.','agent');};
   channel.onmessage=async event=>{
    if(t.closed||generation!==state.liveGeneration)return;let m;try{m=JSON.parse(event.data)}catch{return;}
-   if(m.type==='error'){state.error='OpenAI Live: '+String(m.error?.message||'Session error').slice(0,250);render();}
+   if(m.type==='error'){const code=String(m.error?.code||'');state.error='OpenAI Live: '+String(m.error?.message||'Session error').slice(0,250);if(/invalid_api_key|insufficient_quota|rate_limit/i.test(code))pauseLiveTalkOnError(state.error,'agent');else render();}
    if(m.type==='conversation.item.input_audio_transcription.completed'&&m.transcript)saveLiveAgentMessage({message:m.transcript,role:'user',event_id:m.item_id||'user-'+Date.now()},generation,'openai-'+generation);
    if((m.type==='response.output_audio_transcript.done')&&m.transcript)saveLiveAgentMessage({message:m.transcript,role:'assistant',event_id:m.item_id||'assistant-'+Date.now()},generation,'openai-'+generation);
-   if(m.type==='response.audio.delta'){state.liveStage='speaking';render();}
+   if(m.type==='response.audio.delta'||m.type==='response.output_audio.delta'){state.liveStage='speaking';render();}
    if(m.type==='response.done'){state.liveStage=state.liveMuted?'muted':'listening';render();}
    if(m.type==='response.function_call_arguments.done'){
     const id=String(m.call_id||'');if(!id||t.calls.has(id))return;t.calls.add(id);
@@ -1889,6 +1898,8 @@ async function connectOpenAILive(){
   const response=await fetch('https://api.openai.com/v1/realtime/calls',{method:'POST',headers:{Authorization:'Bearer '+issued.clientSecret,'Content-Type':'application/sdp'},body:offer.sdp});
   if(!response.ok)throw new Error('OpenAI Realtime connection rejected (HTTP '+response.status+')');
   await pc.setRemoteDescription({type:'answer',sdp:await response.text()});
+  t.openTimer=setTimeout(()=>{if(!t.closed&&generation===state.liveGeneration&&channel.readyState!=='open')pauseLiveTalkOnError('OpenAI Realtime connection timed out. Tap retry.','agent');},12000);
+  if(generation!==state.liveGeneration||!state.liveTalk)closeOpenAILive();
  }catch(error){if(generation===state.liveGeneration)pauseLiveTalkOnError('OpenAI Live: '+String(error?.message||'Failed to connect'),'agent');closeOpenAILive();try{pc?.close()}catch{}try{stream?.getTracks().forEach(t=>t.stop())}catch{}}
 }
 
