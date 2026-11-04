@@ -17,7 +17,7 @@ export default async function handler(req,context){
   const memory=await loadVoiceMemoryContext(auth.db,auth.user.id,{projectId:body.projectId||null,conversationId:body.conversationId||null});
   if(memory.error)return errorJson(memory.error.message,memory.error.status,memory.error.code,id);
   await consumeEndpointRate(auth.db,auth.user.id,'voice_realtime_session',id,60);
-  const model=globalThis.Netlify?.env?.get?.('OPENAI_REALTIME_MODEL')||process.env.OPENAI_REALTIME_MODEL||'gpt-realtime-2.1-mini';
+  const model=globalThis.Netlify?.env?.get?.('OPENAI_REALTIME_MODEL')||process.env.OPENAI_REALTIME_MODEL||'gpt-realtime-mini';
   if(!/^[a-zA-Z0-9._-]{3,80}$/.test(model))return errorJson('Invalid realtime model',500,'INVALID_REALTIME_MODEL',id);
   const response=await fetch('https://api.openai.com/v1/realtime/client_secrets',{method:'POST',headers:{Authorization:'Bearer '+key,'Content-Type':'application/json'},body:JSON.stringify({session:{type:'realtime',model,audio:{output:{voice}}}})});
   if(!response.ok){

@@ -420,6 +420,9 @@ async function loadOpenRouterVoices(){
   finally{state.openrouterVoicesLoading=false;render()}
 }
 const GOOGLE_LIVE_VOICES=['Zephyr','Puck','Charon','Kore','Fenrir','Leda','Orus','Aoede'];
+const FEMALE_GEMINI_LIVE_VOICES=new Set(['Zephyr','Kore','Leda','Aoede']);
+const FEMALE_OPENAI_LIVE_VOICES=new Set(['coral','fable','nova','shimmer','marin','ballad']);
+function liveTalkPersona(){return state.liveProvider==='elevenlabs'?(state.liveAgentSelection==='athena'?'ATHENA':'ZEUS'):state.liveProvider==='gemini'?(FEMALE_GEMINI_LIVE_VOICES.has(state.geminiLiveVoice)?'ATHENA':'ZEUS'):(FEMALE_OPENAI_LIVE_VOICES.has(state.openaiLiveVoice)?'ATHENA':'ZEUS');}
 const GOOGLE_TTS_VOICES=['Zephyr','Puck','Charon','Kore','Fenrir','Leda','Orus','Aoede','Callirrhoe','Autonoe','Enceladus','Iapetus','Umbriel','Algieba','Despina','Erinome','Algenib','Rasalgethi','Laomedeia','Achernar','Alnilam','Schedar','Gacrux','Pulcherrima','Achird','Zubenelgenubi','Vindemiatrix','Sadachbia','Sadaltager','Sulafat'];
 function saveVoiceSettings({elevenLabsVoiceId,source='button'}={}){
   const openaiVoice=String($('#zeus-openai-voice')?.value||state.voiceId||'marin').toLowerCase();
@@ -1064,7 +1067,7 @@ function codeAgentJobCard(job){
 function liveTalkExperience(){
   const liveProviderLabel=state.liveProvider==='openai'?'OpenAI Realtime':state.liveProvider==='gemini'?'Google Gemini Live':'ElevenLabs Realtime';
   const liveProviderShort=state.liveProvider==='openai'?'OPENAI REALTIME':state.liveProvider==='gemini'?'GEMINI LIVE':'ELEVEN REALTIME';
-  const persona=state.liveAgentSelection==='athena'?'ATHENA':'ZEUS';
+  const persona=liveTalkPersona();
   const stage=state.liveTalkStopRequested?'Finishing your turn':state.liveMuted?'Microphone muted':state.liveStage==='error'?'Live Talk paused':state.liveStage==='speaking'?`${persona} is speaking`:state.liveStage==='processing'?'Preparing your reply':state.liveStage==='connecting'?`Connecting to ${liveProviderLabel}`:state.liveStage==='listening'?'Listening':'Live Talk connected';
   const latest=[...(state.messages||[])].reverse().find(m=>['assistant','user'].includes(m.role));
   const excerpt=latest?String(latest.content||'').replace(/\s+/g,' ').trim().slice(0,220):'';
@@ -1897,8 +1900,9 @@ async function connectOpenAILive(){
    }
   };
   const offer=await pc.createOffer();await pc.setLocalDescription(offer);
-  const response=await fetch('https://api.openai.com/v1/realtime/calls',{method:'POST',headers:{Authorization:'Bearer '+issued.clientSecret,'Content-Type':'application/sdp'},body:offer.sdp});
-  if(!response.ok)throw new Error('OpenAI Realtime connection rejected (HTTP '+response.status+')');
+  const sdpForm=new FormData();sdpForm.append('sdp',offer.sdp);
+  const response=await fetch('https://api.openai.com/v1/realtime/calls',{method:'POST',headers:{Authorization:'Bearer '+issued.clientSecret},body:sdpForm});
+  if(!response.ok){const failure=await response.text().catch(()=> '');let reason='';try{const data=JSON.parse(failure);reason=String(data.error?.code||data.error?.type||'').replace(/[^a-zA-Z0-9_-]/g,'').slice(0,50)}catch{}throw new Error('OpenAI Realtime connection rejected (HTTP '+response.status+(reason?', '+reason:'')+')');}
   const answerSdp=await response.text();
   if(!answerSdp.trim().startsWith('v=0'))throw new Error('OpenAI returned an invalid SDP answer (HTTP '+response.status+').');
   try{await pc.setRemoteDescription({type:'answer',sdp:answerSdp});}catch(err){throw new Error('OpenAI WebRTC SDP negotiation failed: '+String(err?.message||'invalid SDP').slice(0,150));}
@@ -2090,7 +2094,7 @@ function liveSessionContext(){
     .filter(message=>['user','assistant'].includes(message?.role)&&String(message?.content||'').trim())
     .slice(-8)
     .map(message=>{
-      const speaker=message.role==='user'?'Felipe':(state.liveAgentSelection==='athena'?'Helen':'Felipe');
+      const speaker=message.role==='user'?'Felipe':(liveTalkPersona()==='ATHENA'?'Athena':'Zeus');
       const content=String(message.content||'').replace(/\s+/g,' ').trim().slice(0,900);
       return content?`${speaker}: ${content}`:'';
     }).filter(Boolean);
