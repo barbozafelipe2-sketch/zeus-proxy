@@ -25,7 +25,7 @@ function speechRoutes({elevenLabsVoiceId=''}={}){
 
   const geminiKey=env('GEMINI_API_KEY');
   const geminiBase=env('GOOGLE_GEMINI_BASE_URL');
-  if(geminiKey&&geminiBase)routes.push({name:'gemini_gateway',kind:'gemini',key:geminiKey,base:geminiBase});
+  if(geminiKey)routes.push({name:'gemini',kind:'gemini',key:geminiKey,base:geminiBase||'https://generativelanguage.googleapis.com'});
   return routes;
 }
 
@@ -92,24 +92,25 @@ async function callOpenAI(route,text,voice,signal,fetchImpl){
   });
   return readAudioResponse(response);
 }
+function pcmToWav(pcm,sampleRate=24000){
+  const header=Buffer.alloc(44);header.write('RIFF',0);header.writeUInt32LE(pcm.length+36,4);header.write('WAVEfmt ',8);header.writeUInt32LE(16,16);header.writeUInt16LE(1,20);header.writeUInt16LE(1,22);header.writeUInt32LE(sampleRate,24);header.writeUInt32LE(sampleRate*2,28);header.writeUInt16LE(2,32);header.writeUInt16LE(16,34);header.write('data',36);header.writeUInt32LE(pcm.length,40);return Buffer.concat([header,pcm]);
+}
 async function callGemini(route,text,signal,fetchImpl){
-  const model=env('GEMINI_SPEECH_MODEL')||'gemini-3.8-flash-tts';
-  const response=await fetchImpl(geminiInteractionsUrl(route.base),{
+  const model=env('GEMINI_SPEECH_MODEL')||'gemini-2.5-flash-preview-tts';
+  if(!/^[a-zA-Z0-9._-]+$/.test(model))throw providerError(400);
+  const base=String(route.base).replace(/\\/$/,'');
+  const apiBase=/\\/v1beta$/.test(base)?base:base+'/v1beta';
+  const response=await fetchImpl(appendPath(apiBase,'/models/'+encodeURIComponent(model)+':generateContent'),{
     method:'POST',signal,headers:{'x-goog-api-key':route.key,'Content-Type':'application/json'},
-    body:JSON.stringify({
-      model,
-      input:[{type:'user_input',content:[{type:'text',text,annotations:[{type:'speech_metadata',style:'Natural, calm, conversational Brazilian Portuguese when the input is Portuguese. Use clear articulation, relaxed pacing, and restrained warmth; avoid exaggerated enthusiasm.'}]}]}],
-      response_format:{type:'audio'},
-      generation_config:{speech_config:[{voice:env('GEMINI_SPEECH_VOICE')||'Kore'}]}
-    })
+    body:JSON.stringify({contents:[{parts:[{text}]}],generationConfig:{responseModalities:['AUDIO'],speechConfig:{voiceConfig:{prebuiltVoiceConfig:{voiceName:env('GEMINI_SPEECH_VOICE')||'Kore'}}}}})
   });
   if(!response.ok)throw providerError(response.status);
   const data=await response.json().catch(()=>({}));
-  const encoded=String(data?.output_audio?.data||'');
-  if(!encoded)throw providerError(response.status||502);
-  const bytes=Buffer.from(encoded,'base64');
-  if(bytes.byteLength>MAX_AUDIO_BYTES){const error=new Error('Speech response exceeds 8 MB.');error.status=413;throw error;}
-  if(!bytes.byteLength)throw providerError(502);
+  const audio=data?.candidates?.[0]?.content?.parts?.find(p=>p?.inlineData?.data)?.inlineData;
+  if(!audio?.data)throw providerError(502);
+  const pcm=Buffer.from(audio.data,'base64');
+  const bytes=/audio\\/wav/i.test(audio.mimeType||'')?pcm:pcmToWav(pcm);
+  if(!bytes.length||bytes.length>MAX_AUDIO_BYTES)throw providerError(bytes.length?413:502);
   return {bytes,contentType:'audio/wav'};
 }
 
@@ -142,9 +143,10 @@ async function attempt(route,call){
 }
 const failureEntry=(provider,error,extra={})=>({provider,status:error?.name==='AbortError'?504:Number(error?.status)||503,...(error?.detail?{detail:String(error.detail).slice(0,200)}:{}),...extra});
 
-export async function generateSpeech(text,{voice='marin',elevenLabsVoiceId='',fetchImpl=globalThis.fetch,onProviderError=()=>{}}={}){
+export async function generateSpeech(text,{voice='marin',elevenLabsVoiceId='',provider='auto',fetchImpl=globalThis.fetch,onProviderError=()=>{}}={}){
   if(elevenLabsVoiceId&&!validId(elevenLabsVoiceId)){const error=new Error('Invalid ElevenLabs Voice ID.');error.status=400;error.code='INVALID_ELEVENLABS_VOICE_ID';throw error;}
-  const routes=speechRoutes({elevenLabsVoiceId});
+  if(!['auto','gemini','elevenlabs'].includes(provider))throw Object.assign(new Error('Invalid speech provider.'),{status:400,code:'INVALID_SPEECH_PROVIDER'});
+  const routes=speechRoutes({elevenLabsVoiceId}).filter(r=>provider==='auto'||r.kind===provider);
   const providerFailures=[];
   let lastStatus=0;
   const record=entry=>{lastStatus=entry.status;providerFailures.push(entry);onProviderError(entry.provider,entry.status,entry.detail||'');return entry;};
@@ -209,9 +211,11 @@ export default async function(req,context){
     const text=String(body?.text||'').trim();
     if(!text||text.length>2500)return errorJson('Speech text must be 1 to 2500 characters.',400,'INVALID_SPEECH_TEXT',requestId);
     const elevenLabsVoiceId=String(body?.elevenLabsVoiceId||'').trim();
-    if(!speechRoutes({elevenLabsVoiceId}).length)return errorJson('No speech provider is available. Add ELEVENLABS_API_KEY (Functions scope) in Netlify and redeploy.',501,'SPEECH_NOT_CONFIGURED',requestId);
+    const provider=String(body?.provider||'auto').toLowerCase();
+    if(!['auto','gemini','elevenlabs'].includes(provider))return errorJson('Invalid speech provider.',400,'INVALID_SPEECH_PROVIDER',requestId);
+    if(!speechRoutes({elevenLabsVoiceId}).some(r=>provider==='auto'||r.kind===provider))return errorJson('Selected speech provider is not configured.',501,'SPEECH_NOT_CONFIGURED',requestId);
     await consumeEndpointRate(auth.db,auth.user.id,'speech',requestId,30);
-    const audio=await generateSpeech(text,{voice:body?.voiceId,elevenLabsVoiceId,onProviderError:(provider,status,detail)=>console.error('Speech provider failed',requestId,provider,status,detail||'')});
+    const audio=await generateSpeech(text,{voice:body?.voiceId,elevenLabsVoiceId,provider,onProviderError:(provider,status,detail)=>console.error('Speech provider failed',requestId,provider,status,detail||'')});
     return new Response(audio.bytes,{status:200,headers:{'Content-Type':audio.contentType,'Cache-Control':'no-store','X-Content-Type-Options':'nosniff','X-Zeus-Voice-Route':audio.route,...(audio.voiceFallback?{'X-Zeus-Voice-Fallback':'1'}:{}),...(audio.voiceId?{'X-Zeus-Voice-Used':audio.voiceId}:{})}});
   }catch(error){
     const status=error?.status||503;
