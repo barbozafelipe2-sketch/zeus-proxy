@@ -17,6 +17,6 @@ export async function voiceRealtimeHandler(req,context,kind){
   if(memory.error)return errorJson(memory.error.message,memory.error.status,memory.error.code,requestId);
   await consumeEndpointRate(db,user.id,'voice_realtime_session',requestId,60);
   const credentials=kind==='signed'?await createElevenLabsRealtimeSignedUrl({agent}):await createElevenLabsRealtimeConversationToken({agent});
-  return json({...credentials,memoryContext:memory.memoryContext,projectId:memory.projectId,conversationId:memory.conversationId,requestId});
+  return json({...credentials,selectedAgent:agent,memoryContext:memory.memoryContext,projectId:memory.projectId,conversationId:memory.conversationId,requestId});
  }catch(error){return errorJson('Could not initialize realtime voice.',Number(error?.status)||500,error?.code||'VOICE_REALTIME_FAILED',requestId);}
 }
