@@ -113,7 +113,67 @@ async function handler(req,context){
   const spendRows=db.sql`
     SELECT COALESCE(SUM(CASE WHEN (trace->'usage'->>'estimatedUsd') ~ '^[0-9]{1,12}([.][0-9]{1,12})?$'
       THEN (trace->'usage'->>'estimatedUsd')::numeric ELSE 0 END),0)::float8 AS known_usd,
-      count(*) FILTER (WHERE trace->'usage'->>'estimateCoverage' IN ('partial','none') OR trace->'usage' IS NULL)::int AS incomplete_count
+      count(*) FILTER (WHERE trace->'usage'->>'estimateCoverage' IN ('partial','none') OR trace->'usage' IS NULL)::int AS incomplete_count,
+      count(*) FILTER (WHERE (trace->'usage'->>'estimatedUsd') ~ '^[0-9]{1,12}([.][0-9]{1,12})? WHERE owner_id=${user.id}
+      AND started_at >= date_trunc('month',now())
+      AND started_at < date_trunc('month',now()) + interval '1 month'
+  `;
+  const spendRowsSafe=await withTimeout(spendRows,5000,'monthlyBudget').catch(error=>degrade('monthlyBudget',error,null));
+  const pricedCount=Number(spendRowsSafe?.[0]?.priced_count||0),executionCount=Number(spendRowsSafe?.[0]?.execution_count||0),usd=pricedCount?Number(spendRowsSafe?.[0]?.known_usd||0):null,monthlyTarget=Math.max(1,Number(globalThis.Netlify?.env?.get?.('ZEUS_MONTHLY_TOTAL_USD')||process.env?.ZEUS_MONTHLY_TOTAL_USD)||60);
+  return json({
+    degraded:warnings.length>0,
+    warnings,
+    monthlyBudget:{targetUsd:monthlyTarget,knownTextUsd:usd===null?null:Number(usd.toFixed(4)),unpricedExecutionCount:spendRowsSafe?Number(spendRowsSafe[0]?.incomplete_count||0):null,pricedExecutionCount:spendRowsSafe?pricedCount:null,executionCount:spendRowsSafe?executionCount:null,available:Boolean(spendRowsSafe),targetReached:usd!==null&&usd>=monthlyTarget,policy:'advisory_only',coverage:'partial_text_only',mediaIncluded:false},
+    requestId,
+    providers,
+    transports,
+    providerHealth:runtime,
+    providerReadiness:readiness,
+    transportReadiness,
+    models:configuredModels.map(m=>({provider:m.provider,id:m.id,roles:m.roles})),
+    capabilityReadiness:{
+      chat:chatState,
+      documents:chatState,
+      imageGeneration:(providers.openai&&!runtime.openai?.circuitOpen)||openRouterImageReady?'configured_unverified':'unavailable',
+      imageEditing:providers.openai?(runtime.openai?.circuitOpen?'degraded':'configured_unverified'):'unavailable',
+      imageUnderstanding:availableModels({vision:true,ignoreCircuit:true}).length?(availableModels({vision:true}).length?'configured_unverified':'degraded'):'unavailable',
+      serverTranscription:serverTranscriptionConfigured()?'configured_unverified':'unavailable',
+      elevenLabsRealtimeAgent:elevenLabsRealtimeAgentConfigured()?'configured_unverified':'unavailable',
+      webSearch:providers.openai?(runtime.openai?.circuitOpen?'degraded':'configured_unverified'):'unavailable',
+      githubCommit:githubWrite?'configured_unverified':'unavailable',
+    },
+    capabilities:{
+      chat:['observed_healthy','configured_unverified'].includes(chatState),
+      projects:true,
+      files:true,
+      artifacts:true,
+      imageGeneration:Boolean((providers.openai&&!runtime.openai?.circuitOpen)||openRouterImageReady),
+      imageEditing:Boolean(providers.openai&&!runtime.openai?.circuitOpen),
+      imageUnderstanding:availableModels({vision:true}).length>0,
+      webSearch:Boolean(providers.openai&&!runtime.openai?.circuitOpen),
+      voiceInput:elevenLabsRealtimeAgentConfigured()?'elevenlabs_realtime_agent':'unavailable',
+      serverTranscription:serverTranscriptionConfigured(),
+      elevenLabsRealtimeAgent:elevenLabsRealtimeAgentConfigured(),
+      paginatedHistory:true,
+      archiveSafety:true,
+      storageMaintenance:true,
+      githubRepositoryPublic:true,
+      githubPrivateRepository:Boolean(globalThis.Netlify?.env?.get?.('GITHUB_TOKEN')||process.env?.GITHUB_TOKEN),
+      githubCommit:githubWrite,
+    },
+    goLive:{workspaceAccess:'open',database:true,blobMaintenance:!storageMaintenance?.failed,configuredProviders:configuredRoutes,chatState,ready:Boolean(configuredRoutes>0&&['observed_healthy','configured_unverified'].includes(chatState))},
+    storageMaintenance,
+    note:'Provider readiness uses recent execution evidence stored in OlyHub plus the current Function runtime circuit state. Transport readiness uses sanitized per-model attempts from the past 24 hours; the circuit breaker shown here applies only to the current Function instance. CONFIGURED UNVERIFIED means credentials/models are present but no recent successful execution is recorded. OBSERVED HEALTHY means OlyHub recorded a successful use in the last 24 hours. RECENT FAILURE means the latest stored evidence is a failure. Image/audio endpoint readiness remains configuration-based unless that capability is actually exercised. GitHub public repository retrieval is built in; private repository retrieval and GitHub commits require a server-side GITHUB_TOKEN with access to the target repositories. GitHub writes are atomic, non-force branch updates from validated ZIP project packages. Web search uses the OpenAI Responses web_search capability through the configured OpenAI gateway and is invoked only for explicit/current-information intent. Access is open; configure Netlify site password separately if desired.'
+  });
+}
+
+export default async(req,context)=>{
+  const requestId=getRequestId(req,context,null);
+  try{return await handler(req,context);}catch(error){console.error('Health API failure',requestId,error?.stack||error?.message||error);return errorJson(`Runtime diagnostics could not be loaded: ${safeDbError(error)}`,500,'HEALTH_RUNTIME_FAILURE',requestId);}
+};
+export const config={path:'/api/health'};
+)::int AS priced_count,
+      count(*)::int AS execution_count
     FROM executions WHERE owner_id=${user.id}
       AND started_at >= date_trunc('month',now())
       AND started_at < date_trunc('month',now()) + interval '1 month'
