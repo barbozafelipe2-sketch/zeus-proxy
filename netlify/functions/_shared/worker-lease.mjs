@@ -1,7 +1,7 @@
 // Durable, owner-scoped Olympus queue/worker leases.
 // Every dispatch has a nonce; every claimed worker has an independent fencing token.
 // All acquisition writes happen while holding the same transaction lock as initializeTurn.
-export const OLYMPUS_QUEUE_LEASE_MS=240_000;
+export const OLYMPUS_QUEUE_LEASE_MS=720_000;
 export const OLYMPUS_WORKER_LEASE_MS=600_000;
 export const OLYMPUS_LEGACY_STALE_MS=960_000; // 16 minutes for unleased legacy background runs.
 export const ZEUS_SYNC_STALE_MS=90_000;
@@ -31,7 +31,7 @@ export function validDispatchToken(value){
 export async function queueOlympusExecution(db,{executionId,ownerId}){
   const rows=await db.sql`UPDATE executions
     SET state='QUEUED',dispatch_token=gen_random_uuid(),worker_token=NULL,
-        lease_expires_at=now()+interval '240 seconds',started_at=now()
+        lease_expires_at=now()+interval '720 seconds',started_at=now()
     WHERE id=${executionId} AND owner_id=${ownerId}
       AND state='UNDERSTANDING' AND worker_token IS NULL
     RETURNING dispatch_token`;
