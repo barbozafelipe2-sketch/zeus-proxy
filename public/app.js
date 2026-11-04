@@ -1085,7 +1085,7 @@ function liveTalkExperience(){
       <div class="live-talk-mode"><span class="live-mode-dot"></span>${liveProviderShort} <span>·</span> ${esc(state.liveLocale==='auto'?'AUTO LANGUAGE':state.liveLocale.toUpperCase())}</div>
     </section>
     ${state.error?`<div class="live-talk-error" role="alert">${esc(state.error)}${state.liveStage==='error'?`<button type="button" id="live-talk-retry">${state.liveFailureKind==='playback_blocked'?'Tap to resume':'Reconnect Realtime'}</button>`:''}</div>`:''}
-    <p class="live-voice-note" role="status">Primary voice · ${state.liveAgentSelection==='athena'?'Helen':'Felipe'}</p>
+    <p class="live-voice-note" role="status">${state.liveProvider==='openai'?'OpenAI voice · '+state.openaiLiveVoice:state.liveProvider==='gemini'?'Gemini voice · '+state.geminiLiveVoice:'Primary voice · '+(state.liveAgentSelection==='athena'?'Helen':'Felipe')}</p>
     <form class="live-talk-text-form" id="live-talk-text-form" aria-label="Send a typed message to the live agent"><label class="sr-only" for="live-talk-text">Type a message if voice recognition misunderstood</label><input id="live-talk-text" name="message" type="text" maxlength="4000" autocomplete="off" enterkeyhint="send" placeholder="Miscommunication? Type your message…" value="${esc(state.liveTextDraft)}"><button type="submit" aria-label="Send typed message" title="Send typed message" ${state.sending?'disabled':''}>${icon('send')}</button><span class="sr-only" id="live-talk-text-status" aria-live="polite">${esc(state.liveTextStatus)}</span></form>
     <footer class="live-talk-controls"><div class="live-control-hint"><span class="live-mic-dot"></span>${state.liveMuted?'Your microphone is muted · Zeus audio stays on':state.liveStage==='listening'?'Your microphone is active':state.liveStage==='processing'?'Voice captured':state.liveStage==='speaking'?'Zeus is speaking':state.liveStage==='error'?'Live Talk paused':'Session ready'}</div><div class="live-call-actions"><button type="button" class="live-mute-button ${state.liveMuted?'is-muted':''}" id="live-talk-mute" aria-pressed="${state.liveMuted}" aria-label="${state.liveMuted?'Unmute your microphone; Zeus audio stays on':'Mute your microphone; Zeus audio stays on'}" title="${state.liveMuted?'Unmute your microphone':'Mute your microphone'}">${icon(state.liveMuted?'mic-off':'mic')}</button><button type="button" class="live-end-call" id="live-talk-end" aria-label="End Live Talk" title="End Live Talk">${icon('close')}</button></div><div class="live-control-caption">Mute your microphone; ${state.liveAgentSelection==='athena'?'Athena':'Zeus'} can keep speaking</div></footer>
   </main>`;
@@ -1899,7 +1899,9 @@ async function connectOpenAILive(){
   const offer=await pc.createOffer();await pc.setLocalDescription(offer);
   const response=await fetch('https://api.openai.com/v1/realtime/calls',{method:'POST',headers:{Authorization:'Bearer '+issued.clientSecret,'Content-Type':'application/sdp'},body:offer.sdp});
   if(!response.ok)throw new Error('OpenAI Realtime connection rejected (HTTP '+response.status+')');
-  await pc.setRemoteDescription({type:'answer',sdp:await response.text()});
+  const answerSdp=await response.text();
+  if(!answerSdp.trim().startsWith('v=0'))throw new Error('OpenAI returned an invalid SDP answer (HTTP '+response.status+').');
+  try{await pc.setRemoteDescription({type:'answer',sdp:answerSdp});}catch(err){throw new Error('OpenAI WebRTC SDP negotiation failed: '+String(err?.message||'invalid SDP').slice(0,150));}
   t.openTimer=setTimeout(()=>{if(!t.closed&&generation===state.liveGeneration&&channel.readyState!=='open')pauseLiveTalkOnError('OpenAI Realtime connection timed out. Tap retry.','agent');},12000);
   if(generation!==state.liveGeneration||!state.liveTalk)closeOpenAILive();
  }catch(error){if(generation===state.liveGeneration)pauseLiveTalkOnError('OpenAI Live: '+String(error?.message||'Failed to connect'),'agent');closeOpenAILive();try{pc?.close()}catch{}try{stream?.getTracks().forEach(t=>t.stop())}catch{}}
@@ -1929,7 +1931,7 @@ async function connectGeminiLive(){
     const issued=await api('/api/voice/gemini-live-token',{method:'POST',body:JSON.stringify({projectId:state.currentProject?.id||null,conversationId:state.currentConversation||null,voice:state.geminiLiveVoice})});
     if(!state.liveTalk||generation!==state.liveGeneration){stream.getTracks().forEach(t=>t.stop());return;}
     if(typeof issued.token!=='string'||!issued.token||issued.token.length>4096||!String(issued.model||'').startsWith('models/'))throw new Error('Invalid Gemini Live session credentials');
-    const socket=new WebSocket('wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?access_token='+encodeURIComponent(issued.token));
+    const socket=new WebSocket('wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContentConstrained?access_token='+encodeURIComponent(issued.token));
     const transport={socket,closed:false,processor:null,source:null,audio:null,output:null,queue:[],playingAt:0,turnIndex:0};
     state.geminiLiveTransport=transport;
     const decodeAudio=async(encoded)=>{
