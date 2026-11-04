@@ -100,8 +100,8 @@ function pcmToWav(pcm,sampleRate=24000){
 async function callGemini(route,text,signal,fetchImpl){
   const model=env('GEMINI_SPEECH_MODEL')||'gemini-2.5-flash-preview-tts';
   if(!/^[a-zA-Z0-9._-]+$/.test(model))throw providerError(400);
-  const base=String(route.base).replace(/\\/$/,'');
-  const apiBase=/\\/v1beta$/.test(base)?base:base+'/v1beta';
+  const base=String(route.base).replace(/\/$/,'');
+  const apiBase=/\/v1beta$/.test(base)?base:base+'/v1beta';
   const response=await fetchImpl(appendPath(apiBase,'/models/'+encodeURIComponent(model)+':generateContent'),{
     method:'POST',signal,headers:{'x-goog-api-key':route.key,'Content-Type':'application/json'},
     body:JSON.stringify({contents:[{parts:[{text}]}],generationConfig:{responseModalities:['AUDIO'],speechConfig:{voiceConfig:{prebuiltVoiceConfig:{voiceName:env('GEMINI_SPEECH_VOICE')||'Kore'}}}}})
@@ -111,7 +111,7 @@ async function callGemini(route,text,signal,fetchImpl){
   const audio=data?.candidates?.[0]?.content?.parts?.find(p=>p?.inlineData?.data)?.inlineData;
   if(!audio?.data)throw providerError(502);
   const pcm=Buffer.from(audio.data,'base64');
-  const bytes=/audio\\/wav/i.test(audio.mimeType||'')?pcm:pcmToWav(pcm);
+  const bytes=/audio\/wav/i.test(audio.mimeType||'')?pcm:pcmToWav(pcm);
   if(!bytes.length||bytes.length>MAX_AUDIO_BYTES)throw providerError(bytes.length?413:502);
   return {bytes,contentType:'audio/wav'};
 }
