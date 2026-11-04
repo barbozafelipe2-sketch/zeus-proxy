@@ -1,0 +1,11 @@
+import assert from 'node:assert/strict';
+import {AUTOMATION_CONNECTORS,connectorInventory,authorizeExternalAction} from '../netlify/functions/_shared/automation-connectors.mjs';
+assert.equal(Object.keys(AUTOMATION_CONNECTORS).length,14);
+assert.ok(connectorInventory({}).every(x=>!x.configured&&!x.verified&&!x.operational));
+assert.equal(connectorInventory({N8N_BASE_URL:'https://example.org'}).find(x=>x.id==='n8n').configured,true);
+assert.equal(authorizeExternalAction({connectorId:'postiz',action:'publish',approved:true}).reason,'publish_approval_required');
+assert.equal(authorizeExternalAction({connectorId:'meta_ads',action:'launch',approved:true,spendApproved:true}).allowed,false);
+assert.equal(authorizeExternalAction({connectorId:'meta_ads',action:'launch',approved:true,spendApproved:true,budget:100}).allowed,true);
+assert.equal(authorizeExternalAction({connectorId:'n8n',action:'run'}).allowed,false);
+assert.equal(authorizeExternalAction({connectorId:'invalid',action:'run'}).allowed,false);
+console.log('automation connector registry contracts passed');
