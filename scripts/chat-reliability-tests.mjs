@@ -162,8 +162,10 @@ const limitsSource=read('netlify/functions/_shared/limits.mjs');
 assert.ok(limitsSource.includes("'90 seconds'")&&limitsSource.includes("'16 minutes'"), 'concurrency guard needs separate Zeus and Olympus liveness windows');
 assert.ok(chat.includes("if(!['OLYMPUS','ZEUS'].includes(existing.mode)||existing.state!=='QUEUED')") &&
   chat.includes('const claimed=await claimOlympusWorker(client,') &&
-  chat.includes('if(!claimed)return') && chat.includes("mode==='ZEUS'&&level==='ZEUS_DIRECTED'"), 'only queued Zeus Level 3 or Olympus executions may be resumed by a fenced background worker');
-assert.ok(chat.includes('const toolId=getToolWorkflow(body.toolId)?.id||null'), 'background execution must retain its validated dedicated tool context');
+  chat.includes('if(!claimed)return') &&
+  chat.includes("mode==='OLYMPUS'||level==='ZEUS_DIRECTED'||Boolean(toolWorkflow)"), 'only queued authorized background executions may be claimed by the fenced worker');
+assert.ok(chat.includes("const toolId=getToolWorkflow(body.toolId)?.id||(autoPermission?.allowed?proposedToolId:null)") &&
+  chat.includes('toolId,worker,dispatchToken:body.dispatchToken'), 'background execution must recompute and retain its validated dedicated tool context');
 
 // ---- Client: long-request drops and gateway timeouts are not mislabeled as user network errors ----
 const app = read('public/app.js');
