@@ -1,3 +1,4 @@
+import {voiceRealtimeHandler} from './_shared/voice-realtime.mjs';
 import { requireUser } from './_shared/auth.mjs';
 import { transcribeAudio, serverTranscriptionConfigured } from './_shared/models.mjs';
 import { json, getRequestId, errorJson } from './_shared/http.mjs';
@@ -11,28 +12,8 @@ async function handler(req, context, requestId) {
   if (auth.error) return auth.error;
   const {user,db}=auth;
   const url=new URL(req.url);
-  if(url.pathname==='/api/voice/realtime-token'){
-    if(req.method!=='POST')return errorJson('Method not allowed.',405,'METHOD_NOT_ALLOWED',requestId);
-    try{
-      await consumeEndpointRate(db,user.id,'elevenlabs_realtime_token',requestId,30);
-      const session=await createElevenLabsRealtimeConversationToken();
-      return json({...session,requestId});
-    }catch(error){
-      const status=Number(error?.status)||503;
-      return errorJson(error?.message||'Could not start ElevenLabs Realtime.',status,error?.code||'ELEVENLABS_TOKEN_FAILED',requestId,error?.retryAfter?{retryAfter:error.retryAfter}:{});
-    }
-  }
-  if(url.pathname==='/api/voice/realtime-signed-url'){
-    if(req.method!=='POST')return errorJson('Method not allowed.',405,'METHOD_NOT_ALLOWED',requestId);
-    try{
-      await consumeEndpointRate(db,user.id,'elevenlabs_realtime_signed_url',requestId,30);
-      const session=await createElevenLabsRealtimeSignedUrl();
-      return json({...session,requestId});
-    }catch(error){
-      const status=Number(error?.status)||503;
-      return errorJson(error?.message||'Could not start ElevenLabs Realtime over WebSocket.',status,error?.code||'ELEVENLABS_SIGNED_URL_FAILED',requestId,error?.retryAfter?{retryAfter:error.retryAfter}:{});
-    }
-  }
+  if(url.pathname==='/api/voice/realtime-token')return voiceRealtimeHandler(req,context,'token');
+  if(url.pathname==='/api/voice/realtime-signed-url')return voiceRealtimeHandler(req,context,'signed');
   if (req.method !== 'POST') return errorJson('Method not allowed.', 405, 'METHOD_NOT_ALLOWED', requestId);
   if(!serverTranscriptionConfigured())return errorJson('ElevenLabs Scribe is not configured. Add ELEVENLABS_API_KEY to Netlify Functions.',501,'ELEVENLABS_STT_NOT_CONFIGURED',requestId);
 
