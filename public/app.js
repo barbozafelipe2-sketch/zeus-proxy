@@ -1882,7 +1882,7 @@ async function connectOpenAILive(){
   pc.ontrack=e=>{audio.srcObject=e.streams[0];void audio.play().catch(()=>{if(!t.closed){state.error='Safari blocked OpenAI audio playback. Tap the screen, then reconnect Live Talk.';render();}});};
   pc.onconnectionstatechange=()=>{if(!t.closed&&generation===state.liveGeneration&&['failed','closed'].includes(pc.connectionState))pauseLiveTalkOnError('OpenAI Live connection failed. Tap retry.','agent');};
   stream.getTracks().forEach(track=>pc.addTrack(track,stream));
-  channel.onopen=()=>{clearTimeout(t.openTimer);if(t.closed||generation!==state.liveGeneration)return;channel.send(JSON.stringify({type:'session.update',session:{instructions:liveSessionContext().slice(0,14000),tools:OPENAI_LIVE_TOOLS,tool_choice:'auto',audio:{input:{transcription:{model:'gpt-4o-mini-transcribe'}}}}}));state.liveStage=state.liveMuted?'muted':'listening';render();};
+  channel.onopen=()=>{clearTimeout(t.openTimer);if(t.closed||generation!==state.liveGeneration)return;channel.send(JSON.stringify({type:'session.update',session:{type:'realtime',instructions:liveSessionContext().slice(0,14000),tools:OPENAI_LIVE_TOOLS,tool_choice:'auto',audio:{input:{transcription:{model:'gpt-4o-mini-transcribe'}}}}}));state.liveStage=state.liveMuted?'muted':'listening';render();};
   channel.onclose=()=>{if(!t.closed&&generation===state.liveGeneration&&state.liveTalk)pauseLiveTalkOnError('OpenAI Realtime data channel closed. Tap retry.','agent');};
   channel.onerror=()=>{if(!t.closed&&generation===state.liveGeneration&&state.liveTalk)pauseLiveTalkOnError('OpenAI Realtime data channel error. Tap retry.','agent');};
   channel.onmessage=async event=>{
