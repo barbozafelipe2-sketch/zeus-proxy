@@ -14,7 +14,7 @@ const db={async sql(parts,...p){
  }
  if(q.includes("SET state='UNDERSTANDING'")){
   if(p[1]!==ownerId||e.state!=='QUEUED'||e.dispatch!==p[2]||e.worker||e.expires<=Date.now())return [];
-  e.state='UNDERSTANDING';e.dispatch=null;e.worker=gen();e.expires=Date.now()+90000;
+  e.state='UNDERSTANDING';e.dispatch=null;e.worker=gen();e.expires=Date.now()+180000;
   return [{worker_token:e.worker,lease_expires_at:new Date(e.expires)}];
  }
  if(q.includes("SET state='FAILED'")){
@@ -69,6 +69,7 @@ e.state='UNDERSTANDING';e.worker=null;e.dispatch=null;
 const inlineDispatch=await queueOlympusExecution(db,args);
 const fallback=await claimInlineFallback(db,{...args,dispatchToken:inlineDispatch});
 assert.ok(fallback?.worker_token);
+assert.ok(new Date(fallback.lease_expires_at).getTime()-Date.now()>150000,'inline fallback lease must cover the 150s Turbo budget');
 assert.equal(await claimOlympusWorker(client,{...args,dispatchToken:inlineDispatch}),null,'late worker blocked after Zeus fallback');
 await assertWorkerFence(client,{...args,workerToken:fallback.worker_token});
 const chat=readFileSync('netlify/functions/chat.mjs','utf8'),lease=readFileSync('netlify/functions/_shared/worker-lease.mjs','utf8'),sql=readFileSync('netlify/database/migrations/20261014050000_olympus_worker_leases/migration.sql','utf8');
@@ -79,6 +80,7 @@ assert.ok(chat.indexOf('assertWorkerFence(client,')<chat.indexOf('for(const stag
 assert.ok(chat.includes('userMessageId:init.userMessage?.id||null'),'failed marker must be written only by the fenced owner');
 assert.ok(lease.includes('WITH owned AS (')&&lease.includes('execution_id IN (SELECT id FROM owned)'),'execution failure and user-message marker must be atomic');
 assert.ok(lease.includes("AND dispatch_token IS NULL AND state='UNDERSTANDING'"),'unleased submission errors must not fail queued or claimed worker dispatches');
+assert.ok(lease.includes("lease_expires_at=now()+interval '180 seconds'"),'inline fallback SQL lease must match the extended timeout');
 // Simulate the database guard for an unleased failure after a dispatch transition.
 // A queued or claimed generation must not be overwritten by a late submitter.
 const unleasedFailureGuard=(row)=>row.worker_token===null&&row.dispatch_token===null&&row.state==='UNDERSTANDING';
