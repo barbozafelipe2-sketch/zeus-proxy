@@ -79,6 +79,14 @@ assert.ok(chat.indexOf('assertWorkerFence(client,')<chat.indexOf('for(const stag
 assert.ok(chat.includes('userMessageId:init.userMessage?.id||null'),'failed marker must be written only by the fenced owner');
 assert.ok(lease.includes('WITH owned AS (')&&lease.includes('execution_id IN (SELECT id FROM owned)'),'execution failure and user-message marker must be atomic');
 assert.ok(lease.includes("AND dispatch_token IS NULL AND state='UNDERSTANDING'"),'unleased submission errors must not fail queued or claimed worker dispatches');
+// Simulate the database guard for an unleased failure after a dispatch transition.
+// A queued or claimed generation must not be overwritten by a late submitter.
+const unleasedFailureGuard=(row)=>row.worker_token===null&&row.dispatch_token===null&&row.state==='UNDERSTANDING';
+assert.equal(unleasedFailureGuard({state:'UNDERSTANDING',worker_token:null,dispatch_token:null}),true);
+assert.equal(unleasedFailureGuard({state:'QUEUED',worker_token:null,dispatch_token:gen()}),false);
+assert.equal(unleasedFailureGuard({state:'UNDERSTANDING',worker_token:gen(),dispatch_token:gen()}),false);
+assert.equal(unleasedFailureGuard({state:'COMPLETED',worker_token:null,dispatch_token:null}),false);
+
 assert.ok(lease.includes('AND dispatch_token=$3::uuid'));
 assert.ok(lease.includes("mode IN ('OLYMPUS','ZEUS')"),'background worker claim accepts only execution modes supported by the queue');
 assert.ok(sql.includes('ADD COLUMN IF NOT EXISTS dispatch_token uuid')&&sql.includes('ADD COLUMN IF NOT EXISTS worker_token uuid')&&sql.includes('ADD COLUMN IF NOT EXISTS lease_expires_at timestamptz'));
