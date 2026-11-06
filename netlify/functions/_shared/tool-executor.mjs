@@ -21,9 +21,18 @@ export async function executeThreeModelTool({toolId,input,context='',budget,mode
     output=value;
     const entry={role,provider:model.provider,model:model.id,family:model.family,status:'completed',durationMs:Date.now()-started};
     completed.push(entry);attempts.push(entry);usedFamilies.add(model.family);usedModels.add(model.provider+':'+model.id);
-    if(onStage)await onStage({...entry,content:output});
-    success=true;break;
-   }catch(error){attempts.push({role,provider:model.provider,model:model.id,family:model.family,status:'failed',durationMs:Date.now()-started,code:String(error?.code||'MODEL_CALL_FAILED').slice(0,80)});}
+    success=true;
+    // Reporting failures must not turn a completed paid model call into a retry.
+    // Keep the completed trace intact and fail explicitly if the observer fails.
+    if(onStage){
+     try{await onStage({...entry,content:output});}
+     catch(error){throw new ToolExecutionError('Stage reporting failed: '+role,'TOOL_STAGE_REPORT_FAILED',{completed,attempts,causeCode:String(error?.code||'STAGE_REPORT_FAILED').slice(0,80)});}
+    }
+    break;
+   }catch(error){
+    if(error instanceof ToolExecutionError&&error.code==='TOOL_STAGE_REPORT_FAILED')throw error;
+    attempts.push({role,provider:model.provider,model:model.id,family:model.family,status:'failed',durationMs:Date.now()-started,code:String(error?.code||'MODEL_CALL_FAILED').slice(0,80)});
+   }
   }
   if(!success)throw new ToolExecutionError('Stage failed: '+role,'TOOL_PIPELINE_INCOMPLETE',{completed,attempts});
  }
