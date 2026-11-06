@@ -78,6 +78,7 @@ assert.ok(chat.includes('claimInlineFallback(db,')&&chat.includes('assertWorkerF
 assert.ok(chat.indexOf('assertWorkerFence(client,')<chat.indexOf('for(const staged of stagedArtifacts){'));
 assert.ok(chat.includes('userMessageId:init.userMessage?.id||null'),'failed marker must be written only by the fenced owner');
 assert.ok(lease.includes('WITH owned AS (')&&lease.includes('execution_id IN (SELECT id FROM owned)'),'execution failure and user-message marker must be atomic');
+assert.ok(lease.includes("AND dispatch_token IS NULL AND state='UNDERSTANDING'"),'unleased submission errors must not fail queued or claimed worker dispatches');
 assert.ok(lease.includes('AND dispatch_token=$3::uuid'));
 assert.ok(lease.includes("mode IN ('OLYMPUS','ZEUS')"),'background worker claim accepts only execution modes supported by the queue');
 assert.ok(sql.includes('ADD COLUMN IF NOT EXISTS dispatch_token uuid')&&sql.includes('ADD COLUMN IF NOT EXISTS worker_token uuid')&&sql.includes('ADD COLUMN IF NOT EXISTS lease_expires_at timestamptz'));
