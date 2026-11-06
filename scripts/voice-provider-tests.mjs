@@ -1,0 +1,17 @@
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import {DEFAULT_LIVE_VOICE_PROVIDER,LIVE_VOICE_PROVIDERS,resolveLiveVoiceProvider,issueLiveVoiceCredentials} from '../netlify/functions/_shared/voice-provider.mjs';
+assert.equal(DEFAULT_LIVE_VOICE_PROVIDER,'elevenlabs');
+assert.equal(resolveLiveVoiceProvider(undefined),'elevenlabs');
+assert.equal(resolveLiveVoiceProvider(' ELEVENLABS '),'elevenlabs');
+assert.equal(LIVE_VOICE_PROVIDERS.elevenlabs.realtimeConversation,true);
+assert.equal(LIVE_VOICE_PROVIDERS.muse.realtimeConversation,false);
+assert.throws(()=>resolveLiveVoiceProvider('muse'),e=>e.status===501&&e.code==='VOICE_PROVIDER_UNAVAILABLE');
+assert.throws(()=>resolveLiveVoiceProvider('unknown'),e=>e.status===400&&e.code==='VOICE_PROVIDER_UNKNOWN');
+await assert.rejects(()=>issueLiveVoiceCredentials({provider:'muse',agent:'zeus',kind:'token'}),e=>e.code==='VOICE_PROVIDER_UNAVAILABLE');
+await assert.rejects(()=>issueLiveVoiceCredentials({provider:'elevenlabs',agent:'zeus',kind:'bad'}),e=>e.code==='VOICE_TRANSPORT_UNSUPPORTED');
+const handler=readFileSync('netlify/functions/_shared/voice-realtime.mjs','utf8');
+assert.ok(handler.includes('resolveLiveVoiceProvider(body.provider)'));
+assert.ok(handler.includes('issueLiveVoiceCredentials({provider,agent,kind})'));
+assert.ok(handler.includes('voiceProvider:provider'));
+console.log('Voice provider contract tests passed');
