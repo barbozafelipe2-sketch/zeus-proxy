@@ -1804,7 +1804,7 @@ function describeLiveDisconnect(details){
   return diagnostic?`${category}: ${diagnostic}`:`${category}. The SDK did not provide a close reason.`;
 }
 function saveLiveAgentMessage(payload,generation,providerConversationId){
-  const content=String(payload?.message||'').replace(/<\/?(?:Athena|Zeus)\s*>/gi,'').trim(),eventId=String(payload?.event_id??'');
+  const content=String(payload?.message||'').replace(/<\/?(?:Athena|Zeus|Poseidon)\s*>/gi,'').trim(),eventId=String(payload?.event_id??'');
   if(!content||!eventId||!state.liveTalk||generation!==state.liveGeneration)return;
   const role=payload?.role==='user'||payload?.source==='user'?'user':'assistant';
   const key=`${role}:${eventId}`;
