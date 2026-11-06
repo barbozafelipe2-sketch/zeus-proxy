@@ -41,7 +41,7 @@ async function bootAuth(){
     try{localStorage.removeItem(key);sessionStorage.removeItem(key)}catch{}
   }
   render();
-  try{await bootstrapApp();}catch(err){state.error=err.message||'Zeus could not load the workspace.';render();}
+  try{await bootstrapApp();}catch(err){state.error=err.message||'Poseidon could not load the workspace.';render();}
 }
 
 const LONG_REQUEST_DROP_MS=20000;
@@ -63,8 +63,8 @@ async function api(path, options={}){
     if(navigator.onLine===false)throw apiError('You are offline. Reconnect and try again.',0,'OFFLINE');
     const elapsed=Date.now()-startedAt;
     // A long request that drops is almost always the server's 60s function limit or iOS suspending the app, not the user's network.
-    if(elapsed>=LONG_REQUEST_DROP_MS)throw apiError(`The connection closed after ${Math.round(elapsed/1000)}s while Zeus was still working — the request likely hit the server time limit, or the app went to the background. Tap Retry: a reply that finished will be recovered.`,0,'CONNECTION_INTERRUPTED');
-    throw apiError('Connection to Zeus ended before the server returned an HTTP response. Your internet may still be fine; retry once, then check Runtime diagnostics if it repeats.',0,'NETWORK_ERROR');
+    if(elapsed>=LONG_REQUEST_DROP_MS)throw apiError(`The connection closed after ${Math.round(elapsed/1000)}s while Poseidon was still working — the request likely hit the server time limit, or the app went to the background. Tap Retry: a reply that finished will be recovered.`,0,'CONNECTION_INTERRUPTED');
+    throw apiError('Connection to Poseidon ended before the server returned an HTTP response. Your internet may still be fine; retry once, then check Runtime diagnostics if it repeats.',0,'NETWORK_ERROR');
   }finally{setBusy(-1);}
   const contentType=r.headers.get('content-type')||'';
   let data;
@@ -75,7 +75,7 @@ async function api(path, options={}){
     let msg=isJson?(data.error||data.message||''):'';
     if(!isJson){
       // Non-JSON error bodies come from the platform (gateway timeout / function crash), never from Zeus itself.
-      if([502,503,504].includes(r.status))msg=`Zeus's server timed out or stopped before replying (HTTP ${r.status}). Tap Retry: a reply that finished will be recovered.`;
+      if([502,503,504].includes(r.status))msg=`Poseidon's server timed out or stopped before replying (HTTP ${r.status}). Tap Retry: a reply that finished will be recovered.`;
       else if(typeof data==='string'&&data.trim()&&!/^\s*</.test(data))msg=data.slice(0,180);
     }
     const ref=isJson&&data.requestId?` · ref ${String(data.requestId).slice(0,18)}`:'';
@@ -501,7 +501,7 @@ async function toggleMessageSpeech(messageId){
     if(state.messageAudioBusyId!==messageId)return;
     state.messageAudioUrl=URL.createObjectURL(blob);replyAudio.src=state.messageAudioUrl;replyAudio.muted=false;replyAudio.volume=1;replyAudio.playsInline=true;
     replyAudio.onended=()=>{if(state.messageAudioId===messageId){state.messageAudioId='';state.messageAudioPlaying=false;if(state.messageAudioUrl)URL.revokeObjectURL(state.messageAudioUrl);state.messageAudioUrl=null;render();}};
-    replyAudio.onerror=()=>{if(state.messageAudioId===messageId){state.messageAudioId='';state.messageAudioPlaying=false;state.error='Zeus voice audio could not be played. Try the speaker again.';render();}};
+    replyAudio.onerror=()=>{if(state.messageAudioId===messageId){state.messageAudioId='';state.messageAudioPlaying=false;state.error='Poseidon voice audio could not be played. Try the speaker again.';render();}};
     state.messageAudioBusyId='';state.messageAudioId=messageId;
     await replyAudio.play();state.messageAudioPlaying=true;render();
   }catch(error){
@@ -617,7 +617,7 @@ async function startImageComparison(artifactId){
   const source=state.artifacts.find(a=>a.id===artifactId)||state.chatArtifacts.find(a=>a.id===artifactId);
   if(!source||source.type!=='image'||!source.metadata?.prompt){state.error='This generated image is no longer available for comparison.';render();return;}
   const originalPrompt=String(source.metadata?.prompt||'').trim().slice(0,4000);
-  if(!originalPrompt){state.error='The original image prompt is unavailable, so Zeus cannot make a faithful alternative.';render();return;}
+  if(!originalPrompt){state.error='The original image prompt is unavailable, so Poseidon cannot make a faithful alternative.';render();return;}
   state.imageCompareStartingId=artifactId;state.error='';render();
   try{
     await attachSavedArtifact(artifactId);
@@ -772,7 +772,7 @@ function projectOverviewView(){
       <div class="panel"><div class="panel-head"><h2>Next tasks</h2><button class="text-gold" data-project-section="TASKS">Manage ›</button></div><div class="task-list">${open.length?open.map(taskHtml).join(''):`<div class="empty-mini">No open tasks.</div>`}</div></div>
       <div class="panel"><div class="panel-head"><h2>Recent project material</h2><button class="text-gold" data-project-section="FILES">Open files ›</button></div>${projectFiles.length||projectArtifacts.length?`<div class="output-list">${[...projectArtifacts.map(a=>({...a,kind:'artifact'})),...projectFiles.map(f=>({...f,kind:'file'}))].sort((a,b)=>new Date(b.created_at)-new Date(a.created_at)).slice(0,6).map(outputItem).join('')}</div>`:`<div class="empty-mini">No project files or outputs yet.</div>`}</div>
     </div>
-    <aside class="project-side-stack"><div class="panel project-context-card"><div class="eyebrow">GOAL</div><p class="overview-goal">${esc(p.goal||'Add a clear goal so Zeus and Olympus know what success means.')}</p><div class="context-meta"><span>Status</span><strong>${esc(String(p.status||'IN_PROGRESS').replaceAll('_',' '))}</strong></div></div></aside>
+    <aside class="project-side-stack"><div class="panel project-context-card"><div class="eyebrow">GOAL</div><p class="overview-goal">${esc(p.goal||'Add a clear goal so Poseidon and Olympus know what success means.')}</p><div class="context-meta"><span>Status</span><strong>${esc(String(p.status||'IN_PROGRESS').replaceAll('_',' '))}</strong></div></div></aside>
   </div>`;
 }
 function projectTasksView(){
@@ -889,7 +889,7 @@ async function loadGoogleConnections(){
 function googleIntegrationSettings(){
   const info=state.googleConnections||{},connections=info.connections||{};
   return `<article class="card settings-card"><h3>Google integrations</h3>
-   <p class="muted tiny">Gmail, Calendar and Drive use separate, read-only Google permissions. Search here or ask Zeus to look up your connected Google data. No Google password or OAuth credentials are stored in your browser. Configure OAuth on the server first.</p>
+   <p class="muted tiny">Gmail, Calendar and Drive use separate, read-only Google permissions. Search here or ask Poseidon to look up your connected Google data. No Google password or OAuth credentials are stored in your browser. Configure OAuth on the server first.</p>
    <div class="diag-list">${[['gmail','Gmail'],['calendar','Google Calendar'],['drive','Google Drive']].map(([id,label])=>{
      const ok=Boolean(connections[id]?.connected);
      const result=state.googleSearchResults[id],query=esc(state.googleSearchQueries[id]||'');
@@ -923,14 +923,14 @@ function preferencesSettings(){
   const prefs=state.preferences||{};
   return `<article class="card settings-card">
     <h3>Personality &amp; Instructions</h3>
-    <p class="muted tiny">One personality for Zeus and Olympus, across text chat, recorded voice messages and Live Talk. Project-specific memory remains separate.</p>
+    <p class="muted tiny">One personality for Poseidon and Olympus, across text chat, recorded voice messages and Live Talk. Project-specific memory remains separate.</p>
     <form id="preferences-form" class="form-grid">
       <div class="field"><label for="zeus-personality">Personality</label>
         <select id="zeus-personality" name="personality" required>
           ${[['balanced','Balanced'],['direct','Direct'],['warm','Warm & conversational'],['creative','Creative & expressive'],['professional','Professional']].map(([key,label])=>`<option value="${key}" ${prefs.personality===key?'selected':''}>${label}</option>`).join('')}
         </select></div>
       <div class="field"><label for="zeus-global-instructions">Custom instructions</label>
-        <textarea id="zeus-global-instructions" rows="6" maxlength="4000" placeholder="Tell Zeus how to respond, what to prioritize, and how to speak to you…">${esc(prefs.instructions||'')}</textarea></div>
+        <textarea id="zeus-global-instructions" rows="6" maxlength="4000" placeholder="Tell Poseidon how to respond, what to prioritize, and how to speak to you…">${esc(prefs.instructions||'')}</textarea></div>
       <p class="muted tiny">Preferences apply to future replies. Your saved chats are not rewritten. System safety and factual accuracy always take priority.</p>
       <div class="row"><button class="primary" type="submit" ${!state.preferencesLoaded?'disabled':''}>Save preferences</button><span id="preferences-saved" role="status" aria-live="polite"></span></div>
     </form>
@@ -938,7 +938,7 @@ function preferencesSettings(){
 }
 function personalMemorySettings(){
   const memories=state.personalMemories||[];
-  return `<article class="card settings-card personal-memory-settings"><h3>Personal memory</h3><p class="muted tiny">Save durable facts or preferences for future chats and Live Talk. Zeus saves them when you ask it to remember something, and you can review or delete them here.</p><form id="personal-memory-form" class="memory-create"><textarea id="personal-memory-content" rows="2" maxlength="2000" aria-label="Add personal memory" placeholder="A preference, fact, or standing instruction to remember…" required></textarea><button class="primary compact" type="submit">Save memory</button></form><div class="memory-list">${memories.length?memories.map(memoryItem).join(''):'<div class="empty-mini">No personal memories saved yet. You can say “remember that…” in chat or Live Talk.</div>'}</div></article>`;
+  return `<article class="card settings-card personal-memory-settings"><h3>Personal memory</h3><p class="muted tiny">Save durable facts or preferences for future chats and Live Talk. Poseidon saves them when you ask it to remember something, and you can review or delete them here.</p><form id="personal-memory-form" class="memory-create"><textarea id="personal-memory-content" rows="2" maxlength="2000" aria-label="Add personal memory" placeholder="A preference, fact, or standing instruction to remember…" required></textarea><button class="primary compact" type="submit">Save memory</button></form><div class="memory-list">${memories.length?memories.map(memoryItem).join(''):'<div class="empty-mini">No personal memories saved yet. You can say “remember that…” in chat or Live Talk.</div>'}</div></article>`;
 }
 
 function settingsView(){const providers=state.health?.providerReadiness||{};const statusLabel=(v)=>String(v||'not_configured').toUpperCase().replaceAll('_',' ');const statusGood=(v)=>v==='observed_healthy';return `<section class="page"><div class="page-head"><div><div class="eyebrow">Settings</div><h1>Workspace settings</h1><p>Account and advanced runtime diagnostics.</p></div></div>${errorBanner('page-alert')}<div class="settings-grid"><article class="card settings-card"><h3>Account</h3><div class="user-chip"><div class="avatar">${esc(initials())}</div><div><strong>${esc(state.user?.user_metadata?.full_name||'Felipe')}</strong><div class="muted tiny">${esc(state.user?.email||'Personal owner')}</div></div></div><p class="muted tiny" style="margin-top:12px">This app uses one personal workspace.</p></article><article class="card settings-card"><h3>Monthly cost monitor</h3>
@@ -1110,7 +1110,7 @@ function render(){
   const active=document.activeElement;const key=focusKey(active);
   const selection=active?.id==='composer-text'?{start:active.selectionStart,end:active.selectionEnd}:null;
   const scopeSidebar=Boolean(active?.closest?.('.sidebar'));
-  clearModalLifecycle();modalReturnFocus=null;if(!state.authReady){app.innerHTML='<div class="boot-screen" role="status">INITIALIZING ZEUS</div>';return;} app.innerHTML=appView();bind();
+  clearModalLifecycle();modalReturnFocus=null;if(!state.authReady){app.innerHTML='<div class="boot-screen" role="status">INITIALIZING POSEIDON</div>';return;} app.innerHTML=appView();bind();
   localizeInterface(app);syncDrawerAccessibility();
   if(codeAgentPollTimer){clearTimeout(codeAgentPollTimer);codeAgentPollTimer=null;}
   if((state.tab==='Code Agent'||state.tab==='Home')&&(state.codeAgentJobs||[]).some(job=>['QUEUED','PLANNING','RUNNING','COMMITTING'].includes(job.status)&&(state.tab==='Code Agent'||job.conversation_id===state.currentConversation)))
@@ -1266,7 +1266,7 @@ function bind(){
   $$('[data-project-delete]').forEach(b=>b.addEventListener('click',e=>{e.stopPropagation();deleteProjectById(b.dataset.projectDelete);}));
   $('#chat-search')?.addEventListener('input',e=>{const q=e.target.value.toLowerCase();let shown=0;$$('.conversation-nav-row').forEach(row=>{const match=row.querySelector('.recent-item')?.textContent.toLowerCase().includes(q);row.style.display=match?'flex':'none';if(match)shown++;});$('#recent-empty')?.classList.toggle('hidden',!q||shown>0||!$$('.conversation-nav-row').length);});
   $$('[data-dismiss-error]').forEach(b=>b.addEventListener('click',dismissError));
-  $('#retry-services')?.addEventListener('click',()=>bootstrapApp().catch(err=>{state.error=err.message||'Zeus could not load the workspace.';render();}));
+  $('#retry-services')?.addEventListener('click',()=>bootstrapApp().catch(err=>{state.error=err.message||'Poseidon could not load the workspace.';render();}));
   $$('[data-routing-mode]').forEach(b=>b.addEventListener('click',()=>{if(state.sending||state.currentToolId)return;state.routingMode=b.dataset.routingMode==='MANUAL'?'MANUAL':'AUTO';try{localStorage.setItem('zeus-routing-mode.v1',state.routingMode)}catch{}render();}));
   $$('[data-mode]').forEach(b=>b.addEventListener('click',()=>{if(state.sending)return;state.routingMode='MANUAL';state.mode=b.dataset.mode==='OLYMPUS'?'OLYMPUS':'ZEUS';try{localStorage.setItem('zeus-routing-mode.v1','MANUAL');localStorage.setItem('zeus-manual-mode.v1',state.mode)}catch{}state.activeLevel=null;render();}));
   $$('[data-open-output]').forEach(b=>b.addEventListener('click',()=>openPrivateOutput(b.dataset.openOutput,b.dataset.outputName,b.dataset.outputMime).catch(e=>{state.error=e.message;render();})));
@@ -1506,7 +1506,7 @@ async function pollForReply(conversationId, executionId, mode='OLYMPUS'){
     }
     waitMs=Math.min(5500,Math.round(waitMs*1.35));
   }
-  throw apiError(`${mode==='OLYMPUS'?'Olympus':'Zeus Level 3'} is still working. Wait a moment, then tap Retry to collect the reply.`,503,'REQUEST_IN_PROGRESS');
+  throw apiError(`${mode==='OLYMPUS'?'Olympus':'Poseidon Level 3'} is still working. Wait a moment, then tap Retry to collect the reply.`,503,'REQUEST_IN_PROGRESS');
 }
 function explicitVisualAction(text,hasImage=false){
  const value=String(text||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
@@ -1573,7 +1573,7 @@ async function sendText(text,pendingAttachments=[],requestId=crypto.randomUUID()
   state.messages.push(optimistic);
   state.attachedFiles=[];state.draft='';
   state.sending=true;state.activeMode=mode;state.activeLevel=null;state.error='';state.lastFailedText='';state.lastFailedMessageId=null;state.lastFailedAttachments=[];state.lastFailedRequestId=null;state.lastFailedMode=null;state.lastFailedTurboApproval=null;state.lastFailedCompareType=null;
-  state.execTitle=mode==='OLYMPUS'?'Olympus is working':'Zeus is working';
+  state.execTitle=mode==='OLYMPUS'?'Olympus is working':'Poseidon is working';
   state.execStatus=liveTalkTurn?'Preparing a quick spoken reply…':'Choosing the model for this request…';render();
   const timer=setTimeout(()=>{
     if(!state.sending)return;
@@ -1617,7 +1617,7 @@ async function sendText(text,pendingAttachments=[],requestId=crypto.randomUUID()
     }
     state.currentConversation=d.conversationId;
     if(d.mode)state.activeMode=d.mode;if(d.level)state.activeLevel=d.level;
-    state.execTitle=d.mode==='OLYMPUS'?'Olympus is working':'Zeus is working';
+    state.execTitle=d.mode==='OLYMPUS'?'Olympus is working':'Poseidon is working';
     if(d.modeExplanation)state.execStatus=d.modeExplanation;
     history.replaceState({},'',state.currentProject?.id?`/?project=${encodeURIComponent(state.currentProject.id)}`:`/?conversation=${encodeURIComponent(d.conversationId)}`);
     if(d.userMessage){
@@ -1626,8 +1626,8 @@ async function sendText(text,pendingAttachments=[],requestId=crypto.randomUUID()
     }
     let assistant=d.message||null;
     if(d.pending){
-      state.execTitle=d.mode==='OLYMPUS'?'Olympus is working':'Zeus is working';
-      state.execStatus=d.modeExplanation||(d.mode==='OLYMPUS'?'Olympus is drafting, then writing one answer…':'Zeus is coordinating the selected specialists…');
+      state.execTitle=d.mode==='OLYMPUS'?'Olympus is working':'Poseidon is working';
+      state.execStatus=d.modeExplanation||(d.mode==='OLYMPUS'?'Olympus is drafting, then writing one answer…':'Poseidon is coordinating the selected specialists…');
       render();
       const polled=await pollForReply(d.conversationId,d.execution?.id,d.mode||mode);
       assistant=polled.assistant;
@@ -1664,7 +1664,7 @@ async function sendText(text,pendingAttachments=[],requestId=crypto.randomUUID()
   }catch(err){
     if(err?.code==='REQUEST_IN_PROGRESS'){
       if(err.data?.conversationId&&!state.currentConversation)state.currentConversation=err.data.conversationId;
-      state.error='Zeus is still finishing this request. Wait a few seconds, then tap Retry to get the reply.';
+      state.error='Poseidon is still finishing this request. Wait a few seconds, then tap Retry to get the reply.';
     }else state.error=err.message||'Request failed.';
     state.execStatus='';state.activeMode=mode;state.activeLevel=null;
     state.lastFailedText=text;
@@ -1784,7 +1784,7 @@ function pauseLiveTalkOnError(message,kind='agent'){
   state.error=/operation is insecure|securityerror|secure context/i.test(detail)&&window.isSecureContext===false
     ? 'Esta página precisa ser aberta diretamente por HTTPS. Você ainda pode digitar abaixo.'
     : /notallowederror|permission denied|microphone.*denied/i.test(detail)
-      ? 'Microphone permission is off for this site. Allow it in Safari settings and reconnect. You can still type below; Zeus will answer by voice.'
+      ? 'Microphone permission is off for this site. Allow it in Safari settings and reconnect. You can still type below; Poseidon will answer by voice.'
       : /The connection was closed due to a socket error|Realtime transport failed/i.test(detail)
         ? 'A conexão Realtime com o ElevenLabs caiu. O Safari não informou a causa exata. Toque em Reconectar; se persistir, precisamos conferir o diagnóstico da conexão.'
       : detail;
@@ -2090,7 +2090,7 @@ async function connectLiveTalkAgent(){
 }
 function toggleLiveTalk(){
   if(state.liveTalk){restoreLiveTalk();return;}
-  if(state.sending){state.error='Wait for Zeus to finish the current reply before starting Live Talk.';render();return;}
+  if(state.sending){state.error='Wait for Poseidon to finish the current reply before starting Live Talk.';render();return;}
   if(window.isSecureContext===false){state.error='Live Talk requires a secure HTTPS page. Open OlyHub using its HTTPS address and reconnect.';render();return;}
   if(!liveTalkSupported()){state.error='Live Talk requires microphone access, audio playback, and a supported browser.';render();return;}
   state.voiceId=localStorage.getItem('zeus-voice-id')||'marin';unlockLiveAudioFromGesture();
@@ -2116,7 +2116,7 @@ function livePersonaContext(){
     .replace(/\b(?:sk|rk|pk)-[A-Za-z0-9_-]{16,}\b/g,'[REDACTED API TOKEN]')
     .replace(/\b(?:ghp|gho|ghu|ghs|github_pat)_[A-Za-z0-9_]{16,}\b/g,'[REDACTED GITHUB TOKEN]')
     .replace(/\bAIza[0-9A-Za-z_-]{20,}\b/g,'[REDACTED GOOGLE API KEY]');
-  return `You are ${state.liveAgentSelection==='athena'?'Helen':'Felipe'}, the selected voice assistant in Zeus Proxy. The app labels this agent ${state.liveAgentSelection==='athena'?'Athena':'Zeus'} for navigation only; your spoken name and identity are ${state.liveAgentSelection==='athena'?'Helen':'Felipe'}. Speak using the selected ElevenLabs agent's configured primary voice; do not switch voices. Speak calmly and naturally, with restrained warmth. Avoid constant excitement, exaggerated praise, hype, and unnecessary exclamation marks. Be direct without sounding cold. Zeus Proxy supports natural text/voice conversation, automatic routing between Zeus Levels 1–3 and Olympus, manual Zeus/Olympus selection, project tasks, persistent personal and project memories, past conversation recall, research, and artifact work. In automatic mode, the system selects Zeus Level 1–3 or Olympus. In manual mode, Felipe chooses Zeus or Olympus; Zeus still selects its own level. Casual conversation is complete by itself: do not inspect or offer to inspect projects, call tools, or pitch work unless Felipe asks or a tool is needed to answer his request.\n\nMEMORY AND HISTORY: Use the owner-approved personal memories supplied below when relevant. Save a durable personal fact only when Felipe explicitly asks you to remember it. For a direct request to remember something or recall a previous conversation, use send_olyhub_command with his actual request so Zeus Proxy can save the memory or search his private chat history. Never claim it was saved or found unless the tool result confirms it. Do not search old chats on your own.\n\nPROJECT TOOL PROCEDURE — follow this when Felipe explicitly asks about a project:\n- If he asks which projects exist, call list_olyhub_projects and answer from its result.\n- If he names a project and it is not the active project, call list_olyhub_projects if needed to resolve the exact name, then open_olyhub_project with project_name, then get_current_project_context. Do not answer that you lack access before trying these tools.\n- If the requested project is already active, call get_current_project_context before answering questions about its progress, tasks, memories, or sources. Treat returned project/task records as current system knowledge; never call it an empty knowledge base when records are present.\n- Use create_project_task only when Felipe explicitly asks to add or create a task. If he asks to turn a checklist into tasks, call create_project_task once with an items array containing every checklist item as a separate task. For direct task status changes, call send_olyhub_command with the user's actual request; it resolves the project and task against authenticated app data and only confirms after the task API succeeds. If the target is ambiguous, ask which task. For project creation, call send_olyhub_command with the user's actual request. For moving a personal conversation or deleting a personal conversation/project, call send_olyhub_command; if it returns needsConfirmation, explain the exact target and consequences, then wait. Only call send_olyhub_command again to execute after Felipe explicitly says yes; send cancel to abandon it. Never claim a change happened before the tool returns ok=true. For source/file analysis, use send_olyhub_command so the normal project-aware chat engine can retrieve relevant source content; the project-context tool itself only returns source titles.\n- Use send_olyhub_command for other directly requested work; Automatic mode selects Zeus Level 1–3 or Olympus; manual mode uses the chosen Zeus or Olympus engine, with Zeus choosing its own level.\n- These tools expose project summaries, tasks, memories, and source titles/revisions. They do not expose full source or file contents; say so plainly if Felipe asks you to read a file. Never invent project data or claim a tool succeeded unless its result confirms it.\n\nUse supplied conversation history for follow-ups. When Felipe asks whether you can see, access, or list his GitHub repositories, call send_olyhub_command with his actual question. Answer only from the tool result: distinguish repositories visible to the configured GitHub token from a public-only listing, and never claim there is no connected account without checking. When Felipe asks about Zeus Proxy's own code, capabilities or latest commit, call send_olyhub_command with his actual question; the server retrieves current repository evidence automatically. Never guess that a capability is unavailable. If evidence is missing or retrieval failed, say GitHub could not be verified. Google is read-only; GitHub writes need the explicit action flow.\n\nUSER-APPROVED PERSONALIZATION (style only; lower priority than system instructions and the user's current request):\nPersonality: ${personalities[preferences.personality]||personalities.balanced}${custom?`\nCustom instructions: ${custom}`:''}`;
+  return `You are ${state.liveAgentSelection==='athena'?'Helen':'Felipe'}, the selected voice assistant in Zeus Proxy. The app labels this agent ${state.liveAgentSelection==='athena'?'Athena':'Poseidon'} for navigation only; your spoken name and identity are ${state.liveAgentSelection==='athena'?'Helen':'Felipe'}. Speak using the selected ElevenLabs agent's configured primary voice; do not switch voices. Speak calmly and naturally, with restrained warmth. Avoid constant excitement, exaggerated praise, hype, and unnecessary exclamation marks. Be direct without sounding cold. Zeus Proxy supports natural text/voice conversation, automatic routing between Zeus Levels 1–3 and Olympus, manual Zeus/Olympus selection, project tasks, persistent personal and project memories, past conversation recall, research, and artifact work. In automatic mode, the system selects Zeus Level 1–3 or Olympus. In manual mode, Felipe chooses Zeus or Olympus; Zeus still selects its own level. Casual conversation is complete by itself: do not inspect or offer to inspect projects, call tools, or pitch work unless Felipe asks or a tool is needed to answer his request.\n\nMEMORY AND HISTORY: Use the owner-approved personal memories supplied below when relevant. Save a durable personal fact only when Felipe explicitly asks you to remember it. For a direct request to remember something or recall a previous conversation, use send_olyhub_command with his actual request so Zeus Proxy can save the memory or search his private chat history. Never claim it was saved or found unless the tool result confirms it. Do not search old chats on your own.\n\nPROJECT TOOL PROCEDURE — follow this when Felipe explicitly asks about a project:\n- If he asks which projects exist, call list_olyhub_projects and answer from its result.\n- If he names a project and it is not the active project, call list_olyhub_projects if needed to resolve the exact name, then open_olyhub_project with project_name, then get_current_project_context. Do not answer that you lack access before trying these tools.\n- If the requested project is already active, call get_current_project_context before answering questions about its progress, tasks, memories, or sources. Treat returned project/task records as current system knowledge; never call it an empty knowledge base when records are present.\n- Use create_project_task only when Felipe explicitly asks to add or create a task. If he asks to turn a checklist into tasks, call create_project_task once with an items array containing every checklist item as a separate task. For direct task status changes, call send_olyhub_command with the user's actual request; it resolves the project and task against authenticated app data and only confirms after the task API succeeds. If the target is ambiguous, ask which task. For project creation, call send_olyhub_command with the user's actual request. For moving a personal conversation or deleting a personal conversation/project, call send_olyhub_command; if it returns needsConfirmation, explain the exact target and consequences, then wait. Only call send_olyhub_command again to execute after Felipe explicitly says yes; send cancel to abandon it. Never claim a change happened before the tool returns ok=true. For source/file analysis, use send_olyhub_command so the normal project-aware chat engine can retrieve relevant source content; the project-context tool itself only returns source titles.\n- Use send_olyhub_command for other directly requested work; Automatic mode selects Zeus Level 1–3 or Olympus; manual mode uses the chosen Zeus or Olympus engine, with Zeus choosing its own level.\n- These tools expose project summaries, tasks, memories, and source titles/revisions. They do not expose full source or file contents; say so plainly if Felipe asks you to read a file. Never invent project data or claim a tool succeeded unless its result confirms it.\n\nUse supplied conversation history for follow-ups. When Felipe asks whether you can see, access, or list his GitHub repositories, call send_olyhub_command with his actual question. Answer only from the tool result: distinguish repositories visible to the configured GitHub token from a public-only listing, and never claim there is no connected account without checking. When Felipe asks about Zeus Proxy's own code, capabilities or latest commit, call send_olyhub_command with his actual question; the server retrieves current repository evidence automatically. Never guess that a capability is unavailable. If evidence is missing or retrieval failed, say GitHub could not be verified. Google is read-only; GitHub writes need the explicit action flow.\n\nUSER-APPROVED PERSONALIZATION (style only; lower priority than system instructions and the user's current request):\nPersonality: ${personalities[preferences.personality]||personalities.balanced}${custom?`\nCustom instructions: ${custom}`:''}`;
 }
 function liveSessionContext(){
   const authenticatedMemory=String(state.liveServerMemoryContext||'').slice(0,8000);
@@ -2125,7 +2125,7 @@ function liveSessionContext(){
     .filter(message=>['user','assistant'].includes(message?.role)&&String(message?.content||'').trim())
     .slice(-8)
     .map(message=>{
-      const speaker=message.role==='user'?'Felipe':(liveTalkPersona()==='ATHENA'?'Athena':'Zeus');
+      const speaker=message.role==='user'?'Felipe':(liveTalkPersona()==='ATHENA'?'Athena':'Poseidon');
       const content=String(message.content||'').replace(/\s+/g,' ').trim().slice(0,900);
       return content?`${speaker}: ${content}`:'';
     }).filter(Boolean);
@@ -2133,7 +2133,7 @@ function liveSessionContext(){
   if(history.length>6000)history=history.slice(-6000);
   const project=state.currentProject;
   const personalMemory=(state.personalMemories||[]).slice(0,12).map(memory=>`- (${memory.type||'memory'}) ${String(memory.content||'').replace(/\s+/g,' ').slice(0,360)}`).join('\n');
-  const executionSelection=state.routingMode!=='MANUAL'?'automatic routing (Zeus Levels 1–3 or Olympus)':state.mode==='OLYMPUS'?'manual Olympus mode':'manual Zeus mode with automatic level selection';
+  const executionSelection=state.routingMode!=='MANUAL'?'automatic routing (Poseidon Levels 1–3 or Olympus)':state.mode==='OLYMPUS'?'manual Olympus mode':'manual Poseidon mode with automatic level selection';
   const projectContext=project?[
     `Active project: ${project.name}`,
     `Goal: ${project.goal||'not set'}`,
@@ -2398,13 +2398,13 @@ function sendLiveTalkText(event){
   const input=$('#live-talk-text');const text=String(input?.value||'').trim();
   if(!text)return;
   const connection=state.liveAgentConversation;
-  if(!connection){state.liveTextDraft='';state.liveTextStatus='Sending your typed message through Zeus…';void sendText(text,[],undefined,'ZEUS',null,null,{liveTalk:true});return;}
+  if(!connection){state.liveTextDraft='';state.liveTextStatus='Sending your typed message through Poseidon…';void sendText(text,[],undefined,'ZEUS',null,null,{liveTalk:true});return;}
   try{
     connection.sendUserMessage(text);
     state.liveTextDraft='';state.liveTextStatus='Message sent to the live agent.';state.error='';
     if(input)input.value='';
     const status=$('#live-talk-text-status');if(status)status.textContent=state.liveTextStatus;
-  }catch{state.liveTextDraft='';state.liveTextStatus='Sending your typed message through Zeus…';void sendText(text,[],undefined,'ZEUS',null,null,{liveTalk:true});}
+  }catch{state.liveTextDraft='';state.liveTextStatus='Sending your typed message through Poseidon…';void sendText(text,[],undefined,'ZEUS',null,null,{liveTalk:true});}
 }
 async function retryLiveTalk(){
   if(!state.liveTalk)return;
