@@ -51,11 +51,13 @@ export async function claimOlympusWorker(client,{executionId,ownerId,dispatchTok
 }
 // If dispatch acknowledgement was lost, claim inline work only if the worker
 // has NOT acquired the queue. A late worker cannot pass its QUEUED-only claim.
+// Allow the inline fallback up to 180s to cover the 150s Turbo budget plus finalization;
+// the old 90s lease could expire during a valid paid run and allow a duplicate retry.
 export async function claimInlineFallback(db,{executionId,ownerId,dispatchToken}){
   if(!validDispatchToken(dispatchToken))return null;
   const rows=await db.sql`UPDATE executions
     SET state='UNDERSTANDING',dispatch_token=NULL,
-        worker_token=gen_random_uuid(),lease_expires_at=now()+interval '90 seconds',
+        worker_token=gen_random_uuid(),lease_expires_at=now()+interval '180 seconds',
         started_at=now()
     WHERE id=${executionId} AND owner_id=${ownerId}
       AND mode IN ('OLYMPUS','ZEUS') AND state='QUEUED'
