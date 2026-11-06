@@ -9,7 +9,7 @@ const args={ownerId,executionId};
 const db={async sql(parts,...p){
  const q=parts.join('?');
  if(q.includes("SET state='QUEUED'")){
-  if(p[1]!==ownerId||e.state!=='UNDERSTANDING'||e.worker)return [];
+  if(p[1]!==ownerId||e.state!=='UNDERSTANDING'||e.worker||e.dispatch)return [];
   e.state='QUEUED';e.dispatch=gen();e.expires=Date.now()+OLYMPUS_QUEUE_LEASE_MS;return [{dispatch_token:e.dispatch}];
  }
  if(q.includes("SET state='UNDERSTANDING'")){
@@ -47,6 +47,7 @@ assert.equal(executionLeaseExpired({mode:'ZEUS',started_at:ago(100000)},now),tru
 assert.equal(executionLeaseExpired({mode:'ZEUS',lease_expires_at:new Date(now+50000).toISOString()},now),false,'a live queued Zeus worker lease prevents premature retry');
 assert.equal(executionLeaseExpired({mode:'ZEUS',lease_expires_at:new Date(now-1).toISOString()},now),true,'expired Zeus background leases are recoverable');
 const firstDispatch=await queueOlympusExecution(db,args);
+await assert.rejects(()=>queueOlympusExecution(db,args),error=>error.code==='WORKER_LEASE_CONFLICT','an existing queued dispatch must not be overwritten');
 const workers=await Promise.all([claimOlympusWorker(client,{...args,dispatchToken:firstDispatch}),claimOlympusWorker(client,{...args,dispatchToken:firstDispatch})]);
 assert.equal(workers.filter(Boolean).length,1,'only one worker claims a dispatch');
 const first=workers.find(Boolean);
@@ -90,6 +91,7 @@ assert.equal(unleasedFailureGuard({state:'UNDERSTANDING',worker_token:gen(),disp
 assert.equal(unleasedFailureGuard({state:'COMPLETED',worker_token:null,dispatch_token:null}),false);
 
 assert.ok(lease.includes('AND dispatch_token=$3::uuid'));
+assert.ok(lease.includes("AND worker_token IS NULL AND dispatch_token IS NULL"),'queue acquisition must reject an existing dispatch generation');
 assert.ok(lease.includes("mode IN ('OLYMPUS','ZEUS')"),'background worker claim accepts only execution modes supported by the queue');
 assert.ok(sql.includes('ADD COLUMN IF NOT EXISTS dispatch_token uuid')&&sql.includes('ADD COLUMN IF NOT EXISTS worker_token uuid')&&sql.includes('ADD COLUMN IF NOT EXISTS lease_expires_at timestamptz'));
 console.log('Phase 4/7: exclusive worker claim, deadline-safe leases, fencing and lost-ACK fallback: PASS');
