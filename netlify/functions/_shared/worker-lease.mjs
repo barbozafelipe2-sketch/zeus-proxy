@@ -102,7 +102,7 @@ export async function markFailureIfOwner(db,{executionId,ownerId,workerToken,err
     WITH owned AS (
       UPDATE executions SET state='FAILED',error_code=${errorCode},trace=${trace},completed_at=now()
       WHERE id=${executionId} AND owner_id=${ownerId} AND worker_token IS NULL
-        AND state NOT IN ('COMPLETED','PARTIAL','FAILED','CANCELLED')
+        AND dispatch_token IS NULL AND state='UNDERSTANDING'
       RETURNING id
     ), marked AS (
       UPDATE messages SET metadata=COALESCE(metadata,'{}'::jsonb)||${failureMarker}::jsonb
