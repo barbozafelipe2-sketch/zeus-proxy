@@ -33,7 +33,7 @@ export async function queueOlympusExecution(db,{executionId,ownerId}){
     SET state='QUEUED',dispatch_token=gen_random_uuid(),worker_token=NULL,
         lease_expires_at=now()+interval '720 seconds',started_at=now()
     WHERE id=${executionId} AND owner_id=${ownerId}
-      AND state='UNDERSTANDING' AND worker_token IS NULL
+      AND state='UNDERSTANDING' AND worker_token IS NULL AND dispatch_token IS NULL
     RETURNING dispatch_token`;
   if(rows.length!==1)throw Object.assign(new Error('Olympus queue ownership changed.'),{status:409,code:'WORKER_LEASE_CONFLICT'});
   return String(rows[0].dispatch_token);
