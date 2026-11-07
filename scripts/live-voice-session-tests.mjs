@@ -32,4 +32,6 @@ for(const part of ["createLiveVoiceSessionBridge({","render();void liveVoiceSess
 for(const id of LIVE_VOICE_PROVIDER_IDS)assert.ok(ui.includes('  '+id+':{'),'Missing browser voice driver '+id);
 for(const name of ['connectOpenAILive','connectGeminiLive','connectLiveTalkAgent'])assert.ok(ui.includes('connect:'+name),'Provider transport removed: '+name);
 assert.ok(!ui.includes('<option value="muse"'),'Muse must not be selectable before supported transport exists');
+assert.ok(ui.includes("'Content-Type':'application/sdp'")&&ui.includes("body:offer.sdp"),'OpenAI ephemeral WebRTC must use raw SDP');
+assert.ok(!ui.includes("sdpForm.append('sdp'"),'multipart must not be used for an ephemeral Realtime token');
 console.log('Live Talk browser provider contract PASS');

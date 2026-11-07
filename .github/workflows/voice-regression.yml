@@ -29,3 +29,4 @@ jobs:
           node scripts/live-voice-session-tests.mjs
           node scripts/live-transcript-tests.mjs
           node scripts/voice-provider-tests.mjs
+          node scripts/gemini-live-safari-tests.mjs

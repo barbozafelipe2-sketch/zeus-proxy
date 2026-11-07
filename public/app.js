@@ -1908,8 +1908,8 @@ async function connectOpenAILive(){
    }
   };
   const offer=await pc.createOffer();await pc.setLocalDescription(offer);
-  const sdpForm=new FormData();sdpForm.append('sdp',offer.sdp);
-  const response=await fetch('https://api.openai.com/v1/realtime/calls',{method:'POST',headers:{Authorization:'Bearer '+issued.clientSecret},body:sdpForm});
+  // OpenAI ephemeral Realtime client secrets require raw SDP, not multipart.
+  const response=await fetch('https://api.openai.com/v1/realtime/calls',{method:'POST',headers:{Authorization:'Bearer '+issued.clientSecret,'Content-Type':'application/sdp'},body:offer.sdp});
   if(!response.ok){const failure=await response.text().catch(()=> '');let reason='';try{const data=JSON.parse(failure);reason=String(data.error?.code||data.error?.type||'').replace(/[^a-zA-Z0-9_-]/g,'').slice(0,50)}catch{}throw new Error('OpenAI Realtime connection rejected (HTTP '+response.status+(reason?', '+reason:'')+')');}
   const answerSdp=await response.text();
   if(!answerSdp.trim().startsWith('v=0'))throw new Error('OpenAI returned an invalid SDP answer (HTTP '+response.status+').');

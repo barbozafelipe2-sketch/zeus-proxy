@@ -21,11 +21,12 @@ function speechRoutes({elevenLabsVoiceId=''}={}){
 
   const openaiKey=env('OPENAI_API_KEY');
   const openaiBase=env('OPENAI_BASE_URL');
-  if(openaiKey)routes.push({name:'openai_gateway',kind:'openai',key:openaiKey,base:openaiBase||'https://api.openai.com'});
+  // Explicit gateway URL required; do not silently call the vendor directly.
+  if(openaiKey&&openaiBase)routes.push({name:'openai_gateway',kind:'openai',key:openaiKey,base:openaiBase});
 
   const geminiKey=env('GEMINI_API_KEY');
   const geminiBase=env('GOOGLE_GEMINI_BASE_URL');
-  if(geminiKey)routes.push({name:'gemini',kind:'gemini',key:geminiKey,base:geminiBase||'https://generativelanguage.googleapis.com'});
+  if(geminiKey&&geminiBase)routes.push({name:'gemini',kind:'gemini',key:geminiKey,base:geminiBase});
   const openrouterKey=env('OPENROUTER_API_KEY');
   if(openrouterKey)routes.push({name:'openrouter',kind:'openrouter',key:openrouterKey});
   return routes;

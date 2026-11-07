@@ -75,8 +75,11 @@ try{
 
   const source=readFileSync('netlify/functions/_shared/models.mjs','utf8');
   const speech=readFileSync('netlify/functions/speech.mjs','utf8');
-  for(const forbidden of ['OPENROUTER_DIRECT_API_KEY','OPENAI_DIRECT_API_KEY','https://api.openai.com','https://openrouter.ai/api/v1','https://generativelanguage.googleapis.com'])
-    assert.ok(!source.includes(forbidden)&&!speech.includes(forbidden),'a direct AI provider route remains');
+  for(const forbidden of ['OPENROUTER_DIRECT_API_KEY','OPENAI_DIRECT_API_KEY','https://api.openai.com','https://generativelanguage.googleapis.com'])
+    assert.ok(!source.includes(forbidden)&&!speech.includes(forbidden),'a direct primary AI provider route remains');
+  // OpenRouter is the user-authorized fallback, not a direct primary route.
+  assert.ok(speech.includes('https://openrouter.ai/api/v1'),'OpenRouter fallback must remain enabled');
+  assert.ok(speech.includes('if(openaiKey&&openaiBase)')&&speech.includes('if(geminiKey&&geminiBase)'),'speech primary providers require explicit gateways');
   const chat=readFileSync('netlify/functions/chat.mjs','utf8');
   assert.ok(chat.includes("levelDecision.level='IMAGE_GENERATION'"));
   assert.ok(chat.includes("webIntent&&!toolWorkflow?'SIMPLE':gearLevel"));
