@@ -1,4 +1,5 @@
 import { renderMarkdown } from './markdown.js';
+import { createLiveVoiceSessionBridge } from './live-voice-session.js';
 import { localizeInterface, translateInterfaceText } from './locale-pt.js';
 
 const $ = (s, root=document) => root.querySelector(s);
@@ -1319,7 +1320,7 @@ function bind(){
   $('#live-talk-dock-open')?.addEventListener('click',restoreLiveTalk);
   $('#live-talk-mute')?.addEventListener('click',toggleLiveTalkMute);
   $('#live-talk-dock-mute')?.addEventListener('click',toggleLiveTalkMute);
-  $('#live-talk-text')?.addEventListener('input',event=>{state.liveTextDraft=event.target.value;state.liveTextStatus='';try{state.liveAgentConversation?.sendUserActivity?.();}catch{}});
+  $('#live-talk-text')?.addEventListener('input',event=>{state.liveTextDraft=event.target.value;state.liveTextStatus='';try{liveVoiceSession.notifyActivity();}catch{}});
   $('#live-talk-text-form')?.addEventListener('submit',sendLiveTalkText);
   $('#live-talk-retry')?.addEventListener('click',retryLiveTalk);
   $('#retry-last')?.addEventListener('click',retryLastMessage);
@@ -1651,8 +1652,8 @@ async function sendText(text,pendingAttachments=[],requestId=crypto.randomUUID()
           const audio=state.voiceReplyAudio||new Audio();state.voiceReplyAudio=audio;
           if(state.liveAudioUrl)URL.revokeObjectURL(state.liveAudioUrl);
           state.liveAudioUrl=URL.createObjectURL(blob);audio.src=state.liveAudioUrl;audio.muted=false;audio.volume=1;audio.playsInline=true;
-          await audio.play();audio.onended=()=>{if(state.liveTalk){state.liveStage=state.liveAgentConversation?'listening':'error';render();}};
-        }catch(error){state.liveStage=state.liveAgentConversation?'listening':'error';state.error=`Text reply arrived, but voice playback failed: ${error?.message||'tap the screen and retry'}`;}
+          await audio.play();audio.onended=()=>{if(state.liveTalk){state.liveStage=liveVoiceSession.isConnected()?'listening':'error';render();}};
+        }catch(error){state.liveStage=liveVoiceSession.isConnected()?'listening':'error';state.error=`Text reply arrived, but voice playback failed: ${error?.message||'tap the screen and retry'}`;}
       }
     }
     if(compareType)state.compareType=null;
@@ -1770,16 +1771,15 @@ function finishLiveTalkSession(){
   state.liveTalk=false;state.liveTalkMinimized=false;state.liveTalkStopRequested=false;state.liveMuted=false;state.liveStage='idle';state.liveGeneration++;
   clearTimeout(state.liveRetryTimer);state.liveRetryTimer=null;
   releaseLiveAgentPermissionStream();
-  const connection=state.liveAgentConversation;state.liveAgentConversation=null;state.liveAgentConversationId='';state.liveAgentPartial='';
-  try{void connection?.endSession?.()}catch{}
-  closeGeminiLive();closeOpenAILive();
+  void liveVoiceSession.closeAll();
+  state.liveAgentConversationId='';state.liveAgentPartial='';
   try{state.liveSpeechController?.abort()}catch{}
   state.liveSpeechController=null;discardLiveAudio();try{window.speechSynthesis?.cancel()}catch{}render();
 }
 function minimizeLiveTalk(){if(!state.liveTalk)return;state.liveTalkMinimized=true;render();}
 function restoreLiveTalk(){if(!state.liveTalk)return;state.liveTalkMinimized=false;render();}
 function pauseLiveTalkOnError(message,kind='agent'){
-  if(!state.liveTalk)return;
+  if(!state.liveTalk||state.liveStage==='error')return;
   const detail=String(message||'ElevenLabs Realtime could not complete this voice session.');
   state.error=/operation is insecure|securityerror|secure context/i.test(detail)&&window.isSecureContext===false
     ? 'Esta página precisa ser aberta diretamente por HTTPS. Você ainda pode digitar abaixo.'
@@ -1790,9 +1790,8 @@ function pauseLiveTalkOnError(message,kind='agent'){
       : detail;
   state.liveStage='error';state.liveFailureKind=kind;clearTimeout(state.liveRetryTimer);state.liveRetryTimer=null;
   releaseLiveAgentPermissionStream();
-  const connection=state.liveAgentConversation;state.liveAgentConversation=null;state.liveAgentPartial='';
-  try{void connection?.endSession?.()}catch{}
-  closeGeminiLive();closeOpenAILive();
+  void liveVoiceSession.closeAll();
+  state.liveAgentPartial='';
   try{state.liveSpeechController?.abort()}catch{}
   discardLiveAudio({keepElement:true});try{window.speechSynthesis?.cancel()}catch{}render();
 }
@@ -1951,6 +1950,7 @@ async function connectGeminiLive(){
     const issued=await api('/api/voice/gemini-live-token',{method:'POST',body:JSON.stringify({projectId:state.currentProject?.id||null,conversationId:state.currentConversation||null,voice:state.geminiLiveVoice})});
     if(!state.liveTalk||generation!==state.liveGeneration){stream.getTracks().forEach(t=>t.stop());return;}
     if(typeof issued.token!=='string'||!issued.token||issued.token.length>4096||!String(issued.model||'').startsWith('models/'))throw new Error('Invalid Gemini Live session credentials');
+    state.liveServerMemoryContext=String(issued.memoryContext||'').slice(0,8000);
     const socket=new WebSocket('wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContentConstrained?access_token='+encodeURIComponent(issued.token));
     const transport=state.geminiLiveTransport;
     if(!transport||transport.closed){socket.close();return;}
@@ -2024,7 +2024,7 @@ async function connectLiveTalkAgent(){
     if(!state.liveTalk||generation!==state.liveGeneration){releaseLiveAgentPermissionStream(permissionStream);for(const track of permissionStream.getTracks())try{track.stop()}catch{}return;}
     state.liveAgentPermissionStream=permissionStream;
     const isIosWebKit=/iPad|iPhone|iPod/i.test(navigator.userAgent)||(/MacIntel/.test(navigator.platform||'')&&navigator.maxTouchPoints>1);
-    const issued=await api(isIosWebKit?'/api/voice/realtime-signed-url':'/api/voice/realtime-token',{method:'POST',body:JSON.stringify({projectId:state.currentProject?.id||null,conversationId:state.currentConversation||null,agent:state.liveAgentSelection})});
+    const issued=await api(isIosWebKit?'/api/voice/realtime-signed-url':'/api/voice/realtime-token',{method:'POST',body:JSON.stringify({projectId:state.currentProject?.id||null,conversationId:state.currentConversation||null,agent:state.liveAgentSelection,provider:'elevenlabs'})});
     if(!state.liveTalk||generation!==state.liveGeneration)return;
     if(issued.selectedAgent!==state.liveAgentSelection)throw new Error('Selected Live Talk agent was not confirmed by the server.');
     state.liveServerMemoryContext=String(issued.memoryContext||'').slice(0,8000);
@@ -2088,24 +2088,63 @@ async function connectLiveTalkAgent(){
     else pauseLiveTalkOnError(error?.message||'Could not connect to the ElevenLabs Realtime agent. Check that the agent is published and the server API key has access.','agent');
   }
 }
+// Each voice provider retains its transport; the view speaks through this contract.
+const liveVoiceSession=createLiveVoiceSessionBridge({
+ getProvider:()=>state.liveProvider,
+ drivers:{
+  elevenlabs:{
+   connect:connectLiveTalkAgent,
+   close:()=>{const conversation=state.liveAgentConversation;state.liveAgentConversation=null;return conversation?.endSession?.();},
+   isConnected:()=>Boolean(state.liveAgentConversation),
+   setMuted:muted=>state.liveAgentConversation.setMicMuted(muted),
+   updateContext:context=>state.liveAgentConversation.sendContextualUpdate(context),
+   sendText:text=>{state.liveAgentConversation.sendUserMessage(text);return true;},
+   notifyActivity:()=>state.liveAgentConversation.sendUserActivity?.(),
+  },
+  gemini:{
+   connect:connectGeminiLive,
+   close:closeGeminiLive,
+   isConnected:()=>Boolean(state.geminiLiveTransport&&!state.geminiLiveTransport.closed&&state.geminiLiveTransport.socket?.readyState===WebSocket.OPEN&&state.liveStage!=='connecting'),
+   setMuted:muted=>{state.geminiLiveInput?.getAudioTracks().forEach(track=>{track.enabled=!muted;});},
+   updateContext:context=>{
+    const t=state.geminiLiveTransport;
+    if(t&&!t.closed&&t.socket?.readyState===WebSocket.OPEN)
+     t.socket.send(JSON.stringify({clientContent:{turns:[{role:'user',parts:[{text:'Reference context update only. Do not answer this message.\n'+context.slice(0,10000)}]}],turnComplete:false}}));
+   },
+  },
+  openai:{
+   connect:connectOpenAILive,
+   close:closeOpenAILive,
+   isConnected:()=>Boolean(state.openaiLiveTransport&&!state.openaiLiveTransport.closed&&state.openaiLiveTransport.channel?.readyState==='open'),
+   setMuted:muted=>{state.openaiLiveTransport?.stream?.getAudioTracks().forEach(track=>{track.enabled=!muted;});},
+   updateContext:context=>{
+    const t=state.openaiLiveTransport;
+    if(t&&!t.closed&&t.channel?.readyState==='open')
+     t.channel.send(JSON.stringify({type:'session.update',session:{instructions:context.slice(0,14000)}}));
+   },
+  },
+ }
+});
 function toggleLiveTalk(){
   if(state.liveTalk){restoreLiveTalk();return;}
   if(state.sending){state.error='Wait for Poseidon to finish the current reply before starting Live Talk.';render();return;}
   if(window.isSecureContext===false){state.error='Live Talk requires a secure HTTPS page. Open OlyHub using its HTTPS address and reconnect.';render();return;}
   if(!liveTalkSupported()){state.error='Live Talk requires microphone access, audio playback, and a supported browser.';render();return;}
   state.voiceId=localStorage.getItem('zeus-voice-id')||'marin';unlockLiveAudioFromGesture();
-  state.error='';state.liveMuted=false;state.liveTalkMinimized=false;state.liveFailureKind=null;state.liveRetryCount=0;state.liveTalkStopRequested=false;state.liveAgentPartial='';state.liveTalk=true;state.liveStage='connecting';state.liveGeneration++;state.liveAgentLoggedEvents=new Map();state.liveAgentLogQueue=Promise.resolve();render();if(state.liveProvider==='gemini')connectGeminiLive();else if(state.liveProvider==='openai')connectOpenAILive();else connectLiveTalkAgent();
+  state.error='';state.liveMuted=false;state.liveTalkMinimized=false;state.liveFailureKind=null;state.liveRetryCount=0;state.liveTalkStopRequested=false;state.liveAgentPartial='';state.liveTalk=true;state.liveStage='connecting';state.liveGeneration++;state.liveAgentLoggedEvents=new Map();state.liveAgentLogQueue=Promise.resolve();render();void liveVoiceSession.connect();
 }
-function toggleLiveTalkMute(){
-  if(!state.liveTalk)return;
-  const connection=state.liveAgentConversation;
-  if(state.liveProvider==='openai'){const t=state.openaiLiveTransport;if(!t||t.closed){state.error='OpenAI Live is not connected.';render();return;}state.liveMuted=!state.liveMuted;t.stream?.getAudioTracks().forEach(track=>{track.enabled=!state.liveMuted});state.liveStage=state.liveMuted?'muted':'listening';render();return;}
-  if(state.liveProvider==='gemini'){if(!state.geminiLiveTransport||state.geminiLiveTransport.closed){state.error='Gemini Live is not connected.';render();return;}state.liveMuted=!state.liveMuted;state.geminiLiveInput?.getAudioTracks().forEach(track=>{track.enabled=!state.liveMuted});state.liveStage=state.liveMuted?'muted':'listening';render();return;}
-  try{
-    // ElevenLabs setMicMuted mutes the input pipeline only; agent audio output stays audible.
-    state.liveMuted=!state.liveMuted;connection.setMicMuted(state.liveMuted);
-    state.liveStage=state.liveMuted?'muted':'listening';state.error='';render();
-  }catch(error){pauseLiveTalkOnError(error?.message||'ElevenLabs Realtime could not change microphone state. Reconnect.','agent');}
+async function toggleLiveTalkMute(){
+ if(!state.liveTalk)return;
+ const generation=state.liveGeneration,nextMuted=!state.liveMuted;
+ try{
+  // All drivers mute input without muting assistant playback.
+  await liveVoiceSession.setMuted(nextMuted);
+  if(!state.liveTalk||generation!==state.liveGeneration)return;
+  state.liveMuted=nextMuted;state.liveStage=nextMuted?'muted':'listening';state.error='';render();
+ }catch(error){
+  if(!state.liveTalk||generation!==state.liveGeneration)return;
+  state.error=String(error?.message||'Could not change microphone state. Reconnect Live Talk.');render();
+ }
 }
 function livePersonaContext(){
   const preferences=state.preferences||{};
@@ -2156,13 +2195,7 @@ async function refreshLiveTalkContext(){
   if(revision!==voiceContextRevision||generation!==state.liveGeneration||!state.liveTalk||(state.currentProject?.id||null)!==projectId||(state.currentConversation||null)!==conversationId)return;
   state.liveServerMemoryContext=String(result.memoryContext||'').slice(0,8000);
   const context=liveSessionContext();
-  if(state.liveProvider==='elevenlabs')state.liveAgentConversation?.sendContextualUpdate(context);
-  else if(state.liveProvider==='openai'){const t=state.openaiLiveTransport;if(t&&!t.closed&&t.channel?.readyState==='open')t.channel.send(JSON.stringify({type:'session.update',session:{instructions:context.slice(0,14000)}}));}
-  else {
-   const transport=state.geminiLiveTransport;
-   if(transport&&!transport.closed&&transport.socket?.readyState===WebSocket.OPEN)
-    transport.socket.send(JSON.stringify({clientContent:{turns:[{role:'user',parts:[{text:'Reference context update only. Do not answer this message.\\n'+context.slice(0,10000)}]}],turnComplete:false}}));
-  }
+  liveVoiceSession.updateContext(context);
  }catch{if(generation===state.liveGeneration){state.error='Live Talk context refresh failed; existing context retained.';render();}}
 }
 async function executeLivePendingMutation(action){
@@ -2361,7 +2394,7 @@ function liveProjectClientTools(){
         await openProjectWorkspace(matches[0].id);
         if(!state.currentProject?.id)return 'Project could not be opened.';
         const context=liveSessionContext();
-        state.liveAgentConversation?.sendContextualUpdate(context);
+        liveVoiceSession.updateContext(context);
         return `Opened project “${state.currentProject.name}”. ${context}`;
       }catch(error){return `Could not open project: ${String(error?.message||'request failed').slice(0,180)}`;}
     },
@@ -2393,23 +2426,25 @@ function liveProjectClientTools(){
   };
 }
 function sendLiveTalkText(event){
-  event.preventDefault();
-  if(state.sending)return;
-  const input=$('#live-talk-text');const text=String(input?.value||'').trim();
-  if(!text)return;
-  const connection=state.liveAgentConversation;
-  if(!connection){state.liveTextDraft='';state.liveTextStatus='Sending your typed message through Poseidon…';void sendText(text,[],undefined,'ZEUS',null,null,{liveTalk:true});return;}
-  try{
-    connection.sendUserMessage(text);
-    state.liveTextDraft='';state.liveTextStatus='Message sent to the live agent.';state.error='';
-    if(input)input.value='';
-    const status=$('#live-talk-text-status');if(status)status.textContent=state.liveTextStatus;
-  }catch{state.liveTextDraft='';state.liveTextStatus='Sending your typed message through Poseidon…';void sendText(text,[],undefined,'ZEUS',null,null,{liveTalk:true});}
+ event.preventDefault();
+ if(state.sending)return;
+ const input=$('#live-talk-text'),text=String(input?.value||'').trim();
+ if(!text)return;
+ let accepted=false;
+ try{accepted=liveVoiceSession.sendText(text);}catch{accepted=false;}
+ if(!accepted){
+  state.liveTextDraft='';state.liveTextStatus='Sending your typed message through Poseidon…';
+  void sendText(text,[],undefined,'ZEUS',null,null,{liveTalk:true});
+  return;
+ }
+ state.liveTextDraft='';state.liveTextStatus='Message sent to the live agent.';state.error='';
+ if(input)input.value='';
+ const status=$('#live-talk-text-status');if(status)status.textContent=state.liveTextStatus;
 }
 async function retryLiveTalk(){
   if(!state.liveTalk)return;
   state.error='';state.liveRetryCount=0;state.liveFailureKind=null;
-  if(state.liveProvider==='gemini')await connectGeminiLive();else if(state.liveProvider==='openai')await connectOpenAILive();else await connectLiveTalkAgent();
+  await liveVoiceSession.connect();
 }
 
 async function startVoice(){

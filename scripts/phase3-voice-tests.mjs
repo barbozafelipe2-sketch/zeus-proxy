@@ -20,7 +20,7 @@ assert.match(live,/signedUrl:issued\.signedUrl/,'iOS WebSocket transport must re
 assert.match(live,/rawAudioProcessor:'\/assets\/elevenlabs-worklets\/raw-audio-processor\.js'/,'Live Talk must self-host the raw input AudioWorklet under the strict CSP');
 assert.match(live,/audioConcatProcessor:'\/assets\/elevenlabs-worklets\/audio-concat-processor\.js'/,'Live Talk must self-host the output AudioWorklet under the strict CSP');
 assert.match(live,/libsampleratePath:'\/assets\/elevenlabs-worklets\/libsamplerate\.worklet\.js'/,'Live Talk must self-host the iOS resampler worklet under the strict CSP');
-assert.match(live,/connection\.setMicMuted\(state\.liveMuted\)/,'Live Talk must mute and unmute the agent microphone');
+assert.match(live,/await liveVoiceSession\.setMuted\(nextMuted\)/,'Live Talk must mute the microphone through the session bridge');
 assert.match(live,/if\(state\.liveMuted\)\{\s*try\{await conversation\.setMicMuted\(true\);\}/,'a reconnect must confirm the saved mute state before Live Talk resumes');
 assert.match(live,/Could not confirm microphone mute after reconnect/,'a failed mute restoration must pause instead of claiming the microphone is muted');
 assert.match(live,/setMicMuted mutes the input pipeline only; agent audio output stays audible/,'Live Talk mute must only suppress Felipe’s microphone input, not agent playback');
@@ -83,7 +83,7 @@ const level3Source=readFileSync('netlify/functions/_shared/zeus-directed.mjs','u
 assert.match(level3Source,/Ordinary conversation is complete; do not initiate project inspection or unsolicited work/,'Zeus level 3 must use the same no-unsolicited-project policy');
 assert.match(ui,/Treat the recent transcript below as the prior turns of this same ongoing conversation/,'restored history must be clearly framed as prior conversation context');
 assert.ok(!ui.includes("selectLivePersona('ATHENA')"),'Live Talk must not switch to the unavailable Athena persona');
-assert.match(live,/connection\?\.endSession\?\.\(\)/,'exiting or pausing Live Talk must close the Realtime session');
+assert.match(live,/void liveVoiceSession\.closeAll\(\)/,'exiting or pausing Live Talk must close the Realtime transports');
 assert.match(ui,/Reconnect Realtime/,'Realtime failure must expose an explicit reconnect action');
 assert.match(live,/function describeLiveDisconnect\(details\)/,'Realtime disconnects must format the SDK diagnostic details');
 assert.match(live,/details\?\.context\?\.reason/,'Realtime disconnects must surface the LiveKit close reason');
