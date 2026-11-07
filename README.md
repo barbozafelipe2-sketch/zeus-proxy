@@ -6,7 +6,7 @@ Zeus Proxy is Felipe's private Netlify edition of Olympus Hub.
 
 ## Personal access
 
-The app is a single-owner personal workspace and does not use a shared API access token or unlock screen. Every API route resolves to the same persistent owner. Protect the Netlify site itself with Netlify visitor access controls; provider credentials remain server-side.
+The app is a single-owner personal workspace and does not use a shared API access token or unlock screen. Every API route resolves to the same persistent owner; Functions do not independently authenticate a Netlify SSO identity. The current Netlify site requires SSO for all deploys, and that protection is part of the security boundary: keep it enabled for production, preview/branch deploys, and every alternate hostname. Do not expose the site or enable Drive writes on an unprotected URL. Provider credentials remain server-side.
 
 ## Code Agent
 
@@ -35,11 +35,11 @@ A deterministic zero-token router chooses Zeus Level 1 / 2 / 3; Olympus is a mul
 
 ## Chat and voice behavior
 
-Text chat, voice messages and Live Talk follow the same OlyHub procedures and selected user personalization. Ordinary conversation does not trigger project inspection, tools or unsolicited work offers. Direct work requests use the selected Zeus level or Olympus mode; project tools are reserved for project requests. Live Talk restores a bounded recent transcript and only a small, relevant slice of the open project's context to control prompt cost. Google integrations are read-only; GitHub changes require the dedicated explicit action flow.
+Text chat, voice messages and Live Talk follow the same OlyHub procedures and selected user personalization. Ordinary conversation does not trigger project inspection, tools or unsolicited work offers. Direct work requests use the selected Zeus level or Olympus mode; project tools are reserved for project requests. Live Talk restores a bounded recent transcript and only a small, relevant slice of the open project's context to control prompt cost. The server-side Live Talk provider contract issues credentials for ElevenLabs, OpenAI Realtime and Gemini Live; ElevenLabs remains the default, and Muse stays disabled until it has a supported realtime conversation transport. Google lookups in chat are read-only; Drive document publishing requires the separate project review-and-confirm flow. GitHub changes require the dedicated explicit action flow.
 
-## Google read-only integrations
+## Google integrations
 
-Settings can connect Gmail, Calendar and Drive separately. Connected services can be searched in Settings and explicitly requested in chat; chat requests load a bounded result set into context. Gmail returns up to 10 message headers/snippets, Calendar up to 20 events from a maximum 31-day window (default: the next 7 days), and Drive up to 20 file metadata records per page. The app never writes to Google. OAuth access and refresh tokens are encrypted server-side with AES-256-GCM.
+Settings can connect Gmail, Calendar and Drive separately. Connected services can be searched in Settings and explicitly requested in chat; chat requests load a bounded result set into context. Gmail returns up to 10 message headers/snippets, Calendar up to 20 events from a maximum 31-day window (default: the next 7 days), and Drive up to 20 file metadata records per page. These chat integrations are read-only. A separate Drive writer can create a new Google Doc from a project summary only after the owner reviews the saved draft and confirms creation in the project UI; it never edits or deletes existing Drive files. OAuth access and refresh tokens are encrypted server-side with AES-256-GCM.
 
 Google reads from Settings and chat share a per-owner hourly safety limit of 60 requests by default. Set `OLYHUB_GOOGLE_READ_HOURLY_LIMIT` in Netlify Functions to adjust it; the limit is enforced atomically in the database before refreshing tokens or querying Google.
 
@@ -49,5 +49,7 @@ To enable Google access, enable the Gmail API, Google Calendar API and Google Dr
 - `GOOGLE_CLIENT_SECRET`
 - `GOOGLE_REDIRECT_URI` — exact HTTPS callback URI
 - `GOOGLE_OAUTH_ENCRYPTION_KEY` — 32 random bytes encoded as 64 hexadecimal characters
+
+Drive document publishing uses a separate Google connection with the `drive.file` scope. It is disabled unless `OLYHUB_DRIVE_WRITES_ENABLED=1` is set for Netlify Functions. Apply the `20261107090000_project_continuity` database migration before enabling the feature. The owner must review the full generated draft and explicitly confirm it in the project UI; chat, automated summaries, and GET requests cannot publish documents. See [the continuity and Drive publishing guide](docs/PROJECT_CONTINUITY_DRIVE.md) for the complete flow and production checks.
 
 For a private personal app, add the account as an OAuth test user while the consent screen is in Testing. Google currently expires test-user authorizations after seven days for scopes beyond basic profile access; Gmail read access also requires restricted-scope verification if the app is offered publicly. Reconnect the relevant service when Google reports authorization expired. See the Google Cloud OAuth consent screen and Gmail scope verification requirements before changing the app's audience.
