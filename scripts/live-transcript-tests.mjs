@@ -21,7 +21,7 @@ assert.equal(resolveVoiceTranscriptProvider('gemini').source,'gemini_live');
 assert.deepEqual(Object.keys(LIVE_VOICE_TRANSCRIPT_SOURCES),['elevenlabs','gemini','openai']);
 assert.throws(()=>resolveVoiceTranscriptProvider('muse'),error=>error.status===400&&error.code==='VOICE_TRANSCRIPT_PROVIDER_INVALID');
 const app=readFileSync('public/app.js','utf8'),handler=readFileSync('netlify/functions/voice-log.mjs','utf8');
-for(const text of ["createGeminiTranscriptAccumulator(","transport.transcripts.accept(turn);","transport.transcripts?.flush()","voiceProvider:provider,","const scope=liveTranscriptScopeForCurrentView();","scope.conversationId=saved.conversationId;","state.liveGeneration++;state.liveRetryCount++","liveSessionContext().slice(0,14000)"])assert.ok(app.includes(text),'missing voice integration: '+text);
+for(const text of ["createGeminiTranscriptAccumulator(","transport.transcripts.accept(turn);","state.geminiLiveTransport?.transcripts?.flush()","voiceProvider:provider,","const scope=liveTranscriptScopeForCurrentView();","scope.conversationId=saved.conversationId;","state.liveGeneration++;state.liveRetryCount++","liveSessionContext().slice(0,14000)"])assert.ok(app.includes(text),'missing voice integration: '+text);
 assert.ok(handler.includes('resolveVoiceTranscriptProvider(body?.voiceProvider)'));
 assert.ok(handler.includes("metadata->>'source'="+ '$' +"{source}"),'voice log dedupe must use provider-specific source');
 assert.ok(handler.includes('source,providerConversationId,eventId'),'stored metadata must tag the correct provider');
