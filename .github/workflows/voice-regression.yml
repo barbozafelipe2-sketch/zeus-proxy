@@ -1,0 +1,31 @@
+name: Live Talk provider regression
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'public/app.js'
+      - 'public/live-*.js'
+      - 'netlify/functions/voice-log.mjs'
+      - 'netlify/functions/_shared/voice-*.mjs'
+      - 'scripts/live-*.mjs'
+      - 'scripts/voice-provider-tests.mjs'
+      - '.github/workflows/voice-regression.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  live-talk-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate provider selection, transport lifecycle and transcript persistence
+        run: |
+          node scripts/live-voice-session-tests.mjs
+          node scripts/live-transcript-tests.mjs
+          node scripts/voice-provider-tests.mjs
