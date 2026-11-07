@@ -47,8 +47,7 @@ try{
   assert.deepEqual(openRouterVoiceOptions('fish').voices,[]);
   const app=readFileSync(new URL('../public/app.js',import.meta.url),'utf8');
   assert.match(app,/id="zeus-speech-provider"/);
-  assert.match(app,/id="zeus-openrouter-model"/);
-  assert.match(app,/id="zeus-openrouter-voice"/);
+  assert.ok(!app.includes('id="zeus-openrouter-model"')&&!app.includes('id="zeus-openrouter-voice"'),'OpenRouter stays a server-side fallback, without obsolete manual TTS selectors');
   assert.match(app,/id="elevenlabs-voice-preset"/);
   assert.match(app,/id="test-voice"/);
   assert.ok(app.includes('openrouterModel:state.openrouterModel'));

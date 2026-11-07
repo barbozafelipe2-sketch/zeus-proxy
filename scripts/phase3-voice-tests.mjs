@@ -100,7 +100,8 @@ assert.match(ui,/You can still type below; Poseidon will answer by voice/,'typed
 assert.match(ui,/\$\('#live-talk-text-form'\)\?\.addEventListener\('submit',sendLiveTalkText\)/,'typed fallback must be wired to submit');
 assert.match(ui,/aria-label="End Live Talk"/,'Live Talk end action must be explicit and accessible');
 assert.match(transcribe,/createElevenLabsRealtimeConversationToken/,'server creates temporary ElevenLabs Realtime conversation credentials');
-assert.match(transcribe,/elevenlabs_realtime_token/,'token mint endpoint must be rate-limited');
+const realtimeHandler=readFileSync('netlify/functions/_shared/voice-realtime.mjs','utf8');
+assert.match(realtimeHandler,/voice_realtime_session/,'all Live Talk credential providers must pass the central rate limiter');
 assert.match(transcribe,/path: \['\/api\/transcribe','\/api\/voice\/realtime-token','\/api\/voice\/realtime-signed-url'\]/,'Netlify must route both Realtime credential endpoints');
 const log=readFileSync('netlify/functions/voice-log.mjs','utf8');
 assert.match(log,/requireUser/,'transcript persistence must require authentication');
