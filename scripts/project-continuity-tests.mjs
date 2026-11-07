@@ -1,0 +1,15 @@
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import {projectContinuityPrompt} from '../netlify/functions/project-continuity.mjs';
+const migration=readFileSync('netlify/database/migrations/20261107090000_project_continuity/migration.sql','utf8');
+const api=readFileSync('netlify/functions/project-continuity.mjs','utf8');
+assert.match(migration,/PRIMARY KEY\(owner_id,project_id\)/);
+assert.match(migration,/UNIQUE\(owner_id,project_id,revision\)/);
+assert.match(api,/consumeEndpointRate\(db,ownerId,'project_continuity_refresh',requestId,12\)/);
+assert.match(api,/lease_token=\$7 AND status='BUILDING'/);
+assert.match(api,/withTransaction/);
+assert.match(api,/m\.owner_id=\$\{ownerId\} AND c\.owner_id=\$\{ownerId\}/);
+assert.match(api,/MAX_BATCH=30/);
+const prompt=projectContinuityPrompt({previous:'Version 2 approved',messages:[{role:'user',created_at:'2026-11-07',content:'Never deploy manually'}]});
+assert.ok(prompt.includes('Version 2 approved')&&prompt.includes('Never deploy manually')&&prompt.includes('Newer corrections'));
+console.log('Incremental continuity cursor, versioning, bounded model calls: PASS');
