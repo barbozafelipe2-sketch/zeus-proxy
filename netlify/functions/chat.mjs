@@ -175,7 +175,7 @@ async function buildContext({db,userId,projectId,conversationId,currentMessageId
    approvedPersonalMemories:scopedMemory.personal?.selection?.selected?.length||0,
    approvedProjectMemories:scopedMemory.project?.selection?.selected?.length||0,
    recentTurns:history.length,attachedFiles:attachmentRows.length,
-   projectFilesIncluded:(projectFilesText.match(/PROJECT FILE:/g)||[]).length,
+   projectFilesIncluded:(context.match(/PROJECT FILE:/g)||[]).length,
    summaryIncluded:Boolean(continuityText&&context.includes('HISTORICAL PROJECT CONTINUITY')),
    summaryRevision:continuityRevision,summaryUpdatedAt:continuityUpdatedAt||null,
    priorChatsSearched:Boolean(priorConversationContext)};

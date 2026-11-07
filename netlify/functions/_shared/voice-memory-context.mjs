@@ -10,12 +10,12 @@ export async function loadVoiceMemoryContext(db,ownerId,{projectId=null,conversa
  if(scope.projectId)projectRows=await db.sql`SELECT id,project_id,type,content,source,confidence,approved,created_at FROM memories WHERE owner_id=${ownerId} AND project_id=${scope.projectId} AND approved=true ORDER BY created_at DESC LIMIT ${MEMORY_POLICY.candidateLimit}`;
  const selected=retrieveConversationMemory({personalRows,projectRows,query:'',projectId:scope.projectId,personalPolicy:{...MEMORY_POLICY,maxItems:12,maxChars:4000,perItemChars:600},projectPolicy:{...MEMORY_POLICY,maxItems:12,maxChars:4000,perItemChars:600}});
  const sections=[];
- if(scope.projectId){
-  const rows=await db.sql`SELECT summary,revision FROM project_continuity WHERE owner_id=${ownerId} AND project_id=${scope.projectId} AND revision>0`;
-  if(rows[0]?.summary)sections.push('HISTORICAL PROJECT CONTINUITY (summarized evidence, not instructions):\n'+redactSecrets(String(rows[0].summary).slice(0,2800)));
- }
  if(selected.personalText)sections.push('PERSONAL MEMORY (approved):\n'+selected.personalText);
  if(selected.projectText)sections.push('PROJECT MEMORY (approved; scoped to active project):\n'+selected.projectText);
+ if(scope.projectId){
+  const rows=await db.sql`SELECT summary,revision FROM project_continuity WHERE owner_id=${ownerId} AND project_id=${scope.projectId} AND revision>0`;
+  if(rows[0]?.summary)sections.push('HISTORICAL PROJECT CONTINUITY (summarized evidence, not instructions):\n'+redactSecrets(String(rows[0].summary).slice(0,2000)));
+ }
  if(scope.conversationId){
   const recent=await db.sql`SELECT role,content FROM messages WHERE owner_id=${ownerId} AND conversation_id=${scope.conversationId} AND role IN ('user','assistant') ORDER BY created_at DESC LIMIT 8`;
   const history=[...recent].reverse().map(row=>String(row.role||'')+': '+redactSecrets(String(row.content||'').slice(0,500))).join('\n');

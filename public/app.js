@@ -15,6 +15,7 @@ const state = {
   attachedFiles:[], projects:[], projectFilter:'ALL', currentProject:null, tasks:[],
   files:[], artifacts:[], health:null, recording:false,
   projectSection:'CHAT', projectMemories:[], personalMemories:[], projectSources:[], memoryPolicy:null,
+  projectContinuity:null,projectDrive:null,continuityBusy:false,driveBusy:false,continuityError:'',
   messagePage:{hasMore:false,nextCursor:null}, filesPage:{scope:'global',hasMore:false,nextCursor:null}, artifactsPage:{scope:'global',hasMore:false,nextCursor:null}, chatRestore:null,
   voiceBusy:false, voiceRecorder:null, voiceStream:null, voiceChunks:[], voiceStopTimer:null, voiceBytes:0, voiceHitSizeLimit:false, voiceSubmitRequested:false,
   liveTalk:false, liveTalkMinimized:false, liveTalkStopRequested:false, liveMuted:false, livePersona:'ZEUS', liveAgentSelection:'zeus', liveProvider:'elevenlabs', openaiLiveVoice:'marin', geminiLiveVoice:'Kore', liveFailureKind:null, liveAgentConversation:null, liveAgentConversationId:'', livePendingMutation:null, liveAgentPartial:'', liveTextDraft:'', liveTextStatus:'', liveAgentPermissionStream:null, liveAgentLogQueue:Promise.resolve(), liveAgentLoggedEvents:new Map(), liveTranscriptScope:null, liveGeneration:0, liveRetryCount:0, liveStage:'idle', liveLocale:'auto', voiceId:'marin', speechProvider:'gemini', openrouterModel:'google', openrouterVoice:'', openrouterVoices:[], openrouterVoicesLoading:false, openrouterVoicesLoaded:false, googleVoice:storageGet('zeus-google-tts-voice')||'Kore', elevenLabsVoiceId:'', voiceStatus:null, voiceTesting:false, liveSpeechCache:null, voiceReplyAudio:null, liveAudioUrl:null, liveSpeechController:null, liveAudioUnlocked:false, liveSpeechUnlocked:false,
@@ -163,6 +164,56 @@ async function bootstrapApp(){
 }
 async function loadConversations(){ const d=await api('/api/conversations');state.conversations=d.conversations||[]; }
 async function loadProjects(){ const d=await api('/api/projects');state.projects=d.projects||[]; if(state.currentProject)state.currentProject=state.projects.find(p=>p.id===state.currentProject.id)||null; }
+async function loadProjectContinuity(projectId){
+ try{state.projectContinuity=await api('/api/project-continuity?projectId='+encodeURIComponent(projectId));state.continuityError='';}
+ catch(e){state.projectContinuity=null;state.continuityError=e.message||'Resumo indisponível';}
+}
+async function loadProjectDrive(projectId){
+ try{state.projectDrive=await api('/api/project-drive-sync?projectId='+encodeURIComponent(projectId));}
+ catch(e){state.projectDrive={enabled:false,actions:[]};state.continuityError=state.continuityError||e.message||'Drive indisponível';}
+}
+async function refreshProjectContinuity(){
+ const projectId=state.currentProject?.id;if(!projectId||state.continuityBusy)return;
+ state.continuityBusy=true;render();
+ try{
+  const r=await api('/api/project-continuity',{method:'POST',body:JSON.stringify({action:'refresh',projectId})});
+  await loadProjectContinuity(projectId);state.error='';
+  state.execStatus=r.upToDate?'Resumo já atualizado.':r.hasMore?'Lote concluído. Atualize novamente para incluir mais mensagens.':'Resumo atualizado.';
+ }catch(e){state.error=e.message||'Falha na atualização do resumo.';}
+ finally{state.continuityBusy=false;render();}
+}
+function driveSummaryApprovalModal(action){
+ if(!action||action.state!=='PENDING'||!action.id)return;
+ showModal(`<div class="modal-backdrop"><div class="modal" aria-labelledby="drive-approval-title">
+   <div class="modal-head"><h2 id="drive-approval-title">Autorizar documento no Drive</h2><button type="button" class="ghost" id="modal-close" aria-label="Fechar">${icon('close')}</button></div>
+   <div id="modal-notice" class="notice error-notice hidden" role="alert"></div>
+   <p class="muted tiny">Aprovação específica para criar um documento. OlyHub não vai compartilhar, sobrescrever ou excluir arquivos.</p>
+   <p><strong>${esc(action.title||'Resumo do projeto')}</strong> · revisão ${Number(action.summaryRevision||0)}</p>
+   <div class="card" tabindex="0" style="white-space:pre-wrap;overflow-wrap:anywhere;max-height:330px;overflow-y:auto">${esc(String(action.content||'').slice(0,8500))}</div>
+   <div class="modal-actions"><button type="button" id="drive-approval-cancel" class="secondary">Agora não</button><button type="button" id="drive-approval-confirm" class="primary">Criar este documento</button></div>
+  </div></div>`,{initialFocus:'#drive-approval-confirm'});
+ $('#modal-close').onclick=$('#drive-approval-cancel').onclick=()=>closeModal();
+ $('#drive-approval-confirm').onclick=async()=>{
+  const b=$('#drive-approval-confirm');b.disabled=true;b.setAttribute('aria-busy','true');
+  try{
+   await api('/api/project-drive-sync',{method:'POST',body:JSON.stringify({action:'approve',projectId:state.currentProject.id,actionId:action.id,confirm:true})});
+   closeModal();await loadProjectDrive(state.currentProject.id);state.error='';render();
+  }catch(e){setModalError(e.message||'Falha na criação.');b.disabled=false;b.removeAttribute('aria-busy');}
+ };
+}
+async function prepareProjectDrive(){
+ const projectId=state.currentProject?.id;if(!projectId||state.driveBusy)return;
+ state.driveBusy=true;
+ try{
+  const result=await api('/api/project-drive-sync',{method:'POST',body:JSON.stringify({action:'prepare',projectId})});
+  await loadProjectDrive(projectId);
+  state.driveBusy=false;render();
+  if(result.action?.state==='PENDING')driveSummaryApprovalModal(result.action);
+  else if(result.action?.state==='COMPLETED'){state.execStatus='Documento já publicado no Drive.';render();}
+  else{state.error='Essa revisão já possui uma execução de Drive em andamento.';render();}
+ }catch(e){state.error=e.message||'Não foi possível preparar o documento.';render();}
+ finally{state.driveBusy=false;}
+}
 function mergeById(existing,incoming){const map=new Map((existing||[]).map(x=>[x.id,x]));for(const item of incoming||[])map.set(item.id,item);return [...map.values()];}
 async function loadFiles(projectId=null,{append=false}={}){
   const scope=projectId||'global';const page=state.filesPage?.scope===scope?state.filesPage:{scope,hasMore:false,nextCursor:null};
@@ -367,6 +418,8 @@ function messageHtml(m){
     ?`<details class="trace-lab"><summary>Especialista · ${esc(m.metadata.skillGod)}</summary><div>${esc(m.metadata.skillId||'')} · ${Math.max(0,Math.min(3,Number(m.metadata.skillStagesCompleted)||0))} etapas concluídas · ${m.metadata.skillCapabilityExecuted===true?'Ação externa confirmada':'Sem ação externa confirmada'}${m.metadata.delegatedSkillId?` · Delegação: ${esc(m.metadata.delegatedSkillId)} (${Math.min(3,Number(m.metadata.delegatedModelStages)||0)} etapas; ${Array.isArray(m.metadata.delegatedModelRoles)?m.metadata.delegatedModelRoles.map(r=>esc(r.provider+':'+r.model)).join(', '):''})`:''}${m.metadata.delegationSkipped?` · Delegação não realizada: ${esc(m.metadata.delegationSkipped)}`:''}</div></details>`:'';
   const traceCalls=m.role==='assistant'&&Array.isArray(m.metadata?.traceCalls)?m.metadata.traceCalls.slice(0,24):[];
   const traceHtml=traceCalls.length?`<details class="trace-lab"><summary>Trace Lab · ${traceCalls.filter(call=>call.outcome==='success').length} concluídas / ${traceCalls.length} chamadas</summary><ol>${traceCalls.map(call=>`<li class="trace-call ${call.outcome==='success'?'success':'failure'}"><span class="trace-call-state">${call.outcome==='success'?'OK':'Falhou'}</span><span class="trace-call-model">${esc([call.family&&call.family!==call.provider?call.family:null,call.provider,call.model].filter(Boolean).join(' · ')||'Modelo não informado')}</span><span class="trace-call-stage">${esc(call.stage||'etapa')} · ${esc(call.transport||'rota')}${Number.isFinite(Number(call.durationMs))?` · ${Math.round(Number(call.durationMs))} ms`:''}${call.status?` · HTTP ${esc(call.status)}`:''}</span></li>`).join('')}</ol></details>`:'';
+   const r=m.role==='assistant'&&m.metadata?.contextReceipt&&typeof m.metadata.contextReceipt==='object'?m.metadata.contextReceipt:null;
+   const contextHtml=r?`<details class="trace-lab"><summary>Contexto utilizado nesta resposta</summary><div class="muted tiny">Memórias aprovadas: pessoal ${Number(r.approvedPersonalMemories||0)} · projeto ${Number(r.approvedProjectMemories||0)}. Histórico recente: ${Number(r.recentTurns||0)} turnos. Arquivos anexados: ${Number(r.attachedFiles||0)} · arquivos do projeto: ${Number(r.projectFilesIncluded||0)}. Fontes oficiais do projeto: ${Number(r.sourceOfTruthCount||0)}. Resumo histórico: ${r.summaryIncluded?'incluído (revisão '+Number(r.summaryRevision||0)+')':'não utilizado'}. Chats anteriores: ${r.priorChatsSearched?'pesquisados por solicitação':'não pesquisados'}.</div></details>`:'';
   const speaker=m.role==='user'?'YOU':(m.mode==='ZEUS'||!m.mode?'POSEIDON':String(m.mode).toUpperCase());
   const messageId=String(m.id||m.execution_id||'');
   const reaction=state.messageFeedback[messageId]||'';
@@ -376,7 +429,7 @@ function messageHtml(m){
   const compareBusy=compareSource&&state.imageCompareStartingId===compareSource.id;
   const compareAction=m.role==='assistant'&&compareSource&&!m.metadata?.comparePair?`<button type="button" class="message-action message-compare ${compareBusy?'selected':''}" data-compare-image="${esc(compareSource.id)}" aria-label="${compareBusy?'Generating image B':'Generate image B to compare with this image'}" title="${compareBusy?'Generating B…':'Compare A/B'}" ${state.sending||Boolean(state.imageCompareStartingId)?'disabled':''}><span>${icon(compareBusy?'auto':'compare')}</span></button>`:'';
   const messageActions=m.role==='assistant'&&messageId?`<div class="message-actions" aria-label="Rate, compare, or listen to this assistant reply"><button type="button" class="message-action ${reaction==='up'?'selected':''}" data-message-feedback="up" data-message-id="${esc(messageId)}" aria-label="Approve this answer" aria-pressed="${reaction==='up'}" title="Useful"><span>${icon('like')}</span></button><button type="button" class="message-action ${reaction==='down'?'selected':''}" data-message-feedback="down" data-message-id="${esc(messageId)}" aria-label="Disapprove this answer" aria-pressed="${reaction==='down'}" title="Not useful"><span>${icon('dislike')}</span></button><button type="button" class="message-action message-speak ${activeMessageAudio?'selected':''}" data-message-speak="${esc(messageId)}" aria-label="${audioBusy?'Generating speech':activeMessageAudio?'Pause or resume reading':'Read answer aloud'}" title="${audioBusy?'Preparing voice…':activeMessageAudio?'Pause / resume':'Read aloud'}" ${audioBusy?'disabled':''}><span>${icon(audioBusy?'auto':activeMessageAudio&&state.messageAudioPlaying?'pause':'speaker')}</span></button>${compareAction}${audioBusy?'<span class="message-audio-status" role="status">Preparing voice…</span>':''}</div>`:'';
-  return `<article class="message ${m.role==='user'?'user':'assistant'}"><div class="message-label">${m.role==='user'?'':`<span class="message-bolt" aria-hidden="true">⚡</span>`}<span>${esc(speaker)}</span></div><div class="message-body ${m.role==='assistant'?'markdown-body':''}">${m.role==='assistant'?renderMarkdown(m.content||''):esc(m.content||'')}</div>${imagePreview}${codeJobHtml}${messageActions}${skillTrace}${traceHtml}${note?`<details class="message-debug"><summary>Execution details</summary><div class="message-model">${esc(note)}</div></details>`:''}${sourceHtml}${attached?`<div class="attachments in-message">${attached}</div>`:''}${artifacts?`<div class="artifact-row">${artifacts}</div>`:''}${imageCompare||compareControls}</article>`;
+  return `<article class="message ${m.role==='user'?'user':'assistant'}"><div class="message-label">${m.role==='user'?'':`<span class="message-bolt" aria-hidden="true">⚡</span>`}<span>${esc(speaker)}</span></div><div class="message-body ${m.role==='assistant'?'markdown-body':''}">${m.role==='assistant'?renderMarkdown(m.content||''):esc(m.content||'')}</div>${imagePreview}${codeJobHtml}${messageActions}${skillTrace}${traceHtml}${contextHtml}${note?`<details class="message-debug"><summary>Execution details</summary><div class="message-model">${esc(note)}</div></details>`:''}${sourceHtml}${attached?`<div class="attachments in-message">${attached}</div>`:''}${artifacts?`<div class="artifact-row">${artifacts}</div>`:''}${imageCompare||compareControls}</article>`;
 }
 function artifactCard(a){const tag=esc((a.type||'FILE').toUpperCase().slice(0,4)),url=esc(a.downloadUrl||''),name=esc(a.filename||'Zeus Proxy output'),mime=esc(a.mime_type||a.type||'application/octet-stream'),isImage=String(a.mime_type||'').startsWith('image/'),compareImage=isImage&&a.metadata?.toolId==='images',isZip=a.type==='zip'||/zip/i.test(a.mime_type||'')||String(a.filename||'').toLowerCase().endsWith('.zip'),git=Boolean(state.health?.capabilities?.githubCommit);return `<div class="artifact-card">${isImage?`<button type="button" class="artifact-thumb-wrap" data-open-output="${url}" data-output-name="${name}" data-output-mime="${mime}" aria-label="Open ${name}"><img class="artifact-thumb" data-private-image="${url}" alt=""></button>`:`<div class="out-badge">${tag}</div>`}<div><strong>${name}</strong><small>${fmtSize(a.size)} · ${mime}</small></div><div class="artifact-actions">${compareImage?`<button type="button" class="ghost-a" data-compare-image="${esc(a.id)}">Compare A/B</button>`:''}<button type="button" data-open-output="${url}" data-output-name="${name}" data-output-mime="${mime}">Open</button><button type="button" class="ghost-a" data-download-output="${url}" data-output-name="${name}">Download</button>${isZip&&git?`<button type="button" class="ghost-a" data-github-commit="artifact" data-source-id="${esc(a.id)}" data-source-name="${name}">Commit</button>`:''}</div></div>`}
 const LIVE_LOCALES={auto:'auto',pt:'pt-BR',en:'en-US',es:'es-ES'};
@@ -763,6 +816,22 @@ function projectChatView(){
     </aside>
   </div>`;
 }
+function projectContinuityPanel(){
+ const s=state.projectContinuity?.summary||{},versions=state.projectContinuity?.revisions||[];
+ const drive=state.projectDrive||{},connected=Boolean(state.googleConnections?.connections?.drive_write?.connected);
+ const current=(drive.actions||[]).find(a=>a.summaryRevision===Number(s.revision||0));
+ const link=String(current?.driveUrl||'').startsWith('https://docs.google.com/document/d/')?current.driveUrl:'';
+ return `<div class="panel project-continuity-panel"><div class="panel-head">
+  <div><h2>Resumo vivo</h2><p class="muted tiny">Síntese incremental e versionada do histórico. Memórias aprovadas e Source of Truth continuam prioritárias.</p></div>
+  <button type="button" class="secondary compact" id="refresh-project-continuity" ${state.continuityBusy?'disabled':''}>${state.continuityBusy?'Atualizando…':'Atualizar lote'}</button></div>
+  ${state.continuityError?`<p class="status-warn">${esc(state.continuityError)}</p>`:''}
+  ${s.hasSummary?`<p class="muted tiny">Revisão ${Number(s.revision||0)} · ${Number(s.messageCount||0)} mensagens · ${esc(fmtDateTime(s.updatedAt))}</p><div class="card" style="white-space:pre-wrap;overflow-wrap:anywhere;max-height:340px;overflow-y:auto">${esc(s.summary)}</div>`:'<div class="empty-mini">Ainda não há resumo. Cada atualização usa no máximo uma chamada de IA e consolida até 30 mensagens novas.</div>'}
+  ${versions.length>1?`<details class="source-history"><summary>Revisões (${versions.length})</summary><ol>${versions.map(v=>`<li>v${Number(v.revision||0)} · ${Number(v.source_message_count||0)} mensagens · ${esc(fmtDateTime(v.created_at))}</li>`).join('')}</ol></details>`:''}
+  ${drive.enabled&&connected&&s.hasSummary?`<button type="button" class="secondary compact" id="prepare-project-drive" ${state.driveBusy?'disabled':''}>${state.driveBusy?'Preparando…':'Revisar e criar no Drive'}</button>`:''}
+  ${link?`<a href="${esc(link)}" target="_blank" rel="noopener noreferrer">Abrir documento criado</a>`:''}
+  ${!drive.enabled?'<p class="muted tiny">Escrita no Drive desabilitada até configurar OLYHUB_DRIVE_WRITES_ENABLED=1 no servidor após a revisão de acesso.</p>':!connected?'<p class="muted tiny">Conecte Google Drive (criação) em Configurações antes de publicar.</p>':'<p class="muted tiny">Todo documento requer revisão e confirmação explícita.</p>'}
+ </div>`;
+}
 function projectOverviewView(){
   const p=state.currentProject;
   const open=state.tasks.filter(t=>t.status!=='DONE').slice(0,5);
@@ -771,6 +840,7 @@ function projectOverviewView(){
   return `<div class="project-section-grid">
     <div class="project-main-column">
       <div class="stat-grid project-stat-grid"><div class="card stat-card"><strong>${Number(p.progress||0)}%</strong><span>Progress</span></div><div class="card stat-card"><strong>${Number(p.task_count||0)}</strong><span>Tasks</span></div><div class="card stat-card"><strong>${Number(p.file_count||0)+Number(p.artifact_count||0)}</strong><span>Files + outputs</span></div><div class="card stat-card"><strong>${Number(p.memory_count||0)}</strong><span>Memories</span></div></div>
+      ${projectContinuityPanel()}
       <div class="panel"><div class="panel-head"><h2>Next tasks</h2><button class="text-gold" data-project-section="TASKS">Manage ›</button></div><div class="task-list">${open.length?open.map(taskHtml).join(''):`<div class="empty-mini">No open tasks.</div>`}</div></div>
       <div class="panel"><div class="panel-head"><h2>Recent project material</h2><button class="text-gold" data-project-section="FILES">Open files ›</button></div>${projectFiles.length||projectArtifacts.length?`<div class="output-list">${[...projectArtifacts.map(a=>({...a,kind:'artifact'})),...projectFiles.map(f=>({...f,kind:'file'}))].sort((a,b)=>new Date(b.created_at)-new Date(a.created_at)).slice(0,6).map(outputItem).join('')}</div>`:`<div class="empty-mini">No project files or outputs yet.</div>`}</div>
     </div>
@@ -891,11 +961,11 @@ async function loadGoogleConnections(){
 function googleIntegrationSettings(){
   const info=state.googleConnections||{},connections=info.connections||{};
   return `<article class="card settings-card"><h3>Google integrations</h3>
-   <p class="muted tiny">Gmail, Calendar and Drive use separate, read-only Google permissions. Search here or ask Poseidon to look up your connected Google data. No Google password or OAuth credentials are stored in your browser. Configure OAuth on the server first.</p>
-   <div class="diag-list">${[['gmail','Gmail'],['calendar','Google Calendar'],['drive','Google Drive']].map(([id,label])=>{
+   <p class="muted tiny">Gmail, Calendar e Drive utilizam permissões de leitura separadas. A criação de documentos requer autorização drive.file e aprovação por operação. Search here or ask Poseidon to look up your connected Google data. No Google password or OAuth credentials are stored in your browser. Configure OAuth on the server first.</p>
+   <div class="diag-list">${[['gmail','Gmail'],['calendar','Google Calendar'],['drive','Google Drive (leitura)'],['drive_write','Google Drive (criação)']].map(([id,label])=>{
      const ok=Boolean(connections[id]?.connected);
      const result=state.googleSearchResults[id],query=esc(state.googleSearchQueries[id]||'');
-     const search=ok?`<form class="google-search-form" data-google-search="${id}"><input name="q" value="${query}" maxlength="200" aria-label="Search ${label}" placeholder="${id==='calendar'?'Search events':'Search '+label}"><button type="submit" class="secondary compact" ${state.googleSearchBusy===id?'disabled':''}>${state.googleSearchBusy===id?'Searching…':'Search'}</button></form>`:'';
+     const search=ok&&id!=='drive_write'?`<form class="google-search-form" data-google-search="${id}"><input name="q" value="${query}" maxlength="200" aria-label="Search ${label}" placeholder="${id==='calendar'?'Search events':'Search '+label}"><button type="submit" class="secondary compact" ${state.googleSearchBusy===id?'disabled':''}>${state.googleSearchBusy===id?'Searching…':'Search'}</button></form>`:'';
      const items=Array.isArray(result?.items)?result.items.map(item=>{
        if(id==='gmail')return `<article><strong>${esc(item.subject)}</strong><small>${esc(item.from)} · ${esc(item.date)}</small><p>${esc(item.snippet)}</p></article>`;
        if(id==='calendar')return `<article><strong>${item.htmlLink?`<a href="${esc(item.htmlLink)}" target="_blank" rel="noreferrer noopener">${esc(item.summary)}</a>`:esc(item.summary)}</strong><small>${esc(item.start)}${item.end?` – ${esc(item.end)}`:''}</small>${item.location?`<p>${esc(item.location)}</p>`:''}</article>`;
@@ -1244,6 +1314,8 @@ function bind(){
     }catch(error){state.codeAgentError=error.message||'Não foi possível adicionar o pedido à fila.';}
     finally{state.codeAgentSending=false;render();$('#code-agent-request')?.focus();}
   });
+  $('#refresh-project-continuity')?.addEventListener('click',refreshProjectContinuity);
+  $('#prepare-project-drive')?.addEventListener('click',prepareProjectDrive);
   $('#project-source-form')?.addEventListener('submit',async e=>{
     e.preventDefault();const form=e.currentTarget;
     const id=$('#project-source-id')?.value||'';
@@ -2590,6 +2662,7 @@ async function deleteMemory(id,scope='project'){
 async function hydrateProjectWorkspace(projectId,{loadConversation=true}={}){
   if(!projectId)return;
   await Promise.all([loadTasks(projectId),loadMemories(projectId),loadFiles(projectId),loadArtifacts(projectId)]);await loadProjectSources();
+  await Promise.allSettled([loadProjectContinuity(projectId),loadProjectDrive(projectId),loadGoogleConnections()]);
   const refreshed=state.projects.find(p=>p.id===projectId);
   if(refreshed)state.currentProject=refreshed;
   if(loadConversation&&state.currentProject)await loadProjectConversation(state.currentProject);

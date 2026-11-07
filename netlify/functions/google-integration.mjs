@@ -8,7 +8,8 @@ const env=k=>globalThis.Netlify?.env?.get?.(k)||process.env?.[k]||'';
 const SCOPES=Object.freeze({
  gmail:'https://www.googleapis.com/auth/gmail.readonly',
  calendar:'https://www.googleapis.com/auth/calendar.readonly',
- drive:'https://www.googleapis.com/auth/drive.readonly'
+ drive:'https://www.googleapis.com/auth/drive.readonly',
+ drive_write:'https://www.googleapis.com/auth/drive.file'
 });
 const services=new Set(Object.keys(SCOPES));
 const path='/api/google-integration';
@@ -33,7 +34,7 @@ export default async function(req,context){
      if(!valid||!payload||payload.owner!=='zeus-personal-owner'||!services.has(payload.service)||Date.now()-payload.time>600000||payload.time>Date.now()+30000||!code||error)return popupHtml(false,'Authorization expired, cancelled, or could not be verified. Start again in Zeus Settings.');
      const token=await fetch('https://oauth2.googleapis.com/token',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({code,client_id:env('GOOGLE_CLIENT_ID'),client_secret:env('GOOGLE_CLIENT_SECRET'),redirect_uri:redirect(req),grant_type:'authorization_code'}),signal:AbortSignal.timeout(8000)});
      const data=await token.json().catch(()=>({}));if(!token.ok||!data.access_token||!data.refresh_token)return popupHtml(false,'Google did not return a usable refresh token. Disconnect and retry authorization.');
-     if(!String(data.scope||'').split(/\s+/).includes(SCOPES[payload.service]))return popupHtml(false,'Google did not grant the requested read-only permission. Start authorization again.');
+     if(!String(data.scope||'').split(/\s+/).includes(SCOPES[payload.service]))return popupHtml(false,'Google did not grant the requested permission. Start authorization again.');
      // State + one-time browser cookie bind the callback to the owner-initiated browser.
      const {getDatabase}=await import('@netlify/database');const db=getDatabase();
      await db.sql`INSERT INTO google_connections(owner_id,service,access_ciphertext,refresh_ciphertext,expires_at,scopes)
@@ -49,7 +50,7 @@ export default async function(req,context){
      const rows=await db.sql`SELECT service,updated_at FROM google_connections WHERE owner_id=${user.id}`;
      return json({configured:Boolean(configured()&&redirect(req)),connections:Object.fromEntries(Object.keys(SCOPES).map(s=>[s,{connected:rows.some(r=>r.service===s),updatedAt:rows.find(r=>r.service===s)?.updated_at||null}]))});
    }
-   if(services.has(action)&&req.method==='GET'){
+   if(['gmail','calendar','drive'].includes(action)&&req.method==='GET'){
      await consumeEndpointRate(db,user.id,'google_read',requestId);
      const url=new URL(req.url);
      const token=await resolveGoogleAccessToken({db,ownerId:user.id,service:action,key:encKey(),clientId:env('GOOGLE_CLIENT_ID'),clientSecret:env('GOOGLE_CLIENT_SECRET')});

@@ -1,6 +1,6 @@
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
 
-const SERVICE_SET=new Set(['gmail','calendar','drive']);
+const SERVICE_SET=new Set(['gmail','calendar','drive','drive_write']);
 const GOOGLE_API_TIMEOUT_MS=8000;
 
 export function detectGoogleServiceRequests(text=''){
