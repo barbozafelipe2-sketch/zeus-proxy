@@ -2,6 +2,7 @@ import { requireUser } from './_shared/auth.mjs';
 import { json, readJson, cleanText, isUuid, getRequestId, errorJson } from './_shared/http.mjs';
 import { consumeEndpointRate } from './_shared/limits.mjs';
 import { resolveOwnedScope } from './_shared/relations.mjs';
+import { resolveVoiceTranscriptProvider } from './_shared/voice-transcript-source.mjs';
 
 async function handler(req,context){
   const requestId=getRequestId(req,context,null);
@@ -11,6 +12,7 @@ async function handler(req,context){
   try{
     const body=await readJson(req),role=body?.role==='user'?'user':body?.role==='assistant'?'assistant':'';
     const content=cleanText(body?.content,8000),eventId=String(body?.eventId||'').slice(0,80);
+    const {source}=resolveVoiceTranscriptProvider(body?.voiceProvider);
     const providerConversationId=String(body?.providerConversationId||'').slice(0,100);
     if(!role||!content||!eventId||!providerConversationId)return errorJson('A voice transcript event is incomplete.',400,'VOICE_TRANSCRIPT_INVALID',requestId);
     const scope=await resolveOwnedScope(db,user.id,{projectId:body?.projectId||null,conversationId:body?.conversationId||null});
@@ -26,13 +28,13 @@ async function handler(req,context){
         conversationId=rows[0]?.id;
       }
     }
-    const prior=await db.sql`SELECT id FROM messages WHERE owner_id=${user.id} AND conversation_id=${conversationId} AND role=${role} AND metadata->>'source'='elevenlabs_realtime' AND metadata->>'providerConversationId'=${providerConversationId} AND metadata->>'eventId'=${eventId} LIMIT 1`;
+    const prior=await db.sql`SELECT id FROM messages WHERE owner_id=${user.id} AND conversation_id=${conversationId} AND role=${role} AND metadata->>'source'=${source} AND metadata->>'providerConversationId'=${providerConversationId} AND metadata->>'eventId'=${eventId} LIMIT 1`;
     let message;
     if(prior.length){
       const rows=await db.sql`UPDATE messages SET content=${content} WHERE id=${prior[0].id} AND owner_id=${user.id} RETURNING id,execution_id,role,mode,content,metadata,created_at`;
       message=rows[0];
     }else{
-      const rows=await db.sql`INSERT INTO messages(owner_id,conversation_id,role,mode,content,metadata) VALUES(${user.id},${conversationId},${role},'ZEUS',${content},${JSON.stringify({source:'elevenlabs_realtime',providerConversationId,eventId})}::jsonb) RETURNING id,execution_id,role,mode,content,metadata,created_at`;
+      const rows=await db.sql`INSERT INTO messages(owner_id,conversation_id,role,mode,content,metadata) VALUES(${user.id},${conversationId},${role},'ZEUS',${content},${JSON.stringify({source,providerConversationId,eventId})}::jsonb) RETURNING id,execution_id,role,mode,content,metadata,created_at`;
       message=rows[0];
     }
     await db.sql`UPDATE conversations SET updated_at=now() WHERE id=${conversationId} AND owner_id=${user.id}`;
