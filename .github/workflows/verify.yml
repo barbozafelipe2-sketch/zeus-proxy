@@ -18,5 +18,8 @@ jobs:
           node-version: '22'
       - run: npm ci --ignore-scripts --no-audit --no-fund
       - run: npm test
+      - name: Identify all test regressions if the sequential suite fails
+        if: failure()
+        run: node scripts/audit-failing-tests.mjs
       - run: npm run release:check
       # npm test already builds and verifies the client; avoid a duplicate production build.

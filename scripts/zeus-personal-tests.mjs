@@ -9,7 +9,7 @@ const models=readFileSync('netlify/functions/_shared/models.mjs','utf8');
 const chat=readFileSync('netlify/functions/chat.mjs','utf8');
 const health=readFileSync('netlify/functions/health.mjs','utf8');
 
-assert.ok(app.includes('data-mode="ZEUS"')&&app.includes('data-mode="OLYMPUS"')&&app.includes('<strong>Zeus</strong>')&&app.includes('<strong>Olympus</strong>'),'clean Zeus/Olympus selector missing');
+assert.ok(app.includes('data-mode="ZEUS"')&&app.includes('data-mode="OLYMPUS"')&&app.includes('<strong>Poseidon</strong>')&&app.includes('<strong>Olympus</strong>'),'manual Poseidon/Olympus selector missing');
 assert.ok(!app.includes('${homeAgentPanel()}')&&!app.includes('${homeContextPanel()}')&&!app.includes('${homeMobileArtifacts()}'),'conversation view must stay focused on messages');
 assert.ok(!app.includes('${mobileNav()}')&&app.includes('id="hamburger"'),'mobile navigation should use the existing side drawer');
 assert.ok(!/data-mode=["'](?:OPENAI|CLAUDE|GEMINI|GOOGLE)/i.test(app),'direct provider mode leaked into UI');
