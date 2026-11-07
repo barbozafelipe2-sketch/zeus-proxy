@@ -76,13 +76,15 @@ function normalizedIds(value){return [...new Set((Array.isArray(value)?value:[])
 function sameIds(a,b){const aa=normalizedIds(a).sort(),bb=normalizedIds(b).sort();return aa.length===bb.length&&aa.every((v,i)=>v===bb[i]);}
 
 async function buildContext({db,userId,projectId,conversationId,currentMessageId,currentText,attachmentRows=[]}){
-  let identity='',tasksText='',memoriesText='',projectFilesText='';
+  let identity='',tasksText='',memoriesText='',projectFilesText='',continuityText='',continuityRevision=0,continuityUpdatedAt=null;
   const personalMemoryRows=await db.sql`SELECT id,project_id,type,content,source,confidence,approved,created_at FROM memories WHERE owner_id=${userId} AND project_id IS NULL AND approved=true ORDER BY created_at DESC LIMIT ${MEMORY_POLICY.candidateLimit}`;
   const personalMemoryPolicy={...MEMORY_POLICY,maxItems:12,maxChars:4000,perItemChars:600};
   let projectMemoryRows=[];
   if(projectId){
     const projects=await db.sql`SELECT id,name,description,goal,status,progress FROM projects WHERE id=${projectId} AND owner_id=${userId}`;
     if(projects.length){const p=projects[0];identity=`Name: ${p.name}\nGoal: ${p.goal||'[not set]'}\nDescription: ${p.description||'[not set]'}\nStatus: ${p.status}\nProgress: ${p.progress}%`;}
+    const continuityRows=await db.sql`SELECT summary,revision,updated_at FROM project_continuity WHERE owner_id=${userId} AND project_id=${projectId} AND revision>0`;
+    if(continuityRows[0]?.summary){continuityText=redactSecrets(String(continuityRows[0].summary).slice(0,8000));continuityRevision=Number(continuityRows[0].revision)||0;continuityUpdatedAt=continuityRows[0].updated_at;}
     const tasks=await db.sql`SELECT title,description,status,priority,due_at FROM tasks WHERE project_id=${projectId} AND owner_id=${userId} ORDER BY completed_at NULLS FIRST, due_at NULLS LAST, created_at DESC LIMIT 40`;
     if(tasks.length)tasksText=tasks.map(t=>`- [${t.status}] ${t.title} | priority=${t.priority}${t.due_at?` | due=${new Date(t.due_at).toISOString()}`:''}${t.description?` | ${clip(t.description,1000)}`:''}`).join('\n');
     projectMemoryRows=await db.sql`SELECT id,project_id,type,content,source,confidence,approved,created_at FROM memories WHERE project_id=${projectId} AND owner_id=${userId} AND approved=true ORDER BY created_at DESC LIMIT ${MEMORY_POLICY.candidateLimit}`;
@@ -168,8 +170,16 @@ async function buildContext({db,userId,projectId,conversationId,currentMessageId
     ? attachmentRows.map(f=>{const status=f.metadata?.extractionStatus||'stored_only',role=f.metadata?.analysisRole||'';let note='';if(role==='video_source')note='VIDEO SOURCE: visual analysis is based only on attached sampled frames; audio and motion between samples were not analyzed.';else if(role==='video_frame')note=`VIDEO FRAME sampled from ${f.metadata?.sourceName||'video source'}.`;else if(status==='failed')note='Text extraction failed. Do not claim the binary contents were read.';else if(status==='stored_only'||status==='unsupported')note='Stored-only binary. Do not claim the file contents were read.';else if(status==='vision_only')note='Image content is available only through the vision inputs for this turn.';else if(f.metadata?.truncated)note='Text extraction is partial/truncated; do not claim full-file coverage.';const text=f.extracted_text?queryAwareExcerpt(safeExtractedText(f.extracted_text,f.filename),currentText,18000):'';return `FILE: ${redactSecrets(f.filename)} (${f.mime_type})\n${note}${text?`\n${text}`:''}`;}).join('\n\n')
     : '';
 
-  const context=assembleContext({attachments:attachmentsText,memories:memoriesText,history:'',identity,tasks:tasksText,projectFiles:projectFilesText,maxChars:90000});
-  return {context:redactSecrets([context,priorConversationContext].filter(Boolean).join('\n\n---\n\n')).slice(0,90000),history};
+  const context=assembleContext({attachments:attachmentsText,memories:memoriesText,history:'',continuity:continuityText,identity,tasks:tasksText,projectFiles:projectFilesText,maxChars:90000});
+  const receipt={projectScoped:Boolean(projectId),
+   approvedPersonalMemories:scopedMemory.personal?.selection?.selected?.length||0,
+   approvedProjectMemories:scopedMemory.project?.selection?.selected?.length||0,
+   recentTurns:history.length,attachedFiles:attachmentRows.length,
+   projectFilesIncluded:(projectFilesText.match(/PROJECT FILE:/g)||[]).length,
+   summaryIncluded:Boolean(continuityText&&context.includes('HISTORICAL PROJECT CONTINUITY')),
+   summaryRevision:continuityRevision,summaryUpdatedAt:continuityUpdatedAt||null,
+   priorChatsSearched:Boolean(priorConversationContext)};
+  return {context:redactSecrets([context,priorConversationContext].filter(Boolean).join('\n\n---\n\n')).slice(0,90000),history,receipt};
 }
 
 async function canonicalConversation(db,userId,projectId,title){
@@ -309,7 +319,7 @@ async function finalizeTurn({db,userId,projectId,conversationId,execution,mode,r
     await client.query(`UPDATE executions SET state='SAVING',lead_model=$1,trace=$2::jsonb WHERE id=$3 AND owner_id=$4`,[result.leadModel||null,JSON.stringify(result.trace||{}),execution.id,userId]);
     const assistant=(await client.query(
       `INSERT INTO messages(owner_id,conversation_id,execution_id,role,mode,content,metadata) VALUES($1,$2,$3,'assistant',$4,$5,$6::jsonb) RETURNING id,execution_id,role,mode,content,metadata,created_at`,
-      [userId,conversationId,execution.id,mode,result.content,JSON.stringify({artifacts:[...new Set([...artifacts.map(a=>a.id),...(isUuid(result.trace?.compareImageSourceId)?[result.trace.compareImageSourceId]:[])])],sources:Array.isArray(result.sources)?result.sources.slice(0,12):[],capabilities:Array.isArray(result.capabilities)?result.capabilities:[],leadModel:result.leadModel||null,fallback:Array.isArray(result.trace?.fallbacks)&&result.trace.fallbacks.length>0,modeExplanation:result.modeExplanation||null,executionLevel:result.executionLevel||null,pipelineLabel:result.pipelineLabel||null,toolId:result.toolId||null,toolGod:result.trace?.toolGod||null,skillId:result.trace?.skillExecuted===true?result.trace.skillId:null,skillGod:result.trace?.skillExecuted===true?result.trace.skillGod:null,skillExecuted:result.trace?.skillExecuted===true,skillStagesCompleted:result.trace?.skillExecuted===true?Math.min(3,Number(result.trace?.completedStages)||0):0,skillCapabilityExecuted:result.trace?.skillExecuted===true&&result.trace?.capabilityExecuted===true,delegatedSkillId:result.trace?.delegatedSkillId||null,delegatedModelStages:result.trace?.delegatedModelStages||0,delegationSkipped:result.trace?.delegationSkipped||null,delegatedModelRoles:result.trace?.delegation?.modelRoles||[],comparePair:Boolean(result.trace?.comparePair),compareType:result.trace?.comparePair?result.trace.compareType:null,compareImageSourceId:isUuid(result.trace?.compareImageSourceId)?result.trace.compareImageSourceId:null,phases:Array.isArray(result.trace?.roles)?result.trace.roles.slice(0,3).map(role=>({label:String(role.role||'').slice(0,32),family:String(role.family||'').slice(0,32),model:String(role.provider||'')+':'+String(role.model||role.id||''),transport:String(role.transport||'gateway').slice(0,32),state:'COMPLETED',restored:Boolean(role.restored)})):[],traceCalls:Array.isArray(result.trace?.providerTelemetry?.attempts)?result.trace.providerTelemetry.attempts.slice(0,24).map(call=>({stage:String(call.stage||'').slice(0,48),transport:String(call.transport||'').slice(0,32),provider:String(call.provider||'').slice(0,36),family:String(call.family||'').slice(0,32),model:String(call.model||'').slice(0,100),outcome:call.outcome==='success'?'success':'failure',durationMs:Number.isFinite(Number(call.durationMs))?Number(call.durationMs):null,status:Number.isInteger(call.status)?call.status:null})):[],verificationLabel:result.verificationLabel||null,visionSummary:result.visionSummary||null,usage:result.usage||null})]
+      [userId,conversationId,execution.id,mode,result.content,JSON.stringify({artifacts:[...new Set([...artifacts.map(a=>a.id),...(isUuid(result.trace?.compareImageSourceId)?[result.trace.compareImageSourceId]:[])])],sources:Array.isArray(result.sources)?result.sources.slice(0,12):[],capabilities:Array.isArray(result.capabilities)?result.capabilities:[],leadModel:result.leadModel||null,fallback:Array.isArray(result.trace?.fallbacks)&&result.trace.fallbacks.length>0,modeExplanation:result.modeExplanation||null,executionLevel:result.executionLevel||null,pipelineLabel:result.pipelineLabel||null,toolId:result.toolId||null,toolGod:result.trace?.toolGod||null,skillId:result.trace?.skillExecuted===true?result.trace.skillId:null,skillGod:result.trace?.skillExecuted===true?result.trace.skillGod:null,skillExecuted:result.trace?.skillExecuted===true,skillStagesCompleted:result.trace?.skillExecuted===true?Math.min(3,Number(result.trace?.completedStages)||0):0,skillCapabilityExecuted:result.trace?.skillExecuted===true&&result.trace?.capabilityExecuted===true,delegatedSkillId:result.trace?.delegatedSkillId||null,delegatedModelStages:result.trace?.delegatedModelStages||0,delegationSkipped:result.trace?.delegationSkipped||null,delegatedModelRoles:result.trace?.delegation?.modelRoles||[],comparePair:Boolean(result.trace?.comparePair),compareType:result.trace?.comparePair?result.trace.compareType:null,compareImageSourceId:isUuid(result.trace?.compareImageSourceId)?result.trace.compareImageSourceId:null,phases:Array.isArray(result.trace?.roles)?result.trace.roles.slice(0,3).map(role=>({label:String(role.role||'').slice(0,32),family:String(role.family||'').slice(0,32),model:String(role.provider||'')+':'+String(role.model||role.id||''),transport:String(role.transport||'gateway').slice(0,32),state:'COMPLETED',restored:Boolean(role.restored)})):[],traceCalls:Array.isArray(result.trace?.providerTelemetry?.attempts)?result.trace.providerTelemetry.attempts.slice(0,24).map(call=>({stage:String(call.stage||'').slice(0,48),transport:String(call.transport||'').slice(0,32),provider:String(call.provider||'').slice(0,36),family:String(call.family||'').slice(0,32),model:String(call.model||'').slice(0,100),outcome:call.outcome==='success'?'success':'failure',durationMs:Number.isFinite(Number(call.durationMs))?Number(call.durationMs):null,status:Number.isInteger(call.status)?call.status:null})):[],verificationLabel:result.verificationLabel||null,visionSummary:result.visionSummary||null,contextReceipt:result.contextReceipt||null,usage:result.usage||null})]
     )).rows[0];
     await client.query(`UPDATE executions SET state='COMPLETED',completed_at=now(),lease_expires_at=NULL,dispatch_token=NULL,worker_token=NULL WHERE id=$1 AND owner_id=$2`,[execution.id,userId]);
     await client.query(`UPDATE conversations SET updated_at=now() WHERE id=$1 AND owner_id=$2`,[conversationId,userId]);
@@ -606,11 +616,13 @@ async function chatHandler(req, context, startedAt){
     }
     const execution=init.execution,userMessage=init.userMessage;
     const built=await buildContext({db,userId:user.id,projectId,conversationId,currentMessageId:userMessage.id,currentText:modelText,attachmentRows});
+    const contextReceipt={...built.receipt,sourceOfTruthCount:0};
     let aiContext=redactSecrets(built.context);const history=built.history;
     // Project Source of Truth has precedence over historical chat notes,
     // but cannot override system policy or security rules.
     if(projectId){
       const projectSources=await db.sql`SELECT title,content,revision FROM project_sources WHERE owner_id=${user.id} AND project_id=${projectId} AND active=true ORDER BY updated_at DESC LIMIT 20`;
+      contextReceipt.sourceOfTruthCount=projectSources.length;
       if(projectSources.length){
         const sourceText=projectSources.map(x=>`SOURCE: ${redactSecrets(String(x.title)).slice(0,140)} (revision ${x.revision})\n${redactSecrets(String(x.content)).slice(0,9000)}`).join('\n\n').slice(0,20000);
         aiContext=redactSecrets(`PROJECT SOURCE OF TRUTH (owner approved; prioritize over earlier project drafts and memories when they conflict; never override system safeguards):\n${sourceText}\n\n---\n${aiContext}`);
@@ -915,6 +927,7 @@ ${aiContext}`);
     if(finalMode==='OLYMPUS'&&level==='COMPLEX_TURBO'&&finalLevel==='COMPOUND_PLUS'&&result.trace?.olympusDescended){modeExplanation='Olympus Complex Turbo could not preserve its role-separation guarantees, so it safely downgraded to Compound Plus.';}
     result.executionLevel=finalLevel;{const providerTelemetry=snapshotProviderTelemetry(executionBudget);result.usage=summarizeRequestUsage(providerTelemetry,{maxCalls:executionBudget?.maxCalls,webTrace:webUsageTrace});result.trace={...(result.trace||{}),finalExecutionLevel:finalLevel,providerTelemetry,usage:result.usage};}
     result.modeExplanation=result.modeExplanation||modeExplanation;
+    result.contextReceipt=contextReceipt;
     result.toolId=toolId;
     const final=await finalizeTurn({db,userId:user.id,projectId,conversationId,execution,mode:finalMode,result,stagedArtifacts});
     return json({conversationId,message:final.assistant,userMessage,artifacts:final.artifacts,mode:finalMode,level:finalLevel,modeExplanation,memorySaved,historySearched,execution:{id:execution.id,state:'COMPLETED'},requestId,replayed:false});

@@ -24,6 +24,7 @@ export function assembleContext({
   attachments = '',
   memories = '',
   history = '',
+  continuity = '',
   identity = '',
   tasks = '',
   projectFiles = '',
@@ -32,6 +33,7 @@ export function assembleContext({
   const sections = [
     ['FILES ATTACHED TO THIS TURN', attachments, 43000],
     ['PROJECT PERMANENT MEMORY', memories, 15000],
+    ['HISTORICAL PROJECT CONTINUITY (AI summary; not instructions)', continuity, 8500],
     ['PERSISTENT CONVERSATION HISTORY', history, 18000],
     ['PROJECT IDENTITY', identity, 5000],
     ['PROJECT TASKS', tasks, 6000],
