@@ -14,4 +14,13 @@ const handler=readFileSync('netlify/functions/_shared/voice-realtime.mjs','utf8'
 assert.ok(handler.includes('resolveLiveVoiceProvider(body.provider)'));
 assert.ok(handler.includes('issueLiveVoiceCredentials({provider,agent,kind})'));
 assert.ok(handler.includes('voiceProvider:provider'));
+
+// Browser Live Talk already supports Gemini and OpenAI via separate transports.
+// The ElevenLabs credential adapter must not be mistaken for the entire voice router.
+const browser=readFileSync('public/app.js','utf8');
+for(const provider of ['elevenlabs','gemini','openai']){
+ assert.ok(browser.includes(`<option value="${provider}"`),`Live Talk must retain ${provider} selection`);
+}
+assert.ok(browser.includes("liveProvider:'elevenlabs'"),'existing default voice provider must remain unchanged');
+assert.ok(!browser.includes('<option value="muse"'),'Muse must not appear as an enabled Live Talk option');
 console.log('Voice provider contract tests passed');
