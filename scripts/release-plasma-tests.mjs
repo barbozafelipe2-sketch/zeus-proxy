@@ -4,7 +4,7 @@ const app=readFileSync('public/app.js','utf8');
 const style=readFileSync('public/ui-premium.css','utf8');
 const revise=readFileSync('netlify/functions/artifact-revise.mjs','utf8');
 assert.match(app,/zeus-plasma-image/);
-assert.match(app,/zeus-plasma-orb-v1\.webp/);
+assert.match(app,/poseidon-orb-v1\.webp/);
 assert.doesNotMatch(app,/zeus-voice-symbol">ϟ/);
 assert.match(style,/\.zeus-plasma-image/);
 assert.match(style,/@keyframes plasma-drift/);

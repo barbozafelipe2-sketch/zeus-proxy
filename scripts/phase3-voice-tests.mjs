@@ -49,7 +49,8 @@ assert.match(ui,/sendContextualUpdate\(liveSessionContext\(\)\)/,'Realtime recon
 assert.match(ui,/function liveSessionContext\(/,'Live Talk must build a context restoration update from saved conversation turns');
 assert.match(ui,/You are Athena, the voice agent for Poseidon Voice in OlyHub Core/,'Live Talk uses Athena as the shared Poseidon Voice identity');
 assert.match(ui,/function liveTalkPersona\(\)\{return 'ATHENA';\}/,'all Realtime providers share the Athena voice identity');
-assert.match(liveView,/POSEIDON VOICE/,'Live Talk is branded as Poseidon Voice');
+assert.ok(!liveView.includes('POSEIDON VOICE')&&!liveView.includes('OLYHUB CORE · LIVE'),'Live Talk screen must not show Poseidon or Athena brand labels');
+assert.match(ui,/poseidon-orb-v1\.webp/,'Live Talk uses the new transparent water orb asset');
 assert.match(ui,/liveTalk:true/,'spoken requests use the shared authenticated Poseidon chat path');
 assert.match(css,/hue-rotate\(154deg\)/,'transparent plasma orb is color-treated to the Poseidon blue palette');
 assert.match(ui,/call list_olyhub_projects if needed to resolve the exact name, then open_olyhub_project with project_name, then get_current_project_context/,'Live Talk must follow the project lookup sequence when Felipe names a project');

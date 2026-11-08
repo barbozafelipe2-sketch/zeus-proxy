@@ -224,7 +224,7 @@ const mustContain = [
   [css,'OH-004.3.0 — premium product UI refinement','4.3.0 premium UI refinement'],
   [css,'OH-004.3.4 — final product polish','4.3.4 final polish layer'],
   [chat,'COMPLEX_TURBO','truthful Olympus level routing'],
-  [app,'POSEIDON VOICE','Poseidon Voice Live Talk identity'],
+  [app,'aria-label="Poseidon Voice Live Talk"','accessible Live Talk identity'],
   [app,'composer-meta','composer persistence guidance'],
   [chat,'queryAwareExcerpt','query-aware long attachment excerpts'],
   [models,'Never imply current-web research occurred unless retrieval results are explicitly present','retrieval honesty'],

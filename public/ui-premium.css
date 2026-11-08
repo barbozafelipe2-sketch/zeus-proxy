@@ -1629,3 +1629,12 @@ body .message.user .message-body{border-color:#d4b66e55!important;background:lin
 .live-end-call{box-shadow:inset 0 1px #fff4,0 0 24px rgba(237,79,83,.22)}
 @media(prefers-reduced-motion:reduce){.poseidon-plasma-image,.live-talk-orbit{animation:none!important}}
 @media(max-width:640px){.poseidon-tool-context{margin:5px auto;padding:8px 11px;font-size:11px}}
+/* Live Talk uses the standalone ocean orb art; keep controls and status unbranded. */
+.live-talk-header{grid-template-columns:1fr auto}
+.live-talk-center{gap:2px}
+.live-talk-heading{display:none}
+.live-talk-orb-wrap.has-poseidon-art:before{inset:0;background:radial-gradient(circle,rgba(16,178,240,.32),rgba(10,73,138,.16) 55%,transparent 78%);filter:blur(25px)}
+.live-talk-orb-wrap.has-poseidon-art:after{display:none}
+.live-talk-orb-wrap.has-poseidon-art .zeus-voice-presence.lightning{background:transparent;box-shadow:none;overflow:visible}
+.live-talk-orb-wrap.has-poseidon-art .zeus-plasma-image{width:110%;height:110%;object-fit:contain;filter:drop-shadow(0 0 20px rgba(28,177,243,.4));}
+@media(max-width:700px){.live-talk-header{grid-template-columns:46px auto}.live-talk-center{gap:2px}}
