@@ -33,6 +33,7 @@ const poseidonIndex=toolCatalog.indexOf("id:'poseidon'");
 const athenaIndex=toolCatalog.indexOf("id:'athena'");
 if(!(zeusIndex>=0&&poseidonIndex>zeusIndex&&athenaIndex>poseidonIndex))throw new Error('Zeus and Poseidon must lead the tools catalog in that order');
 if(!toolCatalog.includes('data-new-chat="true"'))throw new Error('Poseidon card must open a clean new chat');
+if(toolCatalog.includes('tool-god-mark')||toolCatalog.includes('tool.mark'))throw new Error('Deity symbols must not overlay faces on any tool card');
 const liveUi=app.slice(app.indexOf('function liveTalkExperience(){'),app.indexOf('\nfunction liveTalkDock(){'));
 if(liveUi.includes('Poseidon')||liveUi.includes('Athena')||liveUi.includes('Helen'))throw new Error('Live Talk UI must not pin a deity name while the orb can change');
 if(/Open in Zeus|Open in Olympus/.test(app))throw new Error('Project UI regressed to Home launcher buttons');
