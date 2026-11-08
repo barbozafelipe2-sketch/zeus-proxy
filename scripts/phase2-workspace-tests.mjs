@@ -27,7 +27,7 @@ assert.match(ui,/Mover para projeto/);
 assert.match(ui,/await loadProjectSources\(\)/);
 assert.match(ui,/conversation-transfer-form/);
 assert.match(ui,/data-move-current="\$\{esc\(state\.currentConversation\)\}"/,'standalone conversations, including chats opened with an agent, can be moved into a project');
-assert.doesNotMatch(ui,/\['Code Agent','code','Code Agent'\]/,'Hephaestus is not exposed as a separate Code Agent navigation tab');
+assert.doesNotMatch(ui,/\['Code Agent','code','Code Agent'\]/,'Hefesto is not exposed as a separate Code Agent navigation tab');
 assert.match(ui,/Source of Truth/);
 assert.match(ui,/id="project-source-file"/);
 assert.match(ui,/sourceFileId:\$\('#project-source-file'\)\?\.value\|\|null/);

@@ -2,17 +2,26 @@
 import { TOOL_WORKFLOWS } from './tool-workflows.mjs';
 import { classifyIntent } from './intent.mjs';
 
-const skill=(id,god,toolId=null)=>Object.freeze({id,god,toolId,enabled:Boolean(toolId)});
+const skill=(id,god,toolId=null,{internal=false}={})=>Object.freeze({id,god,toolId,enabled:Boolean(toolId),internal});
 export const SKILL_REGISTRY=Object.freeze({
- 'hermes.web':skill('hermes.web','Hermes','web'),
- 'hefesto.code':skill('hefesto.code','Hephaestus','code'),
- 'apolo.images':skill('apolo.images','Apollo','images'),
+ 'athena.research':skill('athena.research','Athena','web'),
+ 'athena.documents':skill('athena.documents','Athena','documents'),
+ 'hefesto.code':skill('hefesto.code','Hefesto','code'),
+ 'apollo.images':skill('apollo.images','Apollo','images'),
+ 'hestia.review':skill('hestia.review','Héstia','analysis',{internal:true}),
+ 'mnemosine.memory':skill('mnemosine.memory','Mnemosine',null,{internal:true}),
+ 'dionisio.media':skill('dionisio.media','Dionísio'),
+ 'peitho.marketing':skill('peitho.marketing','Peitho'),
+ 'demeter.business':skill('demeter.business','Deméter'),
+ 'hermes.communication':skill('hermes.communication','Hermes'),
+ 'hades.security':skill('hades.security','Hades'),
+ // Persisted IDs from earlier builds remain accepted, but resolve to current owners.
+ 'hermes.web':skill('hermes.web','Athena','web'),
  'atena.documents':skill('atena.documents','Athena','documents'),
- 'hestia.review':skill('hestia.review','Hestia','analysis'),
+ 'apolo.images':skill('apolo.images','Apollo','images'),
  'ares.defense':skill('ares.defense','Ares'),
- 'mnemosine.memory':skill('mnemosine.memory','Mnemosine'),
  'hades.health':skill('hades.health','Hades'),
- 'dionisio.video':skill('dionisio.video','Dionysus')
+ 'dionisio.video':skill('dionisio.video','Dionísio')
 });
 export const SKILL_LIMITS=Object.freeze({maxDelegations:2,maxDepth:2});
 
@@ -20,8 +29,8 @@ export const SKILL_LIMITS=Object.freeze({maxDelegations:2,maxDepth:2});
 export function selectSkill({message='',activeSkillId=null,hasImage=false,hasFiles=false}={}){
  const intent=classifyIntent(message,{hasImage,hasFiles});
  let id=null;
- if(intent.action==='IMAGE_CREATE'||intent.action==='IMAGE_EDIT')id='apolo.images';
- else if(intent.action==='ARTIFACT_CREATE')id='atena.documents';
+ if(intent.action==='IMAGE_CREATE'||intent.action==='IMAGE_EDIT')id='apollo.images';
+ else if(intent.action==='ARTIFACT_CREATE')id='athena.documents';
  else if(activeSkillId&&Object.hasOwn(SKILL_REGISTRY,activeSkillId))id=activeSkillId;
  const skill=id?SKILL_REGISTRY[id]:null;
  return {intent,skillId:id,toolId:skill?.enabled?skill.toolId:null,
@@ -61,6 +70,6 @@ export function proposeAutomaticSkill({message='',hasImage=false,hasFiles=false}
   &&/\b(c[oó]digo|code|bug|fun[cç][aã]o|function|repository|reposit[oó]rio|repo|codebase|script|typescript|javascript|github|branch|netlify|software|application|app)\b/i.test(request);
  const research=/^(?:pesquis[ae]|busqu[ae]|procure|search|look up|investig[ae]|compare|compar[ae]|verify|verifique|verifica)\b/i.test(request)
   &&/\b(web|internet|site|sites|online|fonte|sources|not[ií]cias|news)\b/i.test(text);
- const skillId=coding?'hefesto.code':research?'hermes.web':null;
+ const skillId=coding?'hefesto.code':research?'athena.research':null;
  return skillId?{skillId,toolId:SKILL_REGISTRY[skillId].toolId,reason:'explicit_user_request'}:null;
 }

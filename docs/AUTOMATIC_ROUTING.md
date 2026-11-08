@@ -6,6 +6,12 @@ The preferred coordinator model is `x-ai/grok-4.3` through the configured OpenRo
 
 The specialist filter excludes the xAI family from tool execution. A specialist's actual response returns to Poseidon for delivery; the coordinator should not silently replace the dedicated tool workflow with its own execution.
 
+## Deity and capability catalog
+
+The canonical roles are Athena (research and knowledge), Hefesto (engineering and code), Apollo (visual design and images), Dionísio (audio and video), Peitho (marketing and acquisition), Deméter (commerce and business operations), Hermes (communications), and Hades (security). Current callable model workflows are Athena research/documents, Hefesto code, and Apollo images. Hermes has read-only Gmail, Calendar, and Drive integrations through Settings and Poseidon chat. Dionísio, Peitho, Deméter, and the dedicated Hades Realm are not yet implemented as callable specialist tools.
+
+Héstia review and Mnemosine memory are internal Core capabilities, not independent Realms. Existing conversation/tool IDs such as `web`, `documents`, `code`, and `images` remain stable for stored data and permissions; the visible owners and labels follow the current canon.
+
 ## Zeus director/auditor status
 
 Zeus is a separate director/auditor surface, not the chat coordinator. The current UI is a shell. Independent ingestion of execution, cost, failure, and approval evidence—and synchronous enforcement that can block critical actions—remain unimplemented. Do not present the shell as an active auditor or claim that it monitors Poseidon.

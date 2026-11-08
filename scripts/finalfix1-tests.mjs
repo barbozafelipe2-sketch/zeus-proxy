@@ -21,7 +21,7 @@ assert.ok(app.includes('hydrateProjectWorkspace(state.currentProject.id,{loadCon
 assert.ok(app.includes("if(state.tab==='Tools')await Promise.all([loadHealth(),loadFiles(),loadArtifacts(),loadToolModels()])"),'Tools must load global output scope and configured model candidates');
 assert.ok(app.includes('data-delete-output'),'file/artifact delete action missing');
 assert.ok(app.includes('deleteCurrentProject'),'project delete action missing');
-assert.ok(app.includes("['documents','DOCUMENTOS E APRESENTAÇÕES','Documentos e apresentações','Textos, relatórios e apresentações de alto impacto.',chat.enabled,chat.label"),'Documents capability must follow chat readiness');
+assert.ok(app.includes("kind:'documents',label:'Documentos',enabled:chat.enabled,status:chat.label"),'Athena document capability must follow chat readiness');
 assert.ok(conversations.includes("body?.operation==='rename'")&&conversations.includes("if(req.method==='DELETE')"),'personal conversations must support rename and delete');
 assert.ok(conversations.includes('queueConversationBlobs')&&projects.includes('queueProjectBlobs'),'conversation and project deletion must clean stored outputs');
 assert.ok(storage.includes("'olyhub-code-workspaces'")&&storage.includes('base_workspace_blob_key'),'deleting a conversation or project must queue Code Agent workspace snapshots for cleanup');

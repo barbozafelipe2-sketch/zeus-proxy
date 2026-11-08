@@ -46,7 +46,7 @@ try{
   assert.equal(managerRoles[0]?.id,'x-ai/grok-4.3','Poseidon remains the first manager/finalizer candidate');
 
   assert.equal(proposeAutomaticSkill({message:'Please audit the GitHub repository for broken routes'})?.toolId,'code','repository audits route to Hefesto');
-  assert.equal(proposeAutomaticSkill({message:'Please compare online sources for current prices'})?.toolId,'web','explicit sourced research routes to Hermes');
+  assert.equal(proposeAutomaticSkill({message:'Please compare online sources for current prices'})?.toolId,'web','explicit sourced research routes to Athena');
   assert.equal(proposeAutomaticSkill({message:'What is a code repository?'}),null,'informational questions do not trigger a tool');
   assert.equal(proposeAutomaticSkill({message:'Create a project for my novel'}),null,'project-management requests do not route to the code specialist');
   console.log('Poseidon coordinator and specialist filter checks passed.');

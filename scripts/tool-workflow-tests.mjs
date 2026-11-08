@@ -3,8 +3,12 @@ import { TOOL_WORKFLOWS,getToolWorkflow,toolConversationTitle,recordToolFeedback
 import { imageGeneratorCandidates } from '../netlify/functions/_shared/models.mjs';
 
 assert.equal(Object.keys(TOOL_WORKFLOWS).length,5);
-assert.equal(new Set(Object.values(TOOL_WORKFLOWS).map(tool=>tool.god)).size,5,'each tool has one distinct owner deity');
-assert.equal(toolConversationTitle('images'),'Apollo · Images');
+assert.equal(TOOL_WORKFLOWS.web.god,'Athena','research belongs to Athena in the current canon');
+assert.equal(TOOL_WORKFLOWS.documents.god,'Athena','documents and knowledge belong to Athena');
+assert.equal(TOOL_WORKFLOWS.code.god,'Hefesto','code belongs to Hefesto');
+assert.equal(TOOL_WORKFLOWS.analysis.internal,true,'Hestia review is internal, not an independent Realm');
+assert.equal(toolConversationTitle('images'),'Apollo · Visual Design & Images');
+assert.equal(toolConversationTitle('web'),'Athena · Research & Intelligence');
 assert.equal(getToolWorkflow('unknown'),null);
 
 const candidates=Array.from({length:6},(_,index)=>({provider:'test',id:`model-${index}`}));

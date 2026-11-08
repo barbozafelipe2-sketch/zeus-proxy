@@ -14,10 +14,13 @@ export async function executeSkillDelegation({sourceSkillId,targetSkillId,allowe
 export function requestedSkillDelegation(message,sourceSkillId){
  const text=String(message||'').slice(0,40000);
  if(!/(?:delegue|delegar|delegate|passe para|hand off to)/i.test(text))return null;
- const requested=Object.values(SKILL_REGISTRY).filter(skill=>skill.enabled&&skill.id!==sourceSkillId&&(
-  new RegExp('\\b'+skill.god+'\\b','i').test(text)||
-  (skill.id==='hermes.web'&&/\bhermes\b/i.test(text))||
-  (skill.id==='hefesto.code'&&/\bhefesto\b/i.test(text))
+ const researchRequest=/\b(?:pesquis\w*|research\w*|web|fontes?|sources?)\b/i.test(text);
+ const documentRequest=/\b(?:document\w*|pdf|apresenta[cç][aã]o|presentation|relat[oó]rio|report)\b/i.test(text);
+ const requested=Object.values(SKILL_REGISTRY).filter(skill=>skill.enabled&&!['hermes.web','atena.documents','apolo.images'].includes(skill.id)&&skill.id!==sourceSkillId&&(
+  (new RegExp('\\b'+skill.god+'\\b','i').test(text)&&skill.id!=='athena.research'&&skill.id!=='athena.documents')||
+  (skill.id==='athena.research'&&/\bathena\b/i.test(text)&&researchRequest&&!documentRequest)||
+  (skill.id==='athena.documents'&&/\bathena\b/i.test(text)&&documentRequest)||
+  (skill.id==='hefesto.code'&&/\b(?:hefesto|hephaestus)\b/i.test(text))
  ));
  return requested.length===1?requested[0]:null;
 }
