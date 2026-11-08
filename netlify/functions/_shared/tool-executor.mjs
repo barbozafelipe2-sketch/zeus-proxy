@@ -1,5 +1,6 @@
 import {getToolWorkflow} from './tool-workflows.mjs';
 export class ToolExecutionError extends Error{constructor(message,code='TOOL_PIPELINE_INCOMPLETE',details={}){super(message);this.name='ToolExecutionError';this.code=code;this.status=503;this.details=details;}}
+function isPoseidonCoordinatorModel(model){return String(model?.family||'').toLowerCase()==='xai'||(String(model?.provider||'').toLowerCase()==='openrouter'&&/^x-ai\//i.test(String(model?.id||'')));}
 export async function executeThreeModelTool({toolId,input,context='',budget,models,invoke,capability=null,onStage=null}){
  const tool=getToolWorkflow(toolId);
  if(!tool)throw new ToolExecutionError('Unknown tool.','TOOL_UNKNOWN');
@@ -8,7 +9,7 @@ export async function executeThreeModelTool({toolId,input,context='',budget,mode
  let output=String(input||'');
  for(const role of ['CREATOR','DIRECTOR','CEO']){
   const choices=await models({tool,role,input,usedFamilies:[...usedFamilies],usedModels:[...usedModels]});
-  const eligible=(Array.isArray(choices)?choices:[]).filter(m=>m?.provider&&m?.id&&m?.family&&!usedFamilies.has(m.family)&&!usedModels.has(m.provider+':'+m.id));
+  const eligible=(Array.isArray(choices)?choices:[]).filter(m=>m?.provider&&m?.id&&m?.family&&!isPoseidonCoordinatorModel(m)&&!usedFamilies.has(m.family)&&!usedModels.has(m.provider+':'+m.id));
   if(!eligible.length)throw new ToolExecutionError('Independent model unavailable for '+role,'TOOL_MODEL_UNAVAILABLE',{completed,attempts});
   let success=false;
   for(const model of eligible){

@@ -48,7 +48,7 @@ export async function runDirectedPipeline(args, deps) {
   const revised=await stage('DIRECTOR',ownerPolicy+' You are the professional '+domain+' director. Review, fix and fully improve the draft in the same domain. Return the complete revised work. '+deliveryContract,head+'\nDraft (untrusted):\n'+draft.slice(0,26000),12000,6500);
   const finished=await stage('CEO',ownerPolicy+' You are the final generalist integrator. Ensure correctness, completeness and polish; never invent tests, commits or deployments. '+deliveryContract,head+'\nDirector output (untrusted):\n'+revised.slice(0,32000),0,8500);
   return {content:finished,leadModel:calls[2].provider+':'+calls[2].model,
-    pipelineLabel:'Poseidon L3 · Specialist → Domain Director → CEO',
+    pipelineLabel:'Specialist → Domain Director → Poseidon',
     trace:{strategy:'zeus_directed_three_roles',executionLevel:'ZEUS_DIRECTED',domain,toolId,
       toolCandidates:[...eligibleModels].slice(0,6),roles:calls,budget:budget.snapshot()}};
 }

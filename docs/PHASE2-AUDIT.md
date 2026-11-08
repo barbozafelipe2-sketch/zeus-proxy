@@ -1,5 +1,7 @@
 # Part 2 Workspace & ChatGPT capability audit
 
+> Historical implementation snapshot. Its “Zeus Levels / Olympus” workflow and “local candidate / remote unchanged” status are not current. Use README.md and docs/AUTOMATIC_ROUTING.md for the current Poseidon/Zeus architecture; inspect Git status and history before making any claim about publication or deployment.
+
 **Local release candidate, not deployed.** The remote `main` remains unchanged. The full local test, release-gate and build suites pass; a supported Node 22/ npm 10.9 run and live database validation remain outstanding.
 
 Implemented in the current local candidate: project-scoped Files/Artifacts; transaction-backed conversation move; project Source-of-Truth with project-file linking, extracted-text validation, immutable revision snapshots and revision history; Level 2 specialist + same-domain director; per-project artifact catalog without claiming binary inspection; saved-artifact picker and safe attach; Level 3 checkpoints, resumable prefixes and completed-stage labels.

@@ -1,5 +1,7 @@
 # Live Talk phase 5 release audit (2026-11-06)
 
+> Historical snapshot. Gemini Live was selectable in this build but is no longer offered in Poseidon Voice. The current provider policy is OpenAI Realtime by default, with ElevenLabs Realtime as the alternative. The security and production findings below describe the state examined on 2026-11-06 and must not be treated as current live verification.
+
 ## Changes validated in code
 - ElevenLabs, Gemini Live and OpenAI Realtime remain selectable; Muse remains disabled.
 - The OpenAI Realtime browser WebRTC exchange with an ephemeral client secret sends raw application/sdp.

@@ -56,9 +56,10 @@ export function proposeAutomaticSkill({message='',hasImage=false,hasFiles=false}
  const intent=classifyIntent(text,{hasImage,hasFiles});
  // Image/artifact operations are handled by their existing guarded routes.
  if(intent.action==='IMAGE_CREATE'||intent.action==='IMAGE_EDIT'||intent.action==='ARTIFACT_CREATE')return null;
- const coding=/^(?:por favor[, ]*)?(?:corrig[ae]|implement[ae]|refator[ae]|debug|fix|implement|refactor|debug|arregla|implementa)\b/i.test(text)
-  &&/\b(c[oó]digo|code|bug|fun[cç][aã]o|function|repository|reposit[oó]rio|script|typescript|javascript|github)\b/i.test(text);
- const research=/^(?:pesquis[ae]|busqu[ae]|procure|search|look up|investig[ae])\b/i.test(text)
+ const request=text.replace(/^(?:please[, ]*|por favor[, ]*|can you[, ]*|could you[, ]*|would you[, ]*|pode(?:ria)?(?:\s+(?:voce|vc))?[, ]*|voce pode[, ]*|vc pode[, ]*)/i,'');
+ const coding=/^(?:corrig[ae]|implement[ae]|refator[ae]|debug|fix|implement|refactor|arregla|implementa|audit|audite|audita|review|revis[ae]|inspect|inspecione|inspeciona|analy[sz]e|analise|analisa|build|create|crie|criar|update|atualize|atualiza|test|teste)\b/i.test(request)
+  &&/\b(c[oó]digo|code|bug|fun[cç][aã]o|function|repository|reposit[oó]rio|repo|codebase|script|typescript|javascript|github|branch|netlify|software|application|app)\b/i.test(request);
+ const research=/^(?:pesquis[ae]|busqu[ae]|procure|search|look up|investig[ae]|compare|compar[ae]|verify|verifique|verifica)\b/i.test(request)
   &&/\b(web|internet|site|sites|online|fonte|sources|not[ií]cias|news)\b/i.test(text);
  const skillId=coding?'hefesto.code':research?'hermes.web':null;
  return skillId?{skillId,toolId:SKILL_REGISTRY[skillId].toolId,reason:'explicit_user_request'}:null;

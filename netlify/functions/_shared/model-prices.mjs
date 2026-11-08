@@ -6,6 +6,7 @@ const BUILTIN={
   'gpt-4.1-mini':{in:0.4,out:1.6},
   'gpt-5':{in:1.25,out:10},
   'gpt-5-mini':{in:0.25,out:2},
+  'x-ai/grok-4.3':{in:1.25,out:2.5},
 };
 function overrides(){
   try{

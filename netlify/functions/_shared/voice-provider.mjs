@@ -7,7 +7,7 @@ const env=name=>globalThis.Netlify?.env?.get?.(name)||process.env?.[name]||'';
 const OPENAI_VOICES=new Set(['alloy','ash','ballad','coral','echo','fable','nova','onyx','sage','shimmer','verse','marin','cedar']);
 const GEMINI_VOICES=new Set(['Zephyr','Puck','Charon','Kore','Fenrir','Leda','Orus','Aoede']);
 
-export const DEFAULT_LIVE_VOICE_PROVIDER='elevenlabs';
+export const DEFAULT_LIVE_VOICE_PROVIDER='openai';
 export const LIVE_VOICE_PROVIDERS=Object.freeze({
  elevenlabs:Object.freeze({id:'elevenlabs',realtimeConversation:true,transports:['token','signed']}),
  openai:Object.freeze({id:'openai',realtimeConversation:true,transports:['token']}),

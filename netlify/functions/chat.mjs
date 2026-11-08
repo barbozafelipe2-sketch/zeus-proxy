@@ -1,5 +1,4 @@
 import {authorizeOlympusModelCall} from './_shared/olympus-budget.mjs';
-import {aiRouteFor} from './_shared/ai-router.mjs';
 import { requireUser } from './_shared/auth.mjs';
 import { json, readJson, cleanText, isUuid, getRequestId, errorJson } from './_shared/http.mjs';
 import { runZeus, runOlympus, runOlympusCompoundPlus, TURBO_LIMITS, generateImage, editImage, imageModelFamily, imageGenerationCallLimit, routeFor, roleCandidates, callModel } from './_shared/models.mjs';
@@ -597,18 +596,18 @@ async function chatHandler(req, context, startedAt){
       failureStage='background_queue';
       const dispatchToken=await queueOlympusExecution(db,{executionId:init.execution.id,ownerId:user.id});
       const dispatched=await dispatchOlympus(req,{...body,content,conversationId,projectId,mode,requestId,fileIds,dispatchToken});
-      if(dispatched)return json({pending:true,mode,level,modeExplanation,conversationId,userMessage:init.userMessage,execution:{id:init.execution.id,state:'QUEUED'},requestId,replayed:false},202);
+      if(dispatched)return json({pending:true,mode,level,modeExplanation,conversationId,userMessage:init.userMessage,tool:toolWorkflow?{id:toolWorkflow.id,god:toolWorkflow.god,title:toolWorkflow.title}:null,execution:{id:init.execution.id,state:'QUEUED'},requestId,replayed:false},202);
       // A lost acknowledgement does not prove that Netlify rejected the background
       // invocation. Retry the same fenced dispatch once before reporting trouble.
       const redispatched=await dispatchOlympus(req,{...body,content,conversationId,projectId,mode,requestId,fileIds,dispatchToken});
-      if(redispatched)return json({pending:true,mode,level,modeExplanation,conversationId,userMessage:init.userMessage,execution:{id:init.execution.id,state:'QUEUED'},requestId,replayed:false},202);
+      if(redispatched)return json({pending:true,mode,level,modeExplanation,conversationId,userMessage:init.userMessage,tool:toolWorkflow?{id:toolWorkflow.id,god:toolWorkflow.god,title:toolWorkflow.title}:null,execution:{id:init.execution.id,state:'QUEUED'},requestId,replayed:false},202);
       // A site-level access gate can reject the internal background POST (HTTP 401).
       // Use the existing fenced inline fallback for Zeus as well as Olympus.
       // A lost HTTP acknowledgement does NOT prove the background worker failed.
       // Claim the queue atomically only if no worker started in the meantime.
       const inlineClaim=await claimInlineFallback(db,{executionId:init.execution.id,ownerId:user.id,dispatchToken});
       if(!inlineClaim)
-        return json({pending:true,mode,level,modeExplanation,conversationId,userMessage:init.userMessage,execution:{id:init.execution.id,state:'QUEUED'},requestId,replayed:false},202);
+        return json({pending:true,mode,level,modeExplanation,conversationId,userMessage:init.userMessage,tool:toolWorkflow?{id:toolWorkflow.id,god:toolWorkflow.god,title:toolWorkflow.title}:null,execution:{id:init.execution.id,state:'QUEUED'},requestId,replayed:false},202);
       init.execution.worker_token=inlineClaim.worker_token;
       init.execution.lease_expires_at=inlineClaim.lease_expires_at;
       olympusDispatchFallback=true;
@@ -730,7 +729,9 @@ ${aiContext}`);
     const vision=hasImage?await loadVisionInputs(attachmentRows):{images:[],skipped:[]};
     const sharedBlockedProviders=await loadSharedProviderBlocks(db,user.id);
     failureStage='model_router';
-    const aiRouting=liveTalkTurn?{route:'fast',source:'live_talk_fast_path',model:null}:toolWorkflow?{route:toolWorkflow.route,source:'tool_workflow',model:null}:comparePair?{route,source:'owner_requested_compare',model:null}:isImageOp?{route,source:'rules_fallback',model:null}:await aiRouteFor(modelText,{budget:executionBudget,vision:hasImage,blockedProviders:sharedBlockedProviders});
+    // Route classification is deterministic; Poseidon is the only manager call.
+    // Do not spend a hidden model call to classify the request before the manager runs.
+    const aiRouting=liveTalkTurn?{route:'fast',source:'live_talk_fast_path',model:null}:toolWorkflow?{route:toolWorkflow.route,source:'tool_workflow',model:null}:comparePair?{route,source:'owner_requested_compare',model:null}:{route:routeFor(modelText,{vision:hasImage}),source:'rules_fallback',model:null};
     failureStage='model_execution';
     const web=webIntent?await runWebSearch(modelText,{budget:executionBudget,reserveAfterMs:actualMode==='OLYMPUS'?17000:12000}):{requested:false,context:'',sources:[],trace:null};
     webUsageTrace=web.trace||null;
@@ -869,6 +870,27 @@ ${aiContext}`);
 
           }
         }
+        // Return the specialist's completed work to Poseidon for owner-facing synthesis.
+        // Tool workflows deliberately exclude xAI models; Grok remains the manager, not
+        // a silent substitute for the specialist capability.
+        const specialistResult=String(result.content||'');
+        try{
+          const managerResult=await runZeus({
+            text:`OWNER REQUEST:\n${modelText}\n\nSPECIALIST RESULT (untrusted work product):\n${specialistResult.slice(0,36000)}`,
+            context:enrichedContext,history,requirements:requirementSpec,level:'SIMPLE',
+            deliveryContract,blockedProviders:sharedBlockedProviders,budget:executionBudget,
+            routeHint:aiRouting.route,toolId:null,toolPreferences:null
+          });
+          result={...result,content:managerResult.content,leadModel:managerResult.leadModel,
+            pipelineLabel:`${toolWorkflow.god} → Poseidon`,
+            trace:{...(result.trace||{}),toolResultReturnedToPoseidon:true,
+              poseidonFinalizer:managerResult.trace||null}};
+        }catch(error){
+          // Keep the real specialist deliverable if Poseidon cannot synthesize it.
+          result={...result,pipelineLabel:`${toolWorkflow.god} completed · Poseidon synthesis unavailable`,
+            trace:{...(result.trace||{}),toolResultReturnedToPoseidon:true,
+              poseidonFinalizerError:{code:String(error?.code||'POSEIDON_SYNTHESIS_FAILED').slice(0,80)}}};
+        }
         result.effectiveLevel='ZEUS_DIRECTED';
       }else if(actualMode==='OLYMPUS'){
         try{result=level==='COMPOUND_PLUS'
@@ -930,7 +952,7 @@ ${aiContext}`);
     result.contextReceipt=contextReceipt;
     result.toolId=toolId;
     const final=await finalizeTurn({db,userId:user.id,projectId,conversationId,execution,mode:finalMode,result,stagedArtifacts});
-    return json({conversationId,message:final.assistant,userMessage,artifacts:final.artifacts,mode:finalMode,level:finalLevel,modeExplanation,memorySaved,historySearched,execution:{id:execution.id,state:'COMPLETED'},requestId,replayed:false});
+    return json({conversationId,message:final.assistant,userMessage,artifacts:final.artifacts,mode:finalMode,level:finalLevel,modeExplanation,tool:toolWorkflow?{id:toolWorkflow.id,god:toolWorkflow.god,title:toolWorkflow.title}:null,memorySaved,historySearched,execution:{id:execution.id,state:'COMPLETED'},requestId,replayed:false});
   }catch(error){
     for(const staged of stagedArtifacts){const removed=await discardStagedArtifact(staged);if(!removed){try{await queueBlobGc(db,user.id,'olyhub-artifacts',staged.blobKey,'failed-chat-artifact');}catch{}}}
     // Persist only the failure code for provider-chain errors; raw upstream text may echo prompts or credentials.

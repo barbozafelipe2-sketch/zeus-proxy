@@ -62,12 +62,12 @@ try{
   const textTools=['web','code','documents'];
   for(const toolId of textTools){
     const roster=models.toolModelCandidates(toolId,`fixed roster ${toolId}`,{toolId,includeUnavailable:true});
-    assert.equal(roster.length,6,`${toolId} must expose six fixed model families`);
-    assert.equal(new Set(roster.map(modelFamily)).size,6,`${toolId} must use six independent model families`);
+    assert.equal(roster.length,5,`${toolId} must expose the five non-Poseidon model families`);
+    assert.equal(new Set(roster.map(modelFamily)).size,5,`${toolId} must use five independent non-Poseidon model families`);
   }
   const analysisRoster=models.toolModelCandidates('analysis','analyze an attached file',{toolId:'analysis',includeUnavailable:true});
-  assert.equal(analysisRoster.length,6,'file analysis must expose six multimodal model families');
-  assert.equal(new Set(analysisRoster.map(modelFamily)).size,6,'file analysis families must be independent');
+  assert.equal(analysisRoster.length,5,'file analysis must expose five multimodal model families outside the Poseidon family');
+  assert.equal(new Set(analysisRoster.map(modelFamily)).size,5,'file analysis families must be independent from Poseidon');
   const fixedImages=models.fixedImageModelCatalog();
   assert.equal(fixedImages.length,6,'image tools must expose six fixed image families');
   assert.equal(new Set(fixedImages.map(modelFamily)).size,6,'image families must be independent');

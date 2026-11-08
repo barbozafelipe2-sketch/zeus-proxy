@@ -1,8 +1,19 @@
-# Zeus Proxy — Personal Olympus Hub
+# OlyHub — Zeus Proxy
 
 **Version:** OH-004.3.4 Personal Recovery
 
-Zeus Proxy is Felipe's private Netlify edition of Olympus Hub.
+OlyHub is Felipe's private Netlify workspace. “Zeus Proxy” remains the repository and legacy API name.
+
+## Current architecture
+
+- **Poseidon Text and Poseidon Voice** are the shared OlyHub Core coordinator. They use the same project context, approved memory, permissions and tool catalog, then delegate eligible work to the appropriate specialist.
+- The coordinator candidate defaults to **`x-ai/grok-4.3`** through the configured OpenRouter route, normally the Netlify AI Gateway. Backend routing may fall back when a provider is unavailable. The repository does not establish live credential availability, current provider pricing, or production behavior.
+- The specialist filter keeps xAI out of tool execution so the coordinator does not take over a task assigned to a dedicated tool.
+- **Zeus** is the planned director/auditor surface. Its current UI is a shell; an independent evidence pipeline for executions, costs, failures and approvals, plus synchronous blocking of critical actions, is not implemented.
+- The user interface has no Zeus Levels or Zeus/Olympus mode selector. Internal compatibility names may remain in APIs, storage and orchestration code.
+- **Athena** is the shared Live Talk identity. OpenAI Realtime is the default; ElevenLabs Realtime is selectable. Both use Poseidon context. Gemini Live is not offered in the Live Talk UI.
+
+The local repository state and the GitHub remote can differ. A passing local build or test suite does not mean a change has been pushed or deployed; live provider and Netlify verification are separate.
 
 ## Personal access
 
@@ -16,26 +27,15 @@ Set `GITHUB_TOKEN` with **Functions** scope in Netlify. Give it Contents read/wr
 
 The background worker sends the final workspace snapshot to the `OlyHub Code Agent Sandbox` GitHub Actions workflow. A trusted preparation job retrieves it using GitHub OIDC; a separate job installs Node dependencies with lifecycle scripts disabled, then runs the repository's `test`, `release:check`, `build`, `lint`, and `typecheck` scripts inside a resource-limited Docker container with networking disabled and no GitHub permissions. The current verifier supports Node.js repositories with at least one of those scripts. Unsupported projects or failed checks stop the job before any commit. A passing workspace is pushed as one commit; branch-head conflicts and credential-like content also block the commit. Dependency installation and Docker image download happen outside the offline test container, without provider credentials or the GitHub token.
 
-## Zeus Levels
-
-| Level | Internal | Typical tasks |
-|------|----------|----------------|
-| **1** | SIMPLE | Basic chat, translation, short answers |
-| **2** | COMPOUND | Simple PDF/docs, logos, moderate code, **image generation** |
-| **3** | ZEUS_DIRECTED | Advanced UI/frontend, isolated backend, complex reports, books |
-| **Olympus** | multi-specialist | Full assemble: UI + code + integration, audits |
-
-**Compare & Evolve** (Tools) and the **Like** button on replies record preferred model families per task type (`familyPreferences`).
-
-## Projects + Manager
+## Projects and tools
 
 The interface calls these workspaces **Projects**. Each project keeps its own permanent chat, memory, sources, tasks and artifacts. **Home** includes project shortcuts and a project list. API routes use `/api/projects`.
 
-A deterministic zero-token router chooses Zeus Level 1 / 2 / 3; Olympus is a multi-specialist mode. There is no hourly execution cap; bounded concurrency, provider quotas, explicit Olympus budget reservations and required action approvals remain. Provider keys stay server-side.
+Poseidon uses the backend routing policy and the dedicated-tool catalog; users do not select internal execution levels or an Olympus mode. Bounded concurrency, provider quotas, budget reservations and required action approvals remain. Provider keys stay server-side.
 
 ## Chat and voice behavior
 
-Text chat, voice messages and Live Talk follow the same OlyHub procedures and selected user personalization. Ordinary conversation does not trigger project inspection, tools or unsolicited work offers. Direct work requests use the selected Zeus level or Olympus mode; project tools are reserved for project requests. Live Talk restores a bounded recent transcript and only a small, relevant slice of the open project's context to control prompt cost. The server-side Live Talk provider contract issues credentials for ElevenLabs, OpenAI Realtime and Gemini Live; ElevenLabs remains the default, and Muse stays disabled until it has a supported realtime conversation transport. Google lookups in chat are read-only; Drive document publishing requires the separate project review-and-confirm flow. GitHub changes require the dedicated explicit action flow.
+Text chat, voice messages and Live Talk share OlyHub context and personalization. Ordinary conversation does not trigger project inspection, tool calls or unsolicited work offers. Poseidon routes explicit work through the backend policy and eligible specialist tools. Live Talk restores a bounded recent transcript and relevant open-project context. OpenAI Realtime is the default voice transport; ElevenLabs Realtime is an alternative. Google lookups in chat are read-only; Drive document publishing requires the separate project review-and-confirm flow. GitHub changes require the dedicated explicit action flow.
 
 ## Google integrations
 

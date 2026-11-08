@@ -1,5 +1,7 @@
 # Zeus Proxy — Part 5/5 pre-release audit (2026-10-22)
 
+> Historical pre-release snapshot. Its Zeus Levels/Olympus terms, branch status, and release instructions reflect the repository state on 2026-10-22 and are superseded by the current Poseidon/Zeus architecture. Verify the current branch, remote, and deployment independently.
+
 **Decision: code checks pass; production release remains unverified.** No deployment was made during this audit. The source was reconciled to `main` at `38309ea` before changes; all requested code changes are being held for one final commit.
 
 ## Verified in the current source

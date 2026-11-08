@@ -96,10 +96,10 @@ const mustContain = [
   [app,'startVoice','voice input handler'],
   [app,'state.health?.capabilities?.serverTranscription','ElevenLabs Scribe transcription gating'],
   [app,'activeMode','actual execution mode display'],
-  [app,'data-routing-mode="AUTO"','automatic execution routing'],
-  [app,'data-routing-mode="MANUAL"','manual execution routing'],
-  [app,'data-mode="ZEUS"','manual Zeus selector'],
-  [app,'data-mode="OLYMPUS"','manual Olympus selector'],
+  [app,'olympusAuto:true','automatic Poseidon-managed execution routing'],
+  [app,'function modeStrip()','Poseidon tool context strip'],
+  [app,'specialistLabel(userRow?.metadata?.toolId)','actual running specialist status'],
+  [chat,'tool:toolWorkflow?{id:toolWorkflow.id,god:toolWorkflow.god,title:toolWorkflow.title}:null','specialist identity in queued response'],
   [intent,'decideExecutionLevel','deterministic internal level router'],
   [intent,'deterministic_zero_token','zero-token router contract'],
   [app,'PERMANENT PROJECT CHAT','embedded project chat'],
@@ -224,7 +224,7 @@ const mustContain = [
   [css,'OH-004.3.0 — premium product UI refinement','4.3.0 premium UI refinement'],
   [css,'OH-004.3.4 — final product polish','4.3.4 final polish layer'],
   [chat,'COMPLEX_TURBO','truthful Olympus level routing'],
-  [app,'PERSONAL · ${persona}','personal current Live Talk identity'],
+  [app,'POSEIDON VOICE','Poseidon Voice Live Talk identity'],
   [app,'composer-meta','composer persistence guidance'],
   [chat,'queryAwareExcerpt','query-aware long attachment excerpts'],
   [models,'Never imply current-web research occurred unless retrieval results are explicitly present','retrieval honesty'],
@@ -247,6 +247,8 @@ const mustContain = [
   [dbShared,"client.query('BEGIN')",'database transaction helper'],
 ];
 for (const [haystack,needle,label] of mustContain) if (!haystack.includes(needle)) throw new Error(`Missing ${label}`);
+
+if (app.includes('data-routing-mode=') || app.includes('data-mode=')) throw new Error('Legacy mode selectors must stay removed from the Poseidon chat.');
 
 if (chat.includes("state='CREATING_ARTIFACT'")) throw new Error('Invalid execution_state CREATING_ARTIFACT returned.');
 if (/db\.sql[^\n]*\.catch\s*\(/.test(chat)) throw new Error('db.sql tagged result must not use Promise .catch().');
@@ -276,7 +278,7 @@ if (!models.includes('maxCreators:2') || !models.includes('roleCandidates(\'CREA
 if (!models.includes("https://api.elevenlabs.io/v1/speech-to-text") || !models.includes("form.append('model_id','scribe_v2')")) throw new Error('Voice message input must post directly to ElevenLabs Scribe v2.');
 if (Object.prototype.hasOwnProperty.call(pkg.dependencies||{},'xlsx')) throw new Error('Redundant legacy xlsx dependency returned.');
 if (!app.includes("if(state.tab==='Tools')await Promise.all([loadHealth(),loadFiles(),loadArtifacts(),loadToolModels()])")) throw new Error('Tools can still render stale Project-scoped outputs or miss the eligible model pools.');
-if (!app.includes('data-tool-start') || !app.includes('toolRun?{maxZeusLevel:3}:{}') || !chat.includes('toolConversationTitle(toolId)')) throw new Error('Tool workflows must open dedicated Zeus Level 3 conversations with their deity title.');
+if (!app.includes('data-tool-start') || !app.includes('toolRun?{toolId:state.currentToolId}:{}') || !chat.includes('toolConversationTitle(toolId)') || app.includes('maxZeusLevel')) throw new Error('Dedicated tool workflows must keep their deity identity without exposing legacy level controls.');
 if (!app.includes('Trace Lab ·') || !chat.includes('traceCalls:Array.isArray(result.trace?.providerTelemetry?.attempts)')) throw new Error('Trace Lab must expose the actual model calls used by each completed response.');
 if (!app.includes('await hydrateProjectWorkspace(state.currentProject.id,{loadConversation:false})')) throw new Error('Opening a Project conversation does not hydrate the full workspace.');
 

@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {DEFAULT_LIVE_VOICE_PROVIDER,LIVE_VOICE_PROVIDERS,resolveLiveVoiceProvider,issueLiveVoiceCredentials} from '../netlify/functions/_shared/voice-provider.mjs';
-assert.equal(DEFAULT_LIVE_VOICE_PROVIDER,'elevenlabs');
-assert.equal(resolveLiveVoiceProvider(undefined),'elevenlabs');
+assert.equal(DEFAULT_LIVE_VOICE_PROVIDER,'openai');
+assert.equal(resolveLiveVoiceProvider(undefined),'openai');
 assert.equal(resolveLiveVoiceProvider(' ELEVENLABS '),'elevenlabs');
 assert.equal(LIVE_VOICE_PROVIDERS.elevenlabs.realtimeConversation,true);
 assert.equal(LIVE_VOICE_PROVIDERS.openai.realtimeConversation,true);
@@ -53,12 +53,13 @@ const providerSource=readFileSync('netlify/functions/_shared/voice-provider.mjs'
 assert.ok(providerSource.includes("if(selected==='openai')return issueOpenAiCredentials(voice)"));
 assert.ok(providerSource.includes("if(selected==='gemini')"));
 
-// Browser Live Talk already supports Gemini and OpenAI via separate transports.
-// The ElevenLabs credential adapter must not be mistaken for the entire voice router.
+// The backend retains legacy Gemini credential compatibility, while Poseidon Voice
+// exposes only the canonical OpenAI Realtime and ElevenLabs Realtime choices.
 const browser=readFileSync('public/app.js','utf8');
-for(const provider of ['elevenlabs','gemini','openai']){
+for(const provider of ['elevenlabs','openai']){
  assert.ok(browser.includes(`<option value="${provider}"`),`Live Talk must retain ${provider} selection`);
 }
-assert.ok(browser.includes("liveProvider:'elevenlabs'"),'existing default voice provider must remain unchanged');
+assert.ok(!browser.includes('<option value="gemini"'),'Gemini Live must not be selectable in Poseidon Voice');
+assert.ok(browser.includes("liveProvider:'openai'"),'OpenAI Realtime must be the default voice provider');
 assert.ok(!browser.includes('<option value="muse"'),'Muse must not appear as an enabled Live Talk option');
 console.log('Voice provider contract tests passed');

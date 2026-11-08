@@ -1560,6 +1560,40 @@ body .message.user .message-body{border-color:#d4b66e55!important;background:lin
 
 .tool-model-chip.unavailable{opacity:.48}.tool-model-chip.unavailable i{background:#667080;box-shadow:none}
 
+/* Zeus Realm shell: visible destination, explicitly separate from live monitoring. */
+.zeus-realm-page{max-width:1260px}
+.zeus-realm-hero{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:8px 2px 22px}
+.zeus-realm-identity{display:flex;align-items:center;gap:16px;min-width:0}
+.zeus-realm-emblem{display:grid;place-items:center;flex:none;width:56px;height:56px;border:1px solid rgba(208,177,111,.38);border-radius:17px;background:linear-gradient(145deg,#211a10,#11151b);color:#d8b86d;box-shadow:0 12px 32px rgba(0,0,0,.22)}
+.zeus-realm-emblem .ico{width:25px;height:25px}
+.zeus-realm-hero h1{margin:3px 0;font-size:clamp(32px,4vw,46px);letter-spacing:-.045em}
+.zeus-realm-hero p{margin:4px 0 0;color:#9ba5b2;font-size:13px}
+.zeus-realm-state{display:inline-flex;align-items:center;gap:8px;flex:none;padding:8px 11px;border:1px solid #4a3f29;border-radius:999px;background:#17140e;color:#dfc27f;font-size:11px;font-weight:650;letter-spacing:.06em;text-transform:uppercase}
+.zeus-realm-state i{width:7px;height:7px;border-radius:50%;background:#b89751;box-shadow:0 0 10px #b8975160}
+.zeus-realm-notice{display:flex;align-items:center;gap:15px;padding:20px;border:1px solid #393326;border-radius:18px;background:linear-gradient(125deg,rgba(39,31,19,.72),rgba(15,19,25,.96) 72%);box-shadow:0 18px 40px rgba(0,0,0,.14)}
+.zeus-notice-mark{display:grid;place-items:center;flex:none;width:42px;height:42px;border:1px solid #69552f;border-radius:13px;background:#201a11;color:#e2c579;font-size:25px}
+.zeus-realm-notice .eyebrow,.zeus-planned-head .eyebrow{color:#c7a85c}
+.zeus-realm-notice h2{margin:4px 0;font-size:18px;letter-spacing:-.02em}
+.zeus-realm-notice p{margin:0;color:#a8b0bb;font-size:12px;line-height:1.55}
+.zeus-realm-status-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:14px 0}
+.zeus-status-card{min-width:0;padding:17px;border:1px solid #252d38;border-radius:15px;background:linear-gradient(180deg,#111720,#0c1016)}
+.zeus-status-card>.eyebrow{display:block;color:#7f8b99;font-size:9px;letter-spacing:.12em}
+.zeus-status-card strong{display:block;margin:10px 0 4px;color:#d7dbe1;font-size:16px;font-weight:650}
+.zeus-status-card small{display:block;color:#828d9b;font-size:11px;line-height:1.45}
+.zeus-planned-panel{margin-top:20px;padding:18px;border:1px solid #252d38;border-radius:17px;background:rgba(12,16,22,.8)}
+.zeus-planned-head{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:12px}
+.zeus-planned-head h2{margin:3px 0 0;font-size:18px}
+.zeus-planned-badge,.zeus-planned-state{padding:5px 8px;border:1px solid #333b47;border-radius:999px;color:#8994a2;font-size:9px;letter-spacing:.08em;text-transform:uppercase;white-space:nowrap}
+.zeus-planned-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.zeus-planned-grid article{display:grid;grid-template-columns:34px minmax(0,1fr);gap:10px;align-items:start;padding:13px;border:1px solid #222a34;border-radius:13px;background:#0e1319}
+.zeus-planned-icon{display:grid;place-items:center;width:32px;height:32px;border:1px solid #2e3540;border-radius:10px;background:#171d25;color:#bba064}
+.zeus-planned-icon .ico{width:17px;height:17px}
+.zeus-planned-grid article>div{min-width:0}
+.zeus-planned-grid article strong{font-size:12px;font-weight:650}
+.zeus-planned-grid article p{margin:5px 0 0;color:#87919f;font-size:10px;line-height:1.45}
+.zeus-planned-state{grid-column:2;justify-self:start;margin-top:1px;padding:3px 7px;font-size:8px}
+@media(max-width:760px){.zeus-realm-hero{align-items:flex-start;padding:3px 0 16px}.zeus-realm-identity{gap:11px}.zeus-realm-emblem{width:46px;height:46px;border-radius:14px}.zeus-realm-hero p{font-size:11px}.zeus-realm-state{padding:7px 9px;font-size:9px}.zeus-realm-notice{align-items:flex-start;padding:15px;gap:11px}.zeus-realm-notice h2{font-size:16px}.zeus-realm-status-grid{grid-template-columns:1fr;gap:8px}.zeus-status-card{padding:13px}.zeus-status-card strong{margin-top:6px}.zeus-planned-panel{padding:14px}.zeus-planned-grid{grid-template-columns:1fr}.zeus-planned-head h2{font-size:16px}}
+
 /* Mobile: keep short user messages readable beside attachment previews. */
 @media(max-width:959px){
  .chat-scroll .message.user{display:flex;flex-direction:column;align-items:flex-end;min-width:0}
@@ -1567,3 +1601,31 @@ body .message.user .message-body{border-color:#d4b66e55!important;background:lin
  .chat-scroll .message.user .attachments.in-message{width:100%;max-width:100%;justify-content:flex-end}
  .chat-scroll .message.user .file-chip.static{max-width:min(100%,320px);overflow-wrap:anywhere}
 }
+
+.poseidon-tool-context{display:flex;align-items:center;gap:10px;width:min(100%,760px);margin:8px auto;padding:10px 14px;border:1px solid rgba(78,190,236,.18);border-radius:12px;background:linear-gradient(100deg,rgba(31,119,158,.11),rgba(10,18,29,.38));color:#a8bbca;font-size:12px;letter-spacing:.02em}
+.poseidon-tool-context .tool-context-mark{color:#83dcff;font-weight:700;letter-spacing:.08em;text-transform:uppercase}
+
+/* Poseidon Voice: transparent water orb on a deep ocean stage. */
+.live-talk-experience{background-color:#020913;background-image:radial-gradient(ellipse at 50% 44%,rgba(0,137,196,.23),transparent 34%),radial-gradient(ellipse at 50% 100%,rgba(0,74,122,.24),transparent 48%),linear-gradient(180deg,#020610 0%,#061423 52%,#020811 100%)}
+.live-talk-scene{background:radial-gradient(ellipse at 50% 53%,rgba(19,151,204,.13),transparent 34%),linear-gradient(180deg,rgba(0,3,9,.16),rgba(0,8,17,.08) 45%,rgba(0,3,10,.48))}
+.live-talk-brand{border-color:rgba(112,209,246,.28);background:linear-gradient(135deg,rgba(18,91,123,.32),rgba(4,12,22,.62));box-shadow:inset 0 1px rgba(220,248,255,.16),0 12px 28px #0008,0 0 28px rgba(34,177,226,.08)}
+.live-talk-brand .personal-bolt{color:#6bdfff;text-shadow:0 0 16px #15bdec}
+.live-talk-heading>span{color:#73dafa}
+.live-talk-status{color:#d1e9f2}
+.live-talk-orb-wrap:before{background:radial-gradient(circle,rgba(20,183,231,.3),rgba(14,100,173,.12) 48%,transparent 72%);filter:blur(21px)}
+.live-talk-orb-wrap:after{border-color:rgba(97,210,255,.33);box-shadow:inset 0 1px 2px #d8f9ff55,0 0 0 5px rgba(30,160,215,.05),0 0 38px rgba(40,188,240,.2);background:linear-gradient(145deg,rgba(212,248,255,.11),transparent 21% 75%,rgba(92,204,255,.08))}
+.live-talk-orb-wrap .zeus-voice-presence.lightning,.zeus-voice-presence.lightning{background:radial-gradient(circle,rgba(16,172,225,.12),rgba(4,34,62,.19) 67%,transparent 84%);box-shadow:0 0 48px rgba(21,167,229,.26),inset 0 0 25px rgba(62,196,243,.12)}
+.zeus-plasma-image.poseidon-plasma-image{filter:hue-rotate(154deg) saturate(1.16) drop-shadow(0 0 15px rgba(51,195,255,.7));animation:plasma-drift 34s linear infinite,poseidon-plasma-breathe 4.2s ease-in-out infinite alternate}
+.zeus-voice-presence.lightning.is-speaking .poseidon-plasma-image{animation-duration:17s,2.2s}
+@keyframes poseidon-plasma-breathe{from{filter:hue-rotate(154deg) saturate(1.08) drop-shadow(0 0 10px rgba(37,168,232,.52)) brightness(.92)}to{filter:hue-rotate(154deg) saturate(1.28) drop-shadow(0 0 25px rgba(61,218,255,.9)) brightness(1.15)}}
+.live-talk-orbit{border-color:rgba(80,197,245,.28);box-shadow:0 0 18px rgba(32,151,210,.18);animation:poseidon-orbit-drift 24s linear infinite}
+.live-talk-orbit-b{border-color:rgba(91,220,251,.2);animation-duration:32s;animation-direction:reverse}
+@keyframes poseidon-orbit-drift{to{rotate:360deg}}
+.live-talk-waveform{border-color:rgba(101,204,242,.28);background:linear-gradient(120deg,rgba(17,106,145,.2),rgba(4,14,27,.65) 45%,rgba(18,96,133,.18));box-shadow:inset 0 1px 2px #d5f7ff22,0 15px 36px #0009,0 0 22px rgba(38,167,217,.16)}
+.live-talk-waveform i{background:linear-gradient(180deg,#d6faff,#4dbce6 55%,#baf4ff);box-shadow:0 0 9px rgba(83,207,244,.56)}
+.live-talk-mode,.live-voice-note{color:#b4d8e8}
+.live-mode-dot{background:#48cafa;box-shadow:0 0 10px #36c5f9}
+.live-mute-button{border-color:rgba(98,203,241,.4);background:linear-gradient(145deg,rgba(16,117,160,.36),rgba(5,19,34,.8));color:#d9f7ff;box-shadow:inset 0 1px #d8fbff25,0 0 25px rgba(23,165,218,.13)}
+.live-end-call{box-shadow:inset 0 1px #fff4,0 0 24px rgba(237,79,83,.22)}
+@media(prefers-reduced-motion:reduce){.poseidon-plasma-image,.live-talk-orbit{animation:none!important}}
+@media(max-width:640px){.poseidon-tool-context{margin:5px auto;padding:8px 11px;font-size:11px}}

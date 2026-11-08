@@ -19,7 +19,7 @@ globalThis.fetch=async(url,options={})=>{
   const system=anthropic?String(body.system||''):String(body.messages?.[0]?.content||'');
   const provider=anthropic?'anthropic':'openai';
   calls.push({provider,model:body.model,system});
-  if(/GPT FINALIZER/i.test(system)){
+  if(/(?:GPT FINALIZER|final coordinator voice)/i.test(system)){
     assert.equal(provider,'openai');
     return new Response(JSON.stringify({choices:[{message:{content:'FINAL OLYMPUS ANSWER'}}]}),{status:200,headers:{'content-type':'application/json'}});
   }
@@ -44,7 +44,7 @@ try{
   assert.equal(result.trace.executionLevel,'COMPOUND_PLUS');
   assert.equal(result.trace.gptFinished,true);
   assert.equal(result.trace.independentCritic,true);
-  assert.equal(calls.length,3,'Compound Plus must be author + independent critic + GPT finalizer on the happy path');
+  assert.equal(calls.length,3,'Compound Plus must be author + independent critic + Poseidon final coordinator on the happy path');
   assert.notEqual(calls[0].provider,calls[1].provider,'author and critic must use independent provider families');
   assert.match(calls[0].system,/AUTHOR stage of Olympus Compound Plus/i);
   assert.match(calls[1].system,/independent CRITIC/i);

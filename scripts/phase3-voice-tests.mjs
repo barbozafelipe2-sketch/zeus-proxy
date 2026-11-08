@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 const ui=readFileSync('public/app.js','utf8');const css=readFileSync('public/ui-premium.css','utf8');const chat=readFileSync('netlify/functions/chat.mjs','utf8');const transcribe=readFileSync('netlify/functions/transcribe.mjs','utf8');const modelSource=readFileSync('netlify/functions/_shared/models.mjs','utf8');
+const voiceSettings=ui.slice(ui.indexOf('<h3>Live Talk Settings</h3>'),ui.indexOf('<h3>Audio Settings</h3>'));
+assert.match(voiceSettings,/<option value="openai"[^>]*>OpenAI Realtime<\/option><option value="elevenlabs"[^>]*>ElevenLabs Realtime<\/option>/,'Poseidon Voice exposes only its two canonical providers and defaults to OpenAI first');
+assert.ok(!voiceSettings.includes('Google Gemini Live')&&!voiceSettings.includes('gemini-live-voice'),'Gemini Live is not offered as a Poseidon Voice provider');
+assert.match(ui,/state\.liveProvider=localStorage\.getItem\('zeus-live-provider\.v1'\)==='elevenlabs'\?'elevenlabs':'openai'/,'saved unsupported Live Talk providers migrate safely to the OpenAI default');
 assert.match(ui,/voiceId:'marin'/);assert.match(ui,/voiceAvatar:'lightning'/);assert.match(ui,/function speechLocale/);
 assert.match(ui,/discardLiveAudio/);assert.match(ui,/zeus-live-stage/);assert.match(ui,/id="voice-avatar"/);assert.match(ui,/id="live-language"/);
 assert.match(css,/prefers-reduced-motion/);assert.match(css,/width:108px;height:108px/);
@@ -26,7 +30,7 @@ assert.match(live,/Could not confirm microphone mute after reconnect/,'a failed 
 assert.match(live,/All drivers mute input without muting assistant playback/,'muting must affect input only');
 assert.match(live,/function minimizeLiveTalk\(\)\{if\(!state\.liveTalk\)return;state\.liveTalkMinimized=true;render\(\);\}/,'returning from Live Talk must minimize the screen without ending the session');
 assert.match(live,/function restoreLiveTalk\(\)\{if\(!state\.liveTalk\)return;state\.liveTalkMinimized=false;render\(\);\}/,'the floating Live Talk control must restore the full session screen');
-assert.match(liveView,/id="live-talk-minimize"[^>]*aria-label="Minimize Live Talk and return to Zeus Proxy"/,'Live Talk back control must minimize rather than disconnect');
+assert.match(liveView,/id="live-talk-minimize"[^>]*aria-label="Minimize Live Talk and return to Poseidon Text"/,'Live Talk back control must minimize rather than disconnect');
 assert.match(ui,/id="live-talk-dock-open"/,'the minimized Live Talk session must have a restore control');
 assert.match(ui,/id="live-talk-dock-mute"/,'the minimized Live Talk session must keep a microphone mute control');
 assert.match(ui,/id="live-talk-dock-end"/,'the minimized Live Talk session must keep an end-call control');
@@ -43,7 +47,11 @@ assert.match(ui,/open_olyhub_project:async/,'the voice agent must be able to ope
 assert.match(ui,/project\.name\)===query/,"voice navigation must resolve a project against the user's loaded project list");
 assert.match(ui,/sendContextualUpdate\(liveSessionContext\(\)\)/,'Realtime reconnects must restore the recent chat context together with the selected persona');
 assert.match(ui,/function liveSessionContext\(/,'Live Talk must build a context restoration update from saved conversation turns');
-assert.match(ui,/the selected voice assistant in Zeus Proxy/,'Live Talk provides voice identity');
+assert.match(ui,/You are Athena, the voice agent for Poseidon Voice in OlyHub Core/,'Live Talk uses Athena as the shared Poseidon Voice identity');
+assert.match(ui,/function liveTalkPersona\(\)\{return 'ATHENA';\}/,'all Realtime providers share the Athena voice identity');
+assert.match(liveView,/POSEIDON VOICE/,'Live Talk is branded as Poseidon Voice');
+assert.match(ui,/liveTalk:true/,'spoken requests use the shared authenticated Poseidon chat path');
+assert.match(css,/hue-rotate\(154deg\)/,'transparent plasma orb is color-treated to the Poseidon blue palette');
 assert.match(ui,/call list_olyhub_projects if needed to resolve the exact name, then open_olyhub_project with project_name, then get_current_project_context/,'Live Talk must follow the project lookup sequence when Felipe names a project');
 assert.match(ui,/Do not answer that you lack access before trying these tools/,'Live Talk must attempt the available project tools before claiming it lacks access');
 assert.match(ui,/They do not expose full source or file contents/,'Live Talk must be honest about the current project file access boundary');
@@ -60,9 +68,9 @@ assert.match(ui,/send_olyhub_command:async/,'the voice agent must be able to rou
 const voiceToolBody=ui.slice(ui.indexOf('send_olyhub_command:async'),ui.indexOf('list_olyhub_projects:async'));
 assert.ok(voiceToolBody.includes('sendText(command,[],crypto.randomUUID()'), 'direct Live Talk work commands must also work in the personal chat outside projects');
 assert.match(ui,/\{voiceCommand:true\}/,'spoken OlyHub work must avoid the fast Live Talk-only execution path');
-assert.match(ui,/olympusAuto:Boolean\(automatic\)/,'automatic chat routing must let the server choose Zeus or Olympus');
-assert.match(ui,/In automatic mode, the system selects Poseidon Level 1–3 or Olympus/,'automatic mode uses Poseidon or Olympus');
-assert.match(ui,/toolRun\?\{maxZeusLevel:3\}:\{\}/,'tool workflows remain forced to Zeus Level 3');
+assert.match(ui,/olympusAuto:true/,'Poseidon-managed routing must remain automatic for spoken work');
+assert.match(ui,/function liveTalkPersona\(\)\{return 'ATHENA';\}/,'Realtime providers share the Athena voice identity');
+assert.ok(!ui.includes('maxZeusLevel'),'dedicated tools no longer expose legacy level selection');
 assert.match(ui,/assistant\.content\|\|''/,'the agent must receive the OlyHub engine reply to speak aloud');
 assert.match(ui,/get_current_project_context:async/,'the voice agent must be able to query the active project context');
 assert.match(ui,/create_project_task:async/,'the voice agent must be able to create a task in the active project');

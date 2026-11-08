@@ -1,5 +1,7 @@
 # OH-004.3.4 — Polish
 
+> Historical release notes. The product-position statements in this file describe OH-004.3.4 and are superseded by the current Poseidon/Zeus architecture documented in README.md.
+
 This pass changes product presentation, source-grounding discipline, long-attachment selection, and release verification. It does not add a database migration.
 
 ## Product position

@@ -14,17 +14,17 @@ const must=[
   [app,'class="topbar-context"','workspace context header'],
   [app,'function managerAgentStrip()','Home Project strip'],
   [app,'id="manager-title">Projects</h1>','Home Projects heading'],
-  [app,'${modeStrip()}','shared chat mode controls'],
+  [app,'${modeStrip()}','shared Poseidon tool context'],
   [app,"['Projects','projects','Projects']",'Projects navigation label with compatible Projects state'],
   [app,'class="proj-card-main" data-project="${esc(p.id)}" aria-label="Abrir projeto','keyboard-accessible native project card button'],
   [app,'aria-label="Delete this memory"','memory action label'],
   [app,'aria-disabled="true"','truthful disabled tools'],
 ];
 for(const [haystack,needle,label] of must){if(typeof haystack==='boolean'){if(haystack!==needle)throw new Error(`Missing ${label}`)}else if(!String(haystack).includes(needle))throw new Error(`Missing ${label}`)}
-if(app.includes('id="zeus-level-cap"')||app.includes('id="olympus-auto"')||!app.includes('data-routing-mode="AUTO"')||!app.includes('data-routing-mode="MANUAL"'))throw new Error('Automatic/manual routing controls are missing or expose a manual Zeus level selector');
-if(!app.includes('Automatic lets the server choose Poseidon L1–L3 or Olympus')||!app.includes('Trace Lab ·'))throw new Error('Automatic routing explanation or per-message Trace Lab is missing');
-if(!app.includes('PERSONAL · POSEIDON')||!app.includes("'Poseidon is working'")||!app.includes('>Poseidon (legacy agent)</option>'))throw new Error('Poseidon identity is missing from workspace, execution or Live Talk');
-if(!app.includes("liveAgentSelection:'zeus'")||!app.includes("mode:'ZEUS'")||!app.includes("X-Zeus-Voice-Fallback"))throw new Error('Legacy voice and execution identifiers must remain compatible');
+if(app.includes('id="zeus-level-cap"')||app.includes('id="olympus-auto"')||app.includes('data-routing-mode=')||app.includes('data-mode='))throw new Error('Legacy mode or level selectors must not appear in the Poseidon chat');
+if(!app.includes('olympusAuto:true')||!app.includes('specialistLabel(userRow?.metadata?.toolId)')||!app.includes('Trace Lab ·'))throw new Error('Poseidon-managed dispatch, live specialist status or per-message Trace Lab is missing');
+if(!app.includes('PERSONAL · POSEIDON')||!app.includes("'Poseidon is working'")||!app.includes('Voice identity: Athena · fixed across Realtime providers'))throw new Error('Poseidon Text or shared Athena voice identity is missing');
+if(!app.includes("liveAgentSelection:'athena'")||!app.includes("mode:'ZEUS'")||!app.includes("X-Zeus-Voice-Fallback"))throw new Error('Athena voice identity and legacy execution identifiers must remain compatible');
 if(/Open in Zeus|Open in Olympus/.test(app))throw new Error('Project UI regressed to Home launcher buttons');
 if(!css.includes('.projects-page .page-head{display:grid;grid-template-columns:minmax(0,1fr);gap:12px;align-items:stretch}')||!css.includes('.projects-page .page-head .primary{width:100%;min-height:46px'))throw new Error('New project button must be full-width and tappable on phones');
 if(!css.includes('.projects-page .page-head .primary{box-sizing:border-box;max-width:100%;white-space:normal;line-height:1.2;overflow-wrap:anywhere}'))throw new Error('New project button text must wrap inside the mobile button');

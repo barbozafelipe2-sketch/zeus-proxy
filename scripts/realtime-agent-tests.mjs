@@ -46,8 +46,8 @@ try{
   for(const [name,value] of [['ELEVENLABS_API_KEY',old.key],['ELEVEN_LABS_API_KEY',old.legacy],['ELEVENLABS_AGENT_ID',old.id]])if(value===undefined)delete process.env[name];else process.env[name]=value;
 }
 const liveClient=readFileSync(new URL('../public/app.js',import.meta.url),'utf8');
-assert.ok(liveClient.includes('automatic routing between Poseidon Levels 1–3 and Olympus'),'Live Talk must describe Poseidon routing');
-assert.ok(liveClient.includes('manual Poseidon/Olympus selection'),'Live Talk must describe the manual Poseidon mode');
+assert.ok(liveClient.includes('Poseidon coordinates every request and selects the specialist workflow based on the task.'),'Live Talk must describe Poseidon-managed specialist routing');
+assert.ok(liveClient.includes('function liveTalkPersona(){return \'ATHENA\';}'),'Live Talk providers must share Athena identity');
 assert.ok(liveClient.includes('replace(/<\\/?(?:Athena|Zeus|Poseidon)\\s*>/gi'), 'Live Talk transcript parser must support old and new speaker markers');
-assert.ok(liveClient.includes("liveAgentSelection:'zeus'"),'ElevenLabs legacy agent selection must remain stable');
+assert.ok(liveClient.includes("liveAgentSelection:'athena'"),'ElevenLabs Realtime must use the chosen Athena agent');
 console.log('ElevenLabs Realtime agent token and failure handling PASS');
