@@ -1638,3 +1638,7 @@ body .message.user .message-body{border-color:#d4b66e55!important;background:lin
 .live-talk-orb-wrap.has-poseidon-art .zeus-voice-presence.lightning{background:transparent;box-shadow:none;overflow:visible}
 .live-talk-orb-wrap.has-poseidon-art .zeus-plasma-image{width:110%;height:110%;object-fit:contain;filter:drop-shadow(0 0 20px rgba(28,177,243,.4));}
 @media(max-width:700px){.live-talk-header{grid-template-columns:46px auto}.live-talk-center{gap:2px}}
+/* Core identity portraits in the canonical tools catalog. */
+.tool-god-portrait.god-zeus{background-image:linear-gradient(180deg,rgba(4,6,9,.02) 36%,rgba(4,6,9,.86)),url('/assets/zeus-tool-portrait.webp')!important;background-size:cover!important;background-position:center 38%!important}
+.tool-god-portrait.god-poseidon{background-image:linear-gradient(180deg,rgba(4,6,9,.02) 36%,rgba(4,6,9,.86)),url('/assets/poseidon-tool-portrait.webp')!important;background-size:cover!important;background-position:center 37%!important}
+@media(max-width:700px){.tool-god-portrait.god-zeus,.tool-god-portrait.god-poseidon{background-size:cover!important;background-position:center 35%!important}}

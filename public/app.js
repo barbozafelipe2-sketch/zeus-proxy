@@ -289,7 +289,7 @@ function sidebar(){
   </aside>${state.drawer?'<button class="scrim" id="scrim" aria-label="Close menu"></button>':''}`;
 }
 function navButtons(){
-  const items=[['Home','home','Home'],['Projects','projects','Projects'],['Tools','tools','Tools'],['Zeus','chart','Zeus'],['Files','files','Files'],['Settings','settings','Settings']];
+  const items=[['Home','home','Home'],['Projects','projects','Projects'],['Tools','tools','Tools'],['Files','files','Files'],['Settings','settings','Settings']];
   return items.map(([tab,ico,label])=>`<button data-tab="${tab}" class="${state.tab===tab?'active':''}" ${state.tab===tab?'aria-current="page"':''}>${icon(ico)}<span>${label}</span></button>`).join('');
 }
 function homeChats(){ return (state.conversations||[]).filter(c=>!c.project_id); }
@@ -903,6 +903,8 @@ function toolsView(){
   const h=state.health?.capabilities||{},chat=capabilityState('chat',Boolean(h.chat)),images=capabilityState('imageGeneration',Boolean(h.imageGeneration));
   const google=state.googleConnections||{},connections=google.connections||{},googleConnected=['gmail','calendar','drive'].filter(id=>connections[id]?.connected).length;
   const tools=[
+    {id:'zeus',god:'Zeus',mark:'ϟ',sprite:'zeus',role:'DIREÇÃO · AUDITORIA',title:'Zeus',description:'Direção e auditoria do trabalho do Poseidon. O monitoramento independente será conectado em uma fase futura.',actions:[{tab:'Zeus',label:'Abrir Zeus',enabled:true}],status:'REALM EM PREPARAÇÃO'},
+    {id:'poseidon',god:'Poseidon',mark:'♆',sprite:'poseidon',role:'OLYHUB CORE · CHAT',title:'Poseidon',description:'Abra uma conversa nova com o coordenador do OlyHub Core.',actions:[{newChat:true,label:'Nova conversa',enabled:true}],status:'CHAT PRINCIPAL'},
     {id:'athena',god:'Athena',mark:'◉',sprite:'athena',role:'PESQUISA · INTELIGÊNCIA',title:'Pesquisa e conhecimento',description:'Pesquisa na web, fontes, análise e documentos. O Hestia faz revisão internamente.',workflows:['web','documents'],actions:[{kind:'web',label:'Pesquisar',enabled:Boolean(h.webSearch),status:h.webSearch?'PRONTA':'WEB NÃO CONFIGURADA'},{kind:'documents',label:'Documentos',enabled:chat.enabled,status:chat.label}]},
     {id:'hefesto',god:'Hefesto',mark:'⚒',sprite:'hefesto',role:'ENGENHARIA · CÓDIGO',title:'Engenharia e código',description:'Implementação, depuração e revisão de código pelo workflow dedicado.',workflows:['code'],actions:[{kind:'code',label:'Abrir Hefesto',enabled:chat.enabled,status:chat.label}]},
     {id:'apollo',god:'Apollo',mark:'☼',sprite:'apollo',role:'DIREÇÃO VISUAL · IMAGENS',title:'Design e imagens',description:'Geração e edição visual usando os modelos de imagem habilitados.',workflows:['images'],actions:[{kind:'images',label:'Abrir Apollo',enabled:images.enabled,status:images.label}]},
@@ -919,9 +921,10 @@ function toolsView(){
     const modelLine=!state.toolModelsLoaded?'Carregando modelos…':state.toolModelsError?`Lista indisponível · ${state.toolModelsError}`:`${activeCount} de ${models.length} modelos disponíveis · seleção adaptativa`;
     const modelList=models.length?models.map(m=>`<span class="tool-model-chip ${m.available?'':'unavailable'}"><i aria-hidden="true"></i>${esc(providerName({provider:m.family||m.provider}))} · ${esc(m.name||m.id)} ${m.available?'':'· Gateway inativo'}</span>`).join(''):'<span class="tool-model-empty">Nenhum workflow de modelo está conectado a este Realm.</span>';
     const details=tool.workflows?.length?`<details class="tool-model-details"><summary>${icon('memory')}<span>${esc(modelLine)}</span><b aria-hidden="true">⌄</b></summary><div class="tool-model-list">${modelList}</div></details>`:`<small class="tool-capability-state">${esc(tool.status||'PLANEJADA')}</small>`;
-    const actions=(tool.actions||[]).map(action=>`<button type="button" class="tool-launch-button" ${action.kind?`data-tool-start="${action.kind}"`:''}${action.tab?`data-tab="${action.tab}"`:''} ${action.enabled?'':'disabled aria-disabled="true"'}>${esc(action.label)} <span aria-hidden="true">›</span></button>`).join('');
+    const actions=(tool.actions||[]).map(action=>`<button type="button" class="tool-launch-button" ${action.kind?`data-tool-start="${action.kind}"`:''}${action.tab?`data-tab="${action.tab}"`:''}${action.newChat?'data-new-chat="true"':''} ${action.enabled?'':'disabled aria-disabled="true"'}>${esc(action.label)} <span aria-hidden="true">›</span></button>`).join('');
     const enabled=(tool.actions||[]).some(action=>action.enabled);
-    return `<article class="tool-feature-card ${enabled?'':'unavailable'}" data-kind="${tool.id}"><div class="tool-god-portrait god-${tool.sprite||tool.id}" role="img" aria-label="${esc(tool.god)}"><span class="tool-god-mark" aria-hidden="true">${tool.mark}</span><span class="tool-god-caption"><strong>${esc(tool.god)}</strong><small>${esc(tool.role)}</small></span></div><div class="tool-feature-copy"><small class="eyebrow">OLYHUB CORE · DEUS ESPECIALISTA</small><h2>${esc(tool.title)}</h2><p>${esc(tool.description)}</p>${details}</div><div class="tool-feature-actions">${actions||'<button type="button" class="tool-launch-button" disabled aria-disabled="true">Indisponível <span aria-hidden="true">›</span></button>'}${tool.actions?.length?`<small class="tool-capability-state ${enabled?'ready':''}">${esc(tool.status||tool.actions.map(action=>action.status).filter(Boolean).join(' · '))}</small>`:''}</div></article>`;
+    const coreCard=['zeus','poseidon'].includes(tool.id);
+    return `<article class="tool-feature-card ${coreCard?'tool-core-card':''} ${enabled?'':'unavailable'}" data-kind="${tool.id}"><div class="tool-god-portrait god-${tool.sprite||tool.id}" role="img" aria-label="${esc(tool.god)}"><span class="tool-god-mark" aria-hidden="true">${tool.mark}</span><span class="tool-god-caption"><strong>${esc(tool.god)}</strong><small>${esc(tool.role)}</small></span></div><div class="tool-feature-copy"><small class="eyebrow">${coreCard?'OLYHUB CORE':'OLYHUB CORE · DEUS ESPECIALISTA'}</small><h2>${esc(tool.title)}</h2><p>${esc(tool.description)}</p>${details}</div><div class="tool-feature-actions">${actions||'<button type="button" class="tool-launch-button" disabled aria-disabled="true">Indisponível <span aria-hidden="true">›</span></button>'}${tool.actions?.length?`<small class="tool-capability-state ${enabled?'ready':''}">${esc(tool.status||tool.actions.map(action=>action.status).filter(Boolean).join(' · '))}</small>`:''}</div></article>`;
   }).join('');
   return `<section class="page tools-page tools-catalog"><div class="tools-hero"><span class="eyebrow">OLYHUB CORE · CATÁLOGO CANÔNICO</span><h1>Ferramentas</h1><p>Poseidon seleciona o especialista. Só capacidades conectadas podem ser abertas.</p></div>${errorBanner('page-alert')}<div class="tool-list">${cards}</div><p class="tool-catalog-note">Capacidades internas, sem Realm próprio: Héstia (revisão) e Mnemosine (memória). Deuses planejados aparecem aqui com o estado real de integração.</p></section>`;
 }
@@ -1021,7 +1024,7 @@ function preferencesSettings(){
   const prefs=state.preferences||{};
   return `<article class="card settings-card">
     <h3>Personality &amp; Instructions</h3>
-    <p class="muted tiny">One personality for Poseidon Text, Poseidon Voice, recorded voice messages and Live Talk. Project-specific memory remains separate.</p>
+    <p class="muted tiny">One personality for text, recorded voice messages and Live Talk. Project-specific memory remains separate.</p>
     <form id="preferences-form" class="form-grid">
       <div class="field"><label for="zeus-personality">Personality</label>
         <select id="zeus-personality" name="personality" required>
@@ -1029,7 +1032,7 @@ function preferencesSettings(){
         </select></div>
       <div class="field"><label for="zeus-global-instructions">Custom instructions</label>
         <textarea id="zeus-global-instructions" rows="6" maxlength="4000" placeholder="Tell Poseidon how to respond, what to prioritize, and how to speak to you…">${esc(prefs.instructions||'')}</textarea></div>
-      <p class="muted tiny">Preferences apply to future replies. Your saved chats are not rewritten. System safety and factual accuracy always take priority.</p>
+      <p class="muted tiny">Preferences apply to future replies, including voice sessions. Your saved chats are not rewritten. System safety and factual accuracy always take priority.</p>
       <div class="row"><button class="primary" type="submit" ${!state.preferencesLoaded?'disabled':''}>Save preferences</button><span id="preferences-saved" role="status" aria-live="polite"></span></div>
     </form>
   </article>`;
@@ -1048,8 +1051,8 @@ function settingsView(){const providers=state.health?.providerReadiness||{};cons
   ${state.health?.monthlyBudget?.targetReached?'<p class="status-warn">Target reached in known estimates. Services remain available.</p>':''}
 </article>${preferencesSettings()}${personalMemorySettings()}${googleIntegrationSettings()}<article class="card settings-card"><h3>Live Talk Settings</h3><p class="muted tiny">Choose a Live Talk provider. Your selection is saved in this browser. End the current session before switching providers.</p><div class="field"><label for="live-provider">Live Talk provider</label><select id="live-provider" ${state.liveTalk?'disabled':''}><option value="openai" ${state.liveProvider==='openai'?'selected':''}>OpenAI Realtime</option><option value="elevenlabs" ${state.liveProvider==='elevenlabs'?'selected':''}>ElevenLabs Realtime</option></select></div>
 ${state.liveProvider==='openai'?`<div class="field"><label for="openai-live-voice">OpenAI Live voice</label><select id="openai-live-voice" ${state.liveTalk?'disabled':''}>${OPENAI_VOICE_NAMES.map(v=>`<option value="${v}" ${state.openaiLiveVoice===v?'selected':''}>${v}</option>`).join('')}</select></div>`:''}
-${state.liveProvider==='elevenlabs'? `<p class="muted tiny">Voice identity: Athena · ElevenLabs uses the Athena agent; OpenAI Realtime uses the same Athena instructions through OlyHub Core.</p>`:''}
-<div class="field"><label for="live-language">Live Talk language</label><select id="live-language">${[['auto','Automatic (agent detects language)'],['pt','Português (Brasil)'],['en','English (US)'],['es','Español']].map(([v,label])=>`<option value="${v}" ${state.liveLocale===v?'selected':''}>${label}</option>`).join('')}</select></div><div class="field"><label for="voice-avatar">Live Talk avatar</label><select id="voice-avatar">${[['lightning','Poseidon water orb'],['classic','Classic orb'],['olympus','Olympus'],['liquid','Liquid metal']].map(([v,label])=>`<option value="${v}" ${state.voiceAvatar===v?'selected':''}>${label}</option>`).join('')}</select></div><p class="muted tiny">Athena is the single voice agent across Realtime providers. Provider-specific voice choices change vocal timbre; the OlyHub Core supplies the shared Poseidon context and authenticated tool path. Audio playback settings below do not change the Live Talk agent.</p><p class="muted tiny" id="live-agent-save-status">Voice identity: Athena · fixed across Realtime providers</p></article><article class="card settings-card"><h3>Audio Settings</h3>
+${state.liveProvider==='elevenlabs'? `<p class="muted tiny">Realtime voice provider connected. Workspace context and authorized tools remain available during the session.</p>`:''}
+<div class="field"><label for="live-language">Live Talk language</label><select id="live-language">${[['auto','Automatic (agent detects language)'],['pt','Português (Brasil)'],['en','English (US)'],['es','Español']].map(([v,label])=>`<option value="${v}" ${state.liveLocale===v?'selected':''}>${label}</option>`).join('')}</select></div><div class="field"><label for="voice-avatar">Live Talk orb</label><select id="voice-avatar">${[['lightning','Ocean orb'],['classic','Classic orb'],['olympus','Olympus orb'],['liquid','Liquid metal orb']].map(([v,label])=>`<option value="${v}" ${state.voiceAvatar===v?'selected':''}>${label}</option>`).join('')}</select></div><p class="muted tiny">The selected orb sets the visual identity for this voice session. Provider-specific voice choices change vocal timbre; authenticated tools and workspace context stay available in every session.</p></article><article class="card settings-card"><h3>Audio Settings</h3>
 <p class="muted tiny">Choose the provider and voice for read-aloud replies. Live Talk has separate settings.</p>
 <div class="field"><label for="zeus-speech-provider">Read-aloud provider</label><select id="zeus-speech-provider">${[['gemini','Google Gemini'],['elevenlabs','ElevenLabs'],['openai','OpenAI']].map(([v,l])=>`<option value="${v}" ${state.speechProvider===v?'selected':''}>${l}</option>`).join('')}</select></div>
 ${state.speechProvider==='openai'?`<div class="field"><label for="zeus-openai-voice">OpenAI voice</label><select id="zeus-openai-voice">${OPENAI_VOICE_NAMES.map(v=>`<option value="${v}" ${state.voiceId===v?'selected':''}>${v}</option>`).join('')}</select></div>`:''}
@@ -1169,10 +1172,10 @@ function liveTalkExperience(){
   const latest=[...(state.messages||[])].reverse().find(m=>['assistant','user'].includes(m.role));
   const excerpt=latest?String(latest.content||'').replace(/\s+/g,' ').trim().slice(0,220):'';
   const bars=Array.from({length:41},(_,i)=>`<i style="--wave:${12+((i*17)%39)}%;--delay:${(i%13)*-0.09}s"></i>`).join('');
-  return `<main class="live-talk-experience" id="main-content" tabindex="-1" aria-label="Poseidon Voice Live Talk">
+  return `<main class="live-talk-experience" id="main-content" tabindex="-1" aria-label="Conversa por voz em tempo real">
     <div class="live-talk-scene" aria-hidden="true"></div>
     <header class="live-talk-header">
-      <button type="button" class="live-glass-button" id="live-talk-minimize" aria-label="Minimize Live Talk and return to Poseidon Text" title="Minimize Live Talk">${icon('back')}</button>
+      <button type="button" class="live-glass-button" id="live-talk-minimize" aria-label="Voltar ao chat" title="Voltar ao chat">${icon('back')}</button>
       <div class="live-pill"><i></i>LIVE</div>
     </header>
     <section class="live-talk-center" aria-live="polite">
@@ -1183,7 +1186,7 @@ function liveTalkExperience(){
       <div class="live-talk-mode"><span class="live-mode-dot"></span>${liveProviderShort} <span>·</span> ${esc(state.liveLocale==='auto'?'AUTO LANGUAGE':state.liveLocale.toUpperCase())}</div>
     </section>
     ${state.error?`<div class="live-talk-error" role="alert">${esc(state.error)}${state.liveStage==='error'?`<button type="button" id="live-talk-retry">${state.liveFailureKind==='playback_blocked'?'Tap to resume':'Reconnect Realtime'}</button>`:''}</div>`:''}
-    <p class="live-voice-note" role="status">${state.liveProvider==='openai'?'OpenAI voice · '+state.openaiLiveVoice:'Primary voice · Helen'}</p>
+    <p class="live-voice-note" role="status">${state.liveProvider==='openai'?'OpenAI voice · '+state.openaiLiveVoice:'Realtime voice active'}</p>
     <form class="live-talk-text-form" id="live-talk-text-form" aria-label="Send a typed message to the live agent"><label class="sr-only" for="live-talk-text">Type a message if voice recognition misunderstood</label><input id="live-talk-text" name="message" type="text" maxlength="4000" autocomplete="off" enterkeyhint="send" placeholder="Miscommunication? Type your message…" value="${esc(state.liveTextDraft)}"><button type="submit" aria-label="Send typed message" title="Send typed message" ${state.sending?'disabled':''}>${icon('send')}</button><span class="sr-only" id="live-talk-text-status" aria-live="polite">${esc(state.liveTextStatus)}</span></form>
     <footer class="live-talk-controls"><div class="live-control-hint"><span class="live-mic-dot"></span>${state.liveMuted?'Your microphone is muted · session audio continues':state.liveStage==='listening'?'Your microphone is active':state.liveStage==='processing'?'Voice captured':state.liveStage==='speaking'?'Speaking':state.liveStage==='error'?'Live Talk paused':'Session ready'}</div><div class="live-call-actions"><button type="button" class="live-mute-button ${state.liveMuted?'is-muted':''}" id="live-talk-mute" aria-pressed="${state.liveMuted}" aria-label="${state.liveMuted?'Unmute your microphone; session audio continues':'Mute your microphone; session audio continues'}" title="${state.liveMuted?'Unmute your microphone':'Mute your microphone'}">${icon(state.liveMuted?'mic-off':'mic')}</button><button type="button" class="live-end-call" id="live-talk-end" aria-label="End Live Talk" title="End Live Talk">${icon('close')}</button></div><div class="live-control-caption">Mute your microphone; the voice agent can keep speaking</div></footer>
   </main>`;
@@ -1316,6 +1319,7 @@ function bind(){
     render();resetViewport();
   }));
   $('#new-chat')?.addEventListener('click',newChat);
+  $$('[data-new-chat]').forEach(button=>button.addEventListener('click',newChat));
   $('#code-agent-refresh')?.addEventListener('click',async()=>{await loadCodeAgentJobs();render();});
   $$('[data-code-agent-approve]').forEach(button=>button.addEventListener('click',async()=>{
     if(button.disabled)return;button.disabled=true;button.setAttribute('aria-busy','true');

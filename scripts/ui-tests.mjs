@@ -24,8 +24,17 @@ const must=[
 for(const [haystack,needle,label] of must){if(typeof haystack==='boolean'){if(haystack!==needle)throw new Error(`Missing ${label}`)}else if(!String(haystack).includes(needle))throw new Error(`Missing ${label}`)}
 if(app.includes('id="zeus-level-cap"')||app.includes('id="olympus-auto"')||app.includes('data-routing-mode=')||app.includes('data-mode='))throw new Error('Legacy mode or level selectors must not appear in the Poseidon chat');
 if(!app.includes('olympusAuto:true')||!app.includes('specialistLabel(userRow?.metadata?.toolId)')||!app.includes('Trace Lab ·'))throw new Error('Poseidon-managed dispatch, live specialist status or per-message Trace Lab is missing');
-if(!app.includes('PERSONAL · POSEIDON')||!app.includes("'Poseidon is working'")||!app.includes('Voice identity: Athena · fixed across Realtime providers'))throw new Error('Poseidon Text or shared Athena voice identity is missing');
+if(!app.includes('PERSONAL · POSEIDON')||!app.includes("'Poseidon is working'"))throw new Error('Poseidon Text identity or status is missing');
 if(!app.includes("liveAgentSelection:'athena'")||!app.includes("mode:'ZEUS'")||!app.includes("X-Zeus-Voice-Fallback"))throw new Error('Athena voice identity and legacy execution identifiers must remain compatible');
+const nav=app.slice(app.indexOf('function navButtons(){'),app.indexOf('\nfunction homeChats()'));
+if(nav.includes("['Zeus','chart','Zeus']"))throw new Error('Zeus must not be a standalone navigation tab');
+const zeusIndex=toolCatalog.indexOf("id:'zeus'");
+const poseidonIndex=toolCatalog.indexOf("id:'poseidon'");
+const athenaIndex=toolCatalog.indexOf("id:'athena'");
+if(!(zeusIndex>=0&&poseidonIndex>zeusIndex&&athenaIndex>poseidonIndex))throw new Error('Zeus and Poseidon must lead the tools catalog in that order');
+if(!toolCatalog.includes('data-new-chat="true"'))throw new Error('Poseidon card must open a clean new chat');
+const liveUi=app.slice(app.indexOf('function liveTalkExperience(){'),app.indexOf('\nfunction liveTalkDock(){'));
+if(liveUi.includes('Poseidon')||liveUi.includes('Athena')||liveUi.includes('Helen'))throw new Error('Live Talk UI must not pin a deity name while the orb can change');
 if(/Open in Zeus|Open in Olympus/.test(app))throw new Error('Project UI regressed to Home launcher buttons');
 if(!css.includes('.projects-page .page-head{display:grid;grid-template-columns:minmax(0,1fr);gap:12px;align-items:stretch}')||!css.includes('.projects-page .page-head .primary{width:100%;min-height:46px'))throw new Error('New project button must be full-width and tappable on phones');
 if(!css.includes('.projects-page .page-head .primary{box-sizing:border-box;max-width:100%;white-space:normal;line-height:1.2;overflow-wrap:anywhere}'))throw new Error('New project button text must wrap inside the mobile button');

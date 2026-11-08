@@ -30,14 +30,14 @@ assert.match(live,/Could not confirm microphone mute after reconnect/,'a failed 
 assert.match(live,/All drivers mute input without muting assistant playback/,'muting must affect input only');
 assert.match(live,/function minimizeLiveTalk\(\)\{if\(!state\.liveTalk\)return;state\.liveTalkMinimized=true;render\(\);\}/,'returning from Live Talk must minimize the screen without ending the session');
 assert.match(live,/function restoreLiveTalk\(\)\{if\(!state\.liveTalk\)return;state\.liveTalkMinimized=false;render\(\);\}/,'the floating Live Talk control must restore the full session screen');
-assert.match(liveView,/id="live-talk-minimize"[^>]*aria-label="Minimize Live Talk and return to Poseidon Text"/,'Live Talk back control must minimize rather than disconnect');
+assert.match(liveView,/id="live-talk-minimize"[^>]*aria-label="Voltar ao chat"/,'Live Talk back control must minimize rather than disconnect');
 assert.match(ui,/id="live-talk-dock-open"/,'the minimized Live Talk session must have a restore control');
 assert.match(ui,/id="live-talk-dock-mute"/,'the minimized Live Talk session must keep a microphone mute control');
 assert.match(ui,/id="live-talk-dock-end"/,'the minimized Live Talk session must keep an end-call control');
 assert.match(ui,/state\.liveTalkMinimized&&state\.liveTalk\?liveTalkDock\(\)/,'the floating session controls must remain visible while the normal app is rendered');
 assert.match(ui,/state\.liveTalk&&!state\.liveTalkMinimized\?liveTalkExperience\(\)/,'the full Live Talk view must only cover the app while expanded');
 assert.ok(!liveView.includes('live-talk-voice')&&!liveView.includes('live-voice-picker'),'Live Talk must not show a voice selector for an agent restricted to its primary voice');
-assert.match(liveView,/Primary voice · /,'Live Talk identifies agent primary voice');
+assert.match(liveView,/Realtime voice active/,'Live Talk uses a generic voice status without pinning a deity');
 assert.match(ui,/id="elevenlabs-voice-preset"/,'Settings must retain voice selection for standalone speech features');
 assert.ok(!liveView.includes('ATHENA')&&!liveView.includes('data-live-persona'),'Live Talk must not expose Athena as a separate agent persona');
 assert.ok(!live.includes('tts:{voiceId:'),'Live Talk must inherit the configured primary voice without sending a Voice ID override');

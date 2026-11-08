@@ -51,6 +51,7 @@
 /* Canonical deity catalog: only active realms receive tool actions. */
 .tool-god-mark{position:absolute;top:26%;left:50%;transform:translate(-50%,-50%);z-index:0;color:#f1d38d;font:500 42px/1 Georgia,"Times New Roman",serif;text-shadow:0 0 22px rgba(241,211,141,.5)}
 .god-athena{background-position:center,-17px -648px}.god-hefesto{background-position:center,-17px -454px}.god-apollo{background-position:center,-17px -844px}.god-hermes{background-position:center,-17px -260px}
+.tool-core-card{border-color:rgba(219,184,113,.5)}.tool-core-card .tool-feature-copy>.eyebrow{color:#d6b875}.tool-core-card[data-kind="poseidon"]{border-color:rgba(74,174,215,.48)}.tool-core-card[data-kind="poseidon"] .tool-feature-copy>.eyebrow{color:#8fd9f6}.tool-core-card[data-kind="poseidon"] .tool-god-caption strong{color:#a8e5ff}
 .god-athena .tool-god-mark,.god-hefesto .tool-god-mark,.god-apollo .tool-god-mark,.god-hermes .tool-god-mark{display:none}
 .tool-god-portrait.god-dionisio,.tool-god-portrait.god-peitho,.tool-god-portrait.god-demeter,.tool-god-portrait.god-hades{background-image:radial-gradient(ellipse at 50% 30%,rgba(201,159,83,.24),transparent 54%),linear-gradient(145deg,#111821,#080a0d 70%);background-size:cover;background-position:center}
 .tool-catalog-note{margin:18px 4px 28px;padding:12px 14px;border-left:2px solid rgba(212,180,110,.65);color:#b9bec7;font-size:12px;line-height:1.5;background:rgba(15,18,22,.45)}
