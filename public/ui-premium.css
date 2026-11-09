@@ -1764,7 +1764,7 @@ body .message.assistant .message-body[data-message-press]{cursor:text}
 @media(max-width:959px){.live-talk-cta{height:44px;min-width:164px;margin:0 auto 8px;padding-right:16px;font-size:14px}.live-talk-cta-orb{width:38px;height:38px}}
 @media(prefers-reduced-motion:reduce){.live-talk-cta-orb:before,.live-talk-cta-orb:after,.live-talk-cta-orb i{animation:none!important}}
 
-/* Team and navigation pass: unify the operational screens with OlyHub's neon identity. */
+/* Navigation pass: unify the workspace shell with OlyHub's neon identity. */
 .sidebar{border-right-color:rgba(52,93,176,.42);background:linear-gradient(180deg,rgba(5,9,34,.985),rgba(4,7,24,.99));box-shadow:inset -1px 0 rgba(111,53,244,.09)}
 .sidebar .logo-row{align-items:center;gap:12px;padding:12px 8px 22px}
 .sidebar .personal-bolt{display:grid;place-items:center;width:43px;height:43px;border:1px solid rgba(25,222,255,.75);border-radius:50%;background:radial-gradient(circle at 35% 30%,rgba(6,225,255,.26),rgba(65,34,213,.19) 56%,rgba(5,9,39,.9));color:#fff;font-size:28px;text-shadow:0 0 8px #11dfff,0 0 18px #8c35ff;box-shadow:0 0 15px rgba(0,201,255,.24),0 0 22px rgba(132,38,255,.17)}
@@ -1796,37 +1796,6 @@ body .message.assistant .message-body[data-message-press]{cursor:text}
 .sidebar-foot{border-top-color:rgba(66,95,165,.35)}
 .close-navigation{border-color:rgba(72,121,201,.5);background:rgba(10,17,49,.9);color:#e8f9ff}
 .close-navigation:hover{border-color:#7d3fff;box-shadow:0 0 16px rgba(0,208,255,.17)}
-.team-page{max-width:1320px;margin-inline:auto;padding:clamp(16px,2.8vw,34px)}
-.team-page .page-head{align-items:flex-end;gap:18px;margin-bottom:20px}
-.team-page .page-head>div{min-width:0}
-.team-page .page-head .eyebrow{color:#b8a4ff}
-.team-page .page-head h1{color:#f8fbff}
-.team-page .page-head p{max-width:680px;color:#aab6d6}
-.team-page #team-refresh{flex:none;border-color:rgba(26,206,255,.48);background:linear-gradient(110deg,rgba(0,184,255,.13),rgba(121,45,230,.15));color:#dcfaff}
-.team-audit-note{display:grid;gap:12px;margin-bottom:20px;padding:clamp(16px,2.4vw,24px);border-color:rgba(52,127,214,.47);border-radius:20px;background:linear-gradient(130deg,rgba(6,29,67,.82),rgba(13,12,48,.91) 64%,rgba(36,12,76,.72));box-shadow:inset 0 1px rgba(255,255,255,.06),0 18px 44px rgba(0,0,0,.2)}
-.team-audit-note>strong{color:#d9f8ff;font-size:17px;letter-spacing:-.02em}
-.team-audit-note>span{color:#b7c5e3;font-size:13px;line-height:1.65}
-.team-audit-note>small{max-width:920px;color:#93a3c7;font-size:11px;line-height:1.55}
-.team-audit-note>strong:nth-of-type(2){margin-top:2px}
-.provider-audit-list{gap:8px}
-.provider-audit-chip{border-color:rgba(255,115,135,.34);background:rgba(5,10,31,.35);color:#ffb1b8;font-size:11px;line-height:1.45}
-.provider-audit-chip.ready{border-color:rgba(20,220,223,.4);color:#a8f8f2}
-.provider-audit-chip.ready i{background:#3de8e8;box-shadow:0 0 9px rgba(34,223,240,.65)}
-.team-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
-.team-member-card{padding:clamp(16px,2vw,22px);border-color:rgba(74,113,188,.4);border-radius:20px;background:linear-gradient(145deg,rgba(8,19,48,.96),rgba(10,12,39,.96) 64%,rgba(24,11,49,.94));box-shadow:inset 0 1px rgba(255,255,255,.045),0 15px 34px rgba(0,0,0,.22)}
-.team-member-card>header{align-items:center}
-.team-member-card .eyebrow{color:#ad9bff}
-.team-member-card h2{font-size:24px;color:#f7fbff}
-.team-description{min-height:0;color:#acb9d7;font-size:13px;line-height:1.65}
-.team-member-card h3{color:#7cecff;font-size:11px;letter-spacing:.1em}
-.team-status{border-color:rgba(159,91,255,.5);background:rgba(116,44,205,.1);color:#d9c5ff;font-size:10px}
-.team-status-active{border-color:rgba(17,221,231,.55);background:rgba(12,193,215,.1);color:#62f4ee}
-.team-status-partial{border-color:rgba(251,198,77,.5);color:#ffe091}
-.team-model-caption{color:#aab7d4;font-size:11px;line-height:1.55}
-.team-model{border:1px solid rgba(79,107,168,.18);background:rgba(4,11,32,.4)}
-.team-model-empty{color:#aebada}
-.team-skills .blueprint-skill-active{border-color:rgba(0,210,230,.36)}
-.team-skills li>small{color:#8fa0c3;font-size:10px}
 .app-shell.has-live-talk-dock .live-talk-dock{top:auto;right:14px;bottom:calc(82px + env(safe-area-inset-bottom));border-color:rgba(40,185,255,.56);background:linear-gradient(120deg,rgba(5,18,55,.96),rgba(22,11,57,.97));color:#f3fbff;box-shadow:0 12px 36px rgba(0,0,0,.5),0 0 22px rgba(38,84,255,.13);}
 .app-shell.has-live-talk-dock .live-dock-light{background:#37eaff;box-shadow:0 0 12px #16dfff}
 .app-shell.has-live-talk-dock .live-dock-copy small{color:#b8c8ed}
@@ -1834,24 +1803,12 @@ body .message.assistant .message-body[data-message-press]{cursor:text}
 .app-shell.has-live-talk-dock .live-dock-action{border-color:rgba(58,203,255,.42);background:rgba(4,20,54,.85);color:#e9fbff}
 .app-shell.has-live-talk-dock .live-dock-action.live-dock-end{border-color:#ff5799;background:radial-gradient(circle at 35% 25%,#f54b82,#8d064f 78%)}
 @media(max-width:959px){
- .team-page{padding:18px 16px 24px}
- .team-page .page-head{display:grid;grid-template-columns:minmax(0,1fr);align-items:stretch;gap:12px;margin-bottom:16px}
- .team-page .page-head h1{font-size:34px}
- .team-page .page-head p{font-size:13px;line-height:1.6}
- .team-page #team-refresh{width:100%;min-height:44px}
- .team-audit-note{gap:10px;margin-bottom:16px;padding:17px;border-radius:18px}
- .team-audit-note>strong{font-size:16px}
- .team-audit-note>span{font-size:12px}
- .team-grid{grid-template-columns:minmax(0,1fr);gap:12px}
- .team-member-card{padding:17px;border-radius:18px}
- .team-member-card h2{font-size:22px}
- .team-model em{max-width:40%;overflow-wrap:anywhere}
  .app-shell.has-live-talk-dock .main{padding-bottom:156px}
  .app-shell.has-live-talk-dock .live-talk-dock{right:12px;bottom:calc(80px + env(safe-area-inset-bottom));width:min(390px,calc(100vw - 24px));}
  .sidebar .logo-row{padding:10px 8px 22px}
 }
 @media(max-width:959px) and (max-height:720px){.app-shell.has-live-talk-dock .live-talk-dock{bottom:calc(74px + env(safe-area-inset-bottom));min-height:50px}.app-shell.has-live-talk-dock .main{padding-bottom:142px}}
-@media(prefers-reduced-motion:reduce){.sidebar *,.team-page *{scroll-behavior:auto!important;transition-duration:.01ms!important}}
+@media(prefers-reduced-motion:reduce){.sidebar *{scroll-behavior:auto!important;transition-duration:.01ms!important}}
 
 /* Realm catalog pass: featured Zeus shell plus portrait-led, blueprint-backed cards. */
 .tools-catalog{max-width:1480px;padding:30px clamp(16px,2.4vw,34px) 34px}

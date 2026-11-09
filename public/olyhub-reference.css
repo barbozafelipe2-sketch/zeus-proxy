@@ -52,7 +52,7 @@ body{background-color:var(--oly-ink)}
 .mobile-bottom-nav{background:linear-gradient(100deg,rgba(4,8,31,.98),rgba(9,8,37,.98) 55%,rgba(20,7,42,.98));border-top:1px solid rgba(73,96,202,.36);backdrop-filter:blur(18px)}
 .mobile-bottom-nav button.active{color:#f8f8ff;background:linear-gradient(130deg,rgba(0,203,255,.14),rgba(89,69,255,.18) 54%,rgba(195,43,255,.16));box-shadow:inset 0 0 0 1px rgba(57,188,255,.32),0 0 18px rgba(75,89,255,.13);border-radius:14px}
 .mobile-bottom-nav button.active .ico{filter:drop-shadow(0 0 7px rgba(50,210,255,.55))}
-.page .card,.settings-card,.team-member-card,.team-audit-note,.out-row,.realm-zeus-feature,.tool-feature-card,.project-card-shell{border-color:rgba(76,112,220,.3);box-shadow:inset 0 1px rgba(255,255,255,.045),0 10px 26px rgba(0,0,0,.18)}
+.page .card,.settings-card,.out-row,.realm-zeus-feature,.tool-feature-card,.project-card-shell{border-color:rgba(76,112,220,.3);box-shadow:inset 0 1px rgba(255,255,255,.045),0 10px 26px rgba(0,0,0,.18)}
 .tools-catalog{max-width:1320px;margin-inline:auto}
 .tools-catalog .tools-hero{align-items:flex-end;gap:18px}
 .tools-catalog .realm-heading-copy h1{font-size:clamp(30px,4vw,46px)}
@@ -69,10 +69,9 @@ body{background-color:var(--oly-ink)}
 .realm-zeus-feature{border-color:rgba(99,98,255,.44);background:linear-gradient(120deg,rgba(6,24,68,.94),rgba(13,12,53,.95) 63%,rgba(32,9,63,.93));box-shadow:0 12px 28px rgba(0,0,0,.2),0 0 25px rgba(44,83,255,.11)}
 .realm-zeus-feature .realm-zeus-art{background:radial-gradient(ellipse at 35% 28%,rgba(21,183,255,.5),transparent 37%),radial-gradient(ellipse at 78% 60%,rgba(181,43,255,.35),transparent 45%),linear-gradient(140deg,#0b2d70,#0a1038 58%,#1b0b45)}
 .realm-badge.status-shell{color:#b4c6ff;background:rgba(112,126,205,.11);border-color:rgba(137,154,232,.31)}
-.team-page,.settings-grid,.files-page,.projects-page{color:var(--oly-text)}
-.settings-card,.team-member-card{border-radius:18px;background:linear-gradient(150deg,rgba(9,17,45,.94),rgba(8,13,33,.96) 68%,rgba(19,10,42,.9))}
-.team-member-card header h2,.settings-card h3{color:#f5f7ff}
-.team-status-shell{color:#c2cdff;border-color:rgba(145,159,231,.38);background:rgba(107,121,194,.12)}
+.settings-grid,.files-page,.projects-page{color:var(--oly-text)}
+.settings-card{border-radius:18px;background:linear-gradient(150deg,rgba(9,17,45,.94),rgba(8,13,33,.96) 68%,rgba(19,10,42,.9))}
+.settings-card h3{color:#f5f7ff}
 .proj-row.project-card-shell{border-radius:18px;background:linear-gradient(150deg,rgba(9,16,44,.96),rgba(10,12,36,.96) 70%,rgba(24,10,47,.92))}
 .proj-row .progress{background:#151d49}
 .proj-row .progress span{background:linear-gradient(90deg,#16d9f4,#557aff 58%,#bf40ff)}
@@ -80,7 +79,7 @@ body{background-color:var(--oly-ink)}
 .realm-filter-empty,.tool-catalog-note{color:#aab7d9}
 :where(button,a,input,textarea,select,[tabindex]):focus-visible{outline:2px solid #4edfff;outline-offset:3px}
 @media(max-width:980px){.tool-list{grid-template-columns:repeat(2,minmax(0,1fr))}}
-@media(max-width:680px){.tool-list{grid-template-columns:minmax(0,1fr)}.tool-feature-card{grid-template-rows:144px auto auto}.tool-god-portrait{height:144px!important}.tools-catalog .tools-hero{display:grid;grid-template-columns:minmax(0,1fr)}.tool-feature-copy{padding-top:12px}.realm-zeus-feature{grid-template-columns:1fr!important}.settings-grid{grid-template-columns:minmax(0,1fr)!important}.team-grid{grid-template-columns:minmax(0,1fr)!important}}
+@media(max-width:680px){.tool-list{grid-template-columns:minmax(0,1fr)}.tool-feature-card{grid-template-rows:144px auto auto}.tool-god-portrait{height:144px!important}.tools-catalog .tools-hero{display:grid;grid-template-columns:minmax(0,1fr)}.tool-feature-copy{padding-top:12px}.realm-zeus-feature{grid-template-columns:1fr!important}.settings-grid{grid-template-columns:minmax(0,1fr)!important}}
 @media(prefers-reduced-motion:reduce){.tool-feature-card{transition:none}.tool-feature-card:hover{transform:none}}
 
 /* OlyHub Live Talk orb and controls. */
@@ -173,3 +172,79 @@ body .live-talk-orb-wrap .zeus-voice-presence:not(.orb-art) .zeus-voice-core{wid
 
 .brand-center .logo-sub,.sidebar .logo-sub{display:none!important}
 .live-talk-brand-label{letter-spacing:.07em!important}
+
+/* Automation catalog: honest connector readiness, without fake controls. */
+.automations-page{max-width:1320px;margin-inline:auto;padding:clamp(18px,2.8vw,36px)}
+.automations-page .page-head{align-items:flex-end;gap:18px;margin-bottom:22px}
+.automations-page .page-head .eyebrow{color:#38dcff;text-shadow:0 0 14px rgba(0,209,255,.2)}
+.automations-page .page-head h1{color:#f7f8ff;letter-spacing:-.045em}
+.automations-page .page-head p{color:#aab7d6}
+.automation-truth-note{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:16px;margin-bottom:25px;padding:19px 21px;border:1px solid rgba(56,178,255,.36);border-radius:20px;background:linear-gradient(115deg,rgba(5,31,75,.86),rgba(13,15,54,.93) 58%,rgba(39,12,73,.8));box-shadow:inset 0 1px rgba(255,255,255,.06),0 16px 40px rgba(0,0,0,.2)}
+.automation-truth-mark{display:grid;place-items:center;width:48px;height:48px;border:1px solid rgba(36,220,255,.45);border-radius:15px;background:linear-gradient(140deg,rgba(0,203,255,.16),rgba(125,40,245,.2));color:#73eaff}
+.automation-truth-mark .ico{width:24px;height:24px}
+.automation-truth-note strong{display:block;color:#effaff;font-size:15px}
+.automation-truth-note p{margin:5px 0 0;color:#aab9d8;font-size:12px;line-height:1.6}
+.automation-count{white-space:nowrap;padding:7px 11px;border:1px solid rgba(152,111,255,.42);border-radius:999px;background:rgba(107,54,220,.13);color:#d9c9ff;font-size:11px;font-weight:700}
+.automation-group{margin:24px 0}
+.automation-group>h2{margin:0 0 12px;color:#e8edff;font-size:15px;letter-spacing:-.015em}
+.automation-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.automation-card{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:13px;min-width:0;padding:15px;border:1px solid rgba(91,120,214,.27);border-radius:17px;background:linear-gradient(145deg,rgba(7,17,48,.92),rgba(14,12,47,.94));box-shadow:inset 0 1px rgba(255,255,255,.04);transition:border-color .18s ease,transform .18s ease}
+.automation-card:hover{transform:translateY(-2px);border-color:rgba(48,198,255,.5)}
+.automation-card-mark{display:grid;place-items:center;width:42px;height:42px;border:1px solid rgba(65,190,255,.33);border-radius:13px;background:linear-gradient(145deg,rgba(0,190,255,.12),rgba(133,46,255,.16));color:#83e8ff}
+.automation-card-mark .ico{width:20px;height:20px}
+.automation-card-copy{min-width:0}
+.automation-card h3{margin:0;color:#f1f4ff;font-size:14px}
+.automation-card-copy>p{margin:3px 0 7px;color:#98a8ce;font-size:11px;text-transform:capitalize}
+.automation-status{display:inline-flex;align-items:center;gap:6px;color:#b6c2df;font-size:10px;line-height:1.35}
+.automation-status i{width:7px;height:7px;border-radius:50%;background:#8995b4}
+.automation-status.configured{color:#77eafa}
+.automation-status.configured i{background:#2ce0f7;box-shadow:0 0 8px rgba(44,224,247,.72)}
+.automation-status.active{color:#64f0cb}
+.automation-status.active i{background:#38e9bb;box-shadow:0 0 8px rgba(56,233,187,.72)}
+.automation-approval{grid-column:2;color:#909ec1;font-size:10px}
+.automation-footnote{margin-top:25px;color:#8d9bbc;font-size:11px;line-height:1.55}
+.automation-empty{padding:28px;border:1px solid rgba(88,111,186,.28);border-radius:16px;color:#aab7d6;text-align:center}
+@media(max-width:680px){.automations-page{padding:20px 15px calc(30px + env(safe-area-inset-bottom))}.automations-page .page-head{display:grid;grid-template-columns:1fr}.automations-page #automation-refresh{width:100%;min-height:44px}.automation-truth-note{grid-template-columns:auto minmax(0,1fr);padding:16px}.automation-count{grid-column:2;justify-self:start}.automation-grid{grid-template-columns:1fr}.automation-card{padding:14px}}
+@media(prefers-reduced-motion:reduce){.automation-card{transition:none}}
+
+/* Final OlyHub identity pass: retire the legacy gold accent across shared UI. */
+:root{--gold:#39dfff;--gold2:#8cecff;--gold3:#4352b8;--zeus-gold:#70eaff}
+.icon-btn.recording{background:rgba(0,202,255,.16)!important;color:#9befff!important;box-shadow:0 0 0 2px rgba(34,223,252,.75),0 0 16px rgba(0,190,255,.28)!important}
+.mode-card.selected{border-color:#25dcff!important;box-shadow:0 0 0 1px rgba(0,211,255,.32),0 0 24px rgba(0,168,255,.12)!important}
+.mode-icon,.new-chat .ico,.private-preview-generic .ico{color:#6feaff!important}
+.message-label,.text-gold,.chev-link,.proj-thumb,.proj-row em{color:#64e7ff!important}
+.avatar{border-color:rgba(42,218,255,.72)!important}
+.artifact-actions a,.artifact-actions button:not(.ghost-a),.project-tabs button.active{color:#fff!important;background:linear-gradient(120deg,#00bfe9,#3759ff 58%,#a52cff)!important;border-color:transparent!important}
+.progress span{background:linear-gradient(90deg,#00dcf4,#5667ff 58%,#c536ff)!important}
+.skip-link{background:linear-gradient(120deg,#00c9ed,#5766ff 58%,#a82dff)!important;color:#fff!important}
+html.is-busy body::before{background:linear-gradient(90deg,transparent,#20ddff,#a837ff,transparent)!important}
+.markdown-body a{color:#74eaff!important}
+.side-add{color:#75eaff!important;border-color:rgba(58,205,255,.35)!important}
+.project-nav-link:hover,.project-nav-link.active{background:rgba(46,149,255,.14)!important;color:#e6faff!important}
+.project-nav-link.active .ico,.project-nav-link .ico{color:#69e7ff!important}
+.side-view-all{color:#72e8ff!important}
+.nav-context-menu summary:hover,.nav-context-menu[open] summary,.project-card-menu summary:hover,.project-card-menu[open] summary{color:#8beeff!important}
+.project-card-shell:hover{border-color:rgba(54,215,255,.62)!important}
+.proj-card-main:focus-visible{outline-color:#42e4ff!important}
+.attach-menu{border-color:rgba(50,205,255,.35)!important;background:rgba(5,10,35,.98)!important}
+.attach-menu button{color:#e6f2ff!important}
+.attach-menu button:hover,.attach-menu button:focus-visible{background:rgba(32,162,255,.12)!important;outline-color:rgba(75,211,255,.4)!important}
+.zeus-realm-emblem{border-color:rgba(43,211,255,.4)!important;background:linear-gradient(145deg,rgba(0,172,255,.15),rgba(74,38,155,.24))!important;color:#65e5ff!important}
+.zeus-realm-state{border-color:rgba(89,113,234,.52)!important;background:rgba(12,17,51,.86)!important;color:#b8c9ff!important}
+.zeus-realm-state i{background:#24ddff!important;box-shadow:0 0 10px rgba(36,221,255,.65)!important}
+.zeus-realm-notice{border-color:rgba(58,177,255,.32)!important;background:linear-gradient(125deg,rgba(6,30,76,.76),rgba(10,13,40,.96) 72%)!important}
+.zeus-realm-notice .eyebrow,.zeus-planned-head .eyebrow{color:#73e8ff!important}
+.zeus-status-card,.zeus-planned-panel{border-color:rgba(80,113,220,.32)!important;background:linear-gradient(145deg,rgba(8,17,47,.92),rgba(11,12,38,.96))!important}
+.zeus-planned-badge,.zeus-planned-state{border-color:rgba(154,111,255,.4)!important;background:rgba(95,48,166,.14)!important;color:#cfb8ff!important}
+.settings-page .settings-card,.settings-page .card{border-color:rgba(77,120,232,.34)!important;background:linear-gradient(150deg,rgba(8,17,46,.96),rgba(8,13,35,.98) 68%,rgba(19,10,46,.94))!important;color:#f4f7ff}
+.settings-page .eyebrow{color:#c0b5ff!important}
+.settings-page .avatar{border-color:#35dfff!important;color:#8aeaff!important}
+.settings-page input:focus,.settings-page select:focus,.settings-page textarea:focus{border-color:#41dfff!important;box-shadow:0 0 0 3px rgba(42,199,255,.16)!important}
+@media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}
+
+/* Match the OlyHub bolt from the supplied reference; keep every selected control cyan/violet. */
+.olyhub-mark{filter:drop-shadow(0 0 6px rgba(0,222,255,.72)) drop-shadow(0 0 14px rgba(167,52,255,.56))}
+.live-talk-orb-choice:hover{border-color:#43dfff!important}
+.live-talk-orb-choice.selected{border-color:#7beaff!important;box-shadow:0 0 0 2px rgba(0,211,255,.28),0 0 18px rgba(70,89,255,.3)!important}
+body .settings-page .voice-orb-option:hover{border-color:rgba(42,218,255,.72)!important}
+body .settings-page .voice-orb-option.selected{border-color:transparent!important;background:linear-gradient(145deg,rgba(0,173,255,.18),rgba(27,18,79,.94)) padding-box,linear-gradient(115deg,#13dcff,#5f62ff 58%,#d43fff) border-box!important;box-shadow:inset 0 0 0 1px rgba(89,191,255,.16),0 0 20px rgba(61,89,255,.2)!important;color:#f5f8ff!important}
