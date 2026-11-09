@@ -1339,7 +1339,7 @@ function render(){
   if(key&&offCanvasSidebar){$('#main-content')?.focus({preventScroll:true});}
   else if(key){const candidates=$$(key,app);const next=candidates.find(el=>Boolean(el.closest('.sidebar'))===scopeSidebar)||candidates[0];if(next&&!next.disabled){next.focus({preventScroll:true});if(selection&&next.setSelectionRange){try{next.setSelectionRange(selection.start,selection.end)}catch{}}}}
   announce(state.error||state.execStatus);
-  requestAnimationFrame(()=>{const s=$('#chat-scroll');if(!s)return;if(state.chatRestore){const r=state.chatRestore;state.chatRestore=null;s.scrollTop=Math.max(0,s.scrollHeight-r.height+r.top);}else s.scrollTop=s.scrollHeight;}); }
+  requestAnimationFrame(()=>{const s=$('#chat-scroll');if(!s)return;if(state.chatRestore){const r=state.chatRestore;state.chatRestore=null;s.scrollTop=Math.max(0,s.scrollHeight-r.height+r.top);}else if(state.tab==='Home'&&!state.messages.length){s.scrollTop=0;}else s.scrollTop=s.scrollHeight;}); }
 
 function bind(){
   $('#hamburger')?.addEventListener('click',()=>{state.drawer=!state.drawer;render();if(state.drawer)requestAnimationFrame(()=>$('.sidebar .side-nav button.active,.sidebar .side-nav button')?.focus())}); $('#scrim')?.addEventListener('click',()=>{state.drawer=false;render();$('#hamburger')?.focus()});
@@ -1562,12 +1562,12 @@ function bind(){
   $('#create-project')?.addEventListener('click',projectModal); $('#create-project-empty')?.addEventListener('click',projectModal); $('#sidebar-create-project')?.addEventListener('click',()=>{state.drawer=false;render();projectModal();});
   $('#sidebar-new-chat')?.addEventListener('click',newChat);
   $('#team-refresh')?.addEventListener('click',async()=>{state.realmInventoryLoaded=false;try{await loadRealmInventory()}catch{}render();});
-  $('[data-filter]').forEach(b=>b.addEventListener('click',()=>{state.projectFilter=b.dataset.filter;render()}));
+  $$('[data-filter]').forEach(b=>b.addEventListener('click',()=>{state.projectFilter=b.dataset.filter;render()}));
   $('#projects-search')?.addEventListener('input',event=>{state.projectSearch=event.target.value;render()});
-  $('[data-project-search-clear]').forEach(b=>b.addEventListener('click',()=>{state.projectSearch='';state.projectFilter='ALL';render()}));
+  $$('[data-project-search-clear]').forEach(b=>b.addEventListener('click',()=>{state.projectSearch='';state.projectFilter='ALL';render()}));
   $('#files-search')?.addEventListener('input',event=>{state.filesSearch=event.target.value;render()});
-  $('[data-files-filter]').forEach(b=>b.addEventListener('click',()=>{state.filesFilter=b.dataset.filesFilter;render()}));
-  $('[data-files-clear]').forEach(b=>b.addEventListener('click',()=>{state.filesSearch='';state.filesFilter='ALL';render()}));
+  $$('[data-files-filter]').forEach(b=>b.addEventListener('click',()=>{state.filesFilter=b.dataset.filesFilter;render()}));
+  $$('[data-files-clear]').forEach(b=>b.addEventListener('click',()=>{state.filesSearch='';state.filesFilter='ALL';render()}));
   $('#upload-files-empty')?.addEventListener('click',()=>$('#global-file-input')?.click());
   $$('[data-project]').forEach(b=>{b.addEventListener('click',()=>openProjectWorkspace(b.dataset.project));b.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();openProjectWorkspace(b.dataset.project);}});});
   $$('[data-project-section]').forEach(b=>b.addEventListener('click',async()=>{state.projectSection=b.dataset.projectSection;try{if(state.projectSection==='MEMORY'&&state.currentProject)await loadMemories(state.currentProject.id);if(state.projectSection==='SOURCE'&&state.currentProject)await loadProjectSources();}catch(err){state.error=err?.message||'Could not load project memory.';}render();resetViewport()}));

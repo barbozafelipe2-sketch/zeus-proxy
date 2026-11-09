@@ -121,3 +121,35 @@ body{background-color:var(--oly-ink)}
 .project-search-empty{padding:34px;border-radius:18px;background:linear-gradient(145deg,rgba(8,18,47,.94),rgba(14,12,44,.93));border-color:rgba(75,119,221,.32)}
 .project-search-empty h2{color:#f3f6ff}
 @media(max-width:620px){.project-search-box,.file-library-search{max-width:none;min-height:46px}.file-library-filters{margin-right:-14px;padding-right:14px}.files-page .file-library-filters button{flex:0 0 auto}.library-search-note{font-size:11px}}
+
+
+/* OlyHub canonical home: midnight navy and cyan/violet wave light.
+   Remove the retired marble background from the shared app canvas. */
+body .main{
+  background-color:#04071d!important;
+  background-image:
+    radial-gradient(ellipse at 16% 14%,rgba(19,45,154,.24),transparent 35%),
+    radial-gradient(ellipse at 88% 28%,rgba(107,28,198,.17),transparent 34%),
+    linear-gradient(180deg,#04071d 0%,#050a24 52%,#04071d 100%)!important;
+  background-attachment:fixed!important;
+}
+body .main:before{
+  position:fixed!important;inset:0!important;height:auto!important;z-index:0!important;pointer-events:none;
+  background:
+    radial-gradient(ellipse 108% 31% at -4% 0%,transparent 67%,rgba(183,43,255,.86) 67.35%,rgba(99,57,255,.35) 68%,transparent 69.2%),
+    radial-gradient(ellipse 98% 29% at 103% 1%,transparent 66.5%,rgba(0,207,255,.9) 66.9%,rgba(0,137,255,.36) 67.8%,transparent 69.2%),
+    radial-gradient(ellipse 106% 24% at 4% 104%,transparent 66%,rgba(174,34,255,.78) 66.4%,rgba(83,56,255,.3) 67.2%,transparent 68.6%),
+    radial-gradient(ellipse 92% 24% at 105% 102%,transparent 65%,rgba(0,199,255,.78) 65.4%,rgba(0,115,255,.31) 66.2%,transparent 67.6%);
+  opacity:.56;
+}
+body .home-workspace{background:transparent!important;background-image:none!important}
+body .topbar .personal-bolt.small{
+  width:40px;height:42px;border:0;border-radius:0;background:transparent;color:#e7fbff;
+  font-size:39px;line-height:1;text-shadow:0 0 8px #00dfff,0 0 18px #7e38ff;
+  transform:rotate(-8deg)
+}
+@media(max-width:959px){
+  body .home-workspace .chat-scroll{background:transparent!important}
+  body .topbar .brand-copy .logo-sub{display:none}
+}
+@media(prefers-reduced-motion:reduce){body .main{background-attachment:scroll!important}}
