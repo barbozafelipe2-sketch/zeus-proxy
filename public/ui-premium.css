@@ -1994,3 +1994,24 @@ body .message.user .message-body{
 @media(max-width:959px){
   .home-workspace.has-messages .chat-scroll{padding-bottom:calc(250px + env(safe-area-inset-bottom))!important}
 }
+
+/* Live Talk: smaller orb, fixed neon rim, inner glow and audio-reactive bars. */
+.live-talk-orb-wrap{width:min(64vw,460px)!important;height:min(64vw,460px)!important;max-width:460px!important;max-height:460px!important;min-width:0!important;min-height:0!important;margin:4px 0 0!important}
+.live-talk-orb-wrap:before{inset:-7%!important;border-radius:50%;background:radial-gradient(circle,rgba(0,218,255,.27),rgba(90,30,255,.18) 50%,transparent 73%)!important;filter:blur(25px)!important;opacity:.52;animation:none}
+.live-talk-orb-wrap:has(.is-speaking):before{animation:olyhub-orb-glow 1.35s ease-in-out infinite alternate}
+.live-talk-orb-wrap:after{content:""!important;display:block!important;inset:2.5%!important;border:2px solid transparent!important;border-radius:50%!important;background:linear-gradient(rgba(3,7,29,.04),rgba(3,7,29,.04)) padding-box,linear-gradient(145deg,#06e5ff 0%,#5571ff 50%,#d23dff 100%) border-box!important;box-shadow:0 0 12px rgba(0,215,255,.45),0 0 25px rgba(133,43,255,.3)!important;pointer-events:none;z-index:4;transform:none!important;animation:none!important}
+.live-talk-orb-wrap.has-orb-art .zeus-voice-presence.orb-art{width:92%!important;height:92%!important;flex:0 0 92%!important;overflow:visible!important}
+.live-talk-orb-wrap .voice-orb-art{width:100%!important;height:100%!important;object-fit:contain;transform:none!important;animation:none!important}
+.live-talk-waveform{width:min(52vw,350px)!important;height:54px!important;margin:18px auto 0!important;padding:4px 10px!important;gap:5px!important;border:0!important;border-radius:0!important;background:transparent!important;box-shadow:none!important;backdrop-filter:none!important}
+.live-talk-waveform i{width:4px!important;max-height:34px!important;min-height:3px!important;background:linear-gradient(180deg,#9cf9ff,#08c8ff 52%,#805cff)!important;box-shadow:0 0 0 rgba(0,214,255,0)!important;opacity:.16!important;transform:scaleY(.35);transition:opacity .2s ease,filter .2s ease,transform .2s ease}
+.live-talk-waveform i:nth-child(n+23){background:linear-gradient(180deg,#f1b9ff,#b640ff 65%,#741aff)!important;box-shadow:0 0 0 rgba(179,45,255,0)!important}
+.live-talk-waveform.is-speaking i{opacity:1!important;filter:brightness(1.18);animation:live-wave 620ms ease-in-out var(--delay) infinite alternate;box-shadow:0 0 10px rgba(0,212,255,.8)!important}
+.live-talk-waveform.is-speaking i:nth-child(n+23){box-shadow:0 0 10px rgba(179,45,255,.8)!important}
+.live-talk-cta-orb{isolation:isolate}
+.live-talk-cta-orb:before,.live-talk-cta-orb:after,.live-talk-cta-orb i{display:none!important;animation:none!important}
+.live-talk-cta-art{display:block;width:100%;height:100%;object-fit:contain;pointer-events:none}
+.live-talk-cta-orb .voice-orb-swatch{width:100%;height:100%;box-shadow:none}
+@keyframes olyhub-orb-glow{from{opacity:.4;filter:blur(25px) brightness(.9)}to{opacity:1;filter:blur(29px) brightness(1.35)}}
+@media(max-width:959px){.live-talk-orb-wrap{width:min(64vw,420px)!important;height:min(64vw,420px)!important;max-width:420px!important;max-height:420px!important;margin:0!important}.live-talk-waveform{width:min(55vw,350px)!important;margin-top:14px!important}}
+@media(max-width:959px) and (max-height:760px){.live-talk-orb-wrap{width:min(50vh,360px)!important;height:min(50vh,360px)!important}}
+@media(prefers-reduced-motion:reduce){.live-talk-orb-wrap:has(.is-speaking):before,.live-talk-waveform.is-speaking i{animation:none!important}.live-talk-waveform.is-speaking i{opacity:1!important}}
