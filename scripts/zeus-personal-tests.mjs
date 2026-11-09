@@ -26,7 +26,7 @@ assert.ok(app.includes('Permanent project memory')&&app.includes('memory-form'),
 assert.ok(app.includes('task-form')&&app.includes('upload-project-file'),'Project tasks/files missing');
 assert.ok(app.includes('attach-media')&&app.includes('attach-camera')&&app.includes('attach-file'),'plus attachment chooser missing');
 assert.ok(html.includes('global-media-input')&&html.includes('global-camera-input')&&html.includes('global-file-input'),'attachment inputs missing');
-assert.ok(app.includes('Enter adds a new line · use the arrow to send'),'multiline composer guidance missing');
+assert.ok(app.includes('Enter cria uma nova linha · use a seta para enviar'),'multiline composer guidance missing');
 assert.ok(!app.includes("e.key==='Enter'&&!e.shiftKey"),'Enter still submits instead of newline');
 assert.ok(!app.includes('x-zeus-access-token')&&!app.includes('function authView('),'personal app must start without a shared access key');
 assert.ok(!auth.includes('ZEUS_PROXY_ACCESS_TOKEN')&&!auth.includes('timingSafeEqual'),'server must not gate personal APIs on a shared token');

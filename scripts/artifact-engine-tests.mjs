@@ -23,7 +23,7 @@ assert.ok(chat.includes('parseArtifactDelivery(result.content,requestedArtifacts
 assert.ok(chat.includes('await finalizeTurn({db,')&&chat.includes('isArtifactContinuation(content)'));
 assert.ok(artifact.includes('validateWorkbook(workbook)')&&artifact.includes('readback.xlsx.load(Buffer.from(bytes))'));
 assert.ok(ui.includes('<details class="message-debug">'));
-assert.ok(ui.includes('Message '+'$'+'{composerMode}'));
+assert.ok(ui.includes('Mensagem para '+'$'+'{composerMode}'));
 console.log('Artifact Engine multi-file validation and continuation: PASS');
 // fix-v2: Portuguese prose regressions (ref 6688a54d)
 {

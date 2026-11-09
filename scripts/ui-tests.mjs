@@ -24,7 +24,7 @@ const must=[
 for(const [haystack,needle,label] of must){if(typeof haystack==='boolean'){if(haystack!==needle)throw new Error(`Missing ${label}`)}else if(!String(haystack).includes(needle))throw new Error(`Missing ${label}`)}
 if(app.includes('id="zeus-level-cap"')||app.includes('id="olympus-auto"')||app.includes('data-routing-mode=')||app.includes('data-mode='))throw new Error('Legacy mode or level selectors must not appear in the Poseidon chat');
 if(!app.includes('olympusAuto:true')||!app.includes('specialistLabel(userRow?.metadata?.toolId)')||!app.includes('Trace Lab ·'))throw new Error('Poseidon-managed dispatch, live specialist status or per-message Trace Lab is missing');
-if(!app.includes('PERSONAL · POSEIDON')||!app.includes("'Poseidon is working'"))throw new Error('Poseidon Text identity or status is missing');
+if(!app.includes('PRIVATE AI WORKSPACE')||!app.includes("'Poseidon is working'"))throw new Error('OlyHub identity or Poseidon Text status is missing');
 const homeView=app.slice(app.indexOf('function homeView()'),app.indexOf('function safeSources'));
 if(/homeAgentPanel|homeContextPanel|homeMobileArtifacts|managerAgentStrip/.test(homeView))throw new Error('Poseidon Home must open directly into chat without legacy dashboard panels');
 if(!app.includes("liveAgentSelection:'athena'")||!app.includes("mode:'ZEUS'")||!app.includes("X-Zeus-Voice-Fallback"))throw new Error('Athena voice identity and legacy execution identifiers must remain compatible');

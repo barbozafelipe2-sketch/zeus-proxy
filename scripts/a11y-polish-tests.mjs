@@ -25,13 +25,13 @@ assert.ok(manifest.id==='/'&&manifest.display==='standalone'&&manifest.icons?.le
 
 // Landmarks and ARIA state.
 assert.ok(app.includes('<main class="main" id="main-content" tabindex="-1">'),'main landmark missing');
-assert.ok(app.includes('<nav class="side-nav" aria-label="Primary">'),'primary nav landmark missing');
+assert.ok(app.includes('<nav class="side-nav" aria-label="Navegação complementar">'),'complementary navigation landmark missing');
 assert.ok(app.includes('aria-controls="app-sidebar" aria-expanded="${state.drawer}"'),'menu button must expose expanded state');
 assert.ok(app.includes(`\${state.tab===tab?'aria-current="page"':''}`),'active nav must expose aria-current');
 assert.ok(app.includes('aria-haspopup="menu" aria-expanded="${state.attachMenu}"'),'+ menu must expose expanded state');
 assert.ok(app.includes('role="menuitem" id="attach-media"')&&app.includes('role="menuitem" id="attach-camera"'),'attachment menu items need menuitem role');
 assert.ok(!app.includes('auth-key')&&!app.includes('auth-form'),'obsolete access-key form must be removed');
-assert.ok(app.includes('aria-label="Search chats"'),'chat search needs a label');
+assert.ok(app.includes('aria-label="Buscar conversas"'),'chat search needs a localized label');
 assert.ok(app.includes('aria-label="Task title"')&&app.includes('aria-label="New project memory"'),'task/memory inputs need labels');
 assert.ok(app.includes('aria-label="Remove ${esc(f.filename)}"'),'attachment remove button needs a label');
 
