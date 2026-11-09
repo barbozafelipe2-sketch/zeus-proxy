@@ -991,7 +991,7 @@ function toolsView(){
     status:realm.id==='zeus'?'SHELL · AUDITORIA AINDA NÃO ATIVA':realm.id==='poseidon'?'CHAT PRINCIPAL':realm.id==='hermes'?(actionByRealm.hermes[0].status||'GOOGLE · LEITURA'):realm.status==='active'?'WORKFLOW CONECTADO':realm.status==='partial'?'GOOGLE SOMENTE LEITURA · REALM EM PREPARAÇÃO':'REALM PLANEJADO · DESATIVADO'
   }));
   const providerName=m=>({openai:'OpenAI',anthropic:'Anthropic',gemini:'Google Gemini',google:'Google Gemini',xai:'xAI','x-ai':'xAI',deepseek:'DeepSeek','black-forest-labs':'Black Forest Labs · FLUX',recraft:'Recraft',bytedance:'ByteDance','bytedance-seed':'ByteDance · Seedream',tencent:'Tencent',ideogram:'Ideogram',stability:'Stability AI',luma:'Luma',meta:'Meta'}[String(m.provider||'').toLowerCase()]||String(m.provider||'').replaceAll('_',' ').replace(/\b\w/g,c=>c.toUpperCase()));
-  const cards=tools.map(tool=>{
+  const cards=tools.filter(tool=>tool.id!=='zeus').map(tool=>{
     const models=(tool.workflows||[]).flatMap(id=>state.toolModels.find(item=>item.id===id)?.models||[]).filter((model,index,all)=>all.findIndex(other=>`${other.provider}:${other.id}`===`${model.provider}:${model.id}`)===index);
     const activeCount=models.filter(m=>m.available).length;
     const inactiveCount=models.length-activeCount;
