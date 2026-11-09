@@ -1,5 +1,6 @@
 // Skill Engine foundation. Existing executors remain authoritative.
 import { TOOL_WORKFLOWS } from './tool-workflows.mjs';
+import { getRealmName } from './realm-blueprint.mjs';
 import { classifyIntent } from './intent.mjs';
 
 const skill=(id,god,toolId=null,{internal=false}={})=>Object.freeze({id,god,toolId,enabled:Boolean(toolId),internal});
@@ -10,18 +11,18 @@ export const SKILL_REGISTRY=Object.freeze({
  'apollo.images':skill('apollo.images','Apollo','images'),
  'hestia.review':skill('hestia.review','Héstia','analysis',{internal:true}),
  'mnemosine.memory':skill('mnemosine.memory','Mnemosine',null,{internal:true}),
- 'dionisio.media':skill('dionisio.media','Dionísio'),
- 'peitho.marketing':skill('peitho.marketing','Peitho'),
- 'demeter.business':skill('demeter.business','Deméter'),
- 'hermes.communication':skill('hermes.communication','Hermes'),
- 'hades.security':skill('hades.security','Hades'),
+ 'dionisio.media':skill('dionisio.media',getRealmName('dionisio')),
+ 'peitho.marketing':skill('peitho.marketing',getRealmName('peitho')),
+ 'demeter.business':skill('demeter.business',getRealmName('demeter')),
+ 'hermes.communication':skill('hermes.communication',getRealmName('hermes')),
+ 'hades.security':skill('hades.security',getRealmName('hades')),
  // Persisted IDs from earlier builds remain accepted, but resolve to current owners.
  'hermes.web':skill('hermes.web','Athena','web'),
  'atena.documents':skill('atena.documents','Athena','documents'),
  'apolo.images':skill('apolo.images','Apollo','images'),
  'ares.defense':skill('ares.defense','Ares'),
- 'hades.health':skill('hades.health','Hades'),
- 'dionisio.video':skill('dionisio.video','Dionísio')
+ 'hades.health':skill('hades.health',getRealmName('hades')),
+ 'dionisio.video':skill('dionisio.video',getRealmName('dionisio'))
 });
 export const SKILL_LIMITS=Object.freeze({maxDelegations:2,maxDepth:2});
 

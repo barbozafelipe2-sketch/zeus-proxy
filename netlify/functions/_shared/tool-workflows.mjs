@@ -1,12 +1,13 @@
 // Workflow IDs remain stable for persisted conversations and permissions. Public
 // deity ownership follows the current Poseidon canon; Hestia stays internal.
 // Model candidates are resolved from the configured server catalog.
+import { getRealmName } from './realm-blueprint.mjs';
 export const TOOL_WORKFLOWS=Object.freeze({
-  web:Object.freeze({id:'web',god:'Athena',title:'Research & Intelligence',route:'research',vision:false}),
-  code:Object.freeze({id:'code',god:'Hefesto',title:'Engineering & Code',route:'coding',vision:false}),
-  images:Object.freeze({id:'images',god:'Apollo',title:'Visual Design & Images',route:'vision',vision:true}),
-  documents:Object.freeze({id:'documents',god:'Athena',title:'Documents & Knowledge',route:'writing',vision:false}),
-  analysis:Object.freeze({id:'analysis',god:'Héstia',title:'Internal Source Review',route:'hard',vision:true,internal:true}),
+  web:Object.freeze({id:'web',god:getRealmName('athena'),title:'Research & Intelligence',route:'research',vision:false}),
+  code:Object.freeze({id:'code',god:getRealmName('hefesto'),title:'Engineering & Code',route:'coding',vision:false}),
+  images:Object.freeze({id:'images',god:getRealmName('apollo'),title:'Visual Design & Images',route:'vision',vision:true}),
+  documents:Object.freeze({id:'documents',god:getRealmName('athena'),title:'Documents & Knowledge',route:'writing',vision:false}),
+  analysis:Object.freeze({id:'analysis',god:getRealmName('hestia'),title:'Internal Source Review',route:'hard',vision:true,internal:true}),
 });
 
 export function getToolWorkflow(id){return typeof id==='string'?TOOL_WORKFLOWS[id]||null:null;}

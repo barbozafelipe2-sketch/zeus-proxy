@@ -9,12 +9,13 @@ const models=readFileSync('netlify/functions/_shared/models.mjs','utf8');
 const chat=readFileSync('netlify/functions/chat.mjs','utf8');
 const health=readFileSync('netlify/functions/health.mjs','utf8');
 
-assert.ok(app.includes('Tell Poseidon what you need.')&&!app.includes('data-mode=')&&!app.includes('data-routing-mode='),'Poseidon must be the primary chat without legacy mode selectors');
-assert.ok(!app.includes('${homeAgentPanel()}')&&!app.includes('${homeContextPanel()}')&&!app.includes('${homeMobileArtifacts()}'),'conversation view must stay focused on messages');
+assert.ok(app.includes('Peça algo ao Poseidon.')&&!app.includes('data-mode=')&&!app.includes('data-routing-mode='),'Poseidon must be the primary chat without legacy mode selectors');
+const homeView=app.slice(app.indexOf('function homeView()'),app.indexOf('function safeSources'));
+assert.doesNotMatch(homeView,/homeAgentPanel|homeContextPanel|homeMobileArtifacts|managerAgentStrip/,'Poseidon Home must open directly into chat without legacy dashboard panels');
 assert.ok(!app.includes('${mobileNav()}')&&app.includes('id="hamburger"'),'mobile navigation should use the existing side drawer');
 assert.ok(!/data-mode=["'](?:OPENAI|CLAUDE|GEMINI|GOOGLE)/i.test(app),'direct provider mode leaked into UI');
-assert.ok(app.includes('id="hamburger" aria-label="Open navigation" title="Navigation">${icon(\'menu\')}</button>')&&app.includes("['Projects','projects','Projects']"),'simplified menu navigation with Projects missing');
-assert.ok(app.includes('function managerAgentStrip()')&&app.includes('id="manager-title">Projects</h1>')&&app.includes('class="manager-agent-chip"'),'Home must expose clickable Project shortcuts');
+assert.ok(app.includes('id="hamburger" aria-label="Open navigation" title="Navigation">${icon(\'menu\')}</button>')&&app.includes("['Projects','projects','Projetos','bottom']"),'mobile drawer and bottom navigation destinations are separated');
+assert.ok(app.includes('side-project-section')&&app.includes('sidebar-create-project')&&app.includes('function homeView()'),'Poseidon chat must open directly with Projects available in navigation');
 assert.ok(app.includes('PERMANENT PROJECT CHAT'),'permanent Project chat missing');
 assert.match(app,/function projectChatView\(\)[\s\S]*?\$\{modeStrip\(\)\}/,'Project chat must reuse the main Poseidon tool context');
 assert.ok(!app.includes('id="zeus-level-cap"')&&!app.includes('id="olympus-auto"'),'legacy level and engine selectors stay removed');

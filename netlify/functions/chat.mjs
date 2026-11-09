@@ -1,7 +1,7 @@
 import {authorizeOlympusModelCall} from './_shared/olympus-budget.mjs';
 import { requireUser } from './_shared/auth.mjs';
 import { json, readJson, cleanText, isUuid, getRequestId, errorJson } from './_shared/http.mjs';
-import { runZeus, runOlympus, runOlympusCompoundPlus, TURBO_LIMITS, generateImage, editImage, imageModelFamily, imageGenerationCallLimit, routeFor, roleCandidates, callModel } from './_shared/models.mjs';
+import { runZeus, runOlympus, runOlympusCompoundPlus, runIndependentModelAnswer, TURBO_LIMITS, generateImage, editImage, imageModelFamily, imageGenerationCallLimit, routeFor, roleCandidates, callModel } from './_shared/models.mjs';
 import { modelFamily } from './_shared/provider-routing.mjs';
 import { getToolWorkflow, toolConversationTitle } from './_shared/tool-workflows.mjs';
 import { executeThreeModelTool } from './_shared/tool-executor.mjs';
@@ -74,7 +74,7 @@ function codedError(message,status=400,code='REQUEST_FAILED'){const e=new Error(
 function normalizedIds(value){return [...new Set((Array.isArray(value)?value:[]).filter(isUuid))].slice(0,8);}
 function sameIds(a,b){const aa=normalizedIds(a).sort(),bb=normalizedIds(b).sort();return aa.length===bb.length&&aa.every((v,i)=>v===bb[i]);}
 
-async function buildContext({db,userId,projectId,conversationId,currentMessageId,currentText,attachmentRows=[]}){
+async function buildContext({db,userId,projectId,conversationId,currentMessageId,currentText,attachmentRows=[],historyBeforeAt=null}){
   let identity='',tasksText='',memoriesText='',projectFilesText='',continuityText='',continuityRevision=0,continuityUpdatedAt=null;
   const personalMemoryRows=await db.sql`SELECT id,project_id,type,content,source,confidence,approved,created_at FROM memories WHERE owner_id=${userId} AND project_id IS NULL AND approved=true ORDER BY created_at DESC LIMIT ${MEMORY_POLICY.candidateLimit}`;
   const personalMemoryPolicy={...MEMORY_POLICY,maxItems:12,maxChars:4000,perItemChars:600};
@@ -135,7 +135,9 @@ async function buildContext({db,userId,projectId,conversationId,currentMessageId
   if(conversationId){
     // Stable newest-first fetch; allocate the limited history window to recent
     // corrections/decisions, then restore chronological order for the providers.
-    const rows=await db.sql`SELECT role,mode,content,created_at FROM messages WHERE conversation_id=${conversationId} AND owner_id=${userId} AND id<>${currentMessageId} AND COALESCE(metadata->>'failed','false')<>'true' ORDER BY created_at DESC,id DESC LIMIT 30`;
+    const rows=historyBeforeAt
+      ?await db.sql`SELECT role,mode,content,created_at FROM messages WHERE conversation_id=${conversationId} AND owner_id=${userId} AND created_at<${historyBeforeAt} AND id<>${currentMessageId} AND COALESCE(metadata->>'failed','false')<>'true' ORDER BY created_at DESC,id DESC LIMIT 30`
+      :await db.sql`SELECT role,mode,content,created_at FROM messages WHERE conversation_id=${conversationId} AND owner_id=${userId} AND id<>${currentMessageId} AND COALESCE(metadata->>'failed','false')<>'true' ORDER BY created_at DESC,id DESC LIMIT 30`;
     history.push(...selectRecentHistory(rows,{maxChars:18000,perMessageChars:4000}));
   }
 
@@ -302,7 +304,7 @@ async function replayCompleted(db,userId,conversationId,execution,userMessage,re
   const message=assistantRows[0];return json({conversationId,message,userMessage,artifacts:artifactRows.map(a=>({...a,downloadUrl:`/api/artifact-download?id=${a.id}`})),mode:message.mode,level:message.metadata?.executionLevel||null,modeExplanation:message.metadata?.modeExplanation||null,execution:{id:execution.id,state:execution.state},requestId,replayed:true});
 }
 
-async function finalizeTurn({db,userId,projectId,conversationId,execution,mode,result,stagedArtifacts}){
+async function finalizeTurn({db,userId,projectId,conversationId,execution,mode,result,stagedArtifacts,compareAnswerToMessageId=null}){
   return withTransaction(db,async(client)=>{
     // Fence before creating artifacts or the assistant message: no stale worker
     // may persist an answer after a newer browser retry has claimed ownership.
@@ -318,7 +320,7 @@ async function finalizeTurn({db,userId,projectId,conversationId,execution,mode,r
     await client.query(`UPDATE executions SET state='SAVING',lead_model=$1,trace=$2::jsonb WHERE id=$3 AND owner_id=$4`,[result.leadModel||null,JSON.stringify(result.trace||{}),execution.id,userId]);
     const assistant=(await client.query(
       `INSERT INTO messages(owner_id,conversation_id,execution_id,role,mode,content,metadata) VALUES($1,$2,$3,'assistant',$4,$5,$6::jsonb) RETURNING id,execution_id,role,mode,content,metadata,created_at`,
-      [userId,conversationId,execution.id,mode,result.content,JSON.stringify({artifacts:[...new Set([...artifacts.map(a=>a.id),...(isUuid(result.trace?.compareImageSourceId)?[result.trace.compareImageSourceId]:[])])],sources:Array.isArray(result.sources)?result.sources.slice(0,12):[],capabilities:Array.isArray(result.capabilities)?result.capabilities:[],leadModel:result.leadModel||null,fallback:Array.isArray(result.trace?.fallbacks)&&result.trace.fallbacks.length>0,modeExplanation:result.modeExplanation||null,executionLevel:result.executionLevel||null,pipelineLabel:result.pipelineLabel||null,toolId:result.toolId||null,toolGod:result.trace?.toolGod||null,skillId:result.trace?.skillExecuted===true?result.trace.skillId:null,skillGod:result.trace?.skillExecuted===true?result.trace.skillGod:null,skillExecuted:result.trace?.skillExecuted===true,skillStagesCompleted:result.trace?.skillExecuted===true?Math.min(3,Number(result.trace?.completedStages)||0):0,skillCapabilityExecuted:result.trace?.skillExecuted===true&&result.trace?.capabilityExecuted===true,delegatedSkillId:result.trace?.delegatedSkillId||null,delegatedModelStages:result.trace?.delegatedModelStages||0,delegationSkipped:result.trace?.delegationSkipped||null,delegatedModelRoles:result.trace?.delegation?.modelRoles||[],comparePair:Boolean(result.trace?.comparePair),compareType:result.trace?.comparePair?result.trace.compareType:null,compareImageSourceId:isUuid(result.trace?.compareImageSourceId)?result.trace.compareImageSourceId:null,phases:Array.isArray(result.trace?.roles)?result.trace.roles.slice(0,3).map(role=>({label:String(role.role||'').slice(0,32),family:String(role.family||'').slice(0,32),model:String(role.provider||'')+':'+String(role.model||role.id||''),transport:String(role.transport||'gateway').slice(0,32),state:'COMPLETED',restored:Boolean(role.restored)})):[],traceCalls:Array.isArray(result.trace?.providerTelemetry?.attempts)?result.trace.providerTelemetry.attempts.slice(0,24).map(call=>({stage:String(call.stage||'').slice(0,48),transport:String(call.transport||'').slice(0,32),provider:String(call.provider||'').slice(0,36),family:String(call.family||'').slice(0,32),model:String(call.model||'').slice(0,100),outcome:call.outcome==='success'?'success':'failure',durationMs:Number.isFinite(Number(call.durationMs))?Number(call.durationMs):null,status:Number.isInteger(call.status)?call.status:null})):[],verificationLabel:result.verificationLabel||null,visionSummary:result.visionSummary||null,contextReceipt:result.contextReceipt||null,usage:result.usage||null})]
+      [userId,conversationId,execution.id,mode,result.content,JSON.stringify({artifacts:[...new Set([...artifacts.map(a=>a.id),...(isUuid(result.trace?.compareImageSourceId)?[result.trace.compareImageSourceId]:[])])],sources:Array.isArray(result.sources)?result.sources.slice(0,12):[],capabilities:Array.isArray(result.capabilities)?result.capabilities:[],leadModel:result.leadModel||null,fallback:Array.isArray(result.trace?.fallbacks)&&result.trace.fallbacks.length>0,modeExplanation:result.modeExplanation||null,executionLevel:result.executionLevel||null,pipelineLabel:result.pipelineLabel||null,toolId:result.toolId||null,toolGod:result.trace?.toolGod||null,skillId:result.trace?.skillExecuted===true?result.trace.skillId:null,skillGod:result.trace?.skillExecuted===true?result.trace.skillGod:null,skillExecuted:result.trace?.skillExecuted===true,skillStagesCompleted:result.trace?.skillExecuted===true?Math.min(3,Number(result.trace?.completedStages)||0):0,skillCapabilityExecuted:result.trace?.skillExecuted===true&&result.trace?.capabilityExecuted===true,delegatedSkillId:result.trace?.delegatedSkillId||null,delegatedModelStages:result.trace?.delegatedModelStages||0,delegationSkipped:result.trace?.delegationSkipped||null,delegatedModelRoles:result.trace?.delegation?.modelRoles||[],...(isUuid(compareAnswerToMessageId)?{compareAnswerToMessageId}:{}),comparePair:Boolean(result.trace?.comparePair),compareType:result.trace?.comparePair?result.trace.compareType:null,compareImageSourceId:isUuid(result.trace?.compareImageSourceId)?result.trace.compareImageSourceId:null,phases:Array.isArray(result.trace?.roles)?result.trace.roles.slice(0,3).map(role=>({label:String(role.role||'').slice(0,32),family:String(role.family||'').slice(0,32),model:String(role.provider||'')+':'+String(role.model||role.id||''),transport:String(role.transport||'gateway').slice(0,32),state:'COMPLETED',restored:Boolean(role.restored)})):[],traceCalls:Array.isArray(result.trace?.providerTelemetry?.attempts)?result.trace.providerTelemetry.attempts.slice(0,24).map(call=>({stage:String(call.stage||'').slice(0,48),transport:String(call.transport||'').slice(0,32),provider:String(call.provider||'').slice(0,36),family:String(call.family||'').slice(0,32),model:String(call.model||'').slice(0,100),outcome:call.outcome==='success'?'success':'failure',durationMs:Number.isFinite(Number(call.durationMs))?Number(call.durationMs):null,status:Number.isInteger(call.status)?call.status:null})):[],verificationLabel:result.verificationLabel||null,visionSummary:result.visionSummary||null,contextReceipt:result.contextReceipt||null,usage:result.usage||null})]
     )).rows[0];
     await client.query(`UPDATE executions SET state='COMPLETED',completed_at=now(),lease_expires_at=NULL,dispatch_token=NULL,worker_token=NULL WHERE id=$1 AND owner_id=$2`,[execution.id,userId]);
     await client.query(`UPDATE conversations SET updated_at=now() WHERE id=$1 AND owner_id=$2`,[conversationId,userId]);
@@ -436,6 +438,22 @@ async function chatHandler(req, context, startedAt){
   const scope=await resolveOwnedScope(db,user.id,{projectId,conversationId});
   if(scope.error)return errorJson(scope.error.message,scope.error.status,scope.error.code,requestId);
   projectId=scope.projectId;conversationId=scope.conversationId;
+  let compareAnswerToMessageId=null,compareHistoryBeforeAt=null,compareOriginalText='',compareSourceFamily='',compareOriginalAttachmentIds=[];
+  if(body.compareAnswerToMessageId!==undefined&&body.compareAnswerToMessageId!==null){
+    if(!isUuid(body.compareAnswerToMessageId))return errorJson('A valid answer is required for comparison.',400,'INVALID_ANSWER_COMPARE',requestId);
+    compareAnswerToMessageId=body.compareAnswerToMessageId;
+    const sourceRows=await db.sql`SELECT id,execution_id,metadata FROM messages WHERE id=${compareAnswerToMessageId} AND owner_id=${user.id} AND conversation_id=${conversationId} AND role='assistant' LIMIT 1`;
+    if(!sourceRows.length)return errorJson('The answer to compare is unavailable in this conversation.',404,'ANSWER_COMPARE_SOURCE_NOT_FOUND',requestId);
+    const sourceUserRows=await db.sql`SELECT id,content,metadata,created_at FROM messages WHERE owner_id=${user.id} AND conversation_id=${conversationId} AND execution_id=${sourceRows[0].execution_id} AND role='user' ORDER BY created_at ASC LIMIT 1`;
+    if(!sourceUserRows.length)return errorJson('The original request for this answer is unavailable.',409,'ANSWER_COMPARE_REQUEST_NOT_FOUND',requestId);
+    compareOriginalText=String(sourceUserRows[0].content||'');
+    compareOriginalAttachmentIds=normalizedIds(sourceUserRows[0].metadata?.attachments||[]);
+    const sourceLead=String(sourceRows[0].metadata?.leadModel||'');
+    const sourceCall=[...(sourceRows[0].metadata?.traceCalls||[])].reverse().find(call=>call?.outcome==='success'&&call?.provider&&call?.model);
+    const sourceParts=sourceLead.includes(':')?sourceLead.split(':',2):sourceCall?[sourceCall.provider,sourceCall.model]:[];
+    if(sourceParts.length===2)compareSourceFamily=modelFamily({provider:sourceParts[0],id:sourceParts[1]});
+    compareHistoryBeforeAt=sourceUserRows[0].created_at;
+  }
   if(!conversationId&&!projectId){
     // A retry of a first message whose response was lost (timeout/backgrounded app) has no conversation id yet;
     // reuse the conversation already bound to this request id instead of failing with REQUEST_ID_REUSED.
@@ -443,6 +461,7 @@ async function chatHandler(req, context, startedAt){
     if(prior.length&&prior[0].conversation_id)conversationId=prior[0].conversation_id;
   }
   let fileIds=normalizedIds(body.fileIds);
+  if(compareAnswerToMessageId){fileIds=compareOriginalAttachmentIds;modelText=redactSecrets(compareOriginalText);}
   // Explicit continuation retrieves the original authorized deliverable request, not AI promises.
   // The new turn uses its own request id, and prior file ids are revalidated against owner scope.
   if(conversationId&&isArtifactContinuation(content)){
@@ -614,7 +633,7 @@ async function chatHandler(req, context, startedAt){
       modeExplanation='Background dispatch was unavailable; this execution was exclusively claimed for a Zeus fallback.';
     }
     const execution=init.execution,userMessage=init.userMessage;
-    const built=await buildContext({db,userId:user.id,projectId,conversationId,currentMessageId:userMessage.id,currentText:modelText,attachmentRows});
+    const built=await buildContext({db,userId:user.id,projectId,conversationId,currentMessageId:userMessage.id,currentText:modelText,attachmentRows,...(compareHistoryBeforeAt?{historyBeforeAt:compareHistoryBeforeAt}:{})});
     const contextReceipt={...built.receipt,sourceOfTruthCount:0};
     let aiContext=redactSecrets(built.context);const history=built.history;
     // Project Source of Truth has precedence over historical chat notes,
@@ -717,7 +736,7 @@ ${aiContext}`);
     if(actualMode==='OLYMPUS'&&(isImageOp||webIntent))throw codedError('This Olympus media/research route requires a verified price reservation before it can run. Use Zeus for now.',409,'OLYMPUS_UNPRICED_ROUTE');
     const zeusLevel=actualMode==='ZEUS'?(webIntent&&!toolWorkflow?'SIMPLE':gearLevel):null;
     const turboCreatorCount=turboHardCap?(webIntent?1:Number(turboQuote?.creatorCount||TURBO_LIMITS.maxCreators)):null;
-    const maxCalls=comparePair?2:isImageOp?(toolWorkflow?Math.max(3,imageGenerationCallLimit()):imageGenerationCallLimit()):
+    const maxCalls=comparePair?2:compareAnswerToMessageId?4:isImageOp?(toolWorkflow?Math.max(3,imageGenerationCallLimit()):imageGenerationCallLimit()):
       actualMode==='ZEUS'&&webIntent
         ?(toolWorkflow?GEAR_CALL_CAPS.ZEUS_DIRECTED+1:GEAR_CALL_CAPS.COMPOUND+1)
         :(GEAR_CALL_CAPS[gearLevel]||GEAR_CALL_CAPS.SIMPLE)+(toolWorkflow?0:1); // tools run their declared three roles; regular turns reserve one routing call
@@ -802,6 +821,10 @@ ${aiContext}`);
         result={content:'Two independent alternatives were generated and saved as A and B. Open both files, then choose one, combine them into C, or try another pair.',effectiveLevel:'COMPARE_PAIR',modeExplanation:'Compare · two independent models created A and B.',
           leadModel:pair.variants.map(v=>`${v.model.provider}:${v.model.id}`).join(' + '),pipelineLabel:'Compare & Evolve · independent A/B',
           trace:{strategy:'independent_artifact_pair',comparePair:true,compareType,roles:pair.variants.map(v=>({role:`Variant ${v.label}`,provider:v.model.provider,model:v.model.id,family:modelFamily(v.model)}))}};
+      }else if(compareAnswerToMessageId){
+        result=await runIndependentModelAnswer({text:modelText,sourceFamily:compareSourceFamily,
+          context:enrichedContext,images:vision.images,history,blockedProviders:sharedBlockedProviders,
+          budget:executionBudget,routeHint:aiRouting.route});
       }else if(toolWorkflow){
         result=await executeThreeModelTool({
           toolId,input:modelText,context:enrichedContext,budget:executionBudget,
@@ -951,7 +974,7 @@ ${aiContext}`);
     result.modeExplanation=result.modeExplanation||modeExplanation;
     result.contextReceipt=contextReceipt;
     result.toolId=toolId;
-    const final=await finalizeTurn({db,userId:user.id,projectId,conversationId,execution,mode:finalMode,result,stagedArtifacts});
+    const final=await finalizeTurn({db,userId:user.id,projectId,conversationId,execution,mode:finalMode,result,stagedArtifacts,compareAnswerToMessageId});
     return json({conversationId,message:final.assistant,userMessage,artifacts:final.artifacts,mode:finalMode,level:finalLevel,modeExplanation,tool:toolWorkflow?{id:toolWorkflow.id,god:toolWorkflow.god,title:toolWorkflow.title}:null,memorySaved,historySearched,execution:{id:execution.id,state:'COMPLETED'},requestId,replayed:false});
   }catch(error){
     for(const staged of stagedArtifacts){const removed=await discardStagedArtifact(staged);if(!removed){try{await queueBlobGc(db,user.id,'olyhub-artifacts',staged.blobKey,'failed-chat-artifact');}catch{}}}

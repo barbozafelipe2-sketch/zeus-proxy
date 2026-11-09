@@ -174,8 +174,15 @@ assert.ok(app.includes('[502,503,504].includes(r.status)'), 'non-JSON gateway er
 assert.ok(app.includes("err?.code==='REQUEST_IN_PROGRESS'"));
 assert.ok(app.includes('data-compare-image')&&app.includes('compareImageSourceId'),'image artifacts must expose an A/B alternative flow');
 assert.ok(app.includes('message-action message-compare')&&app.includes('data-compare-image="${esc(compareSource.id)}"'),'generated image replies need a Compare action beside the message actions');
+assert.ok(['data-message-copy','data-message-feedback="up"','data-message-feedback="down"','data-message-speak','data-message-share','data-message-more'].every(action=>app.includes(action)),'every assistant answer must expose copy, rating, listen, share and overflow actions');
+assert.ok(app.includes("$$('[data-message-audit]')")&&app.includes("$$('[data-message-compare]')")&&app.includes("$$('[data-message-combine]')"),'answer overflow actions must be wired to audit, compare and combine handlers');
+assert.ok(app.includes('compareAnswerToMessageId:messageId')&&chat.includes("body.compareAnswerToMessageId")&&chat.includes('historyBeforeAt:compareHistoryBeforeAt'),'text B comparisons must link back to A and exclude A and later turns from model history');
+assert.ok(chat.includes('...(isUuid(compareAnswerToMessageId)?{compareAnswerToMessageId}:{})'),'saved comparison B must retain its A link so Combine appears after reload');
 assert.ok(app.includes('Modelo usado: ${esc(imageModelLabel(item))}')&&app.includes('Instruções para combinar (opcional)')&&app.includes('Combinar A + B em C'),'image comparison must show both model identities and accept optional combine instructions');
 assert.ok(chat.includes("metadata->>'prompt' IS NOT NULL")&&!chat.includes("toolId!=='images'"),'image comparison should work for generated chat images, not only Apollo tool conversations');
+assert.ok(chat.includes('runIndependentModelAnswer')&&chat.includes('compareSourceFamily')&&chat.includes('compareOriginalAttachmentIds'),'text comparison must use the original request and its source answer family');
+const modelSource=read('netlify/functions/_shared/models.mjs');
+assert.ok(modelSource.includes('modelFamily(model)!==family')&&modelSource.includes('familyUsed===family')&&modelSource.includes("transport:'gateway'"),'comparison B must stay in a different model family through Gateway fallbacks');
 assert.ok(/@media\(max-width:600px\)[\s\S]*?\.chat-error\{display:grid;grid-template-columns:minmax\(0,1fr\)/.test(read('public/ui-premium.css')),'mobile errors must use a full-width text column');
 assert.ok(app.includes('You are offline. Reconnect and try again.') && app.includes('Connection to Poseidon ended before the server returned an HTTP response.'));
 

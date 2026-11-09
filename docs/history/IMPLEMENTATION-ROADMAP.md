@@ -1,6 +1,6 @@
 # Historical roadmap — Zeus Proxy requirements (2026-10-14)
 
-> **Superseded as product architecture by the Poseidon/Zeus canon.** This document is retained as an implementation-history record. Its Zeus Levels, manual Zeus/Olympus selection, voice identity, and old phase statuses are not current requirements. See [Poseidon routing](AUTOMATIC_ROUTING.md) and the current architecture section in the README.
+> **Superseded as product architecture by the Poseidon/Zeus canon.** This document is retained as an implementation-history record. Its Zeus Levels, manual Zeus/Olympus selection, voice identity, and old phase statuses are not current requirements. See [Poseidon routing](../AUTOMATIC_ROUTING.md), the [canonical Realm blueprint](../REALM_BLUEPRINT.md), and the current architecture section in the README.
 
 Status: implementation specification. **Do not mistake this file or a staged Git object for deployed functionality.**
 

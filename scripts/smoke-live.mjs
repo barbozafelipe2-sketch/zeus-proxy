@@ -17,10 +17,10 @@ async function fetchJson(path,options={}){
   return data;
 }
 
-console.log(`Zeus Proxy live smoke: ${base}`);
+console.log(`OlyHub live smoke: ${base}`);
 const health=await fetchJson('/api/health',{headers:{'X-OlyHub-Request-ID':requestId()}});
 if(!health?.capabilities?.projects||!health?.capabilities?.files||!health?.capabilities?.artifacts)throw new Error('Core capability health is incomplete.');
-console.log(`✓ open workspace API + health (${health.capabilityReadiness?.chat||'unknown'} chat)`);
+console.log(`✓ workspace API + runtime health (${health.capabilityReadiness?.chat||'unknown'} chat)`);
 const projects=await fetchJson('/api/projects',{headers:{'X-OlyHub-Request-ID':requestId()}});
 if(!Array.isArray(projects?.projects))throw new Error('Projects API did not return a project list.');
 console.log('✓ Database read');
@@ -33,7 +33,7 @@ try{
   projectId=created?.project?.id;const conversationId=created?.project?.conversation_id;
   if(!projectId||!conversationId)throw new Error('Project creation did not return canonical project/conversation ids.');
   console.log('✓ Project + canonical conversation write');
-  const fd=new FormData();fd.append('projectId',projectId);fd.append('conversationId',conversationId);fd.append('file',new File(['ZEUS_SMOKE_SOURCE=alpha-27\nThe expected token is alpha-27.'],'zeus-smoke.txt',{type:'text/plain'}));
+  const fd=new FormData();fd.append('projectId',projectId);fd.append('conversationId',conversationId);fd.append('file',new File(['OLYHUB_SMOKE_SOURCE=alpha-27\nThe expected token is alpha-27.'],'zeus-smoke.txt',{type:'text/plain'}));
   const upload=await fetchJson('/api/files',{method:'POST',headers:{'X-OlyHub-Request-ID':requestId()},body:fd});
   if(!upload?.file?.id||!upload?.file?.extracted)throw new Error('Blob/file upload did not complete with text extraction.');
   console.log('✓ Blob upload + extraction + DB row');
@@ -42,10 +42,10 @@ try{
   console.log('✓ Project-scoped file retrieval');
   if(ai){
     const turnId=requestId();
-    const reply=await fetchJson('/api/chat',{method:'POST',headers:jsonHeaders(turnId),body:JSON.stringify({projectId,conversationId,mode:'ZEUS',content:'Using only the attached smoke source, reply with exactly: ZEUS_SMOKE_OK alpha-27',fileIds:[upload.file.id],requestId:turnId})});
-    const content=String(reply?.message?.content||'');if(!content.includes('alpha-27'))throw new Error(`Zeus did not demonstrate attached-source use: ${content.slice(0,240)}`);
-    console.log('✓ Zeus + attachment context + response persistence');
-  }else console.log('○ AI turn skipped (set ZEUS_PROXY_SMOKE_AI=1 to test a real Zeus provider call)');
+    const reply=await fetchJson('/api/chat',{method:'POST',headers:jsonHeaders(turnId),body:JSON.stringify({projectId,conversationId,content:'Using only the attached smoke source, reply with exactly: OLYHUB_SMOKE_OK alpha-27',fileIds:[upload.file.id],requestId:turnId})});
+    const content=String(reply?.message?.content||'');if(!content.includes('alpha-27'))throw new Error(`Poseidon did not demonstrate attached-source use: ${content.slice(0,240)}`);
+    console.log('✓ Poseidon + attachment context + response persistence');
+  }else console.log('○ AI turn skipped (set ZEUS_PROXY_SMOKE_AI=1 to test a real Poseidon provider call)');
 } finally {
   if(projectId){try{await fetchJson('/api/projects',{method:'DELETE',headers:jsonHeaders(requestId()),body:JSON.stringify({id:projectId})});console.log('✓ Project cascade + Blob cleanup path');}catch(error){console.error(`Cleanup warning: ${error.message}`);process.exitCode=1;}}
 }

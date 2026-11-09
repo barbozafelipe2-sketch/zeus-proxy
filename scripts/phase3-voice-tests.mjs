@@ -5,7 +5,7 @@ const voiceSettings=ui.slice(ui.indexOf('<h3>Live Talk Settings</h3>'),ui.indexO
 assert.match(voiceSettings,/<option value="openai"[^>]*>OpenAI Realtime<\/option><option value="elevenlabs"[^>]*>ElevenLabs Realtime<\/option>/,'Poseidon Voice exposes only its two canonical providers and defaults to OpenAI first');
 assert.ok(!voiceSettings.includes('Google Gemini Live')&&!voiceSettings.includes('gemini-live-voice'),'Gemini Live is not offered as a Poseidon Voice provider');
 assert.match(ui,/state\.liveProvider=localStorage\.getItem\('zeus-live-provider\.v1'\)==='elevenlabs'\?'elevenlabs':'openai'/,'saved unsupported Live Talk providers migrate safely to the OpenAI default');
-assert.match(ui,/voiceId:'marin'/);assert.match(ui,/voiceAvatar:'lightning'/);assert.match(ui,/function speechLocale/);
+assert.match(ui,/voiceId:'marin'/);assert.match(ui,/voiceAvatar:'ocean'/);assert.match(ui,/function speechLocale/);
 assert.match(ui,/discardLiveAudio/);assert.match(ui,/zeus-live-stage/);assert.match(ui,/id="voice-avatar"/);assert.match(ui,/id="live-language"/);
 assert.match(css,/prefers-reduced-motion/);assert.match(css,/width:108px;height:108px/);
 assert.match(ui,/function toggleLiveTalk\(\)/);assert.match(ui,/function saveLiveAgentMessage/);
@@ -50,9 +50,9 @@ assert.match(ui,/function liveSessionContext\(/,'Live Talk must build a context 
 assert.match(ui,/You are Athena, the voice agent for Poseidon Voice in OlyHub Core/,'Live Talk uses Athena as the shared Poseidon Voice identity');
 assert.match(ui,/function liveTalkPersona\(\)\{return 'ATHENA';\}/,'all Realtime providers share the Athena voice identity');
 assert.ok(!liveView.includes('POSEIDON VOICE')&&!liveView.includes('OLYHUB CORE · LIVE'),'Live Talk screen must not show Poseidon or Athena brand labels');
-assert.match(ui,/poseidon-orb-v1\.webp/,'Live Talk uses the new transparent water orb asset');
+assert.match(ui,/poseidon-orb-v2\.webp/,'Live Talk uses the cleaned orb based on the supplied Poseidon reference');
 assert.match(ui,/liveTalk:true/,'spoken requests use the shared authenticated Poseidon chat path');
-assert.match(css,/hue-rotate\(154deg\)/,'transparent plasma orb is color-treated to the Poseidon blue palette');
+assert.match(css,/\.zeus-voice-presence\.orb-ocean \.voice-orb-art/,'the selected Poseidon orb uses its original blue artwork without hue rotation');
 assert.match(ui,/call list_olyhub_projects if needed to resolve the exact name, then open_olyhub_project with project_name, then get_current_project_context/,'Live Talk must follow the project lookup sequence when Felipe names a project');
 assert.match(ui,/Do not answer that you lack access before trying these tools/,'Live Talk must attempt the available project tools before claiming it lacks access');
 assert.match(ui,/They do not expose full source or file contents/,'Live Talk must be honest about the current project file access boundary');

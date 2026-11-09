@@ -4,6 +4,8 @@
 
 OlyHub is Felipe's private Netlify workspace. “Zeus Proxy” remains the repository and legacy API name.
 
+The canonical Realm roles, order, model policy, skills and implementation status live in [`public/realm-blueprint.json`](public/realm-blueprint.json). The Tools UI and backend metadata consume that contract. [`docs/REALM_BLUEPRINT.md`](docs/REALM_BLUEPRINT.md) explains its status rules; older roadmaps are history, not competing requirements.
+
 ## Current architecture
 
 - **Poseidon Text and Poseidon Voice** are the shared OlyHub Core coordinator. They use the same project context, approved memory, permissions and tool catalog, then delegate eligible work to the appropriate specialist.
@@ -19,7 +21,7 @@ The local repository state and the GitHub remote can differ. A passing local bui
 
 ## Personal access
 
-The app is a single-owner personal workspace and does not use a shared API access token or unlock screen. Every API route resolves to the same persistent owner; Functions do not independently authenticate a Netlify SSO identity. The current Netlify site requires SSO for all deploys, and that protection is part of the security boundary: keep it enabled for production, preview/branch deploys, and every alternate hostname. Do not expose the site or enable Drive writes on an unprotected URL. Provider credentials remain server-side.
+The app is a single-owner personal workspace and does not use a shared API access token or unlock screen. Every API route resolves to the same persistent owner; Functions do not independently authenticate a Netlify SSO identity. Netlify visitor access must be configured and verified outside this repository for production, preview/branch deploys, and every alternate hostname. This repository and its health endpoint cannot verify those dashboard-level settings, so do not assume the deployed site is protected. Do not expose the site or enable Drive writes on an unprotected URL. Provider credentials remain server-side.
 
 ## Code Agent
 

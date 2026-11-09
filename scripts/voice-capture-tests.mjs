@@ -14,7 +14,7 @@ assert.ok(stopRec.includes('_zeusWatchdog')&&stopRec.includes('onstop'),'stop ne
 assert.ok(app.includes('if(recorder._zeusFinalized)return;'),'onstop must not finalize twice');
 const live=app.slice(app.indexOf('function finishLiveTalkSession(){'),app.indexOf('async function startVoice(){'));
 assert.ok(live.includes('Conversation.startSession')&&live.includes("connectionType:'webrtc'")&&!/Scribe\.connect|SpeechRecognition|webkitSpeechRecognition/.test(live),'Live Talk uses the ElevenLabs Realtime agent');
-assert.ok(app.includes('live-talk-trigger')&&app.includes('>⚡</button>'),'Live Talk must use the lightning control beside the microphone');
+assert.ok(app.includes('class="live-talk-cta')&&app.includes('live-talk-cta-orb')&&app.includes('id="live-talk"'),'Live Talk must have a dedicated orb CTA above the composer');
 assert.ok(!app.includes("'Live Talk microphone is unavailable. Voice Message remains available.'"),'generic Live Talk error replaced by real error');
 console.log('voice capture tests: PASS');
 const models=fs.readFileSync(new URL('../netlify/functions/_shared/models.mjs',import.meta.url),'utf8');

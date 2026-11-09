@@ -11,7 +11,7 @@ let codeAgentPollTimer=null;
 const state = {
   user:null, authReady:false, attachMenu:false,
   tab:'Home', mode:'ZEUS', activeMode:null, activeLevel:null, drawer:false,
-  conversations:[], currentConversation:null, currentToolId:null, toolModels:[], toolModelsLoaded:false, toolModelsError:'', messages:[], chatArtifacts:[], sending:false, execStatus:'', error:'', bootstrapFailures:[],
+  conversations:[], currentConversation:null, currentToolId:null, toolModels:[], modelProviders:null, toolModelsLoaded:false, toolModelsError:'', realmInventory:null, realmInventoryLoaded:false, realmInventoryError:'', realmBlueprint:null, realmBlueprintError:'', messages:[], chatArtifacts:[], sending:false, execStatus:'', error:'', bootstrapFailures:[],
   attachedFiles:[], projects:[], projectFilter:'ALL', currentProject:null, tasks:[],
   files:[], artifacts:[], health:null, recording:false,
   projectSection:'CHAT', projectMemories:[], personalMemories:[], projectSources:[], memoryPolicy:null,
@@ -19,8 +19,8 @@ const state = {
   messagePage:{hasMore:false,nextCursor:null}, filesPage:{scope:'global',hasMore:false,nextCursor:null}, artifactsPage:{scope:'global',hasMore:false,nextCursor:null}, chatRestore:null,
   voiceBusy:false, voiceRecorder:null, voiceStream:null, voiceChunks:[], voiceStopTimer:null, voiceBytes:0, voiceHitSizeLimit:false, voiceSubmitRequested:false,
   liveTalk:false, liveTalkMinimized:false, liveTalkStopRequested:false, liveMuted:false, livePersona:'ATHENA', liveAgentSelection:'athena', liveProvider:'openai', openaiLiveVoice:'marin', geminiLiveVoice:'Kore', liveFailureKind:null, liveAgentConversation:null, liveAgentConversationId:'', livePendingMutation:null, liveAgentPartial:'', liveTextDraft:'', liveTextStatus:'', liveAgentPermissionStream:null, liveAgentLogQueue:Promise.resolve(), liveAgentLoggedEvents:new Map(), liveTranscriptScope:null, liveGeneration:0, liveRetryCount:0, liveStage:'idle', liveLocale:'auto', voiceId:'marin', speechProvider:'gemini', openrouterModel:'google', openrouterVoice:'', openrouterVoices:[], openrouterVoicesLoading:false, openrouterVoicesLoaded:false, googleVoice:storageGet('zeus-google-tts-voice')||'Kore', elevenLabsVoiceId:'', voiceStatus:null, voiceTesting:false, liveSpeechCache:null, voiceReplyAudio:null, liveAudioUrl:null, liveSpeechController:null, liveAudioUnlocked:false, liveSpeechUnlocked:false,
-  messageFeedback:{}, messageAudioId:'', messageAudioBusyId:'', messageAudioUrl:null,
-  voiceAvatar:'lightning', elevenLabsVoices:[], elevenLabsVoicesLoaded:false, elevenLabsVoicesLoading:false, elevenLabsVoicesError:'', elevenLabsVoicePageToken:'', elevenLabsVoiceHasMore:false,
+  messageFeedback:{}, messageAudioId:'', messageAudioBusyId:'', messageAudioUrl:null, openMessageMenuId:'',
+  voiceAvatar:'ocean', elevenLabsVoices:[], elevenLabsVoicesLoaded:false, elevenLabsVoicesLoading:false, elevenLabsVoicesError:'', elevenLabsVoicePageToken:'', elevenLabsVoiceHasMore:false,
   preferences:{personality:'balanced',instructions:''}, preferencesLoaded:false,
   googleSearchResults:{}, googleSearchQueries:{}, googleSearchBusy:null,
   draft:'', offline:typeof navigator!=='undefined'&&navigator.onLine===false,
@@ -151,6 +151,7 @@ async function bootstrapApp(){
     ['Files',loadFiles()],
     ['Artifacts',loadArtifacts()],
     ['Runtime diagnostics',loadHealth()],
+    ['Realm blueprint',loadRealmBlueprint()],
     ['Personalization',loadPreferences()],
     ['Personal memory',loadPersonalMemories()],
   ];
@@ -161,6 +162,13 @@ async function bootstrapApp(){
   if(pid && state.projects.some(p=>p.id===pid)){ await openProjectWorkspace(pid); return; }
   if(cid) await openConversation(cid,false);
   render();
+}
+async function loadRealmBlueprint(){
+  const response=await fetch('/realm-blueprint.json',{cache:'no-store'});
+  if(!response.ok)throw new Error(`Blueprint unavailable (HTTP ${response.status}).`);
+  const blueprint=await response.json();
+  if(blueprint?.version!==1||!Array.isArray(blueprint.realms))throw new Error('Blueprint format is invalid.');
+  state.realmBlueprint=blueprint;state.realmBlueprintError='';
 }
 async function loadConversations(){ const d=await api('/api/conversations');state.conversations=d.conversations||[]; }
 async function loadProjects(){ const d=await api('/api/projects');state.projects=d.projects||[]; if(state.currentProject)state.currentProject=state.projects.find(p=>p.id===state.currentProject.id)||null; }
@@ -228,7 +236,8 @@ async function loadArtifacts(projectId=null,{append=false}={}){
   state.artifacts=append?mergeById(state.artifacts,incoming):incoming;state.artifactsPage={scope,hasMore:Boolean(d.page?.hasMore),nextCursor:d.page?.nextCursor||null};
 }
 async function loadHealth(){ try{state.health=await api('/api/health');state.healthError=false;}catch(error){state.healthError=true;throw error;} }
-async function loadToolModels(){try{const d=await api('/api/tool-models');state.toolModels=Array.isArray(d.tools)?d.tools:[];state.toolModelsError='';}catch(error){state.toolModelsError=error?.message||'Model discovery failed.';throw error;}finally{state.toolModelsLoaded=true;}}
+async function loadToolModels(){try{const d=await api('/api/tool-models');state.toolModels=Array.isArray(d.tools)?d.tools:[];state.modelProviders=d.providers||null;state.toolModelsError='';}catch(error){state.toolModelsError=error?.message||'Model discovery failed.';throw error;}finally{state.toolModelsLoaded=true;}}
+async function loadRealmInventory(){try{state.realmInventory=await api('/api/realms');state.realmInventoryError='';}catch(error){state.realmInventoryError=error?.message||'Realm inventory unavailable.';throw error;}finally{state.realmInventoryLoaded=true;}}
 async function loadTasks(projectId){ const d=await api(`/api/tasks?projectId=${encodeURIComponent(projectId)}`);state.tasks=d.tasks||[]; }
 async function loadProjectSources(){
   if(!state.currentProject?.id){state.projectSources=[];return;}
@@ -244,6 +253,7 @@ function icon(name){
     home:svg('<path d="M4 10.5 12 4l8 6.5V20a1 1 0 0 1-1 1h-5v-6H10v6H5a1 1 0 0 1-1-1z"/>'),
     projects:svg('<rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/>'),
     tools:svg('<path d="M14.5 6.5 18 3l3 3-3.5 3.5M3 21l7.5-7.5M13 11l2.5-2.5"/><path d="M8 16l-3 5 5-3"/>'),
+    team:svg('<circle cx="9" cy="8" r="3"/><path d="M3 20v-1a6 6 0 0 1 12 0v1zM16 5a3 3 0 0 1 0 6M18 14a5 5 0 0 1 3 5v1h-4"/>'),
     files:svg('<path d="M7 3h7l5 5v13a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/><path d="M14 3v5h5"/>'),
     settings:svg('<circle cx="12" cy="12" r="3"/><path d="M12 3v2M12 19v2M5 12H3M21 12h-2M6.2 6.2l1.4 1.4M16.4 16.4l1.4 1.4M17.8 6.2l-1.4 1.4M7.6 16.4 6.2 17.8"/>'),
     plus:svg('<path d="M12 5v14M5 12h14"/>'),
@@ -266,6 +276,9 @@ function icon(name){
     like:svg('<path d="M7 10v10H4a1 1 0 0 1-1-1v-8a1 1 0 0 1 1-1h3ZM7 10l5-7c2 0 3 1 2 4l-1 3h6a2 2 0 0 1 2 2l-1 6a2 2 0 0 1-2 2H7"/>'),
     dislike:svg('<path d="M7 14V4H4a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h3ZM7 14l5 7c2 0 3-1 2-4l-1-3h6a2 2 0 0 0 2-2l-1-6a2 2 0 0 0-2-2H7"/>'),
     compare:svg('<path d="M4 7h15M15 3l4 4-4 4M20 17H5m4-4-4 4 4 4"/>'),
+    copy:svg('<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"/>'),
+    share:svg('<path d="M12 16V3m-5 5 5-5 5 5"/><path d="M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/>'),
+    more:svg('<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>'),
     speaker:svg('<path d="M4 10v4h4l5 4V6l-5 4H4Z"/><path d="M16 9a5 5 0 0 1 0 6M18.5 6.5a9 9 0 0 1 0 11"/>'),
     pause:svg('<path d="M8 5v14M16 5v14"/>'),
     folder:svg('<path d="M4 7h6l2 2h8v10H4z"/>'),
@@ -289,29 +302,15 @@ function sidebar(){
   </aside>${state.drawer?'<button class="scrim" id="scrim" aria-label="Close menu"></button>':''}`;
 }
 function navButtons(){
-  const items=[['Home','home','Home'],['Projects','projects','Projects'],['Tools','tools','Tools'],['Files','files','Files'],['Settings','settings','Settings']];
-  return items.map(([tab,ico,label])=>`<button data-tab="${tab}" class="${state.tab===tab?'active':''}" ${state.tab===tab?'aria-current="page"':''}>${icon(ico)}<span>${label}</span></button>`).join('');
+  const items=[['Home','home','Início','bottom'],['Projects','projects','Projetos','bottom'],['Tools','tools','Realms','bottom'],['Team','team','Equipe','drawer'],['Files','files','Arquivos','bottom'],['Settings','settings','Configurações','drawer']];
+  return items.map(([tab,ico,label,group])=>`<button data-tab="${tab}" data-nav-group="${group}" class="${state.tab===tab?'active':''}" ${state.tab===tab?'aria-current="page"':''}>${icon(ico)}<span>${label}</span></button>`).join('');
+}
+function mobileBottomNav(){
+  const items=[['Home','home','Início'],['Projects','projects','Projetos'],['Tools','tools','Realms'],['Files','files','Arquivos']];
+  return `<nav class="mobile-bottom-nav" aria-label="Navegação principal">${items.map(([tab,ico,label])=>`<button type="button" data-tab="${tab}" class="${state.tab===tab?'active':''}" ${state.tab===tab?'aria-current="page"':''}>${icon(ico)}<span>${label}</span></button>`).join('')}</nav>`;
 }
 function homeChats(){ return (state.conversations||[]).filter(c=>!c.project_id); }
 function projectChats(){ return (state.conversations||[]).filter(c=>c.project_id); }
-function managerAgentStrip(){
-  const projects=(state.projects||[]).filter(p=>p.status!=='COMPLETED');
-  const chips=projects.slice(0,6).map(p=>`<button type="button" class="manager-agent-chip" data-project="${esc(p.id)}" aria-label="Open project ${esc(p.name)}"><span class="manager-agent-mark" aria-hidden="true">${esc((p.name||'P').trim().slice(0,1).toUpperCase())}</span><span class="manager-agent-copy"><strong>${esc(p.name)}</strong><small>${Number(p.progress||0)}% · ${Number(p.task_count||0)} open tasks</small></span><span class="manager-agent-status" aria-hidden="true"></span></button>`).join('');
-  return `<section class="manager-panel" aria-labelledby="manager-title"><div class="manager-panel-head"><div><div class="eyebrow">PROJECTS</div><h1 id="manager-title">Projects</h1><p>Open a project to continue its work.</p></div><button type="button" class="secondary compact" id="create-project">＋ New project</button></div><div class="manager-agent-strip" aria-label="Your projects">${chips||`<div class="manager-empty">No projects yet. Create one to give a workstream its own chat, memory and files.</div>`}<button type="button" class="manager-all-agents" data-tab="Projects">All projects <span aria-hidden="true">›</span></button></div></section>`;
-}
-function homeAgentPanel(){
-  const projects=(state.projects||[]).filter(p=>p.status!=='COMPLETED').slice(0,10);
-  return `<aside class="home-agent-rail" aria-label="Workspace projects"><div class="home-rail-heading"><div><span class="eyebrow">WORKSPACE</span><h2>Projects</h2></div><span class="home-count">${projects.length}</span><button type="button" class="home-see-agents" data-tab="Projects">View all <span aria-hidden="true">›</span></button></div><button type="button" class="home-agent-search" data-tab="Projects">${icon('search')}<span>Browse projects</span><span aria-hidden="true">⌕</span></button><div class="home-agent-list">${projects.length?projects.map(p=>`<button type="button" class="home-agent-card" data-project="${esc(p.id)}"><span class="home-agent-avatar">${esc((p.name||'P').trim().slice(0,1).toUpperCase())}</span><span class="home-agent-info"><strong>${esc(p.name)}</strong><small>${Number(p.progress||0)}% progress · ${Number(p.task_count||0)} tasks</small></span><span class="home-agent-indicator" aria-hidden="true"></span></button>`).join(''):`<div class="home-rail-empty">No projects yet. Create a project to give a workstream its own chat and memory.</div>`}</div><button type="button" class="home-create-agent" id="home-create-project"><span aria-hidden="true">＋</span><span><strong>New project</strong><small>Start a project workspace</small></span></button></aside>`;
-}
-function homeContextPanel(){
-  const artifacts=[...(state.artifacts||[])].filter(a=>!a.project_id).sort((a,b)=>new Date(b.created_at||0)-new Date(a.created_at||0)).slice(0,4);
-  const memories=(state.projects||[]).filter(p=>Number(p.memory_count||0)>0).slice(0,5);
-  return `<aside class="home-context-rail" aria-label="Workspace context"><section class="home-context-section"><div class="home-rail-heading"><div><span class="eyebrow">WORKSPACE</span><h2>Artifacts</h2></div><button type="button" class="home-view-link" data-tab="Files">View all <span aria-hidden="true">›</span></button></div><div class="home-artifact-list">${artifacts.length?artifacts.map(a=>`<button type="button" class="home-artifact-card" data-open-output="${esc(a.downloadUrl||'')}" data-output-name="${esc(a.filename||'Saved artifact')}" data-output-mime="${esc(a.mime_type||a.type||'application/octet-stream')}" ${a.downloadUrl?'':'disabled'}><span class="home-artifact-icon">${icon('doc')}</span><span class="home-artifact-copy"><strong>${esc(a.filename||'Saved artifact')}</strong><small>${esc(String(a.type||a.mime_type||'FILE').toUpperCase())} · ${fmtDateTime(a.created_at)||'Saved'}</small></span><span class="home-artifact-chevron" aria-hidden="true">›</span></button>`).join(''):`<div class="home-rail-empty">Saved outputs will appear here.</div>`}</div></section><section class="home-context-section home-memory-section"><div class="home-rail-heading"><div><span class="eyebrow">PERSISTENT CONTEXT</span><h2>Project memory</h2></div><span class="home-memory-mark">${icon('memory')}</span></div>${memories.length?`<div class="home-memory-list">${memories.map(p=>`<button type="button" class="home-memory-card" data-project="${esc(p.id)}"><span class="home-memory-copy"><strong>${esc(p.name)}</strong><small>${Number(p.memory_count||0)} saved ${Number(p.memory_count||0)===1?'memory':'memories'}</small></span><span aria-hidden="true">›</span></button>`).join('')}</div>`:`<div class="home-rail-empty">Memory stays with each project. Open a project to review its saved context.</div>`}</section></aside>`;
-}
-function homeMobileArtifacts(){
-  const artifacts=[...(state.artifacts||[])].filter(a=>!a.project_id).sort((a,b)=>new Date(b.created_at||0)-new Date(a.created_at||0)).slice(0,8);
-  return `<section class="home-mobile-artifacts" aria-labelledby="mobile-artifacts-title"><div class="mobile-artifacts-heading"><div><span class="eyebrow">SAVED OUTPUTS</span><h2 id="mobile-artifacts-title">Artifacts</h2></div><button type="button" data-tab="Files">See all <span aria-hidden="true">›</span></button></div>${artifacts.length?`<div class="mobile-artifact-track">${artifacts.map(a=>{const image=String(a.mime_type||'').startsWith('image/');return `<button type="button" class="mobile-artifact-card" data-open-output="${esc(a.downloadUrl||'')}" data-output-name="${esc(a.filename||'Saved artifact')}" data-output-mime="${esc(a.mime_type||a.type||'application/octet-stream')}" ${a.downloadUrl?'':'disabled'}>${image?`<img data-private-image="${esc(a.downloadUrl||'')}" alt="">`:`<span class="mobile-artifact-glyph">${esc(String(a.type||'FILE').toUpperCase().slice(0,4))}</span>`}<span class="mobile-artifact-name">${esc(a.filename||'Saved artifact')}</span></button>`}).join('')}</div>`:`<div class="mobile-artifacts-empty">Saved outputs from this chat will appear here.</div>`}</section>`;
-}
 function topbar(){
   const tool=state.toolModels?.find(item=>item.id===state.currentToolId);
   const conversationTitle=state.conversations.find(c=>c.id===state.currentConversation)?.title;
@@ -324,11 +323,10 @@ function topbar(){
   return `<header class="topbar">
     <button class="hamburger personal-more" aria-controls="app-sidebar" aria-expanded="${state.drawer}" id="hamburger" aria-label="Open navigation" title="Navigation">${icon('menu')}</button>
     <div class="topbar-context" aria-label="Current workspace"><span>${esc(state.currentProject?'PROJECT':'WORKSPACE')}</span><strong ${!state.currentProject&&!(state.tab==='Home'&&state.currentConversation)?'data-ui-label':''}>${esc(context)}</strong></div>
-    <div class="brand-center"><div class="personal-bolt small">ϟ</div><div class="brand-copy"><span class="logo-word">OLYMPUS HUB</span><span class="logo-sub">PERSONAL · POSEIDON</span></div></div>
-    <div class="topbar-actions"><span class="system-indicator ${tone}" title="${esc(title)}" role="status" aria-label="${esc(`${status}: ${title}`)}"><i aria-hidden="true"></i>${status}</span><button class="avatar ghost" id="profile-avatar" aria-label="Open account settings">${esc(initials())}</button></div>
+    <div class="brand-center"><div class="personal-bolt small">ϟ</div><div class="brand-copy"><span class="logo-word">Oly<span>Hub</span></span><span class="logo-sub">PRIVATE AI WORKSPACE</span></div></div>
+    <div class="topbar-actions"><span class="system-indicator ${tone}" title="${esc(title)}" role="status" aria-label="${esc(`${status}: ${title}`)}"><i aria-hidden="true"></i>${status}</span><button type="button" class="mobile-new-chat" data-new-chat="true" aria-label="Nova conversa" title="Nova conversa">${icon('chat')}<i>＋</i></button><button class="avatar ghost" id="profile-avatar" aria-label="Open account settings">${esc(initials())}</button></div>
   </header>`;
 }
-
 function lastReply(messages=state.messages){return [...(messages||[])].reverse().find(m=>m.role==='assistant'&&(m.mode==='OLYMPUS'||m.mode==='ZEUS'))||null;}
 function lastReplyMode(messages=state.messages){return lastReply(messages)?.mode||null;}
 function syncActiveModeFromMessages(){const last=lastReply();state.activeMode=last?.mode||null;state.activeLevel=last?.metadata?.executionLevel||null;}
@@ -337,7 +335,6 @@ function modeStrip(){
   const tool=state.toolModels?.find(item=>item.id===state.currentToolId);
   return tool?`<div class="poseidon-tool-context" role="note"><span class="tool-context-mark">${esc(tool.god||'Poseidon')}</span><span>${esc(tool.title||'Ferramenta especializada')} · fluxo dedicado</span></div>`:'';
 }
-
 function homeView(){
   const isEmpty=!state.messages.length;
   const tool=state.toolModels?.find(item=>item.id===state.currentToolId);
@@ -348,7 +345,8 @@ function homeView(){
     ${modeStrip()}
     ${state.currentConversation&&!state.currentProject?`<div class="conversation-actions"><button type="button" class="text-gold" data-move-current="${esc(state.currentConversation)}">Mover esta conversa para um projeto</button></div>`:''}
     <div class="chat-scroll" id="chat-scroll">
-      ${isEmpty?`<div class="welcome"><div class="eyebrow">${tool?`${esc(tool.god)} · FERRAMENTA ESPECIALIZADA`:state.currentProject?esc(state.currentProject.name):'ONE AI ENVIRONMENT. REAL RESULTS.'}</div><h1>${tool?`What should ${esc(tool.god)} do?`:'Turn the request into a result.'}</h1><p>${tool?`This private ${esc(tool.title.toLowerCase())} workspace uses its dedicated workflow, coordinated by Poseidon.`:'Tell Poseidon what you need. Your work stays saved in this conversation.'}</p>${tool?'':`<div class="quick-prompts"><button data-prompt="Analyze the attached file and ground every important claim in the source. Call out anything the source does not support.">Review a source</button><button data-prompt="Create the next professional deliverable for this work and keep it connected to the conversation.">Create a deliverable</button><button data-prompt="Build this as runnable code. Include focused tests and tell me clearly which tests were not actually executed.">Build with tests</button><button data-prompt="Turn this goal into a project plan with clear tasks, risks, and milestones.">Plan a project</button></div>`}</div>`:`${state.messagePage?.hasMore?'<div class="history-more"><button class="secondary compact" id="load-older-messages">Load older messages</button></div>':''}<div class="message-list">${msgs}</div>`}
+      <div class="poseidon-chat-intro"><div class="poseidon-chat-emblem" aria-hidden="true"><span>ϟ</span></div><strong>Poseidon</strong><span class="poseidon-chat-prompt">Como posso <b>ajudar?</b></span></div>
+      ${isEmpty?`<div class="welcome"><div class="eyebrow">${tool?`${esc(tool.god)} · FERRAMENTA ESPECIALIZADA`:state.currentProject?esc(state.currentProject.name):'SEU ASSISTENTE DE IA NO OLYHUB'}</div><h1>${tool?`What should ${esc(tool.god)} do?`:'Comece uma conversa'}</h1><p>${tool?`This private ${esc(tool.title.toLowerCase())} workspace uses its dedicated workflow, coordinated by Poseidon.`:'Peça algo ao Poseidon. Suas conversas e entregas ficam salvas no workspace.'}</p>${tool?'':`<div class="quick-prompts"><button data-prompt="Analyze the attached file and ground every important claim in the source. Call out anything the source does not support.">Review a source</button><button data-prompt="Create the next professional deliverable for this work and keep it connected to the conversation.">Create a deliverable</button><button data-prompt="Build this as runnable code. Include focused tests and tell me clearly which tests were not actually executed.">Build with tests</button><button data-prompt="Turn this goal into a project plan with clear tasks, risks, and milestones.">Plan a project</button></div>`}</div>`:`${state.messagePage?.hasMore?'<div class="history-more"><button class="secondary compact" id="load-older-messages">Load older messages</button></div>':''}<div class="message-list">${msgs}</div>`}
       ${exec}
       ${errorBanner()}
     </div>
@@ -426,17 +424,32 @@ function messageHtml(m){
   const compareSource=generatedImages[0];
   const compareBusy=compareSource&&state.imageCompareStartingId===compareSource.id;
   const compareAction=m.role==='assistant'&&compareSource&&!m.metadata?.comparePair?`<button type="button" class="message-action message-compare ${compareBusy?'selected':''}" data-compare-image="${esc(compareSource.id)}" aria-label="${compareBusy?'Generating image B':'Generate image B to compare with this image'}" title="${compareBusy?'Generating B…':'Compare A/B'}" ${state.sending||Boolean(state.imageCompareStartingId)?'disabled':''}><span>${icon(compareBusy?'auto':'compare')}</span></button>`:'';
-  const messageActions=m.role==='assistant'&&messageId?`<div class="message-actions" aria-label="Rate, compare, or listen to this assistant reply"><button type="button" class="message-action ${reaction==='up'?'selected':''}" data-message-feedback="up" data-message-id="${esc(messageId)}" aria-label="Approve this answer" aria-pressed="${reaction==='up'}" title="Useful"><span>${icon('like')}</span></button><button type="button" class="message-action ${reaction==='down'?'selected':''}" data-message-feedback="down" data-message-id="${esc(messageId)}" aria-label="Disapprove this answer" aria-pressed="${reaction==='down'}" title="Not useful"><span>${icon('dislike')}</span></button><button type="button" class="message-action message-speak ${activeMessageAudio?'selected':''}" data-message-speak="${esc(messageId)}" aria-label="${audioBusy?'Generating speech':activeMessageAudio?'Pause or resume reading':'Read answer aloud'}" title="${audioBusy?'Preparing voice…':activeMessageAudio?'Pause / resume':'Read aloud'}" ${audioBusy?'disabled':''}><span>${icon(audioBusy?'auto':activeMessageAudio&&state.messageAudioPlaying?'pause':'speaker')}</span></button>${compareAction}${audioBusy?'<span class="message-audio-status" role="status">Preparing voice…</span>':''}</div>`:'';
-  return `<article class="message ${m.role==='user'?'user':'assistant'}"><div class="message-label">${m.role==='user'?'':`<span class="message-bolt" aria-hidden="true">⚡</span>`}<span>${esc(speaker)}</span></div><div class="message-body ${m.role==='assistant'?'markdown-body':''}">${m.role==='assistant'?renderMarkdown(m.content||''):esc(m.content||'')}</div>${imagePreview}${codeJobHtml}${messageActions}${skillTrace}${traceHtml}${contextHtml}${note?`<details class="message-debug"><summary>Execution details</summary><div class="message-model">${esc(note)}</div></details>`:''}${sourceHtml}${attached?`<div class="attachments in-message">${attached}</div>`:''}${artifacts?`<div class="artifact-row">${artifacts}</div>`:''}${imageCompare||compareControls}</article>`;
+  const compareAnswerTo=String(m.metadata?.compareAnswerToMessageId||'');
+  const pairedReply=Boolean(compareAnswerTo||state.messages.some(candidate=>candidate.role==='assistant'&&String(candidate.metadata?.compareAnswerToMessageId||'')===messageId));
+  const messageMenuOpen=state.openMessageMenuId===messageId;
+  const menuCompare=compareSource&&!m.metadata?.comparePair?`<button type="button" data-message-compare-image="${esc(compareSource.id)}">${icon('compare')}Comparar resposta</button>`:`<button type="button" data-message-compare="${esc(messageId)}" ${pairedReply?'disabled title="Esta resposta já faz parte de um par"':''}>${icon('compare')}Comparar</button>`;
+  const menuCombine=pairedReply?`<button type="button" data-message-combine="${esc(messageId)}">${icon('plus')}Combinar A + B</button>`:'';
+  const messageMenu=m.role==='assistant'&&messageId&&messageMenuOpen?`<div class="message-overflow-menu" role="group" aria-label="Mais ações para esta resposta">${menuCompare}<button type="button" data-message-audit="${esc(messageId)}">${icon('check')}Auditar</button>${menuCombine}</div>`:'';
+  const messageActions=m.role==='assistant'&&messageId?`<div class="message-action-wrap"><div class="message-actions" aria-label="Ações da resposta"><button type="button" class="message-action" data-message-copy="${esc(messageId)}" aria-label="Copiar resposta" title="Copiar">${icon('copy')}</button><button type="button" class="message-action ${reaction==='up'?'selected':''}" data-message-feedback="up" data-message-id="${esc(messageId)}" aria-label="Gostei da resposta" aria-pressed="${reaction==='up'}" title="Gostei">${icon('like')}</button><button type="button" class="message-action ${reaction==='down'?'selected':''}" data-message-feedback="down" data-message-id="${esc(messageId)}" aria-label="Não gostei da resposta" aria-pressed="${reaction==='down'}" title="Não gostei">${icon('dislike')}</button><button type="button" class="message-action message-speak ${activeMessageAudio?'selected':''}" data-message-speak="${esc(messageId)}" aria-label="${audioBusy?'Gerando áudio':activeMessageAudio?'Pausar ou continuar leitura':'Ouvir resposta'}" title="${audioBusy?'Preparando áudio…':activeMessageAudio?'Pausar / continuar':'Ouvir'}" ${audioBusy?'disabled':''}>${icon(audioBusy?'auto':activeMessageAudio&&state.messageAudioPlaying?'pause':'speaker')}</button><button type="button" class="message-action" data-message-share="${esc(messageId)}" aria-label="Compartilhar resposta" title="Compartilhar">${icon('share')}</button><button type="button" class="message-action message-more ${messageMenuOpen?'selected':''}" data-message-more="${esc(messageId)}" aria-label="Mais ações" aria-expanded="${messageMenuOpen}" title="Mais">${icon('more')}</button>${audioBusy?'<span class="message-audio-status" role="status">Preparando áudio…</span>':''}</div>${messageMenu}</div>`:'';
+  const speakerLabel=compareAnswerTo?`B · ${speaker}`:pairedReply?`A · ${speaker}`:speaker;
+  return `<article class="message ${m.role==='user'?'user':'assistant'}" data-assistant-message="${m.role==='assistant'?esc(messageId):''}"><div class="message-label">${m.role==='user'?'':`<span class="message-bolt" aria-hidden="true">⚡</span>`}<span>${esc(speakerLabel)}</span></div><div class="message-body ${m.role==='assistant'?'markdown-body':''}" ${m.role==='assistant'&&messageId?`data-message-press="${esc(messageId)}"`:''}>${m.role==='assistant'?renderMarkdown(m.content||''):esc(m.content||'')}</div>${imagePreview}${codeJobHtml}${messageActions}${skillTrace}${traceHtml}${contextHtml}${note?`<details class="message-debug"><summary>Execution details</summary><div class="message-model">${esc(note)}</div></details>`:''}${sourceHtml}${attached?`<div class="attachments in-message">${attached}</div>`:''}${artifacts?`<div class="artifact-row">${artifacts}</div>`:''}${imageCompare||compareControls}</article>`;
 }
 function artifactCard(a){const tag=esc((a.type||'FILE').toUpperCase().slice(0,4)),url=esc(a.downloadUrl||''),name=esc(a.filename||'Zeus Proxy output'),mime=esc(a.mime_type||a.type||'application/octet-stream'),isImage=String(a.mime_type||'').startsWith('image/'),compareImage=isImage&&a.metadata?.toolId==='images',isZip=a.type==='zip'||/zip/i.test(a.mime_type||'')||String(a.filename||'').toLowerCase().endsWith('.zip'),git=Boolean(state.health?.capabilities?.githubCommit);return `<div class="artifact-card">${isImage?`<button type="button" class="artifact-thumb-wrap" data-open-output="${url}" data-output-name="${name}" data-output-mime="${mime}" aria-label="Open ${name}"><img class="artifact-thumb" data-private-image="${url}" alt=""></button>`:`<div class="out-badge">${tag}</div>`}<div><strong>${name}</strong><small>${fmtSize(a.size)} · ${mime}</small></div><div class="artifact-actions">${compareImage?`<button type="button" class="ghost-a" data-compare-image="${esc(a.id)}">Compare A/B</button>`:''}<button type="button" data-open-output="${url}" data-output-name="${name}" data-output-mime="${mime}">Open</button><button type="button" class="ghost-a" data-download-output="${url}" data-output-name="${name}">Download</button>${isZip&&git?`<button type="button" class="ghost-a" data-github-commit="artifact" data-source-id="${esc(a.id)}" data-source-name="${name}">Commit</button>`:''}</div></div>`}
 const LIVE_LOCALES={auto:'auto',pt:'pt-BR',en:'en-US',es:'es-ES'};
-const VOICE_AVATARS=new Set(['lightning','classic','olympus','liquid']);
+const VOICE_AVATARS=Object.freeze({
+ ocean:{label:'Oceano',image:'/poseidon-orb-v2.webp',className:'orb-ocean'},
+ current:{label:'Maré azul',image:'/poseidon-orb-v1.webp',className:'orb-current'},
+ amber:{label:'Dourada',image:'/zeus-orb-v1.webp',className:'orb-amber'},
+ storm:{label:'Tempestade',image:'/zeus-orb-storm-v1.webp',className:'orb-storm'},
+ plasma:{label:'Plasma solar',image:'/zeus-plasma-orb-v1.webp',className:'orb-plasma'},
+ classic:{label:'Azul clássica',className:'classic'},
+ liquid:{label:'Metal líquido',className:'liquid'}
+});
 function initVoicePrefs(){
  try{const l=localStorage.getItem('zeus-live-locale');state.liveLocale=Object.prototype.hasOwnProperty.call(LIVE_LOCALES,l)?l:'auto';
   state.mode='ZEUS';
  state.livePersona='ATHENA';state.liveProvider=localStorage.getItem('zeus-live-provider.v1')==='elevenlabs'?'elevenlabs':'openai';try{localStorage.setItem('zeus-live-provider.v1',state.liveProvider)}catch{}state.openaiLiveVoice=OPENAI_VOICE_NAMES.includes(localStorage.getItem('zeus-openai-live-voice.v1'))?localStorage.getItem('zeus-openai-live-voice.v1'):'marin';state.geminiLiveVoice=GOOGLE_LIVE_VOICES.includes(localStorage.getItem('zeus-gemini-live-voice.v1'))?localStorage.getItem('zeus-gemini-live-voice.v1'):'Kore';state.liveAgentSelection='athena';try{localStorage.setItem('zeus-live-agent.v1','athena')}catch{}try{localStorage.removeItem('zeus-live-persona')}catch{}
- const a=localStorage.getItem('zeus-voice-avatar');state.voiceAvatar=VOICE_AVATARS.has(a)?a:'lightning';
+  const savedOrb=localStorage.getItem('zeus-voice-avatar'),orbAliases={lightning:'ocean',olympus:'amber'};state.voiceAvatar=VOICE_AVATARS[orbAliases[savedOrb]||savedOrb]?orbAliases[savedOrb]||savedOrb:'ocean';
  const savedVoice=String(localStorage.getItem('zeus-voice-id')||'marin').toLowerCase();
  state.voiceId=['alloy','ash','ballad','coral','echo','fable','nova','onyx','sage','shimmer','verse','marin','cedar'].includes(savedVoice)?savedVoice:'marin';
  state.speechProvider=['gemini','elevenlabs','openai'].includes(localStorage.getItem('zeus-speech-provider'))?localStorage.getItem('zeus-speech-provider'):'gemini';
@@ -531,6 +544,55 @@ async function setMessageFeedback(messageId,value){
   if(next&&message?.metadata?.toolId){try{await api('/api/tool-feedback',{method:'POST',body:JSON.stringify({messageId,value:next})});}catch(error){state.error=`Your rating was saved on this device, but model preference sync failed: ${error.message||'try again later'}`;}}
   render();
 }
+function messageById(messageId){return state.messages.find(item=>item.role==='assistant'&&String(item.id||item.execution_id||'')===String(messageId))||null;}
+function sourceUserMessage(message){
+  const index=state.messages.indexOf(message);
+  return index<0?null:[...state.messages.slice(0,index)].reverse().find(item=>item.role==='user'&&(!message.execution_id||!item.execution_id||item.execution_id===message.execution_id))||[...state.messages.slice(0,index)].reverse().find(item=>item.role==='user')||null;
+}
+async function copyAssistantMessage(messageId){
+  const message=messageById(messageId);if(!message)return;
+  try{
+    const text=String(message.content||'');let copied=false;
+    try{if(navigator.clipboard?.writeText){await navigator.clipboard.writeText(text);copied=true;}}catch{}
+    if(!copied){const input=document.createElement('textarea');input.value=text;input.setAttribute('readonly','');input.style.cssText='position:fixed;top:-9999px;left:0;opacity:0';document.body.appendChild(input);try{input.select();copied=typeof document.execCommand==='function'&&document.execCommand('copy');}finally{input.remove();}}
+    if(!copied)throw new Error('Clipboard access unavailable');
+    state.execStatus='Resposta copiada.';
+  }
+  catch{state.error='Não consegui acessar a área de transferência neste navegador.';}
+  render();
+}
+async function shareAssistantMessage(messageId){
+  const message=messageById(messageId);if(!message)return;
+  const text=String(message.content||'');
+  try{
+    if(navigator.share)await navigator.share({title:'Resposta do OlyHub',text});
+    else{await navigator.clipboard.writeText(text);state.execStatus='Resposta copiada para você compartilhar.';}
+  }catch(error){if(error?.name!=='AbortError')state.error='Não foi possível abrir o menu de compartilhamento.';}
+  render();
+}
+async function auditAssistantMessage(messageId){
+  const message=messageById(messageId),source=message&&sourceUserMessage(message);if(!message||!source){state.error='O pedido original desta resposta não está disponível para auditoria.';render();return;}
+  const priorTool=state.currentToolId;
+  const prompt=`Héstia: faça uma auditoria independente da resposta A abaixo, comparando-a com o pedido original. Verifique aderência ao pedido, precisão e evidências, omissões, riscos e afirmações sem suporte. Não reescreva a resposta; conclua com APROVA, RESSALVAS ou REJEITA e liste achados concretos.\n\nPEDIDO ORIGINAL:\n${String(source.content||'').slice(0,10000)}\n\nRESPOSTA A:\n${String(message.content||'').slice(0,20000)}`;
+  state.openMessageMenuId='';state.currentToolId='analysis';state.error='';render();
+  try{await sendText(prompt,[],crypto.randomUUID(),'ZEUS');}
+  finally{state.currentToolId=priorTool;render();}
+}
+async function compareAssistantMessage(messageId){
+  const message=messageById(messageId),source=message&&sourceUserMessage(message);if(!message||!source){state.error='O pedido original desta resposta não está disponível para comparação.';render();return;}
+  const prompt=`Gere uma resposta B alternativa ao mesmo pedido original. Trate B como uma nova resposta completa e útil; não critique, mencione nem copie a resposta A.\n\nPEDIDO ORIGINAL:\n${String(source.content||'').slice(0,12000)}`;
+  state.openMessageMenuId='';state.error='';
+  await sendText(prompt,[],crypto.randomUUID(),'ZEUS',null,null,{compareAnswerToMessageId:messageId});
+}
+async function combineAssistantMessages(messageId){
+  const selected=messageById(messageId);if(!selected)return;
+  const originalId=String(selected.metadata?.compareAnswerToMessageId||'');
+  const alternative=originalId?selected:state.messages.find(item=>item.role==='assistant'&&String(item.metadata?.compareAnswerToMessageId||'')===messageId);
+  const original=originalId?messageById(originalId):selected;
+  if(!original||!alternative||original===alternative){state.error='A resposta A e a resposta B deste par não estão disponíveis.';render();return;}
+  const prompt=`Combine as respostas A e B em uma resposta C final. Preserve os pontos corretos e úteis de ambas, resolva contradições com base no pedido original e indique qualquer incerteza restante.\n\nRESPOSTA A:\n${String(original.content||'').slice(0,16000)}\n\nRESPOSTA B:\n${String(alternative.content||'').slice(0,16000)}`;
+  state.openMessageMenuId='';state.error='';await sendText(prompt,[],crypto.randomUUID(),'ZEUS');
+}
 async function toggleMessageSpeech(messageId){
   const message=state.messages.find(item=>String(item.id||item.execution_id||'')===messageId&&item.role==='assistant');
   if(!message)return;
@@ -610,10 +672,15 @@ function speechLocale(text=''){
 }
 
 function voiceAvatarMarkup(){
- const kind=VOICE_AVATARS.has(state.voiceAvatar)?state.voiceAvatar:'lightning';
-  return kind==='lightning'
- ? `<div class="zeus-voice-presence lightning ${state.liveTalk?'active':''} ${state.liveStage==='speaking'?'is-speaking':''}" aria-hidden="true"><img class="zeus-plasma-image poseidon-plasma-image" src="/poseidon-orb-v1.webp" alt="" draggable="false"></div>`
- : `<div class="zeus-voice-presence ${kind} ${state.liveTalk?'active':''}" aria-hidden="true"><div class="zeus-voice-core"><span class="zeus-voice-symbol">●</span></div></div>`;
+ const option=VOICE_AVATARS[state.voiceAvatar]||VOICE_AVATARS.ocean,active=state.liveTalk?'active':'',speaking=state.liveStage==='speaking'?'is-speaking':'';
+ if(option.image)return `<div class="zeus-voice-presence orb-art ${option.className} ${active} ${speaking}" aria-hidden="true"><img class="voice-orb-art" src="${option.image}" alt="" draggable="false">${state.voiceAvatar==='ocean'?'<span class="poseidon-water-motion"></span>':''}</div>`;
+ return `<div class="zeus-voice-presence ${option.className} ${active}" aria-hidden="true"><div class="zeus-voice-core"><span class="zeus-voice-symbol">●</span></div></div>`;
+}
+function voiceAvatarPicker(){
+ return `<div class="field"><span class="field-label">Live Talk orb</span><div id="voice-avatar" class="voice-orb-options" role="radiogroup" aria-label="Choose a Live Talk orb">${Object.entries(VOICE_AVATARS).map(([id,option])=>{const selected=state.voiceAvatar===id,preview=option.image?`<img src="${option.image}" alt="" loading="lazy">`:`<span class="voice-orb-swatch ${option.className}" aria-hidden="true"></span>`;return `<button type="button" class="voice-orb-option ${selected?'selected':''}" data-voice-avatar="${id}" role="radio" aria-checked="${selected}" aria-pressed="${selected}"><span class="voice-orb-preview ${option.image?'has-art':''}">${preview}</span><span>${option.label}</span></button>`}).join('')}</div></div>`;
+}
+function liveTalkOrbPicker(){
+ return `<div class="live-talk-orb-picker"><span>ESCOLHA A ESFERA</span><div role="radiogroup" aria-label="Escolher a esfera do Live Talk">${Object.entries(VOICE_AVATARS).map(([id,option])=>{const selected=state.voiceAvatar===id,preview=option.image?`<img src="${option.image}" alt="" loading="lazy">`:`<span class="voice-orb-swatch ${option.className}" aria-hidden="true"></span>`;return `<button type="button" class="live-talk-orb-choice ${selected?'selected':''}" data-voice-avatar="${id}" role="radio" aria-label="Esfera ${option.label}" aria-checked="${selected}" aria-pressed="${selected}" title="${option.label}">${preview}</button>`}).join('')}</div></div>`;
 }
 function discardLiveAudio({keepElement=false}={}){try{state.voiceReplyAudio?.pause()}catch{}if(!keepElement)state.voiceReplyAudio=null;
  if(state.liveAudioUrl){URL.revokeObjectURL(state.liveAudioUrl);state.liveAudioUrl=null;}}
@@ -739,7 +806,7 @@ function composer(){
   const chips=state.attachedFiles.map(f=>`<span class="file-chip">${icon('files')} ${esc(f.filename)}<button type="button" data-remove-file="${esc(f.id)}" aria-label="Remove ${esc(f.filename)}" title="Remove attachment">${icon('close')}</button></span>`).join('');
   const showMic=voiceSupported();
   const scope=state.currentProject?`Project: ${esc(state.currentProject.name)}`:'This conversation';
-  return `<div class="composer-shell">${state.liveTalk&&!state.liveTalkMinimized?`<div class="zeus-live-stage" role="status" aria-label="Live Talk active">${voiceAvatarMarkup()}<span class="${state.liveStage==='speaking'?'zeus-speaking-state':''}">${state.liveStage==='speaking'?'<span class="zeus-speaking-bolt" aria-hidden="true">⚡</span>':''}Live Talk · ${esc(state.liveTalkStopRequested?'Finishing this turn':state.liveStage==='speaking'?'Speaking':state.liveStage==='processing'?'Processing':state.liveStage==='listening'?'Listening':'Connected')} · ${esc(state.liveLocale==='auto'?'Device language':state.liveLocale.toUpperCase())}</span></div>`:''}${state.attachMenu?`<div class="attach-menu" role="menu" id="attach-menu" aria-label="Add attachment"><button type="button" role="menuitem" id="attach-media">${icon('image')}<span>Photo / Video</span></button><button type="button" role="menuitem" id="attach-camera">${icon('camera')}<span>Camera</span></button><button type="button" role="menuitem" id="attach-file">${icon('files')}<span>File</span></button><button type="button" role="menuitem" id="attach-saved">${icon('folder')}<span>Saved artifact</span></button></div>`:''}${chips?`<div class="attachments pending">${chips}</div>`:''}<form class="composer" id="composer"><button type="button" class="icon-btn attach-plus" id="attach" title="Add photo, video or file" aria-label="Add photo, video or file" aria-haspopup="menu" aria-expanded="${state.attachMenu}" ${state.attachMenu?'aria-controls="attach-menu"':''}>＋</button><textarea id="composer-text" rows="1" aria-label="Message ${composerMode}" placeholder="Message ${composerMode}…" ${state.sending?'disabled':''}>${esc(state.draft)}</textarea>${showMic?`<button type="button" class="icon-btn ${state.recording?'recording':''}" id="voice" title="${state.recording?'Stop and send audio to ElevenLabs Scribe':state.voiceBusy?'Transcribing with ElevenLabs Scribe…':'Record a voice message'}" aria-label="${state.recording?'Stop and send audio to ElevenLabs Scribe':state.voiceBusy?'Transcribing voice with ElevenLabs Scribe':'Record a voice message'}" ${state.voiceBusy?'disabled':''}>${icon('mic')}</button>`:''}${liveTalkSupported()?`<button type="button" class="icon-btn live-talk-trigger ${state.liveTalk?'active':''}" id="live-talk" aria-pressed="${state.liveTalk}" aria-label="${state.liveTalk?'Return to Live Talk':'Start Live Talk'}" title="${state.liveTalk?'Return to Live Talk':'Start Live Talk'}">⚡</button>`:''}<button type="submit" class="icon-btn send-btn" title="Send (Ctrl/⌘+Enter)" aria-label="Send message" ${state.sending?'disabled':''}>${icon('send')}</button></form><div class="composer-meta"><span>${state.currentProject?'Permanent Project chat · dedicated memory + files':'Conversation history available · no Project memory'}</span><span>Enter adds a new line · use the arrow to send</span></div></div>`;
+  return `<div class="composer-shell">${state.liveTalk&&!state.liveTalkMinimized?`<div class="zeus-live-stage" role="status" aria-label="Live Talk active">${voiceAvatarMarkup()}<span class="${state.liveStage==='speaking'?'zeus-speaking-state':''}">${state.liveStage==='speaking'?'<span class="zeus-speaking-bolt" aria-hidden="true">⚡</span>':''}Live Talk · ${esc(state.liveTalkStopRequested?'Finishing this turn':state.liveStage==='speaking'?'Speaking':state.liveStage==='processing'?'Processing':state.liveStage==='listening'?'Listening':'Connected')} · ${esc(state.liveLocale==='auto'?'Device language':state.liveLocale.toUpperCase())}</span></div>`:''}${state.attachMenu?`<div class="attach-menu" role="menu" id="attach-menu" aria-label="Add attachment"><button type="button" role="menuitem" id="attach-media">${icon('image')}<span>Photo / Video</span></button><button type="button" role="menuitem" id="attach-camera">${icon('camera')}<span>Camera</span></button><button type="button" role="menuitem" id="attach-file">${icon('files')}<span>File</span></button><button type="button" role="menuitem" id="attach-saved">${icon('folder')}<span>Saved artifact</span></button></div>`:''}${chips?`<div class="attachments pending">${chips}</div>`:''}${liveTalkSupported()?`<button type="button" class="live-talk-cta ${state.liveTalk?'active':''}" id="live-talk" aria-pressed="${state.liveTalk}" aria-label="${state.liveTalk?'Return to Live Talk':'Start Live Talk'}"><span class="live-talk-cta-orb" aria-hidden="true"><i></i></span><span>${state.liveTalk?'Voltar ao Live Talk':'Live Talk'}</span></button>`:''}<form class="composer" id="composer"><button type="button" class="icon-btn attach-plus" id="attach" title="Add photo, video or file" aria-label="Add photo, video or file" aria-haspopup="menu" aria-expanded="${state.attachMenu}" ${state.attachMenu?'aria-controls="attach-menu"':''}>＋</button><textarea id="composer-text" rows="1" aria-label="Message ${composerMode}" placeholder="Message ${composerMode}…" ${state.sending?'disabled':''}>${esc(state.draft)}</textarea>${showMic?`<button type="button" class="icon-btn ${state.recording?'recording':''}" id="voice" title="${state.recording?'Stop and send audio to ElevenLabs Scribe':state.voiceBusy?'Transcribing with ElevenLabs Scribe…':'Record a voice message'}" aria-label="${state.recording?'Stop and send audio to ElevenLabs Scribe':state.voiceBusy?'Transcribing voice with ElevenLabs Scribe':'Record a voice message'}" ${state.voiceBusy?'disabled':''}>${icon('mic')}</button>`:''}<button type="submit" class="icon-btn send-btn" title="Send (Ctrl/⌘+Enter)" aria-label="Send message" ${state.sending?'disabled':''}>${icon('send')}</button></form><div class="composer-meta"><span>${state.currentProject?'Permanent Project chat · dedicated memory + files':'Conversation history available · no Project memory'}</span><span>Enter adds a new line · use the arrow to send</span></div></div>`;
 }
 
 function projectsView(){
@@ -902,31 +969,53 @@ function startCompareFormat(id){
 function toolsView(){
   const h=state.health?.capabilities||{},chat=capabilityState('chat',Boolean(h.chat)),images=capabilityState('imageGeneration',Boolean(h.imageGeneration));
   const google=state.googleConnections||{},connections=google.connections||{},googleConnected=['gmail','calendar','drive'].filter(id=>connections[id]?.connected).length;
-  const tools=[
-    {id:'zeus',god:'Zeus',sprite:'zeus',role:'DIREÇÃO · AUDITORIA',title:'Zeus',description:'Direção e auditoria do trabalho do Poseidon. O monitoramento independente será conectado em uma fase futura.',actions:[{tab:'Zeus',label:'Abrir Zeus',enabled:true}],status:'REALM EM PREPARAÇÃO'},
-    {id:'poseidon',god:'Poseidon',sprite:'poseidon',role:'OLYHUB CORE · CHAT',title:'Poseidon',description:'Abra uma conversa nova com o coordenador do OlyHub Core.',actions:[{newChat:true,label:'Nova conversa',enabled:true}],status:'CHAT PRINCIPAL'},
-    {id:'athena',god:'Athena',sprite:'athena',role:'PESQUISA · INTELIGÊNCIA',title:'Pesquisa e conhecimento',description:'Pesquisa na web, fontes, análise e documentos. O Hestia faz revisão internamente.',workflows:['web','documents'],actions:[{kind:'web',label:'Pesquisar',enabled:Boolean(h.webSearch),status:h.webSearch?'PRONTA':'WEB NÃO CONFIGURADA'},{kind:'documents',label:'Documentos',enabled:chat.enabled,status:chat.label}]},
-    {id:'hefesto',god:'Hefesto',sprite:'hefesto',role:'ENGENHARIA · CÓDIGO',title:'Engenharia e código',description:'Implementação, depuração e revisão de código pelo workflow dedicado.',workflows:['code'],actions:[{kind:'code',label:'Abrir Hefesto',enabled:chat.enabled,status:chat.label}]},
-    {id:'apollo',god:'Apollo',sprite:'apollo',role:'DIREÇÃO VISUAL · IMAGENS',title:'Design e imagens',description:'Geração e edição visual usando os modelos de imagem habilitados.',workflows:['images'],actions:[{kind:'images',label:'Abrir Apollo',enabled:images.enabled,status:images.label}]},
-    {id:'dionisio',god:'Dionísio',role:'ÁUDIO · VÍDEO',title:'Mídia',description:'O Realm dedicado de áudio e vídeo ainda não está conectado. Poseidon Voice é uma interface de conversa separada.',status:'REALM PLANEJADO'},
-    {id:'peitho',god:'Peitho',role:'MARKETING · AQUISIÇÃO',title:'Marketing e aquisição',description:'Estratégia de conteúdo, canais, campanhas e métricas; integração ainda não implementada.',status:'PLANEJADA'},
-    {id:'demeter',god:'Deméter',role:'COMÉRCIO · OPERAÇÕES',title:'Negócios e comércio',description:'Operações, clientes, catálogo e métricas comerciais; integração ainda não implementada.',status:'PLANEJADA'},
-    {id:'hermes',god:'Hermes',sprite:'hermes',role:'COMUNICAÇÕES',title:'Comunicações',description:'Gmail, Calendar e Drive estão disponíveis em modo de leitura pelas integrações Google.',status:googleConnected?`${googleConnected} SERVIÇO(S) CONECTADO(S) · LEITURA`:'GOOGLE · CONEXÃO EM CONFIGURAÇÕES',actions:[{tab:'Settings',label:'Abrir conexões',enabled:true}]},
-    {id:'hades',god:'Hades',role:'SEGURANÇA · PROTEÇÃO',title:'Segurança',description:'O Core aplica verificações de segurança. O Realm especialista Hades ainda não está conectado.',status:'REALM PLANEJADO'},
-  ];
+  const workflowIds={athena:['web','documents'],hefesto:['code'],apollo:['images']};
+  const actionByRealm={
+    zeus:[{tab:'Zeus',label:'Abrir Zeus',enabled:true}],poseidon:[{newChat:true,label:'Nova conversa',enabled:true}],
+    athena:[{kind:'web',label:'Pesquisar',enabled:Boolean(h.webSearch),status:h.webSearch?'PRONTA':'WEB NÃO CONFIGURADA'},{kind:'documents',label:'Documentos',enabled:chat.enabled,status:chat.label}],
+    hefesto:[{kind:'code',label:'Abrir Hefesto',enabled:chat.enabled,status:chat.label}],
+    apollo:[{kind:'images',label:'Abrir Apollo',enabled:images.enabled,status:images.label}],
+    hermes:[{tab:'Settings',label:'Abrir conexões',enabled:true,status:googleConnected?`${googleConnected} SERVIÇO(S) CONECTADO(S) · LEITURA`:'GOOGLE · CONEXÃO EM CONFIGURAÇÕES'}]
+  };
+  const tools=(state.realmBlueprint?.realms||[]).map(realm=>({
+    ...realm,god:realm.name,sprite:realm.id,workflows:workflowIds[realm.id]||[],actions:actionByRealm[realm.id]||[],
+    status:realm.id==='zeus'?'SHELL · AUDITORIA AINDA NÃO ATIVA':realm.id==='poseidon'?'CHAT PRINCIPAL':realm.id==='hermes'?(actionByRealm.hermes[0].status||'GOOGLE · LEITURA'):realm.status==='active'?'WORKFLOW CONECTADO':realm.status==='partial'?'GOOGLE SOMENTE LEITURA · REALM EM PREPARAÇÃO':'REALM PLANEJADO · DESATIVADO'
+  }));
   const providerName=m=>({openai:'OpenAI',anthropic:'Anthropic',gemini:'Google Gemini',google:'Google Gemini',xai:'xAI','x-ai':'xAI',deepseek:'DeepSeek','black-forest-labs':'Black Forest Labs · FLUX',recraft:'Recraft',bytedance:'ByteDance','bytedance-seed':'ByteDance · Seedream',tencent:'Tencent',ideogram:'Ideogram',stability:'Stability AI',luma:'Luma',meta:'Meta'}[String(m.provider||'').toLowerCase()]||String(m.provider||'').replaceAll('_',' ').replace(/\b\w/g,c=>c.toUpperCase()));
   const cards=tools.map(tool=>{
     const models=(tool.workflows||[]).flatMap(id=>state.toolModels.find(item=>item.id===id)?.models||[]).filter((model,index,all)=>all.findIndex(other=>`${other.provider}:${other.id}`===`${model.provider}:${model.id}`)===index);
     const activeCount=models.filter(m=>m.available).length;
-    const modelLine=!state.toolModelsLoaded?'Carregando modelos…':state.toolModelsError?`Lista indisponível · ${state.toolModelsError}`:`${activeCount} de ${models.length} modelos disponíveis · seleção adaptativa`;
-    const modelList=models.length?models.map(m=>`<span class="tool-model-chip ${m.available?'':'unavailable'}"><i aria-hidden="true"></i>${esc(providerName({provider:m.family||m.provider}))} · ${esc(m.name||m.id)} ${m.available?'':'· Gateway inativo'}</span>`).join(''):'<span class="tool-model-empty">Nenhum workflow de modelo está conectado a este Realm.</span>';
-    const details=tool.workflows?.length?`<details class="tool-model-details"><summary>${icon('memory')}<span>${esc(modelLine)}</span><b aria-hidden="true">⌄</b></summary><div class="tool-model-list">${modelList}</div></details>`:`<small class="tool-capability-state">${esc(tool.status||'PLANEJADA')}</small>`;
+    const inactiveCount=models.length-activeCount;
+    const modelLine=!state.toolModelsLoaded?'Carregando modelos…':state.toolModelsError?`Lista indisponível · ${state.toolModelsError}`:models.length?`${activeCount}/${models.length} famílias de provedor configuradas${inactiveCount?` · ${inactiveCount} sem rota`:''}`:'Nenhum modelo cadastrado';
+    const modelList=models.length?models.map(m=>`<span class="tool-model-chip ${m.available?'':'unavailable'}"><i aria-hidden="true"></i>${esc(providerName({provider:m.family||m.provider}))} · ${esc(m.name||m.id)} ${m.available?'':'· sem rota configurada'}</span>`).join(''):'<span class="tool-model-empty">Nenhum workflow de modelo está conectado a este Realm.</span>';
+    const runtimeDetails=tool.workflows?.length?`<details class="tool-model-details"><summary>${icon('memory')}<span>${esc(modelLine)}</span><b aria-hidden="true">⌄</b></summary><div class="tool-model-list">${modelList}<p class="tool-blueprint-note">Disponibilidade indica configuração de rota por família, não uma chamada de teste bem-sucedida.</p></div></details>`:'';
+    const blueprintDetails=tool.model?`<details class="tool-model-details tool-blueprint-details"><summary><span class="tool-blueprint-mark" aria-hidden="true">✦</span><span>Blueprint · modelos e skills</span><b aria-hidden="true">⌄</b></summary><div class="tool-blueprint-content"><p><strong>Modelo · ${esc(tool.modelStatus)}</strong>${esc(tool.model)}</p><p><strong>Capacidades e skills do Realm</strong><span class="blueprint-skill-list">${(tool.skills||[]).map(skill=>`<span class="blueprint-skill blueprint-skill-${esc(skill.status)}"><i aria-hidden="true"></i>${esc(skill.name)} · ${skill.status==='active'?'ativa':skill.status==='internal'?'interna':'planejada'}</span>`).join('')}</span></p><small>Estado de skill no blueprint não altera o status de integração exibido no card.</small></div></details>`:'';
+    const details=runtimeDetails+blueprintDetails||`<small class="tool-capability-state">${esc(tool.status||'PLANEJADA')}</small>`;
     const actions=(tool.actions||[]).map(action=>`<button type="button" class="tool-launch-button" ${action.kind?`data-tool-start="${action.kind}"`:''}${action.tab?`data-tab="${action.tab}"`:''}${action.newChat?'data-new-chat="true"':''} ${action.enabled?'':'disabled aria-disabled="true"'}>${esc(action.label)} <span aria-hidden="true">›</span></button>`).join('');
     const enabled=(tool.actions||[]).some(action=>action.enabled);
     const coreCard=['zeus','poseidon'].includes(tool.id);
-    return `<article class="tool-feature-card ${coreCard?'tool-core-card':''} ${enabled?'':'unavailable'}" data-kind="${tool.id}"><div class="tool-god-portrait god-${tool.sprite||tool.id}" role="img" aria-label="${esc(tool.god)}"><span class="tool-god-caption"><strong>${esc(tool.god)}</strong><small>${esc(tool.role)}</small></span></div><div class="tool-feature-copy"><small class="eyebrow">${coreCard?'OLYHUB CORE':'OLYHUB CORE · DEUS ESPECIALISTA'}</small><h2>${esc(tool.title)}</h2><p>${esc(tool.description)}</p>${details}</div><div class="tool-feature-actions">${actions||'<button type="button" class="tool-launch-button" disabled aria-disabled="true">Indisponível <span aria-hidden="true">›</span></button>'}${tool.actions?.length?`<small class="tool-capability-state ${enabled?'ready':''}">${esc(tool.status||tool.actions.map(action=>action.status).filter(Boolean).join(' · '))}</small>`:''}</div></article>`;
+    return `<article class="tool-feature-card ${coreCard?'tool-core-card':''} ${enabled?'':'unavailable'}" data-kind="${tool.id}"><div class="tool-god-portrait god-${tool.sprite||tool.id}" role="img" aria-label="${esc(tool.god)}"><span class="tool-god-caption"><strong>${esc(tool.god)}</strong><small>${esc(tool.role)}</small></span></div><div class="tool-feature-copy"><small class="eyebrow">${coreCard?'OLYHUB CORE':'OLYHUB CORE · DEUS ESPECIALISTA'}</small><h2>${esc(tool.title)}</h2><p>${esc(tool.description)}</p>${details}</div><div class="tool-feature-actions">${actions||'<button type="button" class="tool-launch-button" disabled aria-disabled="true">Indisponível <span aria-hidden="true">›</span></button>'}<small class="tool-capability-state ${enabled?'ready':''}">${esc(tool.status||'REALM PLANEJADO · DESATIVADO')}</small></div></article>`;
   }).join('');
-  return `<section class="page tools-page tools-catalog"><div class="tools-hero"><span class="eyebrow">OLYHUB CORE · CATÁLOGO CANÔNICO</span><h1>Ferramentas</h1><p>Poseidon seleciona o especialista. Só capacidades conectadas podem ser abertas.</p></div>${errorBanner('page-alert')}<div class="tool-list">${cards}</div><p class="tool-catalog-note">Capacidades internas, sem Realm próprio: Héstia (revisão) e Mnemosine (memória). Deuses planejados aparecem aqui com o estado real de integração.</p></section>`;
+  const internal=(state.realmBlueprint?.internalCapabilities||[]).map(capability=>`${esc(capability.name)} (${esc(capability.role.toLowerCase())})`).join(' · ');
+  return `<section class="page tools-page tools-catalog"><div class="tools-hero"><span class="eyebrow">OLYHUB CORE · CATÁLOGO CANÔNICO</span><h1>Realms</h1><p>Poseidon seleciona o especialista. Só capacidades conectadas podem ser abertas.</p></div>${state.realmBlueprintError?'<div class="chat-error page-alert" role="alert">O blueprint não carregou. Atualize a página para tentar de novo.</div>':''}${errorBanner('page-alert')}<div class="tool-list">${cards}</div><p class="tool-catalog-note">Capacidades internas, sem Realm próprio: ${internal}. Deuses planejados aparecem aqui com o estado real de integração.</p></section>`;
+}
+function teamView(){
+  const inventory=state.realmInventory||{};
+  const providerName=m=>({openai:'OpenAI',anthropic:'Anthropic',gemini:'Google Gemini',google:'Google Gemini',xai:'xAI','x-ai':'xAI',deepseek:'DeepSeek','black-forest-labs':'Black Forest Labs · FLUX',recraft:'Recraft',bytedance:'ByteDance','bytedance-seed':'ByteDance · Seedream',tencent:'Tencent',ideogram:'Ideogram',stability:'Stability AI',luma:'Luma',meta:'Meta'}[String(m.provider||'').toLowerCase()]||String(m.provider||'').replaceAll('_',' ').replace(/\b\w/g,c=>c.toUpperCase()));
+  const realmList=[...(inventory.realms||[]),...(inventory.internalCapabilities||[])];
+  const cards=realmList.map(realm=>{
+    const models=realm.models||[];
+    const modelItems=state.realmInventoryLoaded?(models.length?models.map(m=>`<li class="team-model ${m.available?'configured':'unconfigured'}"><span class="team-model-state" aria-label="${m.available?'Rota elegível':'Rota não elegível'}"></span><span><strong>${esc(providerName({provider:m.family||m.provider}))}</strong><small>${esc(m.name||m.id)}</small></span><em>${m.available?'Rota elegível':'Sem rota elegível'}</em></li>`).join(''):`<li class="team-model-empty">${esc(realm.model||'Nenhum modelo atribuído ou workflow conectado.')}</li>`):'<li class="team-model-empty">Carregando inventário…</li>';
+    const skillItems=(realm.skills||[]).map(skill=>`<li><span class="blueprint-skill blueprint-skill-${esc(skill.status)}"><i aria-hidden="true"></i>${esc(skill.name)}</span><small>${skill.status==='active'?'Implementada no blueprint':skill.status==='internal'?'Capacidade interna':'Planejada'}</small></li>`).join('');
+    const stateLabel=realm.status==='active'?'Workflow ativo':realm.status==='partial'?'Parcial':realm.status==='internal'?'Interno':'Planejado';
+    const workflowNames=(realm.workflows||[]).map(workflow=>`${workflow.title} · ${workflow.available}/${workflow.requested}`).join(' · ');
+    const modelSummary=realm.assignment==='workflow'?`${realm.available}/${realm.requested} modelos elegíveis no Gateway`:realm.model||'Sem pool de modelos';
+    return `<article class="team-member-card" data-team-member="${esc(realm.id)}"><header><div><span class="eyebrow">${esc(realm.role||'CAPACIDADE INTERNA')}</span><h2>${esc(realm.name)}</h2></div><span class="team-status team-status-${esc(realm.status||'planned')}">${stateLabel}</span></header><p class="team-description">${esc(realm.description||'')}</p><section><h3>Skills e funções</h3><ul class="team-skills">${skillItems||'<li class="team-model-empty">Sem skills no blueprint.</li>'}</ul></section><section><h3>Workflows conectados</h3><p class="team-model-caption">${esc(workflowNames||'Nenhum executor de workflow conectado.')}</p></section><section><h3>Modelos usados</h3><p class="team-model-caption">${esc(realm.modelStatus||'Estado não definido')} · ${esc(modelSummary)}</p><ul class="team-model-list">${modelItems}</ul></section></article>`;
+  }).join('');
+  const providerEntries=Object.entries(inventory.providers||{}).map(([id,provider])=>{const label=provider.status==='observed_healthy'?'sucesso observado':provider.status==='unstable'?'instável':provider.status==='degraded'?'circuito em pausa':provider.status==='configured_unverified'?'configurado · não testado':'não configurado';return `<span class="provider-audit-chip ${['observed_healthy','configured_unverified'].includes(provider.status)?'ready':'missing'}"><i aria-hidden="true"></i>${esc(id==='openrouter'?'Netlify AI Gateway · rota OpenRouter':providerName({provider:id}))} · ${label}</span>`;}).join('');
+  const voiceEntries=Object.entries(inventory.voiceProviders||{}).map(([id,ready])=>`<span class="provider-audit-chip ${ready?'ready':'missing'}"><i aria-hidden="true"></i>${esc(({openaiRealtime:'OpenAI Realtime · voz',googleGeminiLive:'Google Gemini Live · voz',elevenLabsRealtime:'ElevenLabs · voz'})[id]||id)} · ${ready?'credencial configurada':'sem credencial'}</span>`).join('');
+  const policy=inventory.routingPolicy;
+  return `<section class="page team-page"><div class="page-head"><div><div class="eyebrow">CONFIGURAÇÃO CANÔNICA · BACKEND + BLUEPRINT</div><h1>Equipe</h1><p>Funções e skills vêm do blueprint; workflows, pools e estado de provedores vêm do backend.</p></div><button type="button" class="secondary compact" id="team-refresh">Atualizar auditoria</button></div>${state.realmInventoryError?`<div class="chat-error page-alert" role="alert">Inventário do backend indisponível: ${esc(state.realmInventoryError)}</div>`:''}<div class="team-audit-note"><strong>Roteamento e auditoria</strong><span>Texto: Netlify AI Gateway primeiro; OpenRouter é uma rota de modelo disponível pelo Gateway. Chaves diretas ficam prioritariamente para voz; fallback de texto direto está ${policy?.directTextFallbackEnabled?'habilitado':'desabilitado'}.</span><div class="provider-audit-list">${providerEntries||'<span class="team-model-empty">Estado dos provedores não carregado.</span>'}</div><small>O estado distingue rota configurada, sucesso observado, instabilidade e circuito em pausa. Modelos elegíveis ainda não significam que a inferência foi testada para aquele ID.</small><strong>Provedores de voz</strong><div class="provider-audit-list">${voiceEntries||'<span class="team-model-empty">Estado de voz indisponível.</span>'}</div></div><div class="team-grid">${cards}</div></section>`;
 }
 function zeusRealmView(){return `<section class="page zeus-realm-page" aria-labelledby="zeus-realm-title">
   <header class="zeus-realm-hero">
@@ -1052,7 +1141,7 @@ function settingsView(){const providers=state.health?.providerReadiness||{};cons
 </article>${preferencesSettings()}${personalMemorySettings()}${googleIntegrationSettings()}<article class="card settings-card"><h3>Live Talk Settings</h3><p class="muted tiny">Choose a Live Talk provider. Your selection is saved in this browser. End the current session before switching providers.</p><div class="field"><label for="live-provider">Live Talk provider</label><select id="live-provider" ${state.liveTalk?'disabled':''}><option value="openai" ${state.liveProvider==='openai'?'selected':''}>OpenAI Realtime</option><option value="elevenlabs" ${state.liveProvider==='elevenlabs'?'selected':''}>ElevenLabs Realtime</option></select></div>
 ${state.liveProvider==='openai'?`<div class="field"><label for="openai-live-voice">OpenAI Live voice</label><select id="openai-live-voice" ${state.liveTalk?'disabled':''}>${OPENAI_VOICE_NAMES.map(v=>`<option value="${v}" ${state.openaiLiveVoice===v?'selected':''}>${v}</option>`).join('')}</select></div>`:''}
 ${state.liveProvider==='elevenlabs'? `<p class="muted tiny">Realtime voice provider connected. Workspace context and authorized tools remain available during the session.</p>`:''}
-<div class="field"><label for="live-language">Live Talk language</label><select id="live-language">${[['auto','Automatic (agent detects language)'],['pt','Português (Brasil)'],['en','English (US)'],['es','Español']].map(([v,label])=>`<option value="${v}" ${state.liveLocale===v?'selected':''}>${label}</option>`).join('')}</select></div><div class="field"><label for="voice-avatar">Live Talk orb</label><select id="voice-avatar">${[['lightning','Ocean orb'],['classic','Classic orb'],['olympus','Olympus orb'],['liquid','Liquid metal orb']].map(([v,label])=>`<option value="${v}" ${state.voiceAvatar===v?'selected':''}>${label}</option>`).join('')}</select></div><p class="muted tiny">The selected orb sets the visual identity for this voice session. Provider-specific voice choices change vocal timbre; authenticated tools and workspace context stay available in every session.</p></article><article class="card settings-card"><h3>Audio Settings</h3>
+<div class="field"><label for="live-language">Live Talk language</label><select id="live-language">${[['auto','Automatic (agent detects language)'],['pt','Português (Brasil)'],['en','English (US)'],['es','Español']].map(([v,label])=>`<option value="${v}" ${state.liveLocale===v?'selected':''}>${label}</option>`).join('')}</select></div>${voiceAvatarPicker()}<p class="muted tiny">Choose an orb preview above. Only its inner energy moves; the frame and symbol stay fixed. Provider-specific voice choices change vocal timbre; authenticated tools and workspace context stay available in every session.</p></article><article class="card settings-card"><h3>Audio Settings</h3>
 <p class="muted tiny">Choose the provider and voice for read-aloud replies. Live Talk has separate settings.</p>
 <div class="field"><label for="zeus-speech-provider">Read-aloud provider</label><select id="zeus-speech-provider">${[['gemini','Google Gemini'],['elevenlabs','ElevenLabs'],['openai','OpenAI']].map(([v,l])=>`<option value="${v}" ${state.speechProvider===v?'selected':''}>${l}</option>`).join('')}</select></div>
 ${state.speechProvider==='openai'?`<div class="field"><label for="zeus-openai-voice">OpenAI voice</label><select id="zeus-openai-voice">${OPENAI_VOICE_NAMES.map(v=>`<option value="${v}" ${state.voiceId===v?'selected':''}>${v}</option>`).join('')}</select></div>`:''}
@@ -1064,7 +1153,7 @@ ${state.elevenLabsVoicesError?`<p class="status-warn" role="status">${esc(state.
 <div class="row"><button type="button" class="secondary compact" id="reload-elevenlabs-voices" ${state.elevenLabsVoicesLoading?'disabled':''}>Refresh voices</button>${state.elevenLabsVoiceHasMore?'<button type="button" class="secondary compact" id="load-more-elevenlabs-voices">Load more</button>':''}</div>`:''}
 <div class="row"><button type="button" class="secondary compact" id="save-voice-id">Save voice</button><button type="button" class="secondary compact" id="test-voice" ${state.voiceTesting?'disabled':''}>${state.voiceTesting?'Testing…':'Test voice'}</button></div>
 <p class="${state.voiceStatus?.kind==='error'?'status-warn':'status-good'}" id="voice-save-status" role="status" aria-live="polite">${state.voiceStatus?esc(state.voiceStatus.text):''}</p>
-</article><article class="card settings-card"><h3>Go-live checklist</h3>${(state.health?.warnings||[]).length?`<div class="diag-list health-warnings" role="status">${state.health.warnings.map(w=>`<p class="diag-warning"><strong>${esc(w.section)}</strong>: ${esc(w.message)}</p>`).join('')}</div>`:''}<div class="diag-list">${[['Workspace API open',state.health?.goLive?.workspaceAccess==='open'],['Database',state.health?.goLive?.database],['Blob maintenance',state.health?.goLive?.blobMaintenance],['Provider configured',Number(state.health?.goLive?.configuredProviders||0)>0],['Chat callable',['observed_healthy','configured_unverified'].includes(state.health?.goLive?.chatState)]].map(([label,ok])=>`<div class="diag-row"><span>${esc(label)}</span><strong class="${ok?'status-good':'status-warn'}">${ok?'READY':'BLOCKED'}</strong></div>`).join('')}</div><p class="muted tiny" style="line-height:1.55;margin-top:14px">${state.health?.goLive?.ready?'Core runtime checks passed for this workspace.':'The workspace is waiting for its database, an AI provider and a callable chat route.'}</p></article><article class="card settings-card"><h3>AI provider diagnostics</h3><div class="diag-list">${['openai','anthropic','gemini','openrouter'].map(p=>{const v=providers[p]?.status||'not_configured';return `<div class="diag-row"><span>${p}</span><strong class="${statusGood(v)?'status-good':'status-warn'}">${esc(statusLabel(v))}</strong></div>`}).join('')}</div><p class="muted tiny" style="line-height:1.55;margin-top:14px">Diagnostics are runtime-local evidence. CONFIGURED UNVERIFIED means credentials/models were detected but this warm Function runtime has not observed a successful call yet. DEGRADED means the temporary circuit breaker is open.</p></article><article class="card settings-card"><h3>Capabilities</h3><div class="diag-list">${Object.keys(state.health?.capabilityReadiness||{}).length?'':`<div class="muted tiny">${state.health?'No capability diagnostics reported.':'Diagnostics load when the workspace runtime responds.'}</div>`}${Object.entries(state.health?.capabilityReadiness||{}).map(([k,v])=>`<div class="diag-row"><span>${esc(k)}</span><strong class="${v==='observed_healthy'?'status-good':'status-warn'}">${esc(statusLabel(v))}</strong></div>`).join('')}</div></article></div></section>`}
+</article><article class="card settings-card"><h3>Go-live checklist</h3>${(state.health?.warnings||[]).length?`<div class="diag-list health-warnings" role="status">${state.health.warnings.map(w=>`<p class="diag-warning"><strong>${esc(w.section)}</strong>: ${esc(w.message)}</p>`).join('')}</div>`:''}<div class="diag-list">${[['Netlify visitor access',null],['Database',state.health?.goLive?.database],['Blob maintenance',state.health?.goLive?.blobMaintenance],['Provider configured',Number(state.health?.goLive?.configuredProviders||0)>0],['Chat callable',['observed_healthy','configured_unverified'].includes(state.health?.goLive?.chatState)]].map(([label,ok])=>`<div class="diag-row"><span>${esc(label)}</span><strong class="${ok===null?'status-warn':ok?'status-good':'status-warn'}">${ok===null?'VERIFY IN NETLIFY':ok?'READY':'BLOCKED'}</strong></div>`).join('')}</div><p class="muted tiny" style="line-height:1.55;margin-top:14px">${state.health?.goLive?.ready?'Runtime checks passed. Verify Netlify visitor access for production, previews/branch deploys, and every alternate hostname.':'Runtime readiness is incomplete. Visitor access also requires a separate Netlify dashboard check.'}</p></article><article class="card settings-card"><h3>AI provider diagnostics</h3><div class="diag-list">${['openai','anthropic','gemini','openrouter'].map(p=>{const v=providers[p]?.status||'not_configured';return `<div class="diag-row"><span>${p}</span><strong class="${statusGood(v)?'status-good':'status-warn'}">${esc(statusLabel(v))}</strong></div>`}).join('')}</div><p class="muted tiny" style="line-height:1.55;margin-top:14px">Diagnostics are runtime-local evidence. CONFIGURED UNVERIFIED means credentials/models were detected but this warm Function runtime has not observed a successful call yet. DEGRADED means the temporary circuit breaker is open.</p></article><article class="card settings-card"><h3>Capabilities</h3><div class="diag-list">${Object.keys(state.health?.capabilityReadiness||{}).length?'':`<div class="muted tiny">${state.health?'No capability diagnostics reported.':'Diagnostics load when the workspace runtime responds.'}</div>`}${Object.entries(state.health?.capabilityReadiness||{}).map(([k,v])=>`<div class="diag-row"><span>${esc(k)}</span><strong class="${v==='observed_healthy'?'status-good':'status-warn'}">${esc(statusLabel(v))}</strong></div>`).join('')}</div></article></div></section>`}
 
 
 let modalKeydownHandler=null;
@@ -1168,34 +1257,35 @@ function codeAgentJobCard(job){
 function liveTalkExperience(){
   const liveProviderLabel=state.liveProvider==='elevenlabs'?'ElevenLabs Realtime':'OpenAI Realtime';
   const liveProviderShort=state.liveProvider==='elevenlabs'?'ELEVEN REALTIME':'OPENAI REALTIME';
-  const stage=state.liveTalkStopRequested?'Finishing your turn':state.liveMuted?'Microphone muted':state.liveStage==='error'?'Live Talk paused':state.liveStage==='speaking'?'Speaking':state.liveStage==='processing'?'Preparing your reply':state.liveStage==='connecting'?`Connecting to ${liveProviderLabel}`:state.liveStage==='listening'?'Listening':'Live Talk connected';
+  const stage=state.liveTalkStopRequested?'Finalizando sua vez':state.liveMuted?'Microfone silenciado':state.liveStage==='error'?'Live Talk pausado':state.liveStage==='speaking'?'Falando':state.liveStage==='processing'?'Preparando resposta':state.liveStage==='connecting'?`Conectando ao ${liveProviderLabel}`:state.liveStage==='listening'?'Ouvindo':'Conectado';
   const latest=[...(state.messages||[])].reverse().find(m=>['assistant','user'].includes(m.role));
   const excerpt=latest?String(latest.content||'').replace(/\s+/g,' ').trim().slice(0,220):'';
   const bars=Array.from({length:41},(_,i)=>`<i style="--wave:${12+((i*17)%39)}%;--delay:${(i%13)*-0.09}s"></i>`).join('');
-  return `<main class="live-talk-experience" id="main-content" tabindex="-1" aria-label="Conversa por voz em tempo real">
+  return `<main class="live-talk-experience orb-theme-${state.voiceAvatar}" id="main-content" tabindex="-1" aria-label="Conversa por voz em tempo real">
     <div class="live-talk-scene" aria-hidden="true"></div>
     <header class="live-talk-header">
       <button type="button" class="live-glass-button" id="live-talk-minimize" aria-label="Voltar ao chat" title="Voltar ao chat">${icon('back')}</button>
-      <div class="live-pill"><i></i>LIVE</div>
+      <div class="live-talk-brand"><span class="live-brand-bolt" aria-hidden="true">ϟ</span><strong>Oly<span>Hub</span></strong></div>
+      <div class="live-talk-brand-label">LIVE TALK</div><div class="live-pill"><i></i>LIVE</div>
     </header>
     <section class="live-talk-center" aria-live="polite">
-      <p class="live-talk-status ${state.liveStage==='speaking'?'is-speaking':''}">${state.liveStage==='speaking'?'<span class="zeus-speaking-bolt" aria-hidden="true">⚡</span>':''}${esc(stage)}</p>
-      <div class="live-talk-orb-wrap has-poseidon-art">${voiceAvatarMarkup()}<span class="live-talk-orbit live-talk-orbit-a"></span><span class="live-talk-orbit live-talk-orbit-b"></span></div>
+      <div class="live-talk-orb-wrap orb-stage-${state.voiceAvatar} ${VOICE_AVATARS[state.voiceAvatar]?.image?'has-orb-art':''}">${voiceAvatarMarkup()}<span class="live-fluid-orb" aria-hidden="true"><i></i><i></i><i></i></span></div>
       <div class="live-talk-waveform ${state.liveStage==='speaking'?'is-speaking':''}" aria-hidden="true">${bars}</div>
-      <p class="live-talk-latest">${state.liveAgentPartial?`<span class="muted">You:</span> ${esc(state.liveAgentPartial)}`:excerpt?esc(excerpt):'Fale naturalmente. Sua conversa será salva no chat.'}</p>
+      <p class="live-talk-status ${state.liveStage==='speaking'?'is-speaking':''}"><span class="live-mic-dot"></span>${state.liveStage==='speaking'?'<span class="zeus-speaking-bolt" aria-hidden="true">⚡</span>':''}${esc(stage)}</p>
+      <p class="live-talk-latest">${state.liveAgentPartial?`<span class="muted">Você:</span> ${esc(state.liveAgentPartial)}`:excerpt?esc(excerpt):'Fale naturalmente. Sua conversa será salva no chat.'}</p>
       <div class="live-talk-mode"><span class="live-mode-dot"></span>${liveProviderShort} <span>·</span> ${esc(state.liveLocale==='auto'?'AUTO LANGUAGE':state.liveLocale.toUpperCase())}</div>
     </section>
     ${state.error?`<div class="live-talk-error" role="alert">${esc(state.error)}${state.liveStage==='error'?`<button type="button" id="live-talk-retry">${state.liveFailureKind==='playback_blocked'?'Tap to resume':'Reconnect Realtime'}</button>`:''}</div>`:''}
     <p class="live-voice-note" role="status">${state.liveProvider==='openai'?'OpenAI voice · '+state.openaiLiveVoice:'Realtime voice active'}</p>
-    <form class="live-talk-text-form" id="live-talk-text-form" aria-label="Send a typed message to the live agent"><label class="sr-only" for="live-talk-text">Type a message if voice recognition misunderstood</label><input id="live-talk-text" name="message" type="text" maxlength="4000" autocomplete="off" enterkeyhint="send" placeholder="Miscommunication? Type your message…" value="${esc(state.liveTextDraft)}"><button type="submit" aria-label="Send typed message" title="Send typed message" ${state.sending?'disabled':''}>${icon('send')}</button><span class="sr-only" id="live-talk-text-status" aria-live="polite">${esc(state.liveTextStatus)}</span></form>
-    <footer class="live-talk-controls"><div class="live-control-hint"><span class="live-mic-dot"></span>${state.liveMuted?'Your microphone is muted · session audio continues':state.liveStage==='listening'?'Your microphone is active':state.liveStage==='processing'?'Voice captured':state.liveStage==='speaking'?'Speaking':state.liveStage==='error'?'Live Talk paused':'Session ready'}</div><div class="live-call-actions"><button type="button" class="live-mute-button ${state.liveMuted?'is-muted':''}" id="live-talk-mute" aria-pressed="${state.liveMuted}" aria-label="${state.liveMuted?'Unmute your microphone; session audio continues':'Mute your microphone; session audio continues'}" title="${state.liveMuted?'Unmute your microphone':'Mute your microphone'}">${icon(state.liveMuted?'mic-off':'mic')}</button><button type="button" class="live-end-call" id="live-talk-end" aria-label="End Live Talk" title="End Live Talk">${icon('close')}</button></div><div class="live-control-caption">Mute your microphone; the voice agent can keep speaking</div></footer>
+    <form class="live-talk-text-form" id="live-talk-text-form" aria-label="Enviar mensagem de texto ao agente"><label class="sr-only" for="live-talk-text">Digite uma mensagem</label><input id="live-talk-text" name="message" type="text" maxlength="4000" autocomplete="off" enterkeyhint="send" placeholder="Digite uma mensagem..." value="${esc(state.liveTextDraft)}"><button type="submit" aria-label="Enviar mensagem" title="Enviar mensagem" ${state.sending?'disabled':''}>${icon('send')}</button><span class="sr-only" id="live-talk-text-status" aria-live="polite">${esc(state.liveTextStatus)}</span></form>
+    <footer class="live-talk-controls"><div class="live-control-hint"><span class="live-mic-dot"></span>${state.liveMuted?'Microfone silenciado · sessão continua':state.liveStage==='listening'?'Ouvindo':state.liveStage==='processing'?'Áudio recebido':state.liveStage==='speaking'?'Falando':state.liveStage==='error'?'Live Talk pausado':'Sessão pronta'}</div><div class="live-call-actions"><button type="button" class="live-mute-button ${state.liveMuted?'is-muted':''}" id="live-talk-mute" aria-pressed="${state.liveMuted}" aria-label="${state.liveMuted?'Ativar microfone':'Silenciar microfone'}" title="${state.liveMuted?'Ativar microfone':'Silenciar microfone'}">${icon(state.liveMuted?'mic-off':'mic')}</button><button type="button" class="live-end-call" id="live-talk-end" aria-label="Encerrar Live Talk" title="Encerrar Live Talk">${icon('close')}</button></div><div class="live-control-caption">O agente pode continuar falando com o microfone silenciado</div></footer>
   </main>`;
 }
 function liveTalkDock(){
   const status=state.liveTalkStopRequested?'Finishing turn':state.liveMuted?'Mic muted · session audio on':state.liveStage==='speaking'?'Speaking':state.liveStage==='processing'?'Processing':state.liveStage==='error'?'Paused':state.liveStage==='connecting'?'Connecting':'Listening';
   return `<aside class="live-talk-dock" role="region" aria-label="Live Talk controls"><button type="button" class="live-dock-open" id="live-talk-dock-open" aria-label="Open Live Talk"><span class="live-dock-light ${state.liveStage==='error'?'is-error':''}"></span><span class="live-dock-copy"><strong>LIVE TALK</strong><small>${esc(status)}</small></span><span class="live-dock-expand" aria-hidden="true">↗</span></button><button type="button" class="live-dock-action ${state.liveMuted?'is-muted':''}" id="live-talk-dock-mute" aria-pressed="${state.liveMuted}" aria-label="${state.liveMuted?'Unmute your microphone; session audio continues':'Mute your microphone; session audio continues'}" title="${state.liveMuted?'Unmute your microphone':'Mute your microphone'}">${icon(state.liveMuted?'mic-off':'mic')}</button><button type="button" class="live-dock-action live-dock-end" id="live-talk-dock-end" aria-label="End Live Talk" title="End Live Talk">${icon('close')}</button></aside>`;
 }
-function appView(){const page=state.tab==='Home'?homeView():state.tab==='Projects'?projectsView():state.tab==='Tools'?toolsView():state.tab==='Zeus'?zeusRealmView():state.tab==='Files'?filesView():settingsView();return `<div class="app-shell">${sidebar()}<main class="main" id="main-content" tabindex="-1">${topbar()}${page}</main><div id="modal-root"></div>${state.liveTalkMinimized&&state.liveTalk?liveTalkDock():''}${state.liveTalk&&!state.liveTalkMinimized?liveTalkExperience():''}</div>`}
+function appView(){const page=state.tab==='Home'?homeView():state.tab==='Projects'?projectsView():state.tab==='Tools'?toolsView():state.tab==='Team'?teamView():state.tab==='Zeus'?zeusRealmView():state.tab==='Files'?filesView():settingsView();return `<div class="app-shell">${sidebar()}<main class="main" id="main-content" tabindex="-1">${topbar()}${page}</main>${mobileBottomNav()}<div id="modal-root"></div>${state.liveTalkMinimized&&state.liveTalk?liveTalkDock():''}${state.liveTalk&&!state.liveTalkMinimized?liveTalkExperience():''}</div>`}
 function focusKey(el){
   if(!el||el===document.body||!app.contains(el))return null;
   if(el.id)return `#${CSS.escape(el.id)}`;
@@ -1223,6 +1313,17 @@ function bind(){
   $('#hamburger')?.addEventListener('click',()=>{state.drawer=!state.drawer;render();if(state.drawer)requestAnimationFrame(()=>$('.sidebar .side-nav button.active,.sidebar .side-nav button')?.focus())}); $('#scrim')?.addEventListener('click',()=>{state.drawer=false;render();$('#hamburger')?.focus()});
   $$('[data-message-feedback]').forEach(button=>button.addEventListener('click',()=>setMessageFeedback(button.dataset.messageId,button.dataset.messageFeedback)));
   $$('[data-message-speak]').forEach(button=>button.addEventListener('click',()=>toggleMessageSpeech(button.dataset.messageSpeak)));
+  $$('[data-message-copy]').forEach(button=>button.addEventListener('click',()=>copyAssistantMessage(button.dataset.messageCopy)));
+  $$('[data-message-share]').forEach(button=>button.addEventListener('click',()=>shareAssistantMessage(button.dataset.messageShare)));
+  $$('[data-message-more]').forEach(button=>button.addEventListener('click',()=>{const id=button.dataset.messageMore;state.openMessageMenuId=state.openMessageMenuId===id?'':id;render();}));
+  $$('[data-message-press]').forEach(body=>body.addEventListener('click',event=>{
+    if(event.target.closest('a,button,input,textarea,select,pre,code'))return;
+    const id=body.dataset.messagePress;state.openMessageMenuId=state.openMessageMenuId===id?'':id;render();
+  }));
+  $$('[data-message-audit]').forEach(button=>button.addEventListener('click',()=>auditAssistantMessage(button.dataset.messageAudit)));
+  $$('[data-message-compare]').forEach(button=>button.addEventListener('click',()=>compareAssistantMessage(button.dataset.messageCompare)));
+  $$('[data-message-compare-image]').forEach(button=>button.addEventListener('click',()=>startImageComparison(button.dataset.messageCompareImage)));
+  $$('[data-message-combine]').forEach(button=>button.addEventListener('click',()=>combineAssistantMessages(button.dataset.messageCombine)));
   $('#close-navigation')?.addEventListener('click',()=>{state.drawer=false;render();$('#hamburger')?.focus()});
   $$('.copy-code').forEach(button=>button.addEventListener('click',async()=>{
     const code=button.parentElement.querySelector('code')?.textContent||'';
@@ -1276,7 +1377,7 @@ function bind(){
       state.error=error.message||'Could not save preferences.';
     }finally{if(button)button.disabled=false;}
   });
-  $('#voice-avatar')?.addEventListener('change',e=>{const v=e.target.value;if(VOICE_AVATARS.has(v)){state.voiceAvatar=v;localStorage.setItem('zeus-voice-avatar',v);render();}});
+  $$('[data-voice-avatar]').forEach(button=>button.addEventListener('click',()=>{const v=button.dataset.voiceAvatar;if(VOICE_AVATARS[v]){state.voiceAvatar=v;localStorage.setItem('zeus-voice-avatar',v);render();}}));
   $('#live-provider')?.addEventListener('change',e=>{if(state.liveTalk)return;const v=e.target.value;if(['elevenlabs','openai'].includes(v)){state.liveProvider=v;try{localStorage.setItem('zeus-live-provider.v1',v)}catch{}render();}});
   $('#openai-live-voice')?.addEventListener('change',e=>{if(state.liveTalk)return;const v=e.target.value;if(OPENAI_VOICE_NAMES.includes(v)){state.openaiLiveVoice=v;try{localStorage.setItem('zeus-openai-live-voice.v1',v)}catch{}render();}});
 
@@ -1307,6 +1408,7 @@ function bind(){
       if(state.tab==='Projects'){await loadProjects();if(state.currentProject?.id)await hydrateProjectWorkspace(state.currentProject.id,{loadConversation:false});else state.tasks=[];}
       if(state.tab==='Files')await Promise.all([loadFiles(),loadArtifacts()]);
       if(state.tab==='Tools')await Promise.all([loadHealth(),loadFiles(),loadArtifacts(),loadToolModels()]);
+      if(state.tab==='Team'&&!state.realmInventoryLoaded)await loadRealmInventory();
       if(state.tab==='Code Agent'){
         try{state.codeAgentRepo=localStorage.getItem('olyhub.code-agent.repo.v1')||state.codeAgentRepo;state.codeAgentBranch=localStorage.getItem('olyhub.code-agent.branch.v1')||state.codeAgentBranch;}catch{}
         await loadCodeAgentJobs();
@@ -1424,8 +1526,9 @@ function bind(){
   $('#approve-olympus-five')?.addEventListener('click',approveNextOlympusFive);
   $('#load-older-messages')?.addEventListener('click',loadOlderMessages);
   $('#load-older-outputs')?.addEventListener('click',loadOlderOutputs);
-  $('#create-project')?.addEventListener('click',projectModal); $('#home-create-project')?.addEventListener('click',projectModal); $('#create-project-empty')?.addEventListener('click',projectModal); $('#sidebar-create-project')?.addEventListener('click',()=>{state.drawer=false;render();projectModal();});
+  $('#create-project')?.addEventListener('click',projectModal); $('#create-project-empty')?.addEventListener('click',projectModal); $('#sidebar-create-project')?.addEventListener('click',()=>{state.drawer=false;render();projectModal();});
   $('#sidebar-new-chat')?.addEventListener('click',newChat);
+  $('#team-refresh')?.addEventListener('click',async()=>{state.realmInventoryLoaded=false;try{await loadRealmInventory()}catch{}render();});
   $$('[data-filter]').forEach(b=>b.addEventListener('click',()=>{state.projectFilter=b.dataset.filter;render()}));
   $$('[data-project]').forEach(b=>{b.addEventListener('click',()=>openProjectWorkspace(b.dataset.project));b.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();openProjectWorkspace(b.dataset.project);}});});
   $$('[data-project-section]').forEach(b=>b.addEventListener('click',async()=>{state.projectSection=b.dataset.projectSection;try{if(state.projectSection==='MEMORY'&&state.currentProject)await loadMemories(state.currentProject.id);if(state.projectSection==='SOURCE'&&state.currentProject)await loadProjectSources();}catch(err){state.error=err?.message||'Could not load project memory.';}render();resetViewport()}));
@@ -1690,6 +1793,7 @@ async function sendText(text,pendingAttachments=[],requestId=crypto.randomUUID()
       ...(toolRun?{toolId:state.currentToolId}:{}),
       ...(liveTalkTurn?{liveTalk:true}:{}),
       ...(options?.imageOptions?{imageOptions:options.imageOptions}:{}),
+      ...(typeof options?.compareAnswerToMessageId==='string'?{compareAnswerToMessageId:options.compareAnswerToMessageId}:{}),
       ...(/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(options?.compareImageSourceId||''))?{compareImageSourceId:options.compareImageSourceId}:{}),
       mode,
       requestId,

@@ -1,0 +1,129 @@
+{
+  "version": 1,
+  "updated": "2026-11-08",
+  "realms": [
+    {
+      "id": "zeus", "name": "Zeus", "role": "DIREÇÃO · AUDITORIA", "title": "Zeus",
+      "description": "Direção e auditoria independente do OlyHub. O painel é um shell enquanto o pipeline de evidências não estiver implementado.",
+      "status": "shell", "modelStatus": "NÃO HOMOLOGADO",
+      "model": "DeepSeek é uma opção para avaliação do auditor; nenhuma versão ou rota foi homologada. Não executa auditoria independente hoje.",
+      "skills": [
+        { "name": "Auditoria independente", "status": "planned" },
+        { "name": "Evidências de execução, custo, falhas e aprovações", "status": "planned" },
+        { "name": "Parecer: aprovar, ressalvas ou rejeitar", "status": "planned" }
+      ]
+    },
+    {
+      "id": "poseidon", "name": "Poseidon", "role": "OLYHUB CORE · CHAT", "title": "Poseidon",
+      "description": "Abra uma conversa nova com o coordenador do OlyHub Core.",
+      "status": "active", "modelStatus": "PADRÃO EM EXECUÇÃO",
+      "model": "Texto: x-ai/grok-4.3 pelo Netlify AI Gateway, com fallback conforme configuração do servidor. Live Talk: OpenAI Realtime padrão; ElevenLabs Realtime opcional.",
+      "skills": [
+        { "name": "Coordenar conversa, contexto de projeto e memória aprovada", "status": "active" },
+        { "name": "Delegar pedidos explícitos a workflows especialistas", "status": "active" },
+        { "name": "Comandos de projetos e tarefas", "status": "active" },
+        { "name": "Live Talk com identidade visual selecionada pela esfera", "status": "active" }
+      ]
+    },
+    {
+      "id": "athena", "name": "Athena", "role": "PESQUISA · INTELIGÊNCIA", "title": "Pesquisa e conhecimento",
+      "description": "Pesquisa na web, fontes, análise e documentos. Héstia e Mnemosine são capacidades internas.",
+      "status": "active", "modelStatus": "ROTEAMENTO DINÂMICO",
+      "model": "O backend seleciona candidatos disponíveis para pesquisa/análise e documentos. GPT-6 Luna, Claude e Grok são opções de blueprint, não uma lista fixa de modelos ativos.",
+      "skills": [
+        { "name": "Pesquisa web com fontes", "status": "active" },
+        { "name": "Documentos e conhecimento", "status": "active" },
+        { "name": "Análise e síntese", "status": "active" },
+        { "name": "Revisão interna de fontes (Héstia)", "status": "internal" },
+        { "name": "Recuperação de memória relevante (Mnemosine)", "status": "internal" }
+      ]
+    },
+    {
+      "id": "hefesto", "name": "Hefesto", "role": "ENGENHARIA · CÓDIGO", "title": "Engenharia e código",
+      "description": "Implementação, depuração e revisão de código pelo workflow dedicado.",
+      "status": "active", "modelStatus": "POOL DINÂMICO · 5 MODELOS",
+      "model": "O workflow de código expõe cinco modelos elegíveis. A seleção usa disponibilidade e roteamento; os nomes individuais aparecem na lista de modelos conectados abaixo.",
+      "skills": [
+        { "name": "Ler repositórios e planejar mudanças", "status": "active" },
+        { "name": "Implementar código e corrigir bugs", "status": "active" },
+        { "name": "Executar verificações disponíveis", "status": "active" },
+        { "name": "Code Agent com fila, aprovação e publicação em commit único", "status": "active" }
+      ]
+    },
+    {
+      "id": "apollo", "name": "Apollo", "role": "DIREÇÃO VISUAL · IMAGENS", "title": "Design e imagens",
+      "description": "Geração e edição visual usando os modelos de imagem habilitados.",
+      "status": "active", "modelStatus": "POOL CONECTADO · 6 MODELOS",
+      "model": "A lista de modelos efetivamente conectados vem do backend. Os seis candidatos disponíveis são exibidos acima quando a configuração do Gateway permite.",
+      "skills": [
+        { "name": "Direção visual e geração de imagens", "status": "active" },
+        { "name": "Edição de imagens", "status": "active" },
+        { "name": "Comparação e refinamento de imagens", "status": "active" },
+        { "name": "Brand Studio, biblioteca de assets e handoff para Hefesto", "status": "planned" }
+      ]
+    },
+    {
+      "id": "dionisio", "name": "Dionísio", "role": "ÁUDIO · VÍDEO", "title": "Mídia",
+      "description": "O Realm dedicado de áudio e vídeo ainda não está conectado. Poseidon Voice é uma interface de conversa separada.",
+      "status": "planned", "modelStatus": "PARCIALMENTE DEFINIDO",
+      "model": "ElevenLabs é prioridade planejada para voz de produção. Modelos de vídeo e fluxo completo ainda não foram escolhidos nem conectados.",
+      "skills": [
+        { "name": "Audiobook: preparar, gerar por partes, revisar, mixar e exportar", "status": "planned" },
+        { "name": "Produção de áudio e voz", "status": "planned" },
+        { "name": "Produção de vídeo · 1080p padrão e 4K opcional", "status": "planned" }
+      ]
+    },
+    {
+      "id": "peitho", "name": "Peitho", "role": "MARKETING · AQUISIÇÃO", "title": "Marketing e aquisição",
+      "description": "Estratégia de conteúdo, canais, campanhas e métricas; integração ainda não implementada.",
+      "status": "planned", "modelStatus": "ROTEAMENTO CANDIDATO · NÃO ATIVO",
+      "model": "Gemini Flash, Llama pequeno, Qwen e Claude Haiku são candidatos para avaliação por tarefa; nenhum está conectado a um workflow Peitho.",
+      "skills": [
+        { "name": "Tendências, calendário e campanhas", "status": "planned" },
+        { "name": "Anúncios e métricas CTR/CAC/ROAS", "status": "planned" },
+        { "name": "Audiência e testes A/B", "status": "planned" },
+        { "name": "Fila de aprovação; publicação e orçamento exigem autorização", "status": "planned" }
+      ]
+    },
+    {
+      "id": "demeter", "name": "Deméter", "role": "COMÉRCIO · OPERAÇÕES", "title": "Negócios e comércio",
+      "description": "Operações, clientes, catálogo e métricas comerciais; integração ainda não implementada.",
+      "status": "planned", "modelStatus": "ROTEAMENTO CANDIDATO · NÃO ATIVO",
+      "model": "Cálculos determinísticos, Llama pequeno, Qwen, Gemini Flash e Claude Haiku são opções para avaliação; nenhum workflow Deméter está conectado.",
+      "skills": [
+        { "name": "Vendas, produtos, pedidos e CRM", "status": "planned" },
+        { "name": "Pipeline, assinaturas e operações financeiras", "status": "planned" },
+        { "name": "Stripe e Shopify como integrações prioritárias", "status": "planned" },
+        { "name": "Isolamento de dados entre empresas", "status": "planned" }
+      ]
+    },
+    {
+      "id": "hermes", "name": "Hermes", "role": "COMUNICAÇÕES", "title": "Comunicações",
+      "description": "Gmail, Calendar e Drive estão disponíveis em modo de leitura pelas integrações Google.",
+      "status": "partial", "modelStatus": "REALM PLANEJADO · GOOGLE READ-ONLY ATIVO",
+      "model": "Gemini 2.5 Flash-Lite é o modelo planejado para o Realm Hermes; o backend atual não tem um executor Hermes de mensagens.",
+      "skills": [
+        { "name": "Gmail, Calendar e Drive · leitura no chat", "status": "active" },
+        { "name": "Inbox, chat, contas, rascunhos e automações", "status": "planned" },
+        { "name": "Relatórios, notificações e atividade", "status": "planned" },
+        { "name": "Permissões separadas para ler, rascunhar e enviar", "status": "planned" }
+      ]
+    },
+    {
+      "id": "hades", "name": "Hades", "role": "SEGURANÇA · PROTEÇÃO", "title": "Segurança",
+      "description": "O Core aplica verificações de segurança. O Realm especialista Hades ainda não está conectado.",
+      "status": "planned", "modelStatus": "MODELO NÃO DEFINIDO",
+      "model": "Controles críticos determinísticos devem funcionar sem orçamento de IA; nenhum modelo especialista foi homologado.",
+      "skills": [
+        { "name": "Políticas e controle de acesso", "status": "planned" },
+        { "name": "Proteção de segredos e integrações", "status": "planned" },
+        { "name": "Auditoria, incidentes e recuperação", "status": "planned" },
+        { "name": "Bloqueio crítico imposto pelo backend", "status": "planned" }
+      ]
+    }
+  ],
+  "internalCapabilities": [
+    { "id": "hestia", "name": "Héstia", "role": "Revisão interna de fontes", "status": "internal" },
+    { "id": "mnemosine", "name": "Mnemosine", "role": "Recuperação interna de memória", "status": "internal" }
+  ]
+}

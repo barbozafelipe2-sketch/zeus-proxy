@@ -111,7 +111,7 @@ const mustContain = [
   [app,'openProjectWorkspace','project workspace loader'],
   [app,"state.tab=state.currentProject?'Projects':'Home'",'project conversations route back to Projects'],
   [app,'resetViewport','mobile tab scroll reset'],
-  [css,'OH-004.2.7 — product finish pass','4.2.7 product finish UI'],
+  [css,'Tools catalog and product finish styles','tools catalog UI'],
   [contextBuilder,'PERSISTENT CONVERSATION HISTORY','conversation history injected into model context'],
   [contextBuilder,'PROJECT PERMANENT MEMORY','project memory injected into model context'],
   [contextBuilder,'PROJECT TASKS','project tasks injected into model context'],
@@ -178,6 +178,12 @@ const mustContain = [
   [executionPolicy,'turboApprovalFingerprint','request-bound Turbo approval'],
   [executionPolicy,'externalMutationPolicy','external mutation policy'],
   [health,'serverTranscriptionConfigured()','health reports actual transcription readiness'],
+  [health,"workspaceAccess:'deployment_unverified'",'health does not claim to know Netlify visitor access'],
+  [health,'cannot be verified by this endpoint','deployment perimeter limitation is explicit'],
+  [app,'Netlify visitor access','Settings exposes the deployment access check'],
+  [app,'VERIFY IN NETLIFY','unverified deployment access is not shown as ready'],
+  [app,"api('/api/tool-models')",'catalog loads runtime model candidates from the backend'],
+  [read('netlify/functions/tool-models.mjs'),"path:'/api/tool-models'",'tool model catalog API route'],
   [auth,'single-owner personal workspace','single-owner personal workspace documentation'],
   [auth,'DATABASE_UNAVAILABLE','controlled database bootstrap failure'],
   [chat,'olympusFallback','Olympus to Zeus fallback'],
@@ -247,6 +253,17 @@ const mustContain = [
   [dbShared,"client.query('BEGIN')",'database transaction helper'],
 ];
 for (const [haystack,needle,label] of mustContain) if (!haystack.includes(needle)) throw new Error(`Missing ${label}`);
+
+const catalogDeities=['zeus','poseidon','athena','hefesto','apollo','dionisio','peitho','demeter','hermes','hades'];
+for(const deity of catalogDeities){
+  const asset=`public/assets/${deity}-tool-portrait.webp`;
+  if(!existsSync(asset))throw new Error(`Missing catalog portrait for ${deity}: ${asset}`);
+  if(!css.includes(`/${deity}-tool-portrait.webp`))throw new Error(`Catalog portrait is not wired to CSS: ${deity}`);
+}
+if(/olyhub-gods-tools-reference\.jpeg|727px 1536px|-17px -648px/.test(read('public/styles.css')+css))
+  throw new Error('Legacy sprite-sheet portrait positioning is still active.');
+if(readme.includes('The current Netlify site requires SSO')||health.includes('Access is open; configure Netlify'))
+  throw new Error('Deployment perimeter access is being reported without runtime evidence.');
 
 if (app.includes('data-routing-mode=') || app.includes('data-mode=')) throw new Error('Legacy mode selectors must stay removed from the Poseidon chat.');
 
@@ -338,7 +355,7 @@ const baselineHash=createHash('sha256').update(readFileSync(baseline)).digest('h
 const expected='90dece71adbd153d42168585fab6988e000fec715c33a6bef3595c2096a52d70';
 if(baselineHash!==expected) throw new Error(`Applied baseline migration changed: ${baselineHash}`);
 
-console.log('OlyHub OH-004.3.4 POLISH CANDIDATE verification: PASS');
+console.log('OlyHub OH-004.3.4 verification: PASS');
 console.log(`Baseline migration SHA-256: ${baselineHash}`);
 console.log('Verified: hardened foundation and Final Fix invariants preserved; 4.3.4 product-polish, source-grounding, long-document and release-gate invariants present.');
 
