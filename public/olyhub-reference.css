@@ -207,6 +207,48 @@ body .live-talk-orb-wrap .zeus-voice-presence:not(.orb-art) .zeus-voice-core{wid
 @media(max-width:680px){.automations-page{padding:20px 15px calc(30px + env(safe-area-inset-bottom))}.automations-page .page-head{display:grid;grid-template-columns:1fr}.automations-page #automation-refresh{width:100%;min-height:44px}.automation-truth-note{grid-template-columns:auto minmax(0,1fr);padding:16px}.automation-count{grid-column:2;justify-self:start}.automation-grid{grid-template-columns:1fr}.automation-card{padding:14px}}
 @media(prefers-reduced-motion:reduce){.automation-card{transition:none}}
 
+/* Final OlyHub identity pass: retire the legacy gold accent across shared UI. */
+:root{--gold:#39dfff;--gold2:#8cecff;--gold3:#4352b8;--zeus-gold:#70eaff}
+.icon-btn.recording{background:rgba(0,202,255,.16)!important;color:#9befff!important;box-shadow:0 0 0 2px rgba(34,223,252,.75),0 0 16px rgba(0,190,255,.28)!important}
+.mode-card.selected{border-color:#25dcff!important;box-shadow:0 0 0 1px rgba(0,211,255,.32),0 0 24px rgba(0,168,255,.12)!important}
+.mode-icon,.new-chat .ico,.private-preview-generic .ico{color:#6feaff!important}
+.message-label,.text-gold,.chev-link,.proj-thumb,.proj-row em{color:#64e7ff!important}
+.avatar{border-color:rgba(42,218,255,.72)!important}
+.artifact-actions a,.artifact-actions button:not(.ghost-a),.project-tabs button.active{color:#fff!important;background:linear-gradient(120deg,#00bfe9,#3759ff 58%,#a52cff)!important;border-color:transparent!important}
+.progress span{background:linear-gradient(90deg,#00dcf4,#5667ff 58%,#c536ff)!important}
+.skip-link{background:linear-gradient(120deg,#00c9ed,#5766ff 58%,#a82dff)!important;color:#fff!important}
+html.is-busy body::before{background:linear-gradient(90deg,transparent,#20ddff,#a837ff,transparent)!important}
+.markdown-body a{color:#74eaff!important}
+.side-add{color:#75eaff!important;border-color:rgba(58,205,255,.35)!important}
+.project-nav-link:hover,.project-nav-link.active{background:rgba(46,149,255,.14)!important;color:#e6faff!important}
+.project-nav-link.active .ico,.project-nav-link .ico{color:#69e7ff!important}
+.side-view-all{color:#72e8ff!important}
+.nav-context-menu summary:hover,.nav-context-menu[open] summary,.project-card-menu summary:hover,.project-card-menu[open] summary{color:#8beeff!important}
+.project-card-shell:hover{border-color:rgba(54,215,255,.62)!important}
+.proj-card-main:focus-visible{outline-color:#42e4ff!important}
+.attach-menu{border-color:rgba(50,205,255,.35)!important;background:rgba(5,10,35,.98)!important}
+.attach-menu button{color:#e6f2ff!important}
+.attach-menu button:hover,.attach-menu button:focus-visible{background:rgba(32,162,255,.12)!important;outline-color:rgba(75,211,255,.4)!important}
+.zeus-realm-emblem{border-color:rgba(43,211,255,.4)!important;background:linear-gradient(145deg,rgba(0,172,255,.15),rgba(74,38,155,.24))!important;color:#65e5ff!important}
+.zeus-realm-state{border-color:rgba(89,113,234,.52)!important;background:rgba(12,17,51,.86)!important;color:#b8c9ff!important}
+.zeus-realm-state i{background:#24ddff!important;box-shadow:0 0 10px rgba(36,221,255,.65)!important}
+.zeus-realm-notice{border-color:rgba(58,177,255,.32)!important;background:linear-gradient(125deg,rgba(6,30,76,.76),rgba(10,13,40,.96) 72%)!important}
+.zeus-realm-notice .eyebrow,.zeus-planned-head .eyebrow{color:#73e8ff!important}
+.zeus-status-card,.zeus-planned-panel{border-color:rgba(80,113,220,.32)!important;background:linear-gradient(145deg,rgba(8,17,47,.92),rgba(11,12,38,.96))!important}
+.zeus-planned-badge,.zeus-planned-state{border-color:rgba(154,111,255,.4)!important;background:rgba(95,48,166,.14)!important;color:#cfb8ff!important}
+.settings-page .settings-card,.settings-page .card{border-color:rgba(77,120,232,.34)!important;background:linear-gradient(150deg,rgba(8,17,46,.96),rgba(8,13,35,.98) 68%,rgba(19,10,46,.94))!important;color:#f4f7ff}
+.settings-page .eyebrow{color:#c0b5ff!important}
+.settings-page .avatar{border-color:#35dfff!important;color:#8aeaff!important}
+.settings-page input:focus,.settings-page select:focus,.settings-page textarea:focus{border-color:#41dfff!important;box-shadow:0 0 0 3px rgba(42,199,255,.16)!important}
+@media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}
+
+/* Match the OlyHub bolt from the supplied reference; keep every selected control cyan/violet. */
+.olyhub-mark{filter:drop-shadow(0 0 6px rgba(0,222,255,.72)) drop-shadow(0 0 14px rgba(167,52,255,.56))}
+.live-talk-orb-choice:hover{border-color:#43dfff!important}
+.live-talk-orb-choice.selected{border-color:#7beaff!important;box-shadow:0 0 0 2px rgba(0,211,255,.28),0 0 18px rgba(70,89,255,.3)!important}
+body .settings-page .voice-orb-option:hover{border-color:rgba(42,218,255,.72)!important}
+body .settings-page .voice-orb-option.selected{border-color:transparent!important;background:linear-gradient(145deg,rgba(0,173,255,.18),rgba(27,18,79,.94)) padding-box,linear-gradient(115deg,#13dcff,#5f62ff 58%,#d43fff) border-box!important;box-shadow:inset 0 0 0 1px rgba(89,191,255,.16),0 0 20px rgba(61,89,255,.2)!important;color:#f5f8ff!important}
+
 /* Conversation screen: restore the OlyHub reference after legacy cascade rules. */
 body .home-workspace.has-messages .chat-scroll,
 body .home-workspace.is-empty .chat-scroll{
