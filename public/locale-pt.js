@@ -61,6 +61,7 @@ const translations = new Map(Object.entries({
   'Files & Library':'Arquivos e resultados', 'Files & outputs':'Arquivos e resultados', 'Upload files':'Enviar arquivos', 'Upload':'Enviar', 'All outputs':'Todos os arquivos', 'Load older':'Ver anteriores',
   'Upload, analyze, and keep everything in context across all your projects and conversations.':'Envie e organize arquivos dos seus projetos e conversas.',
   'Upload, analyze, and keep files and generated artifacts connected to your conversations and projects.':'Organize arquivos enviados e resultados gerados em suas conversas e projetos.',
+  'Upload, analyze, and keep files and generated artifacts connected to Poseidon conversations and projects.':'Envie, analise e mantenha arquivos e resultados gerados conectados às conversas do Poseidon e aos projetos.',
   'Your library starts with the first source or deliverable.':'Seus arquivos aparecerão aqui.',
   'Upload a source for analysis, or ask Zeus/Olympus to create a document, image, spreadsheet, presentation or ZIP.':'Envie um arquivo para análise ou peça um documento, imagem, planilha, apresentação ou ZIP.',
   'Workspace settings':'Configurações', 'Account and advanced runtime diagnostics.':'Sua conta e o estado dos serviços.', 'Account':'Conta',
