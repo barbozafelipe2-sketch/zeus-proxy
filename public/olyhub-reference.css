@@ -101,3 +101,23 @@ body{background-color:var(--oly-ink)}
 .orb-theme-olyhub .live-end-call{border-color:rgba(255,79,132,.7);background:radial-gradient(circle at 35% 25%,#fa5387,#a30f4e 76%);box-shadow:0 0 18px rgba(255,42,118,.26)}
 .orb-theme-olyhub .live-talk-controls,.orb-theme-olyhub .live-control-caption,.orb-theme-olyhub .live-control-hint{color:#d8e2fb}
 .orb-theme-olyhub .live-control-hint{border-color:rgba(77,160,243,.3);background:rgba(7,14,44,.62)}
+
+
+/* Real, client-side search and type filters for the loaded project library. */
+.project-search-box,.file-library-search{display:flex;align-items:center;gap:10px;max-width:720px;min-height:48px;margin:0 0 14px;padding:0 15px;border:1px solid rgba(73,129,226,.42);border-radius:15px;background:linear-gradient(120deg,rgba(9,23,62,.88),rgba(13,12,45,.9) 72%,rgba(32,12,58,.84));color:#b7c9ee;box-shadow:inset 0 1px rgba(255,255,255,.05)}
+.project-search-box:focus-within,.file-library-search:focus-within{border-color:rgba(31,218,255,.8);box-shadow:0 0 0 2px rgba(36,206,255,.14),0 0 20px rgba(44,107,255,.12)}
+.project-search-box .ico,.file-library-search .ico{width:19px;height:19px;flex:0 0 auto;color:#4de4ff}
+.project-search-box input,.file-library-search input{width:100%;min-width:0;border:0;outline:0;background:transparent;color:#f6f8ff;font:inherit}
+.project-search-box input::placeholder,.file-library-search input::placeholder{color:#a1b0d3}
+.projects-page .project-tabs{max-width:100%;overflow-x:auto}
+.projects-page .project-tabs button,.file-library-filters button{white-space:nowrap}
+.file-library-filters{display:flex;gap:8px;max-width:100%;overflow-x:auto;padding:2px 1px 10px;scrollbar-width:thin}
+.file-library-filters button{min-height:37px;padding:8px 15px;border:1px solid rgba(81,113,201,.35);border-radius:999px;background:rgba(7,14,43,.78);color:#c4cce8;cursor:pointer}
+.file-library-filters button.active{border-color:rgba(37,220,255,.72);background:linear-gradient(110deg,rgba(0,194,255,.24),rgba(74,76,244,.24) 65%,rgba(189,42,255,.22));color:#f8fbff;box-shadow:0 0 14px rgba(54,120,255,.14)}
+.library-search-note{margin:0 0 14px;color:#91a1c7;font-size:12px;line-height:1.45}
+.library-empty{padding:24px;border-radius:18px;background:linear-gradient(145deg,rgba(8,18,47,.94),rgba(14,12,44,.93));border-color:rgba(75,119,221,.32)}
+.library-empty strong{color:#f3f6ff}
+.library-empty p{max-width:62ch;color:#aebcdf}
+.project-search-empty{padding:34px;border-radius:18px;background:linear-gradient(145deg,rgba(8,18,47,.94),rgba(14,12,44,.93));border-color:rgba(75,119,221,.32)}
+.project-search-empty h2{color:#f3f6ff}
+@media(max-width:620px){.project-search-box,.file-library-search{max-width:none;min-height:46px}.file-library-filters{margin-right:-14px;padding-right:14px}.files-page .file-library-filters button{flex:0 0 auto}.library-search-note{font-size:11px}}
