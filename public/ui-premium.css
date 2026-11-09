@@ -1717,7 +1717,7 @@ body .message.assistant .message-body[data-message-press]{cursor:text}
 .live-talk-orb-wrap{width:min(72vw,560px);height:min(72vw,560px);min-width:0;min-height:0;max-width:560px;max-height:560px;margin:4px 0 0}
 .live-talk-orb-wrap:before{inset:-8%;background:radial-gradient(circle,rgba(0,208,255,.32),rgba(91,28,255,.21) 51%,transparent 73%);filter:blur(28px)}
 .live-talk-orb-wrap:after{inset:1%;border:2px solid rgba(140,136,255,.56);background:radial-gradient(circle at 35% 30%,rgba(0,200,255,.17),transparent 36%),linear-gradient(150deg,rgba(255,255,255,.04),transparent 42%,rgba(156,39,255,.11));box-shadow:inset 0 0 48px rgba(20,32,191,.54),0 0 20px rgba(0,182,255,.62),0 0 46px rgba(140,22,255,.6)}
-.live-talk-orb-wrap .zeus-voice-presence{display:none!important}
+
 .live-fluid-orb{position:absolute;inset:2%;display:block;overflow:hidden;border-radius:50%;background:radial-gradient(ellipse at 29% 32%,#14eaff 0%,#0966ef 17%,#06133e 43%,#030921 70%);box-shadow:inset -25px -35px 70px #08002c,inset 18px 15px 42px rgba(37,230,255,.84),inset 0 0 38px rgba(120,29,255,.73);isolation:isolate}
 .live-fluid-orb:before,.live-fluid-orb:after,.live-fluid-orb i{content:"";position:absolute;display:block;border-radius:50%;pointer-events:none;mix-blend-mode:screen}
 .live-fluid-orb:before{width:88%;height:48%;left:-4%;top:24%;transform:rotate(-22deg);background:linear-gradient(180deg,transparent 0%,rgba(9,87,255,.15) 25%,#11edff 39%,#d6ffff 43%,rgba(0,128,255,.86) 49%,rgba(19,39,202,.22) 70%,transparent 100%);filter:blur(7px);animation:fluid-wave-a 7s ease-in-out infinite alternate}
