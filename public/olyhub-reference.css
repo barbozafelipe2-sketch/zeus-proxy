@@ -40,3 +40,64 @@ body .home-workspace .composer .send-btn,body .project-chat-scroll~.composer-she
   .files-page .out-actions{grid-column:1/-1;justify-content:space-between;padding-left:60px}
   .files-page .out-actions button{min-height:38px}
 }
+
+
+/* OlyHub visual pass — preserve real workspace data and integration states. */
+:root{--oly-ink:#05091f;--oly-cyan:#22dffc;--oly-violet:#a64cff;--oly-text:#f6f7ff;--oly-muted:#aab7d9}
+body{background-color:var(--oly-ink)}
+.topbar{background:linear-gradient(100deg,rgba(4,8,31,.97),rgba(7,9,35,.96) 55%,rgba(20,7,41,.95));border-bottom-color:rgba(82,102,206,.28)}
+.sidebar{background:linear-gradient(180deg,rgba(5,10,34,.99),rgba(7,10,31,.98) 64%,rgba(18,8,42,.98));border-color:rgba(69,91,186,.28)}
+.page-head h1,.tools-hero h1,.project-workspace-head h1{color:var(--oly-text);letter-spacing:-.045em}
+.page-head p,.realm-heading-copy p{color:var(--oly-muted)}
+.mobile-bottom-nav{background:linear-gradient(100deg,rgba(4,8,31,.98),rgba(9,8,37,.98) 55%,rgba(20,7,42,.98));border-top:1px solid rgba(73,96,202,.36);backdrop-filter:blur(18px)}
+.mobile-bottom-nav button.active{color:#f8f8ff;background:linear-gradient(130deg,rgba(0,203,255,.14),rgba(89,69,255,.18) 54%,rgba(195,43,255,.16));box-shadow:inset 0 0 0 1px rgba(57,188,255,.32),0 0 18px rgba(75,89,255,.13);border-radius:14px}
+.mobile-bottom-nav button.active .ico{filter:drop-shadow(0 0 7px rgba(50,210,255,.55))}
+.page .card,.settings-card,.team-member-card,.team-audit-note,.out-row,.realm-zeus-feature,.tool-feature-card,.project-card-shell{border-color:rgba(76,112,220,.3);box-shadow:inset 0 1px rgba(255,255,255,.045),0 10px 26px rgba(0,0,0,.18)}
+.tools-catalog{max-width:1320px;margin-inline:auto}
+.tools-catalog .tools-hero{align-items:flex-end;gap:18px}
+.tools-catalog .realm-heading-copy h1{font-size:clamp(30px,4vw,46px)}
+.tool-list{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;align-items:stretch}
+.tool-feature-card{grid-template-columns:minmax(0,1fr)!important;grid-template-rows:150px auto auto;gap:0;padding:10px;border:1px solid rgba(81,112,228,.33);border-radius:20px;background:linear-gradient(155deg,rgba(8,17,49,.97),rgba(12,12,48,.96) 65%,rgba(25,10,52,.95));box-shadow:0 10px 25px rgba(0,0,0,.2),inset 0 1px rgba(255,255,255,.05);transition:border-color .18s,box-shadow .18s,transform .18s}
+.tool-feature-card:hover{border-color:rgba(39,212,255,.65);box-shadow:0 12px 28px rgba(0,0,0,.24),0 0 18px rgba(48,106,255,.13);transform:translateY(-2px)}
+.tool-god-portrait{grid-column:1!important;grid-row:1!important;width:100%;height:150px!important;min-height:0!important;align-self:auto;border-radius:15px;background-color:#101d4b}
+.tool-feature-copy{grid-column:1!important;grid-row:2!important;min-width:0;padding:15px 6px 4px}
+.tool-feature-copy h2{font-size:21px;letter-spacing:-.035em;color:#f7f8ff}
+.tool-feature-copy>p{color:#b7c4e5;line-height:1.55}
+.tool-feature-actions{grid-column:1!important;grid-row:3!important;display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:8px 6px 6px}
+.tool-feature-card .realm-badge{margin-right:auto}
+.tool-launch-button{border-color:rgba(39,206,255,.34);background:linear-gradient(110deg,rgba(0,180,255,.13),rgba(117,51,229,.16));color:#e7faff}
+.realm-zeus-feature{border-color:rgba(99,98,255,.44);background:linear-gradient(120deg,rgba(6,24,68,.94),rgba(13,12,53,.95) 63%,rgba(32,9,63,.93));box-shadow:0 12px 28px rgba(0,0,0,.2),0 0 25px rgba(44,83,255,.11)}
+.realm-zeus-feature .realm-zeus-art{background:radial-gradient(ellipse at 35% 28%,rgba(21,183,255,.5),transparent 37%),radial-gradient(ellipse at 78% 60%,rgba(181,43,255,.35),transparent 45%),linear-gradient(140deg,#0b2d70,#0a1038 58%,#1b0b45)}
+.realm-badge.status-shell{color:#b4c6ff;background:rgba(112,126,205,.11);border-color:rgba(137,154,232,.31)}
+.team-page,.settings-grid,.files-page,.projects-page{color:var(--oly-text)}
+.settings-card,.team-member-card{border-radius:18px;background:linear-gradient(150deg,rgba(9,17,45,.94),rgba(8,13,33,.96) 68%,rgba(19,10,42,.9))}
+.team-member-card header h2,.settings-card h3{color:#f5f7ff}
+.team-status-shell{color:#c2cdff;border-color:rgba(145,159,231,.38);background:rgba(107,121,194,.12)}
+.proj-row.project-card-shell{border-radius:18px;background:linear-gradient(150deg,rgba(9,16,44,.96),rgba(10,12,36,.96) 70%,rgba(24,10,47,.92))}
+.proj-row .progress{background:#151d49}
+.proj-row .progress span{background:linear-gradient(90deg,#16d9f4,#557aff 58%,#bf40ff)}
+.files-page .out-row{border-radius:16px;background:linear-gradient(130deg,rgba(9,17,44,.94),rgba(13,12,42,.93))}
+.realm-filter-empty,.tool-catalog-note{color:#aab7d9}
+:where(button,a,input,textarea,select,[tabindex]):focus-visible{outline:2px solid #4edfff;outline-offset:3px}
+@media(max-width:980px){.tool-list{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:680px){.tool-list{grid-template-columns:minmax(0,1fr)}.tool-feature-card{grid-template-rows:144px auto auto}.tool-god-portrait{height:144px!important}.tools-catalog .tools-hero{display:grid;grid-template-columns:minmax(0,1fr)}.tool-feature-copy{padding-top:12px}.realm-zeus-feature{grid-template-columns:1fr!important}.settings-grid{grid-template-columns:minmax(0,1fr)!important}.team-grid{grid-template-columns:minmax(0,1fr)!important}}
+@media(prefers-reduced-motion:reduce){.tool-feature-card{transition:none}.tool-feature-card:hover{transform:none}}
+
+/* OlyHub Live Talk orb and controls. */
+.orb-theme-olyhub{background-color:#04071d!important;background-image:radial-gradient(ellipse at 18% 42%,rgba(0,180,255,.18),transparent 35%),radial-gradient(ellipse at 84% 52%,rgba(152,30,255,.16),transparent 37%),linear-gradient(180deg,#05071d,#070a29 58%,#05071c)!important}
+.orb-theme-olyhub .live-talk-scene{background:radial-gradient(ellipse at 16% 84%,rgba(0,184,255,.14),transparent 30%),radial-gradient(ellipse at 89% 18%,rgba(156,45,255,.14),transparent 34%),linear-gradient(180deg,rgba(2,4,20,.16),rgba(3,5,24,.25) 58%,rgba(2,4,20,.5))}
+.orb-theme-olyhub .live-glass-button{border-color:rgba(83,193,255,.4);background:linear-gradient(145deg,rgba(15,61,126,.58),rgba(25,15,72,.66));box-shadow:inset 0 1px rgba(255,255,255,.22),0 0 18px rgba(21,133,255,.13)}
+.orb-theme-olyhub .live-talk-brand-label,.orb-theme-olyhub .live-talk-status,.orb-theme-olyhub .live-voice-note{color:#d9e5ff}
+.orb-theme-olyhub .live-talk-orb-wrap:before{background:radial-gradient(circle,rgba(14,183,255,.26),rgba(88,48,255,.13) 48%,transparent 74%);filter:blur(23px)}
+.orb-theme-olyhub .live-talk-orb-wrap:after{border-color:rgba(93,193,255,.22);box-shadow:inset 0 1px 2px rgba(255,255,255,.34),0 0 0 5px rgba(68,91,255,.04),0 0 30px rgba(87,53,255,.18);background:linear-gradient(145deg,rgba(124,222,255,.1),transparent 26% 75%,rgba(173,108,255,.08))}
+.orb-theme-olyhub .orb-olyhub .voice-orb-art,.voice-orb-preview img[src*="olyhub-live-orb"]{filter:drop-shadow(0 0 20px rgba(0,182,255,.3)) drop-shadow(0 0 24px rgba(163,57,255,.2))}
+.orb-theme-olyhub .live-talk-waveform i{background:linear-gradient(180deg,#8dffff,#1acbff 48%,#a643ff);box-shadow:0 0 9px rgba(40,183,255,.5)}
+.orb-theme-olyhub .live-mic-dot,.orb-theme-olyhub .live-mode-dot{background:#25e6ff;box-shadow:0 0 10px rgba(37,230,255,.8)}
+.orb-theme-olyhub .live-talk-text-form{border-color:rgba(96,168,255,.48);background:linear-gradient(110deg,rgba(9,29,78,.86),rgba(12,12,52,.85) 65%,rgba(39,12,74,.85));box-shadow:inset 0 1px rgba(255,255,255,.12),0 10px 30px rgba(0,0,0,.3)}
+.orb-theme-olyhub .live-talk-text-form:focus-within{border-color:#42e4ff;box-shadow:0 0 0 2px rgba(52,206,255,.22),0 0 22px rgba(73,76,255,.19)}
+.orb-theme-olyhub .live-talk-text-form input{color:#f7f9ff}
+.orb-theme-olyhub .live-talk-text-form input::placeholder{color:#aebde0}
+.orb-theme-olyhub .live-talk-text-form button,.orb-theme-olyhub .live-mute-button{border-color:rgba(48,222,255,.68);background:linear-gradient(140deg,#08d8f5,#2368fa 56%,#9d29ff);color:#fff;box-shadow:0 0 20px rgba(0,177,255,.3)}
+.orb-theme-olyhub .live-end-call{border-color:rgba(255,79,132,.7);background:radial-gradient(circle at 35% 25%,#fa5387,#a30f4e 76%);box-shadow:0 0 18px rgba(255,42,118,.26)}
+.orb-theme-olyhub .live-talk-controls,.orb-theme-olyhub .live-control-caption,.orb-theme-olyhub .live-control-hint{color:#d8e2fb}
+.orb-theme-olyhub .live-control-hint{border-color:rgba(77,160,243,.3);background:rgba(7,14,44,.62)}
