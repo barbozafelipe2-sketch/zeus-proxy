@@ -737,3 +737,32 @@ body .project-chat-scroll .message.assistant .message-bolt.poseidon-trident .pos
 .live-talk-orb-wrap.has-orb-art .zeus-voice-presence.is-speaking .poseidon-water-motion:before{
   animation-duration:2.4s!important;filter:blur(2px)!important;opacity:1!important;
 }
+
+/* Final orb guard: a fixed rim and a hard circular crop on every voice state. */
+.live-talk-orb-wrap.has-orb-art .zeus-voice-presence.orb-art{
+  position:relative!important;width:92%!important;height:92%!important;flex:0 0 92%!important;
+  overflow:hidden!important;border-radius:50%!important;isolation:isolate!important;
+  clip-path:circle(50%)!important;-webkit-clip-path:circle(50%)!important;
+  transform:none!important;
+}
+.live-talk-orb-wrap.has-orb-art .voice-orb-art{
+  position:relative!important;inset:auto!important;width:100%!important;height:100%!important;
+  object-fit:contain!important;object-position:center!important;transform:none!important;animation:none!important;
+}
+.live-talk-orb-wrap.has-orb-art:after{
+  display:block!important;content:""!important;position:absolute!important;inset:4%!important;z-index:6!important;
+  border:1px solid rgba(89,211,255,.46)!important;border-radius:50%!important;
+  background:transparent!important;box-shadow:0 0 12px rgba(34,194,255,.2),inset 0 0 8px rgba(155,84,255,.12)!important;
+  pointer-events:none!important;transform:none!important;animation:none!important;
+}
+.live-talk-orb-wrap.has-orb-art .poseidon-water-motion{
+  border-radius:50%!important;overflow:hidden!important;clip-path:circle(50%)!important;-webkit-clip-path:circle(50%)!important;
+}
+@media(prefers-reduced-motion:reduce){
+  .live-talk-orb-wrap.has-orb-art:before,.live-talk-orb-wrap.has-orb-art:after,
+  .live-talk-orb-wrap.has-orb-art .zeus-voice-presence.is-speaking,
+  .live-talk-orb-wrap.has-orb-art .poseidon-water-motion,
+  .live-talk-orb-wrap.has-orb-art .poseidon-water-motion:before{
+    animation:none!important;transition:none!important
+  }
+}
