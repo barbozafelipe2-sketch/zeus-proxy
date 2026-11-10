@@ -14,7 +14,7 @@ const homeView=app.slice(app.indexOf('function homeView()'),app.indexOf('functio
 assert.doesNotMatch(homeView,/homeAgentPanel|homeContextPanel|homeMobileArtifacts|managerAgentStrip/,'Poseidon Home must open directly into chat without legacy dashboard panels');
 assert.ok(!app.includes('${mobileNav()}')&&app.includes('id="hamburger"'),'mobile navigation should use the existing side drawer');
 assert.ok(!/data-mode=["'](?:OPENAI|CLAUDE|GEMINI|GOOGLE)/i.test(app),'direct provider mode leaked into UI');
-assert.ok(app.includes('id="hamburger" aria-label="Open navigation" title="Navigation">${icon(\'menu\')}</button>')&&app.includes("['Projects','projects','Projetos','bottom']"),'mobile drawer and bottom navigation destinations are separated');
+assert.ok(app.includes('id="hamburger"')&&app.includes('aria-label="Abrir navegação"')&&app.includes("['Projects','projects','Projetos','bottom']"),'mobile drawer and bottom navigation destinations are separated');
 assert.ok(app.includes('side-project-section')&&app.includes('sidebar-create-project')&&app.includes('function homeView()'),'Poseidon chat must open directly with Projects available in navigation');
 assert.ok(app.includes('PERMANENT PROJECT CHAT'),'permanent Project chat missing');
 assert.match(app,/function projectChatView\(\)[\s\S]*?\$\{modeStrip\(\)\}/,'Project chat must reuse the main Poseidon tool context');

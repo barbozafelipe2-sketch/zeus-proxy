@@ -82,7 +82,7 @@ function anthropicBase() {
 function geminiBase() {
   return env('GOOGLE_GEMINI_BASE_URL') || '';
 }
-function directProviderStatus() {
+export function directProviderStatus() {
   return {
     openai: Boolean(env('OPENAI_DIRECT_API_KEY')),
     gemini: Boolean(env('GEMINI_DIRECT_API_KEY') || env('GOOGLE_GEMINI_DIRECT_API_KEY')),
@@ -159,7 +159,8 @@ function recordProviderSuccess(provider) {
 }
 
 export function providerRuntimeHealth() {
-  const configured = providerStatus();
+  const direct=directProviderStatus();
+  const configured = {...providerStatus(),openai_openai_direct:direct.openai,gemini_gemini_direct:direct.gemini};
   return Object.fromEntries(Object.keys(configured).map((provider) => {
     const state = circuitState(provider);
     return [provider, {
@@ -173,7 +174,8 @@ export function providerRuntimeHealth() {
     }];
   }));
 }
-export function providerTransportStatus(){ return {gateway:providerStatus()}; }
+export function providerTransportStatus(){ const direct=directProviderStatus();return {gateway:providerStatus(),openai_direct:direct.openai,gemini_direct:direct.gemini}; }
+export function availableTextModels({ignoreCircuit=false,vision=false,routeHint='fast'}={}){return [...availableModels({ignoreCircuit,vision}),...directFallbackModels({vision,route:vision?'vision':routeHint})].filter(m=>ignoreCircuit||!circuitOpen(modelCircuitScope(m),m.id));}
 
 export function providerReadiness() {
   const runtime = providerRuntimeHealth();
@@ -601,7 +603,7 @@ function routeEligibleWhenGatewayBlocked(model,blocked){
 
 export function zeusBaseCandidates(text='', {vision=false,blockedProviders=[],routeHint=null}={}){
   const blocked=new Set(blockedProviders||[]),route=AI_ROUTES_OVERRIDE(routeHint)||routeFor(text,{vision});
-  const ranked=orderForRoute(route,new Set(),{vision}).filter(m=>modelTransport(m)==='gateway'&&routeEligibleWhenGatewayBlocked(m,blocked)&&modelFamily(m)!=='xai');
+  const ranked=orderForRoute(route,new Set(),{vision}).filter(m=>routeEligibleWhenGatewayBlocked(m,blocked)&&modelFamily(m)!=='xai');
   const strongGpt=env('OPENAI_STRONG_MODEL')||'gpt-6.1-sol';
   const cheap=ranked.map((m,index)=>({m,index})).filter(x=>Number(x.m.cost||99)<=3&&!(x.m.provider==='openai'&&x.m.id===strongGpt)).sort((a,b)=>Number(a.m.cost||99)-Number(b.m.cost||99)||Number(a.m.provider==='openai')-Number(b.m.provider==='openai')||a.index-b.index).map(x=>x.m);
   const fallback=ranked.filter(m=>!(m.provider==='openai'&&m.id===strongGpt));
@@ -613,7 +615,7 @@ export function zeusBaseCandidates(text='', {vision=false,blockedProviders=[],ro
 // excluded so the two stages do not collapse into one model.
 export function gptFinisherCandidates({vision=false,blockedProviders=[],exclude=new Set()}={}){
   const blocked=new Set(blockedProviders||[]),skip=exclude instanceof Set?exclude:new Set(exclude||[]);
-  const pool=availableModels({vision}).filter(m=>routeEligibleWhenGatewayBlocked(m,blocked)&&!skip.has(`${m.provider}:${m.id}`));
+  const pool=availableTextModels({vision,routeHint:'writing'}).filter(m=>routeEligibleWhenGatewayBlocked(m,blocked)&&!skip.has(`${m.provider}:${m.id}`));
   const ids=[env('OPENAI_STRONG_MODEL')||'gpt-6.1-sol','gpt-6.1-terra',env('OPENAI_MODEL')||'gpt-6-luna','gpt-4.1-mini'];
   const preferred=ids.map(id=>pool.find(m=>m.id===id)).filter(Boolean);
   const rest=pool.filter(m=>!preferred.some(p=>p.provider===m.provider&&p.id===m.id)).sort((a,b)=>Number(b.quality||0)-Number(a.quality||0)||Number(a.cost||99)-Number(b.cost||99));
@@ -1078,7 +1080,7 @@ export function roleCandidates(role,text='',{
 }={}){
   const blocked=new Set(blockedProviders||[]),excludedProviders=new Set(excludeProviders||[]),skip=exclude instanceof Set?exclude:new Set(exclude||[]);
   const specialistRole=Boolean(toolId)||['CREATOR','DIRECTOR','PLANNER'].includes(role);
-  const pool=availableModels({vision}).filter(m=>routeEligibleWhenGatewayBlocked(m,blocked)&&!excludedProviders.has(modelFamily(m))&&!skip.has(`${m.provider}:${m.id}`)&&!(specialistRole&&modelFamily(m)==='xai'));
+  const pool=availableTextModels({vision,routeHint:routeHint||getToolWorkflow(toolId)?.route||routeFor(text,{vision})}).filter(m=>routeEligibleWhenGatewayBlocked(m,blocked)&&!excludedProviders.has(modelFamily(m))&&!skip.has(`${m.provider}:${m.id}`)&&!(specialistRole&&modelFamily(m)==='xai'));
   const tool=getToolWorkflow(toolId),route=tool?.route||routeHint,preference=toolPreferences?.[toolId]||null;
   const ranked=uniqueModelOrder(pool.sort((a,b)=>Number(a.provider==='openrouter')-Number(b.provider==='openrouter')||(roleScore(role,b,text,route)+toolPreferenceScore(b,preference))-(roleScore(role,a,text,route)+toolPreferenceScore(a,preference))));
   return ranked.slice(0,Math.max(1,Math.min(Number(limit)||4,6)));
@@ -1093,7 +1095,7 @@ export function toolModelCandidates(toolId,text='',options={}){
   const preference=options.toolPreferences?.[toolId]||null;
   const source=includeUnavailable
     ?modelCatalog().filter(model=>!vision||(model.roles||[]).some(role=>role==='vision'||role==='multimodal'))
-    :availableModels({vision});
+    :availableTextModels({vision,routeHint:tool.route});
   const pool=source.filter(model=>(includeUnavailable||routeEligibleWhenGatewayBlocked(model,blocked))&&FIXED_TOOL_MODEL_FAMILIES.has(modelFamily(model))&&!excluded.has(modelFamily(model))&&!skip.has(`${model.provider}:${model.id}`));
   const ranked=uniqueModelOrder(pool.sort((a,b)=>(roleScore(role,b,text,tool.route)+toolPreferenceScore(b,preference))-(roleScore(role,a,text,tool.route)+toolPreferenceScore(a,preference))));
   const families=new Set(),diverse=[];

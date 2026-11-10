@@ -1074,7 +1074,8 @@ function startCompareFormat(id){
 function toolsView(){
   const h=state.health?.capabilities||{},chat=capabilityState('chat',Boolean(h.chat)),images=capabilityState('imageGeneration',Boolean(h.imageGeneration));
   const google=state.googleConnections||{},connections=google.connections||{},googleConnected=['gmail','calendar','drive'].filter(id=>connections[id]?.connected).length;
-  const workflowIds={athena:['web','documents'],hefesto:['code'],apollo:['images']};
+  const inventory=state.realmInventory;
+  const realms=inventory?.realms||state.realmBlueprint?.realms||[];
   const actionByRealm={
     zeus:[{tab:'Zeus',label:'Abrir Zeus',enabled:true}],poseidon:[{newChat:true,label:'Nova conversa',enabled:true}],
     athena:[{kind:'web',label:'Pesquisar',enabled:Boolean(h.webSearch),status:h.webSearch?'PRONTA':'WEB NÃO CONFIGURADA'},{kind:'documents',label:'Documentos',enabled:chat.enabled,status:chat.label}],
@@ -1082,8 +1083,8 @@ function toolsView(){
     apollo:[{kind:'images',label:'Abrir Apollo',enabled:images.enabled,status:images.label}],
     hermes:[{tab:'Settings',label:'Abrir conexões',enabled:true,status:googleConnected?`${googleConnected} SERVIÇO(S) CONECTADO(S) · LEITURA`:'GOOGLE · CONEXÃO EM CONFIGURAÇÕES'}]
   };
-  const tools=(state.realmBlueprint?.realms||[]).map(realm=>({
-    ...realm,god:realm.name,sprite:realm.id,workflows:workflowIds[realm.id]||[],actions:actionByRealm[realm.id]||[],
+  const tools=realms.map(realm=>({
+    ...realm,god:realm.name,sprite:realm.id,workflows:(realm.workflows||[]).map(workflow=>workflow.id),actions:actionByRealm[realm.id]||[],
     statusInfo:realm.id==='zeus'?{text:'Shell disponível',cls:'status-shell',note:'Painel acessível · auditoria independente ainda não ativa'}:realm.id==='poseidon'?{text:'Ativo',cls:'status-active',note:'Chat principal · OlyHub Core'}:realm.id==='hermes'?{text:googleConnected?'Parcial':'Planejado',cls:googleConnected?'status-partial':'status-planned',note:googleConnected?`${googleConnected} serviço(s) Google · leitura`:'Google · conexão em Configurações'}:realm.status==='active'?{text:'Ativo',cls:'status-active',note:'Workflow conectado'}:realm.status==='partial'?{text:'Parcial',cls:'status-partial',note:'Integração parcial'}:{text:'Planejado',cls:'status-planned',note:'Realm planejado · desativado'},
     status:realm.id==='zeus'?'SHELL · AUDITORIA AINDA NÃO ATIVA':realm.id==='poseidon'?'CHAT PRINCIPAL':realm.id==='hermes'?(actionByRealm.hermes[0].status||'GOOGLE · LEITURA'):realm.status==='active'?'WORKFLOW CONECTADO':realm.status==='partial'?'GOOGLE SOMENTE LEITURA · REALM EM PREPARAÇÃO':'REALM PLANEJADO · DESATIVADO'
   }));
@@ -1092,7 +1093,7 @@ function toolsView(){
     const models=(tool.workflows||[]).flatMap(id=>state.toolModels.find(item=>item.id===id)?.models||[]).filter((model,index,all)=>all.findIndex(other=>`${other.provider}:${other.id}`===`${model.provider}:${model.id}`)===index);
     const activeCount=models.filter(m=>m.available).length;
     const inactiveCount=models.length-activeCount;
-    const modelLine=!state.toolModelsLoaded?'Carregando modelos…':state.toolModelsError?`Lista indisponível · ${state.toolModelsError}`:models.length?`${activeCount}/${models.length} famílias de provedor configuradas${inactiveCount?` · ${inactiveCount} sem rota`:''}`:'Nenhum modelo cadastrado';
+    const modelLine=!state.toolModelsLoaded?'Carregando modelos…':state.toolModelsError?`Lista indisponível · ${state.toolModelsError}`:models.length?`${activeCount}/${models.length} modelos com rota configurada${inactiveCount?` · ${inactiveCount} sem rota`:''}`:'Nenhum modelo cadastrado';
     const modelList=models.length?models.map(m=>`<span class="tool-model-chip ${m.available?'':'unavailable'}"><i aria-hidden="true"></i>${esc(providerName({provider:m.family||m.provider}))} · ${esc(m.name||m.id)} ${m.available?'':'· sem rota configurada'}</span>`).join(''):'<span class="tool-model-empty">Nenhum workflow de modelo está conectado a este Realm.</span>';
     const runtimeDetails=tool.workflows?.length?`<details class="tool-model-details"><summary>${icon('memory')}<span>${esc(modelLine)}</span><b aria-hidden="true">⌄</b></summary><div class="tool-model-list">${modelList}<p class="tool-blueprint-note">Disponibilidade indica configuração de rota por família, não uma chamada de teste bem-sucedida.</p></div></details>`:'';
     const blueprintDetails=tool.model?`<details class="tool-model-details tool-blueprint-details"><summary><span class="tool-blueprint-mark" aria-hidden="true">✦</span><span>Blueprint · modelos e skills</span><b aria-hidden="true">⌄</b></summary><div class="tool-blueprint-content"><p><strong>Modelo · ${esc(tool.modelStatus)}</strong>${esc(tool.model)}</p><p><strong>Capacidades e skills do Realm</strong><span class="blueprint-skill-list">${(tool.skills||[]).map(skill=>`<span class="blueprint-skill blueprint-skill-${esc(skill.status)}"><i aria-hidden="true"></i>${esc(skill.name)} · ${skill.status==='active'?'ativa':skill.status==='internal'?'interna':'planejada'}</span>`).join('')}</span></p><small>Estado de skill no blueprint não altera o status de integração exibido no card.</small></div></details>`:'';
@@ -1557,7 +1558,7 @@ function bind(){
     try{
       if(state.tab==='Projects'){await loadProjects();if(state.currentProject?.id)await hydrateProjectWorkspace(state.currentProject.id,{loadConversation:false});else state.tasks=[];}
       if(state.tab==='Files')await Promise.all([loadFiles(),loadArtifacts()]);
-      if(state.tab==='Tools')await Promise.all([loadHealth(),loadFiles(),loadArtifacts(),loadToolModels()]);
+      if(state.tab==='Tools')await Promise.all([loadHealth(),loadFiles(),loadArtifacts(),loadToolModels(),loadRealmInventory()]);
       if(state.tab==='Automations'&&!state.automationInventoryLoaded)await loadAutomationInventory();
       if(state.tab==='Code Agent'){
         try{state.codeAgentRepo=localStorage.getItem('olyhub.code-agent.repo.v1')||state.codeAgentRepo;state.codeAgentBranch=localStorage.getItem('olyhub.code-agent.branch.v1')||state.codeAgentBranch;}catch{}

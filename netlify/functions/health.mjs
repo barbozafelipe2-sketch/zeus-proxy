@@ -1,5 +1,5 @@
 import { requireUser } from './_shared/auth.mjs';
-import { providerStatus, providerRuntimeHealth, providerTransportStatus, availableModels, serverTranscriptionConfigured } from './_shared/models.mjs';
+import { providerStatus, providerRuntimeHealth, providerTransportStatus, availableTextModels, serverTranscriptionConfigured } from './_shared/models.mjs';
 import { summarizeTransportEvidence } from './_shared/provider-observability.mjs';
 import { json, getRequestId, errorJson } from './_shared/http.mjs';
 import { opportunisticDrainBlobGc } from './_shared/storage.mjs';
@@ -20,7 +20,7 @@ function withTimeout(promise,ms,label){
 }
 function fallbackReadiness(providers,transports){
   const providerResults=Object.fromEntries(PROVIDERS.map(p=>[p,{status:providers[p]?'configured_unverified':'not_configured',configured:Boolean(providers[p]),lastSuccessAt:null,lastFailureAt:null,circuitOpen:false,retryAfterMs:0}]));
-  const transportResults=Object.fromEntries(Object.keys(transports||{}).map(t=>[t,{status:transports[t]?'configured_unverified':'not_configured',configured:Boolean(transports[t]),lastSuccessAt:null,lastFailureAt:null}]));
+  const transportResults=Object.fromEntries(Object.keys(transports||{}).map(t=>[t,{status:(t==='gateway'?Object.values(transports[t]||{}).some(Boolean):transports[t])?'configured_unverified':'not_configured',configured:t==='gateway'?Object.values(transports[t]||{}).some(Boolean):Boolean(transports[t]),lastSuccessAt:null,lastFailureAt:null}]));
   return {providerResults,transportResults};
 }
 
@@ -77,7 +77,7 @@ async function persistedProviderReadiness(db,userId,configured,runtime,transport
     }
     return [provider,{status,configured:Boolean(configured[provider]),lastSuccessAt:ev.lastSuccessAt,lastFailureAt:ev.lastFailureAt,circuitOpen:Boolean(local.circuitOpen),retryAfterMs:Number(local.retryAfterMs||0)}];
   }));
-  const transportResults=summarizeTransportEvidence(rows,{gateway:Object.values(configured).some(Boolean)},runtime);
+  const transportResults=summarizeTransportEvidence(rows,{gateway:Object.values(configured).some(Boolean),openai_direct:Boolean(transports.openai_direct),gemini_direct:Boolean(transports.gemini_direct)},runtime);
   return {providerResults,transportResults};
 }
 
@@ -97,16 +97,16 @@ async function handler(req,context){
   const providers=providerStatus();
   const transports=providerTransportStatus();
   const runtime=providerRuntimeHealth();
-  const configuredRoutes=Object.values(providers).filter(Boolean).length;
-  const configuredModels=availableModels({ignoreCircuit:true});
-  const activeModels=availableModels();
+  const configuredRoutes=Object.values(providers).filter(Boolean).length+Number(transports.openai_direct)+Number(transports.gemini_direct);
+  const configuredModels=availableTextModels({ignoreCircuit:true});
+  const activeModels=availableTextModels();
   const openRouterImageReady=Boolean(providers.openrouter&&!runtime.openrouter?.circuitOpen);
   const warnings0=[];
   let readinessSection;
   try{readinessSection=await withTimeout(persistedProviderReadiness(db,user.id,providers,runtime,transports),5000,'providerReadiness');}
   catch(error){const message=safeDbError(error);console.error('Health section failure',requestId,'providerReadiness',error?.stack||message);warnings0.push({section:'providerReadiness',message});readinessSection=fallbackReadiness(providers,transports);}
   const {providerResults:readiness,transportResults:transportReadiness}=readinessSection;
-  const chatState=chatReadiness(readiness,configuredModels,activeModels);
+  const chatState=chatReadiness({...readiness,...transportReadiness},configuredModels,activeModels);
   const storageMaintenance=await withTimeout(opportunisticDrainBlobGc(db,user.id,{limit:5}),3000,'storageMaintenance').catch(()=>({attempted:0,deleted:0,failed:0,pending:null,skipped:true}));
   const githubWrite=githubWriteConfigured();
   const warnings=warnings0;
@@ -149,7 +149,7 @@ async function handler(req,context){
       documents:chatState,
       imageGeneration:(providers.openai&&!runtime.openai?.circuitOpen)||openRouterImageReady?'configured_unverified':'unavailable',
       imageEditing:providers.openai?(runtime.openai?.circuitOpen?'degraded':'configured_unverified'):'unavailable',
-      imageUnderstanding:availableModels({vision:true,ignoreCircuit:true}).length?(availableModels({vision:true}).length?'configured_unverified':'degraded'):'unavailable',
+      imageUnderstanding:availableTextModels({vision:true,ignoreCircuit:true}).length?(availableTextModels({vision:true}).length?'configured_unverified':'degraded'):'unavailable',
       serverTranscription:serverTranscriptionConfigured()?'configured_unverified':'unavailable',
       elevenLabsRealtimeAgent:elevenLabsRealtimeAgentConfigured()?'configured_unverified':'unavailable',
       webSearch:providers.openai?(runtime.openai?.circuitOpen?'degraded':'configured_unverified'):'unavailable',
@@ -162,7 +162,7 @@ async function handler(req,context){
       artifacts:true,
       imageGeneration:Boolean((providers.openai&&!runtime.openai?.circuitOpen)||openRouterImageReady),
       imageEditing:Boolean(providers.openai&&!runtime.openai?.circuitOpen),
-      imageUnderstanding:availableModels({vision:true}).length>0,
+      imageUnderstanding:availableTextModels({vision:true}).length>0,
       webSearch:Boolean(providers.openai&&!runtime.openai?.circuitOpen),
       voiceInput:elevenLabsRealtimeAgentConfigured()?'elevenlabs_realtime_agent':'unavailable',
       serverTranscription:serverTranscriptionConfigured(),

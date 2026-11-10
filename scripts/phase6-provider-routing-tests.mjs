@@ -20,7 +20,7 @@ let calls=[];
 try{
   globalThis.Netlify={env:{get:key=>env[key]||''}};
   globalThis.fetch=async(url)=>{calls.push(String(url));return new Response('{}',{status:200});};
-  assert.deepEqual(models.providerTransportStatus(),{gateway:{openai:false,anthropic:false,gemini:false,openrouter:false}});
+  assert.deepEqual(models.providerTransportStatus(),{gateway:{openai:false,anthropic:false,gemini:false,openrouter:false},openai_direct:false,gemini_direct:false});
   assert.equal(models.availableModels().length,0);
   await assert.rejects(models.callModel({provider:'openai',id:'gpt-5',transport:'openai_direct'},'s','u',{
     budget:createExecutionBudget({timeoutMs:10000,maxCalls:1})

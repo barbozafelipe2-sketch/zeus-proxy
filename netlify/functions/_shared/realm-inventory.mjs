@@ -1,6 +1,6 @@
 import { REALM_BLUEPRINT } from './realm-blueprint.mjs';
 import { TOOL_WORKFLOWS } from './tool-workflows.mjs';
-import { fixedImageModelCatalog, toolModelCandidates, providerReadiness } from './models.mjs';
+import { fixedImageModelCatalog, toolModelCandidates, providerReadiness, directProviderStatus } from './models.mjs';
 import { modelFamily } from './provider-routing.mjs';
 import { elevenLabsRealtimeAgentConfigured } from './elevenlabs-agent.mjs';
 
@@ -55,6 +55,7 @@ function inventoryEntry(entry, internal = false) {
 }
 
 export function buildRealmInventory() {
+  const direct=directProviderStatus();
   return {
     version: REALM_BLUEPRINT.version,
     updated: REALM_BLUEPRINT.updated,
@@ -67,9 +68,10 @@ export function buildRealmInventory() {
       elevenLabsRealtime: elevenLabsRealtimeAgentConfigured(),
     },
     routingPolicy: {
-      text: ['netlify_ai_gateway', 'openrouter_via_netlify_ai_gateway'],
-      directKeys: 'voice_primary; text fallback is not enabled',
-      directTextFallbackEnabled: false,
+      text: ['netlify_ai_gateway', 'openrouter_via_netlify_ai_gateway','google_direct','openai_direct'],
+      directKeys: 'text recovery requires explicit *_DIRECT_API_KEY credentials; Anthropic/OpenRouter remain Gateway-only',
+      directTextFallbackEnabled: direct.gemini||direct.openai,
+      directProviders:direct,
       availabilityMeans: 'provider route configured or model eligible; it is not a live inference health check',
     },
   };

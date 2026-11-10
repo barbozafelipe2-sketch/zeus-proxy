@@ -54,13 +54,13 @@ export function snapshotProviderTelemetry(budget){
     inputTokens:events.length&&events.some(e=>!Number.isFinite(e.inputTokens))?null:events.reduce((n,e)=>n+(Number.isFinite(e.inputTokens)?e.inputTokens:0),0),
     outputTokens:events.length&&events.some(e=>!Number.isFinite(e.outputTokens))?null:events.reduce((n,e)=>n+(Number.isFinite(e.outputTokens)?e.outputTokens:0),0),
     byTransport:events.reduce((acc,e)=>{acc[e.transport]=(acc[e.transport]||0)+1;return acc;},{}),
-    independentFallbackUsed:false,
+    independentFallbackUsed:events.some(e=>e.transport==='gateway'&&e.outcome==='failure')&&events.some(e=>e.transport!=='gateway'&&e.outcome==='success'),
     attempts:events
   };
 }
 export function summarizeTransportEvidence(rows=[],configuration={},runtime={}){
   const result={};
-  for(const route of ['gateway']){
+  for(const route of ['gateway','openai_direct','gemini_direct'].filter(route=>route==='gateway'||route in configuration)){
     let successes=0,failures=0,lastOutcome=null,lastSeenAt=null,recoveredExecutions=0;
     for(const row of rows){
       const events=Array.isArray(row?.trace?.providerTelemetry?.attempts)?row.trace.providerTelemetry.attempts:[];
@@ -71,7 +71,7 @@ export function summarizeTransportEvidence(rows=[],configuration={},runtime={}){
       if(route!=='gateway'&&events.some(e=>e.transport==='gateway'&&e.outcome==='failure')&&onRoute.some(e=>e.outcome==='success'))recoveredExecutions++;
     }
     const configured=Boolean(configuration[route]);
-    const circuitOpen=Object.values(runtime).some(data=>data?.configured&&data?.circuitOpen);
+    const circuitOpen=Object.entries(runtime).some(([key,data])=>(route==='gateway'?!key.endsWith('_direct'):key.endsWith('_'+route))&&data?.configured&&data?.circuitOpen);
     const status=!configured?'not_configured':circuitOpen?'degraded':lastOutcome==='success'?'observed_healthy':lastOutcome==='failure'?'recent_failure':'configured_unverified';
     result[route]={configured,status,circuitOpen,attempts:successes+failures,successes,failures,lastOutcome,lastSeenAt,recoveredExecutions};
   }

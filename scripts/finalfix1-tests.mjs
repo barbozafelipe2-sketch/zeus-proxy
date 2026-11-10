@@ -18,7 +18,7 @@ const projects=readFileSync('netlify/functions/projects.mjs','utf8');
 const pkg=JSON.parse(readFileSync('package.json','utf8'));
 
 assert.ok(app.includes('hydrateProjectWorkspace(state.currentProject.id,{loadConversation:false})'),'project history open must hydrate full project scope');
-assert.ok(app.includes("if(state.tab==='Tools')await Promise.all([loadHealth(),loadFiles(),loadArtifacts(),loadToolModels()])"),'Tools must load global output scope and configured model candidates');
+assert.ok(app.includes("if(state.tab==='Tools')await Promise.all([loadHealth(),loadFiles(),loadArtifacts(),loadToolModels(),loadRealmInventory()])"),'Tools must load global output scope and configured model candidates');
 assert.ok(app.includes('data-delete-output'),'file/artifact delete action missing');
 assert.ok(app.includes('deleteCurrentProject'),'project delete action missing');
 assert.ok(app.includes("kind:'documents',label:'Documentos',enabled:chat.enabled,status:chat.label"),'Athena document capability must follow chat readiness');

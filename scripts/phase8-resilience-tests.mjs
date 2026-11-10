@@ -8,7 +8,7 @@ const prev=globalThis.Netlify;
 const env={OPENAI_DIRECT_API_KEY:'direct-openai',OPENROUTER_DIRECT_API_KEY:'must-not-route'};
 try{
   globalThis.Netlify={env:{get:key=>env[key]||''}};
-  assert.deepEqual(models.providerTransportStatus(),{gateway:{openai:false,anthropic:false,gemini:false,openrouter:false}});
+  assert.deepEqual(models.providerTransportStatus(),{gateway:{openai:false,anthropic:false,gemini:false,openrouter:false},openai_direct:true,gemini_direct:false});
   const budget=createExecutionBudget({maxCalls:4,timeoutMs:30000});
   assert.equal(snapshotProviderTelemetry(budget).modelCalls,0);
   const candidates=[

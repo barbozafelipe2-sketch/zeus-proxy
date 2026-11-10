@@ -74,22 +74,37 @@ function codedError(message,status=400,code='REQUEST_FAILED'){const e=new Error(
 function normalizedIds(value){return [...new Set((Array.isArray(value)?value:[]).filter(isUuid))].slice(0,8);}
 function sameIds(a,b){const aa=normalizedIds(a).sort(),bb=normalizedIds(b).sort();return aa.length===bb.length&&aa.every((v,i)=>v===bb[i]);}
 
-async function buildContext({db,userId,projectId,conversationId,currentMessageId,currentText,attachmentRows=[],historyBeforeAt=null}){
+export async function buildContext({db,userId,projectId,conversationId,currentMessageId,currentText,attachmentRows=[],historyBeforeAt=null}){
   let identity='',tasksText='',memoriesText='',projectFilesText='',continuityText='',continuityRevision=0,continuityUpdatedAt=null;
   const personalMemoryRows=await db.sql`SELECT id,project_id,type,content,source,confidence,approved,created_at FROM memories WHERE owner_id=${userId} AND project_id IS NULL AND approved=true ORDER BY created_at DESC LIMIT ${MEMORY_POLICY.candidateLimit}`;
   const personalMemoryPolicy={...MEMORY_POLICY,maxItems:12,maxChars:4000,perItemChars:600};
   let projectMemoryRows=[];
   if(projectId){
-    const projects=await db.sql`SELECT id,name,description,goal,status,progress FROM projects WHERE id=${projectId} AND owner_id=${userId}`;
+    // Independent reads preserve owner/project filters and run concurrently.
+    const [projects,continuityRows,tasks,projectMemories,projectFiles,assetRows,approved]=await Promise.all([
+      db.sql`SELECT id,name,description,goal,status,progress FROM projects WHERE id=${projectId} AND owner_id=${userId}`,
+      db.sql`SELECT summary,revision,updated_at FROM project_continuity WHERE owner_id=${userId} AND project_id=${projectId} AND revision>0`,
+      db.sql`SELECT title,description,status,priority,due_at FROM tasks WHERE project_id=${projectId} AND owner_id=${userId} ORDER BY completed_at NULLS FIRST, due_at NULLS LAST, created_at DESC LIMIT 40`,
+      db.sql`SELECT id,project_id,type,content,source,confidence,approved,created_at FROM memories WHERE project_id=${projectId} AND owner_id=${userId} AND approved=true ORDER BY created_at DESC LIMIT ${MEMORY_POLICY.candidateLimit}`,
+      db.sql`SELECT id,filename,mime_type,extracted_text,metadata,created_at FROM files WHERE project_id=${projectId} AND owner_id=${userId} ORDER BY created_at DESC LIMIT 30`,
+      db.sql`SELECT id,filename,type,mime_type,version,created_at FROM artifacts WHERE owner_id=${userId} AND project_id=${projectId} ORDER BY created_at DESC LIMIT 60`,
+      db.sql`SELECT x.alias,a.id,a.filename,a.version,a.type FROM artifact_aliases x
+      JOIN artifacts a ON a.id=x.artifact_id
+      WHERE x.owner_id=${userId} AND x.scope_key=${projectId}
+      AND a.owner_id=${userId} AND a.project_id=${projectId}
+      ORDER BY x.alias LIMIT 40`
+    ]);
+    projectMemoryRows=projectMemories;
+
     if(projects.length){const p=projects[0];identity=`Name: ${p.name}\nGoal: ${p.goal||'[not set]'}\nDescription: ${p.description||'[not set]'}\nStatus: ${p.status}\nProgress: ${p.progress}%`;}
-    const continuityRows=await db.sql`SELECT summary,revision,updated_at FROM project_continuity WHERE owner_id=${userId} AND project_id=${projectId} AND revision>0`;
+
     if(continuityRows[0]?.summary){continuityText=redactSecrets(String(continuityRows[0].summary).slice(0,8000));continuityRevision=Number(continuityRows[0].revision)||0;continuityUpdatedAt=continuityRows[0].updated_at;}
-    const tasks=await db.sql`SELECT title,description,status,priority,due_at FROM tasks WHERE project_id=${projectId} AND owner_id=${userId} ORDER BY completed_at NULLS FIRST, due_at NULLS LAST, created_at DESC LIMIT 40`;
+
     if(tasks.length)tasksText=tasks.map(t=>`- [${t.status}] ${t.title} | priority=${t.priority}${t.due_at?` | due=${new Date(t.due_at).toISOString()}`:''}${t.description?` | ${clip(t.description,1000)}`:''}`).join('\n');
-    projectMemoryRows=await db.sql`SELECT id,project_id,type,content,source,confidence,approved,created_at FROM memories WHERE project_id=${projectId} AND owner_id=${userId} AND approved=true ORDER BY created_at DESC LIMIT ${MEMORY_POLICY.candidateLimit}`;
+
 
     const attachedIds=new Set(attachmentRows.map(r=>String(r.id)));
-    const projectFiles=await db.sql`SELECT id,filename,mime_type,extracted_text,metadata,created_at FROM files WHERE project_id=${projectId} AND owner_id=${userId} ORDER BY created_at DESC LIMIT 30`;
+
     const relevant=projectFiles
       .filter(f=>!attachedIds.has(String(f.id)))
       .map(f=>({...f,_score:relevanceScore(currentText,`${f.filename}\n${String(f.extracted_text||'').slice(0,4000)}`)}))
@@ -97,16 +112,12 @@ async function buildContext({db,userId,projectId,conversationId,currentMessageId
       .slice(0,8);
     // Expose scoped artifact metadata for resolving named saved references.
     // Listing metadata never proves that the artifact binary has been examined.
-    const assetRows=await db.sql`SELECT id,filename,type,mime_type,version,created_at FROM artifacts WHERE owner_id=${userId} AND project_id=${projectId} ORDER BY created_at DESC LIMIT 60`;
+
     const matchingAssets=assetRows.map(a=>({...a,_score:relevanceScore(currentText,a.filename)})).sort((a,b)=>b._score-a._score||new Date(b.created_at)-new Date(a.created_at)).slice(0,15);
     const artifactCatalog=matchingAssets.map(a=>`ARTIFACT REFERENCE: ${redactSecrets(a.filename)} | id=${a.id} | version=${a.version} | type=${a.type}. Stored in this project; binary content NOT inspected automatically.`).join('\n');
     if(relevant.length)projectFilesText=relevant.map(f=>{const status=f.metadata?.extractionStatus||'stored_only',note=status==='analyzable'?(f.metadata?.truncated?'[Text extraction is partial/truncated.]':''):status==='vision_only'?'[Image file: use vision only when explicitly attached to this turn.]':status==='failed'?'[Text extraction failed. Do not claim the file contents were read.]':'[Stored file has no extracted text. Do not claim the binary contents were read.]';return `PROJECT FILE: ${redactSecrets(f.filename)} (${f.mime_type})\n${note}${f.extracted_text?`\n${clip(safeExtractedText(f.extracted_text,f.filename),6500)}`:''}`;}).join('\n\n');
     if(artifactCatalog)projectFilesText=[projectFilesText,artifactCatalog].filter(Boolean).join('\n\n');
-    const approved=await db.sql`SELECT x.alias,a.id,a.filename,a.version,a.type FROM artifact_aliases x
-      JOIN artifacts a ON a.id=x.artifact_id
-      WHERE x.owner_id=${userId} AND x.scope_key=${projectId}
-      AND a.owner_id=${userId} AND a.project_id=${projectId}
-      ORDER BY x.alias LIMIT 40`;
+
     if(approved.length){
       const approvedText=approved.map(a=>`APPROVED PROJECT ARTIFACT ALIAS: ${a.alias} = ${redactSecrets(a.filename)} (id=${a.id}, version=${a.version}, type=${a.type}). Refer to metadata; actual content requires explicit attachment.`).join('\n');
       projectFilesText=[projectFilesText,approvedText].filter(Boolean).join('\n\n');

@@ -22,8 +22,8 @@ for(const id of ['dionisio.media','peitho.marketing','demeter.business','hermes.
 }
 assert.ok(frontend.includes("fetch('/realm-blueprint.json'"),'UI fetches the canonical manifest');
 assert.ok(frontend.includes('state.realmBlueprint?.realms'),'UI renders deity cards from the manifest');
-assert.ok(frontend.includes('activeCount}/${models.length} famílias de provedor configuradas'),'runtime count uses the actual model pool and labels route configuration accurately');
-assert.ok(frontend.includes('function teamView()')&&frontend.includes('data-team-member='),'Equipe renders every canonical Realm with its skills and model pool');
+assert.ok(frontend.includes('activeCount}/${models.length} modelos com rota configurada'),'runtime count uses the actual model pool and labels route configuration accurately');
+assert.ok(frontend.includes('function toolsView()')&&frontend.includes('blueprint-skill-list')&&frontend.includes('tool-model-list'),'Realms renders the canonical skills and model pool');
 assert.ok(frontend.includes('function mobileBottomNav()')&&styles.includes('.side-nav button[data-nav-group="bottom"]{display:none}'),'mobile navigation separates bottom destinations from the drawer');
 assert.ok(modelEndpoint.includes('requested:models.length'),'model inventory denominator follows the actual roster rather than a hard-coded six');
 console.log('Canonical Realm blueprint contract: PASS');
