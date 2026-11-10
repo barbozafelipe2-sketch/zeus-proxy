@@ -3,6 +3,10 @@ function agentId(selection='zeus'){
   return String(env(selection==='athena'?'ELEVENLABS_ATHENA_AGENT_ID':'ELEVENLABS_AGENT_ID')).trim();
 }
 
+export function elevenLabsRealtimeAgentConfigured(){
+  return Boolean((env('ELEVENLABS_API_KEY')||env('ELEVEN_LABS_API_KEY'))&&agentId());
+}
+
 export async function createElevenLabsRealtimeConversationToken({fetchImpl=globalThis.fetch,agent='zeus'}={}){
   const key=env('ELEVENLABS_API_KEY')||env('ELEVEN_LABS_API_KEY');
   const id=agentId(agent);
