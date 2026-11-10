@@ -8,10 +8,12 @@ This document explains how to interpret that contract; it is not a second editab
 
 - Zeus is a separate director/auditor surface and appears first. Its shell is not an audit pipeline. DeepSeek remains a candidate for evaluation, with no version or execution route approved.
 - Poseidon is the OlyHub Core coordinator and appears second. Text routing is task-aware: a native provider via Netlify AI Gateway first, OpenRouter via that Gateway next, then optional direct Google/OpenAI fallback through explicit `*_DIRECT_API_KEY` credentials. Anthropic/OpenRouter personal keys are not required and are never called directly. Live Talk defaults to OpenAI Realtime; ElevenLabs Realtime is optional. The selected orb controls the visible deity identity; the Live Talk screen itself does not pin a deity name.
-- Zeus is a separate oversight surface. The nine Realm entries are Poseidon, Athena, Hefesto, Apollo, Dionísio, Peitho, Deméter, Hermes, and Hades. Héstia (source review) and Mnemosine (memory retrieval) are internal capabilities, not dedicated Realm cards.
+- Zeus is a separate oversight surface. The nine Realm entries are Poseidon, Athena, Hefesto, Apollo, Dionísio, Artemis, Deméter, Hermes, and Hades. Héstia (source review) and Mnemosine (memory retrieval) are internal capabilities, not dedicated Realm cards.
 - “Active” means a backend workflow or supported integration exists. It does not mean every blueprint skill is active. “Planned” and “internal” remain explicit in the interface. Hermes is partial: Google Gmail, Calendar, and Drive are read-only; its dedicated communication executor is not connected.
 - The currently connected specialist workflows are Athena research and documents, Hefesto code, Apollo images, and Héstia internal source review. The skill registry must not enable planned Realm skills until a matching guarded workflow is implemented.
 - Zeus/Olympus levels and selectors are not product UI. Old identifiers may remain only where stored data, APIs, tests, or migration compatibility requires them.
+
+Artemis is the new displayed identity of the former Peitho marketing/acquisition Realm. Its functionality, `planned` readiness and `peitho` IDs stay unchanged for backward compatibility; visual assets and card redesign are deferred. This label does not restrict the Realm to Gemini or any other single model.
 
 ## Model display policy
 

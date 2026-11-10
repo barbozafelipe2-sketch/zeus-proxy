@@ -333,13 +333,13 @@
     },
     {
       "id": "peitho",
-      "name": "Peitho",
+      "name": "Artemis",
       "role": "MARKETING · AQUISIÇÃO",
       "title": "Marketing e aquisição",
       "description": "Estratégia de conteúdo, canais, campanhas e métricas; integração ainda não implementada.",
       "status": "planned",
       "modelStatus": "ROTEAMENTO CANDIDATO · NÃO ATIVO",
-      "model": "Gemini Flash, Llama pequeno, Qwen e Claude Haiku são candidatos para avaliação por tarefa; nenhum está conectado a um workflow Peitho.",
+      "model": "Gemini Flash, Llama pequeno, Qwen e Claude Haiku são candidatos para avaliação por tarefa; nenhum está conectado a um workflow Artemis.",
       "skills": [
         {
           "name": "Tendências, calendário e campanhas",

@@ -12,7 +12,9 @@ The specialist filter excludes the xAI family from tool execution. A specialist'
 
 ## Deity and capability catalog
 
-The canonical roles are Athena (research and knowledge), Hefesto (engineering and code), Apollo (visual design and images), Dionísio (audio and video), Peitho (marketing and acquisition), Deméter (commerce and business operations), Hermes (communications), and Hades (security). Current callable model workflows are Athena research/documents, Hefesto code, and Apollo images. Hermes has read-only Gmail, Calendar, and Drive integrations through Settings and Poseidon chat. Dionísio, Peitho, Deméter, and the dedicated Hades Realm are not yet implemented as callable specialist tools.
+The canonical roles are Athena (research and knowledge), Hefesto (engineering and code), Apollo (visual design and images), Dionísio (audio and video), Artemis (marketing and acquisition), Deméter (commerce and business operations), Hermes (communications), and Hades (security). Current callable model workflows are Athena research/documents, Hefesto code, and Apollo images. Hermes has read-only Gmail, Calendar, and Drive integrations through Settings and Poseidon chat. Dionísio, Artemis, Deméter, and the dedicated Hades Realm are not yet implemented as callable specialist tools.
+
+The Artemis label replaces Peitho without altering its marketing functions, authorization requirements or `planned` status. The existing `peitho` keys and `peitho.marketing` skill stay in place as compatibility identifiers, not an additional Realm. Model selection remains task-based and provider-independent.
 
 Héstia review and Mnemosine memory are internal Core capabilities, not independent Realms. Existing conversation/tool IDs such as `web`, `documents`, `code`, and `images` remain stable for stored data and permissions; the visible owners and labels follow the current canon.
 

@@ -10,6 +10,8 @@ const styles=await readFile(new URL('../public/styles.css',import.meta.url),'utf
 assert.deepEqual(REALM_BLUEPRINT.realms.slice(0,3).map(realm=>realm.id),['zeus','poseidon','athena'],'oversight and coordinator lead the catalog');
 assert.equal(REALM_BLUEPRINT.realms.filter(realm=>realm.id!=='zeus').length,9,'Zeus stays separate from the nine product Realms');
 assert.equal(getRealmName('athena'),'Athena','backend workflow owner comes from canonical blueprint');
+assert.equal(getRealmName('peitho'),'Artemis','legacy Realm ID displays the new Artemis identity');
+assert.equal(SKILL_REGISTRY['peitho.marketing'].god,'Artemis','legacy marketing skill resolves to Artemis without a workflow');
 assert.equal(getRealmName('hestia'),'Héstia','internal capability owner comes from canonical blueprint');
 assert.equal(getRealmStatus('hefesto'),'active','canonical readiness is available to backend');
 for(const workflow of Object.values(TOOL_WORKFLOWS)){
