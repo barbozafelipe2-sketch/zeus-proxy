@@ -184,6 +184,42 @@ const translations = new Map(Object.entries({
   'Complex Turbo needs your approval before this higher-budget run starts.':'Autorize a execução avançada antes de iniciar esta tarefa.',
 }));
 
+translations.set('Personal memory','Memória pessoal');
+translations.set('Save durable facts or preferences for future chats and Live Talk. Poseidon saves them when you ask it to remember something, and you can review or delete them here.','Salve fatos e preferências duradouros para futuras conversas e para o Live Talk. O Poseidon registra quando você pede para lembrar e você pode revisar ou apagar tudo aqui.');
+translations.set('A preference, fact, or standing instruction to remember…','Uma preferência, fato ou instrução permanente para lembrar…');
+translations.set('Save memory','Salvar memória'); translations.set('Add personal memory','Adicionar memória pessoal');
+translations.set('No personal memories saved yet. You can say “remember that…” in chat or Live Talk.','Ainda não há memórias pessoais. Peça ao Poseidon para lembrar de algo pelo chat ou Live Talk.');
+translations.set('Personality & Instructions','Personalidade e instruções');
+translations.set('One personality for text, recorded voice messages and Live Talk. Project-specific memory remains separate.','Uma personalidade para texto, mensagens de voz e Live Talk. A memória de cada projeto continua separada.');
+translations.set('Personality','Personalidade'); translations.set('Balanced','Equilibrada'); translations.set('Direct','Direta'); translations.set('Warm & conversational','Acolhedora e natural'); translations.set('Creative & expressive','Criativa e expressiva'); translations.set('Professional','Profissional');
+translations.set('Custom instructions','Instruções personalizadas');
+translations.set('Tell Poseidon how to respond, what to prioritize, and how to speak to you…','Diga ao Poseidon como responder, o que priorizar e como falar com você…');
+translations.set('Preferences apply to future replies, including voice sessions. Your saved chats are not rewritten. System safety and factual accuracy always take priority.','As preferências valem para as próximas respostas, inclusive sessões de voz. As conversas salvas não serão reescritas. Segurança e precisão continuam em primeiro lugar.');
+translations.set('Save preferences','Salvar preferências'); translations.set('Personal owner','Proprietário pessoal');
+translations.set('One shared $60 testing target for text, images, videos, audio and tools. This is an alert only; nothing is disabled when the target is reached.','Meta mensal compartilhada de US$ 60 para testes de texto, imagens, vídeos, áudio e ferramentas. É apenas um alerta; nada é desativado quando a meta é atingida.');
+translations.set('Known text estimate','Estimativa conhecida de texto'); translations.set('Combined monthly target','Meta mensal combinada');
+translations.set('Tracked executions','Execuções registradas'); translations.set('Priced executions','Execuções com preço conhecido');
+translations.set('Unpriced executions','Execuções sem preço conhecido'); translations.set('Image executions','Execuções de imagem');
+translations.set('Web executions','Execuções de pesquisa web'); translations.set('Tool executions','Execuções de ferramentas');
+translations.set('Executions without a known price','Execuções sem preço conhecido');
+translations.set('Open','Abrir'); translations.set('Download','Baixar'); translations.set('Use in chat','Usar no chat'); translations.set('Compare','Comparar');
+translations.set('Delete memory','Apagar memória'); translations.set('Delete this memory','Apagar esta memória');
+translations.set('PROJECT WORKSPACE','ESPAÇO DO PROJETO'); translations.set('Persistent Olympus project workspace','Espaço persistente do projeto');
+translations.set('Overview','Visão geral'); translations.set('Tasks','Tarefas'); translations.set('Files','Arquivos');
+translations.set('Source of Truth','Documento canônico'); translations.set('Memory','Memória');
+translations.set('All projects','Todos os projetos'); translations.set('progress','progresso'); translations.set('files','arquivos'); translations.set('memories','memórias');
+translations.set('Live Talk orb','Orb do Live Talk');
+translations.set('Live Talk Settings','Configurações do Live Talk');
+translations.set('Audio Settings','Configurações de áudio');
+translations.set('Choose a Live Talk provider. Your selection is saved in this browser. End the current session before switching providers.','Escolha o provedor do Live Talk. A seleção fica salva neste navegador. Encerre a sessão antes de trocar de provedor.');
+translations.set('Choose an orb preview above. Only its inner energy moves; the frame and symbol stay fixed. Provider-specific voice choices change vocal timbre; authenticated tools and workspace context stay available in every session.','Escolha uma esfera acima. A energia interna se move, o aro externo permanece fixo e o brilho aumenta enquanto a IA fala. As vozes alteram o timbre; as ferramentas autorizadas e o contexto do workspace continuam disponíveis.');
+translations.set('Choose the provider and voice for read-aloud replies. Live Talk has separate settings.','Escolha o provedor e a voz para leitura em voz alta. O Live Talk tem configurações próprias.');
+translations.set('Read-aloud provider','Provedor de leitura em voz alta');
+translations.set('Automatic (agent detects language)','Automático (a IA detecta o idioma)');
+translations.set('Português (Brasil)','Português (Brasil)'); translations.set('English (US)','Inglês (EUA)'); translations.set('Español','Espanhol');
+translations.set('Refresh voices','Atualizar vozes'); translations.set('Loading voices…','Carregando vozes…'); translations.set('Choose a voice','Escolha uma voz');
+translations.set('Unknown','Desconhecido'); translations.set('Unavailable','Indisponível'); translations.set('Not integrated','Não integrado');
+translations.set('PROJECT','PROJETO'); translations.set('WORKSPACE','ESPAÇO DE TRABALHO');
 export function translateInterfaceText(value) {
   const reference=/^([\s\S]*?)( · ref .+)$/.exec(value);
   if(reference)return translateInterfaceText(reference[1])+reference[2];
