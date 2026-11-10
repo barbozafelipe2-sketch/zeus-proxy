@@ -655,7 +655,7 @@ body .home-workspace .poseidon-chat-emblem{display:grid;place-items:center}
 
 /* Chat identity artwork: Poseidon carries the ocean trident; specialist realms carry their own mark. */
 .poseidon-chat-emblem .poseidon-trident-art{
-  display:block;width:70px;height:70px;object-fit:contain;filter:drop-shadow(0 0 7px rgba(11,218,255,.6)) drop-shadow(0 0 13px rgba(151,46,255,.42))
+  display:block;width:50px;height:50px;margin:0;object-fit:contain;object-position:center;transform:none;filter:drop-shadow(0 0 7px rgba(11,218,255,.6)) drop-shadow(0 0 13px rgba(151,46,255,.42))
 }
 body .home-workspace .message.assistant .message-bolt.poseidon-trident .poseidon-trident-art,
 body .project-chat-scroll .message.assistant .message-bolt.poseidon-trident .poseidon-trident-art{
