@@ -124,23 +124,13 @@ body{background-color:var(--oly-ink)}
 
 /* OlyHub canonical home: midnight navy and cyan/violet wave light.
    Remove the retired marble background from the shared app canvas. */
-body .main{
-  background-color:#04071d!important;
-  background-image:
-    radial-gradient(ellipse at 16% 14%,rgba(19,45,154,.24),transparent 35%),
-    radial-gradient(ellipse at 88% 28%,rgba(107,28,198,.17),transparent 34%),
-    linear-gradient(180deg,#04071d 0%,#050a24 52%,#04071d 100%)!important;
-  background-attachment:fixed!important;
-}
+body .main{background:#020622!important}
 body .main:before{
-  position:fixed!important;inset:0!important;height:auto!important;z-index:0!important;pointer-events:none;
-  background:
-    radial-gradient(ellipse 108% 31% at -4% 0%,transparent 67%,rgba(183,43,255,.86) 67.35%,rgba(99,57,255,.35) 68%,transparent 69.2%),
-    radial-gradient(ellipse 98% 29% at 103% 1%,transparent 66.5%,rgba(0,207,255,.9) 66.9%,rgba(0,137,255,.36) 67.8%,transparent 69.2%),
-    radial-gradient(ellipse 106% 24% at 4% 104%,transparent 66%,rgba(174,34,255,.78) 66.4%,rgba(83,56,255,.3) 67.2%,transparent 68.6%),
-    radial-gradient(ellipse 92% 24% at 105% 102%,transparent 65%,rgba(0,199,255,.78) 65.4%,rgba(0,115,255,.31) 66.2%,transparent 67.6%);
-  opacity:.56;
+  content:"";position:fixed!important;inset:0 0 0 var(--sidebar)!important;height:auto!important;
+  z-index:0!important;pointer-events:none;background:#020622 url('/assets/olyhub-neon-waves-v2.webp') center/100% 100% no-repeat!important;
+  opacity:1!important;filter:none!important;transform:none!important;animation:none!important;
 }
+@media(max-width:959px){body .main:before{left:0!important}}
 body .home-workspace{background:transparent!important;background-image:none!important}
 body .topbar .personal-bolt.small{
   width:40px;height:42px;border:0;border-radius:0;background:transparent;color:#e7fbff;
@@ -382,7 +372,7 @@ body{background-color:#04091f;color:var(--oly-text)}
 body .home-workspace .poseidon-chat-intro{
   position:relative!important;top:auto!important;z-index:0!important;
   margin:0 auto 22px!important;padding:16px 12px 13px!important;
-  background:linear-gradient(180deg,rgba(7,13,43,.42),rgba(7,13,43,.08))!important;
+  background:transparent!important;
   backdrop-filter:none!important
 }
 body .home-workspace.has-messages .poseidon-chat-intro{margin-bottom:22px!important}
@@ -556,13 +546,8 @@ body .settings-page .voice-orb-option.selected{border-color:#54e6ff!important;co
 }
 .voice-orb-swatch.classic:after,.voice-orb-swatch.liquid:after{opacity:.8}
 
-.home-workspace:after{
-  content:"";position:absolute;left:-10%;right:-10%;top:0;height:340px;z-index:-1;pointer-events:none;opacity:.52;
-  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1200' height='400' viewBox='0 0 1200 400'%3E%3Cdefs%3E%3ClinearGradient id='a' x1='0' x2='1'%3E%3Cstop stop-color='%2300dfff' stop-opacity='.0'/%3E%3Cstop offset='.28' stop-color='%2300dfff' stop-opacity='.85'/%3E%3Cstop offset='.68' stop-color='%237b64ff' stop-opacity='.8'/%3E%3Cstop offset='1' stop-color='%23d12cff' stop-opacity='.0'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath d='M-20 220 C160 190 170 90 350 108 S590 300 790 190 1010 50 1220 95' fill='none' stroke='url(%23a)' stroke-width='3'/%3E%3Cpath d='M-20 270 C170 210 215 150 370 170 S600 330 795 238 1000 106 1220 150' fill='none' stroke='%2300bfff' stroke-opacity='.46' stroke-width='1.4'/%3E%3Cpath d='M-20 330 C180 270 250 230 420 232 S650 365 835 286 1020 188 1220 202' fill='none' stroke='%23c139ff' stroke-opacity='.56' stroke-width='1.6'/%3E%3C/svg%3E");
-  background-position:center top;background-size:cover;filter:drop-shadow(0 0 12px rgba(25,174,255,.4));
-  animation:oly-chat-waves 18s ease-in-out infinite alternate
-}
-@keyframes oly-chat-waves{from{transform:translate3d(-1%,0,0) scale(1);opacity:.36}to{transform:translate3d(1.5%,6px,0) scale(1.02);opacity:.66}}
+.home-workspace:after{content:none!important;display:none!important}
+
 @keyframes oly-screen-arrive{from{opacity:.82;filter:saturate(.88)}to{opacity:1;filter:saturate(1)}}
 body .page:not(.home-workspace){animation:oly-screen-arrive .32s ease-out both}
 .topbar button,.sidebar button,.mobile-bottom-nav button{transition:color .18s,background .2s,box-shadow .2s,transform .18s}
@@ -657,7 +642,7 @@ body .home-workspace .poseidon-chat-emblem{display:grid;place-items:center}
 .poseidon-chat-emblem .poseidon-trident-art{
   display:block;width:48px;height:58px;max-width:100%;max-height:100%;margin:0 auto;
   object-fit:contain;object-position:50% 50%;align-self:center;justify-self:center;transform:none!important;
-  filter:drop-shadow(0 0 7px rgba(11,218,255,.6)) drop-shadow(0 0 13px rgba(151,46,255,.42))
+  filter:brightness(1.65) saturate(1.2) drop-shadow(0 0 3px #80f8ff) drop-shadow(0 0 10px rgba(0,225,255,.95)) drop-shadow(0 0 18px rgba(153,48,255,.7))
 }
 body .home-workspace .message.assistant .message-bolt.poseidon-trident .poseidon-trident-art,
 body .project-chat-scroll .message.assistant .message-bolt.poseidon-trident .poseidon-trident-art{
@@ -673,9 +658,6 @@ body .project-chat-scroll .message.assistant .message-bolt.poseidon-trident .pos
 @media(max-width:959px){
   .poseidon-chat-emblem .poseidon-trident-art{width:46px;height:55px}
   body .home-workspace .message.assistant .message-bolt.poseidon-trident .poseidon-trident-art{width:40px;height:40px}
-}
-@media(prefers-reduced-motion:reduce){
-  .poseidon-chat-emblem .poseidon-trident-art{filter:none}
 }
 
 /* Live Talk orb: animate a continuous S-current inside the clipped sphere. */
@@ -1006,4 +988,25 @@ html.is-busy body:before{background:linear-gradient(90deg,transparent,#22dfff,#a
 @media(prefers-reduced-motion:reduce){
   .live-talk-orb-wrap:has(.is-speaking):before{animation:none!important}
   .project-card-shell .progress>span:after{animation:none!important}
+}
+
+/* Reference composition: art at the edges, clear conversation canvas. */
+body .home-workspace:before{content:none!important;display:none!important}
+body .home-workspace .poseidon-chat-intro{padding:24px 12px 20px!important;background:transparent!important}
+body .home-workspace.is-empty .poseidon-chat-intro{margin-top:clamp(18px,5vh,54px)!important}
+body .home-workspace .poseidon-chat-emblem{
+  border:2px solid transparent;background:linear-gradient(#040823,#040823) padding-box,linear-gradient(140deg,#5dffff,#00cfff 28%,#7c45ff 68%,#ed62ff) border-box;
+  box-shadow:0 0 9px rgba(38,233,255,.8),0 0 28px rgba(0,202,255,.38),0 0 42px rgba(177,45,255,.32),inset 0 0 18px rgba(40,114,255,.18);
+}
+body .home-workspace .poseidon-chat-prompt:before{background:linear-gradient(90deg,transparent,#40edff)!important;box-shadow:0 0 10px rgba(0,225,255,.45)}
+body .home-workspace .poseidon-chat-prompt:after{background:linear-gradient(90deg,#d067ff,transparent)!important;box-shadow:0 0 10px rgba(184,60,255,.4)}
+body .home-chat-column>.composer-shell{background:transparent!important}
+body .home-workspace .composer{box-shadow:0 0 18px rgba(0,200,255,.16),0 0 30px rgba(161,40,255,.13),inset 0 1px rgba(255,255,255,.12)!important}
+body .mobile-bottom-nav{border-radius:24px 24px 0 0;border:1px solid rgba(108,92,243,.4);border-bottom:0;background:rgba(3,7,30,.94)!important}
+body .mobile-bottom-nav button.active{background:linear-gradient(130deg,rgba(0,194,255,.2),rgba(40,40,144,.35) 52%,rgba(170,30,240,.3)) padding-box,linear-gradient(115deg,#00e4ff,#7562ff 55%,#d540ff) border-box!important;box-shadow:inset 0 0 20px rgba(16,156,255,.17),0 0 17px rgba(14,211,255,.25),0 0 25px rgba(152,42,255,.2)!important}
+.realm-chat-description{margin:8px auto;max-width:42ch;text-align:center;color:#b5c4e4;font-size:14px;line-height:1.6}
+@media(min-width:960px){
+ body .sidebar{background:linear-gradient(180deg,rgba(3,6,30,.7),rgba(3,6,30,.35)),url('/assets/olyhub-neon-waves-v2.webp') center/auto 100% no-repeat!important}
+ body .home-workspace .poseidon-chat-intro{padding-top:36px!important;margin-bottom:24px!important}
+ body .home-chat-column{max-width:1120px;margin-inline:auto;width:100%}
 }

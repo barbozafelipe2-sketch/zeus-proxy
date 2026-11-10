@@ -7,9 +7,9 @@ const chat=read('netlify/functions/chat.mjs');
 const pkg=JSON.parse(read('package.json'));
 const lock=JSON.parse(read('package-lock.json'));
 const checks=[
-  [app.includes('SEU ASSISTENTE DE IA NO OLYHUB'),'Poseidon chat identity matches the approved OlyHub UI'],
+  [!app.includes('SEU ASSISTENTE DE IA NO OLYHUB')&&!app.includes('Comece uma conversa')&&!app.includes('Revisar uma fonte'),'Poseidon chat identity matches the approved OlyHub UI'],
   [!app.includes('Deep research & analysis.'),'no fake deep-research copy'],
-  [app.includes('Peça algo ao Poseidon.')&&!app.includes('data-mode="OLYMPUS"'),'Poseidon primary chat without a user-facing Olympus mode'],
+  [app.includes('poseidon-chat-intro')&&!app.includes('data-mode="OLYMPUS"'),'Poseidon primary chat without a user-facing Olympus mode'],
   [app.includes('system-indicator ${tone}'),'runtime-aware topbar state'],
   [app.includes('composer-meta'),'composer persistence/help copy'],
   [css.includes('OH-004.3.4 — final product polish'),'final polish CSS layer'],

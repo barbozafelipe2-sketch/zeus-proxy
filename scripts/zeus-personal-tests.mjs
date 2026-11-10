@@ -9,7 +9,7 @@ const models=readFileSync('netlify/functions/_shared/models.mjs','utf8');
 const chat=readFileSync('netlify/functions/chat.mjs','utf8');
 const health=readFileSync('netlify/functions/health.mjs','utf8');
 
-assert.ok(app.includes('Peça algo ao Poseidon.')&&!app.includes('data-mode=')&&!app.includes('data-routing-mode='),'Poseidon must be the primary chat without legacy mode selectors');
+assert.ok(app.includes('poseidon-chat-intro')&&!app.includes('data-mode=')&&!app.includes('data-routing-mode='),'Poseidon must be the primary chat without legacy mode selectors');
 const homeView=app.slice(app.indexOf('function homeView()'),app.indexOf('function safeSources'));
 assert.doesNotMatch(homeView,/homeAgentPanel|homeContextPanel|homeMobileArtifacts|managerAgentStrip/,'Poseidon Home must open directly into chat without legacy dashboard panels');
 assert.ok(!app.includes('${mobileNav()}')&&app.includes('id="hamburger"'),'mobile navigation should use the existing side drawer');

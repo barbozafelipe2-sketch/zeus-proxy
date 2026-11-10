@@ -275,9 +275,9 @@ function icon(name){
   const map={
     menu:svg('<path d="M4 7h16M4 12h16M4 17h16"/>'),
     home:svg('<path d="M4 10.5 12 4l8 6.5V20a1 1 0 0 1-1 1h-5v-6H10v6H5a1 1 0 0 1-1-1z"/>'),
-    projects:svg('<rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/>'),
-    tools:svg('<path d="M14.5 6.5 18 3l3 3-3.5 3.5M3 21l7.5-7.5M13 11l2.5-2.5"/><path d="M8 16l-3 5 5-3"/>'),
-    files:svg('<path d="M7 3h7l5 5v13a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/><path d="M14 3v5h5"/>'),
+    projects:svg('<path d="m12 3 10 6-10 6L2 9Z"/><path d="m2 13 10 6 10-6M2 17l10 6 10-6"/>'),
+    tools:svg('<path d="m13 2-9 12h7l-1 8 10-13h-8Z"/>'),
+    files:svg('<path d="M3 7a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/>'),
     settings:svg('<circle cx="12" cy="12" r="3"/><path d="M12 3v2M12 19v2M5 12H3M21 12h-2M6.2 6.2l1.4 1.4M16.4 16.4l1.4 1.4M17.8 6.2l-1.4 1.4M7.6 16.4 6.2 17.8"/>'),
     plus:svg('<path d="M12 5v14M5 12h14"/>'),
     search:svg('<circle cx="11" cy="11" r="6"/><path d="m20 20-3.5-3.5"/>'),
@@ -371,7 +371,7 @@ function homeView(){
     ${state.currentConversation&&!state.currentProject?`<div class="conversation-actions"><button type="button" class="text-gold" data-move-current="${esc(state.currentConversation)}">Mover esta conversa para um projeto</button></div>`:''}
     <div class="chat-scroll" id="chat-scroll">
       <div class="poseidon-chat-intro"><div class="poseidon-chat-emblem" aria-hidden="true">${chatEmblemMarkup(chatIdentity)}</div><strong>${esc(chatIdentity.name)}</strong><span class="poseidon-chat-prompt">Como posso <b>ajudar?</b></span></div>
-      ${isEmpty?`<div class="welcome"><div class="eyebrow">${tool?`${esc(tool.god)} · FERRAMENTA ESPECIALIZADA`:state.currentProject?esc(state.currentProject.name):'SEU ASSISTENTE DE IA NO OLYHUB'}</div><h1>${tool?`O que ${esc(tool.god)} deve fazer?`:'Comece uma conversa'}</h1><p>${tool?`Este espaço privado de ${esc(tool.title.toLowerCase())} usa um workflow dedicado, coordenado pelo Poseidon.`:'Peça algo ao Poseidon. Suas conversas e entregas ficam salvas no workspace.'}</p>${tool?'':`<div class="quick-prompts"><button data-prompt="Analise o arquivo anexado e baseie as afirmações importantes na fonte. Aponte claramente o que a fonte não sustenta.">Revisar uma fonte</button><button data-prompt="Crie a próxima entrega profissional deste trabalho e mantenha-a conectada à conversa.">Criar uma entrega</button><button data-prompt="Implemente isso como código executável. Inclua testes focados e diga claramente quais foram executados de verdade.">Criar código</button><button data-prompt="Transforme este objetivo em um plano de projeto com tarefas, riscos e marcos claros.">Planejar projeto</button></div>`}</div>`:`${state.messagePage?.hasMore?'<div class="history-more"><button class="secondary compact" id="load-older-messages">Load older messages</button></div>':''}<div class="message-list">${msgs}</div>`}
+      ${isEmpty?(tool?`<p class="realm-chat-description">Conversa de texto com ${esc(tool.god)} · ${esc(tool.title)}</p>`:''):`${state.messagePage?.hasMore?'<div class="history-more"><button class="secondary compact" id="load-older-messages">Load older messages</button></div>':''}<div class="message-list">${msgs}</div>`}
       ${exec}
       ${errorBanner()}
     </div>
