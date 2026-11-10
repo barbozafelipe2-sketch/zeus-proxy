@@ -700,8 +700,8 @@ function speechLocale(text=''){
 
 function voiceAvatarMarkup(){
  const option=VOICE_AVATARS[state.voiceAvatar]||VOICE_AVATARS.olyhub,active=state.liveTalk?'active':'',speaking=state.liveStage==='speaking'?'is-speaking':'';
- if(option.image)return `<div class="zeus-voice-presence orb-art ${option.className} ${active} ${speaking}" aria-hidden="true"><img class="voice-orb-art" src="${option.image}" alt="" draggable="false">${state.voiceAvatar==='ocean'?'<span class="poseidon-water-motion"></span>':''}</div>`;
- return `<div class="zeus-voice-presence ${option.className} ${active} ${speaking}" aria-hidden="true"><div class="zeus-voice-core"><span class="voice-energy energy-one"></span><span class="voice-energy energy-two"></span><span class="voice-energy energy-three"></span><span class="zeus-voice-symbol">ϟ</span></div></div>`;
+ if(option.image)return `<div class="zeus-voice-presence orb-art ${option.className} ${active} ${speaking}" aria-hidden="true"><img class="voice-orb-art" src="${option.image}" alt="" draggable="false"><span class="poseidon-water-motion ${option.className}"></span></div>`;
+ return `<div class="zeus-voice-presence ${option.className} ${active} ${speaking}" aria-hidden="true"><div class="zeus-voice-core"><span class="voice-energy energy-one"></span><span class="voice-energy energy-two"></span><span class="voice-energy energy-three"></span><img class="voice-orb-trident-mark" src="/assets/poseidon-trident.webp" alt="" draggable="false"></div></div>`;
 }
 function voiceAvatarPicker(){
  return `<div class="field"><span class="field-label">Live Talk orb</span><div id="voice-avatar" class="voice-orb-options" role="radiogroup" aria-label="Choose a Live Talk orb">${Object.entries(VOICE_AVATARS).map(([id,option])=>{const selected=state.voiceAvatar===id,preview=option.image?`<img src="${option.image}" alt="" loading="lazy">`:`<span class="voice-orb-swatch ${option.className}" aria-hidden="true"></span>`;return `<button type="button" class="voice-orb-option ${selected?'selected':''}" data-voice-avatar="${id}" role="radio" aria-checked="${selected}" aria-pressed="${selected}"><span class="voice-orb-preview ${option.image?'has-art':''}">${preview}</span><span>${option.label}</span></button>`}).join('')}</div></div>`;
@@ -1327,7 +1327,7 @@ function liveTalkExperience(){
     </header>
     <section class="live-talk-center" aria-live="polite">
       <div class="live-talk-orb-wrap orb-stage-${state.voiceAvatar} ${VOICE_AVATARS[state.voiceAvatar]?.image?'has-orb-art':''}">${voiceAvatarMarkup()}</div>
-      <div class="live-talk-waveform ${state.liveStage==='speaking'?'is-speaking':''}" aria-hidden="true">${bars}</div>
+      <div class="live-talk-waveform ${state.liveStage==='speaking'?'is-speaking':state.liveStage==='listening'?'is-listening':''}" aria-hidden="true">${bars}</div>
       <p class="live-talk-status ${state.liveStage==='speaking'?'is-speaking':''}"><span class="live-mic-dot"></span>${state.liveStage==='speaking'?'<span class="zeus-speaking-bolt" aria-hidden="true">⚡</span>':''}${esc(stage)}</p>
       <p class="live-talk-latest">${state.liveAgentPartial?`<span class="muted">Você:</span> ${esc(state.liveAgentPartial)}`:excerpt?esc(excerpt):'Fale naturalmente. Sua conversa será salva no chat.'}</p>
       <div class="live-talk-mode"><span class="live-mode-dot"></span>${liveProviderShort} <span>·</span> ${esc(state.liveLocale==='auto'?'AUTO LANGUAGE':state.liveLocale.toUpperCase())}</div>
@@ -2162,7 +2162,7 @@ async function connectOpenAILive(){
    if(m.type==='error'){const code=String(m.error?.code||'');state.error='OpenAI Live: '+String(m.error?.message||'Session error').slice(0,250);if(/invalid_api_key|insufficient_quota|rate_limit/i.test(code))pauseLiveTalkOnError(state.error,'agent');else render();}
    if(m.type==='conversation.item.input_audio_transcription.completed'&&m.transcript)saveLiveAgentMessage({message:m.transcript,role:'user',event_id:m.item_id||'user-'+Date.now()},generation,'openai-'+generation);
    if((m.type==='response.output_audio_transcript.done')&&m.transcript)saveLiveAgentMessage({message:m.transcript,role:'assistant',event_id:m.item_id||'assistant-'+Date.now()},generation,'openai-'+generation);
-   if(m.type==='response.audio.delta'||m.type==='response.output_audio.delta'){state.liveStage='speaking';render();}
+   if((m.type==='response.audio.delta'||m.type==='response.output_audio.delta')&&state.liveStage!=='speaking'){state.liveStage='speaking';render();}
    if(m.type==='response.done'){state.liveStage=state.liveMuted?'muted':'listening';render();}
    if(m.type==='response.function_call_arguments.done'){
     const id=String(m.call_id||'');if(!id||t.calls.has(id))return;t.calls.add(id);

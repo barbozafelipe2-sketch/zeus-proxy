@@ -2015,3 +2015,71 @@ body .message.user .message-body{
 @media(max-width:959px){.live-talk-orb-wrap{width:min(64vw,420px)!important;height:min(64vw,420px)!important;max-width:420px!important;max-height:420px!important;margin:0!important}.live-talk-waveform{width:min(55vw,350px)!important;margin-top:14px!important}}
 @media(max-width:959px) and (max-height:760px){.live-talk-orb-wrap{width:min(50vh,360px)!important;height:min(50vh,360px)!important}}
 @media(prefers-reduced-motion:reduce){.live-talk-orb-wrap:has(.is-speaking):before,.live-talk-waveform.is-speaking i{animation:none!important}.live-talk-waveform.is-speaking i{opacity:1!important}}
+
+/* Live Talk animation pass: keep the rim still, animate only energy inside the sphere. */
+.live-talk-orb-wrap .voice-orb-art{transform:none!important;animation:none!important}
+.poseidon-water-motion{
+  z-index:4!important;left:50%!important;top:50%!important;width:88%!important;height:88%!important;
+  aspect-ratio:1;transform:translate(-50%,-50%);border-radius:50%;overflow:hidden;opacity:.56!important;
+  background:conic-gradient(from 0deg,transparent 0 20%,var(--orb-flow-a,rgba(59,232,255,.7)) 27%,transparent 37% 57%,var(--orb-flow-b,rgba(163,59,255,.62)) 68%,transparent 79% 100%)!important;
+  -webkit-mask:radial-gradient(circle,transparent 0 7%,#000 17% 78%,transparent 94%)!important;
+  mask:radial-gradient(circle,transparent 0 7%,#000 17% 78%,transparent 94%)!important;
+  animation:poseidon-water-current 10s linear infinite!important;mix-blend-mode:screen!important
+}
+.poseidon-water-motion:before,.poseidon-water-motion:after{
+  content:"";position:absolute;display:block;left:-38%;width:176%;height:32%;border-radius:50%;
+  background:linear-gradient(90deg,transparent 2%,var(--orb-flow-a,rgba(27,227,255,.08)) 22%,rgba(115,194,255,.78) 43%,var(--orb-flow-b,rgba(176,50,255,.75)) 69%,transparent 98%);
+  filter:blur(4px);opacity:.8;mix-blend-mode:screen;pointer-events:none
+}
+.poseidon-water-motion:before{top:31%;transform:rotate(-12deg);animation:poseidon-ribbon-flow 3.2s ease-in-out infinite alternate}
+.poseidon-water-motion:after{top:52%;height:22%;opacity:.62;transform:rotate(11deg);animation:poseidon-ribbon-flow 3.8s ease-in-out -1.4s infinite alternate-reverse}
+@keyframes poseidon-ribbon-flow{
+  0%{translate:-5% 8%;scale:.92 .86;opacity:.45}
+  100%{translate:7% -7%;scale:1.06 1.12;opacity:.96}
+}
+.zeus-voice-presence.orb-amber .poseidon-water-motion,.zeus-voice-presence.orb-plasma .poseidon-water-motion{--orb-flow-a:rgba(255,211,95,.78);--orb-flow-b:rgba(255,115,56,.72)}
+.zeus-voice-presence.orb-storm .poseidon-water-motion{--orb-flow-a:rgba(93,202,255,.8);--orb-flow-b:rgba(159,78,255,.8)}
+.zeus-voice-presence.is-speaking{animation:live-orb-neon-breathe 780ms ease-in-out infinite alternate}
+.zeus-voice-presence.is-speaking .poseidon-water-motion{opacity:1!important;animation-duration:6s!important}
+.zeus-voice-presence.is-speaking .poseidon-water-motion:before{animation-duration:1.05s;filter:blur(2px);opacity:1}
+.zeus-voice-presence.is-speaking .poseidon-water-motion:after{animation-duration:1.3s;filter:blur(2px);opacity:.94}
+@keyframes live-orb-neon-breathe{
+  from{filter:drop-shadow(0 0 16px rgba(0,216,255,.38)) drop-shadow(0 0 25px rgba(150,54,255,.25))}
+  to{filter:drop-shadow(0 0 34px rgba(0,233,255,.92)) drop-shadow(0 0 48px rgba(182,54,255,.76))}
+}
+.live-talk-waveform{
+  width:min(78vw,420px)!important;height:54px!important;margin:14px auto 0!important;gap:3px!important;
+  align-items:center!important;justify-content:center!important
+}
+.live-talk-waveform i{
+  width:3px!important;height:clamp(6px,calc(var(--wave)*.26),18px)!important;max-height:18px!important;min-height:5px!important;
+  opacity:.58!important;transform:scaleY(.55);filter:brightness(1.2);
+  box-shadow:0 0 8px rgba(0,211,255,.34)!important;animation:live-wave-idle 1.45s ease-in-out var(--delay) infinite alternate!important
+}
+.live-talk-waveform i:nth-child(n+23){box-shadow:0 0 8px rgba(179,45,255,.32)!important}
+.live-talk-waveform.is-listening i{opacity:.68!important}
+.live-talk-waveform.is-speaking i{
+  height:var(--wave)!important;max-height:46px!important;min-height:7px!important;opacity:1!important;
+  transform:scaleY(1);filter:brightness(1.5);
+  animation:live-wave 620ms ease-in-out var(--delay) infinite alternate!important;
+  box-shadow:0 0 13px rgba(0,220,255,.92),0 0 21px rgba(0,181,255,.55)!important
+}
+.live-talk-waveform.is-speaking i:nth-child(n+23){box-shadow:0 0 13px rgba(189,66,255,.92),0 0 21px rgba(139,49,255,.55)!important}
+@keyframes live-wave-idle{from{transform:scaleY(.42);opacity:.4}to{transform:scaleY(1);opacity:.82}}
+.voice-orb-trident-mark{
+  position:absolute;z-index:3;left:50%;top:50%;width:62px;height:76px;transform:translate(-50%,-50%);
+  object-fit:contain;filter:drop-shadow(0 0 8px rgba(0,218,255,.82)) drop-shadow(0 0 16px rgba(157,45,255,.7))
+}
+.zeus-voice-core .voice-energy{display:block!important;position:absolute;z-index:1;left:-20%;width:140%;height:32%;border-radius:50%;pointer-events:none;mix-blend-mode:screen;filter:blur(5px)}
+.zeus-voice-core .energy-one{top:30%;background:linear-gradient(90deg,transparent,rgba(0,222,255,.8),rgba(73,110,255,.5),transparent);animation:poseidon-ribbon-flow 2.4s ease-in-out infinite alternate}
+.zeus-voice-core .energy-two{top:46%;background:linear-gradient(90deg,transparent,rgba(112,149,255,.42),rgba(185,48,255,.8),transparent);animation:poseidon-ribbon-flow 3s ease-in-out -1s infinite alternate-reverse}
+.zeus-voice-core .energy-three{top:61%;height:20%;background:linear-gradient(90deg,transparent,rgba(0,224,255,.62),rgba(151,56,255,.7),transparent);animation:poseidon-ribbon-flow 3.6s ease-in-out -.8s infinite alternate}
+@media(max-width:680px){
+  .live-talk-waveform{width:min(82vw,390px)!important}
+  .voice-orb-trident-mark{width:54px;height:67px}
+}
+@media(prefers-reduced-motion:reduce){
+  .poseidon-water-motion,.poseidon-water-motion:before,.poseidon-water-motion:after,.zeus-voice-presence.is-speaking,
+  .live-talk-waveform i,.zeus-voice-core .voice-energy{animation:none!important}
+  .live-talk-waveform i{opacity:.86!important}
+}
