@@ -9,7 +9,6 @@ export default async function handler(req,context){
  try{
   const body=await readJson(req);
   if(!body||typeof body!=='object'||Array.isArray(body))return errorJson('Invalid request',400,'INVALID_JSON',requestId);
-  if(typeof body.projectId!=='string'||!body.projectId.trim())return errorJson('Live Talk context requires a project.',400,'VOICE_PROJECT_REQUIRED',requestId);
   await consumeEndpointRate(auth.db,auth.user.id,'voice_realtime_session',requestId,60);
   const memory=await loadVoiceMemoryContext(auth.db,auth.user.id,{projectId:body.projectId||null,conversationId:body.conversationId||null});
   if(memory.error)return errorJson(memory.error.message,memory.error.status,memory.error.code,requestId);

@@ -210,7 +210,7 @@ const CODING = /\b(code|bug|typescript|javascript|python|api|database|deploy|imp
 // OpenRouter models routed through Netlify AI Gateway. Explicit direct Google
 // and OpenAI credentials are appended only as the final recovery tier.
 const ROUTE_TABLE = {
-  fast: [['gemini', () => env('GEMINI_STRONG_MODEL') || 'gemini-3.5-flash'], ['openai', () => env('OPENAI_MODEL') || 'gpt-6-luna'], ['anthropic', () => env('ANTHROPIC_STRONG_MODEL') || 'claude-sonnet-5'], ['openrouter', () => 'x-ai/grok-4.3'], ['openrouter', () => 'deepseek/deepseek-v4.1-flash']],
+  fast: [['gemini', () => env('GEMINI_STRONG_MODEL') || 'gemini-3.5-flash'], ['openai', () => env('OPENAI_MODEL') || 'gpt-6-luna'], ['anthropic', () => env('ANTHROPIC_STRONG_MODEL') || 'claude-sonnet-5'], ['openrouter', () => 'deepseek/deepseek-v4.1-flash'], ['openrouter', () => 'x-ai/grok-4.3']],
   coding: [['anthropic', () => env('ANTHROPIC_STRONG_MODEL') || 'claude-sonnet-5'], ['openai', () => env('OPENAI_STRONG_MODEL') || 'gpt-6.1-sol'], ['gemini', () => env('GEMINI_STRONG_MODEL') || 'gemini-3.5-flash'], ['openrouter', () => 'deepseek/deepseek-v4-pro'], ['openrouter', () => 'deepseek/deepseek-v4.1-flash'], ['openrouter', () => 'x-ai/grok-4.5']],
   writing: [['anthropic', () => env('ANTHROPIC_STRONG_MODEL') || 'claude-sonnet-5'], ['gemini', () => env('GEMINI_STRONG_MODEL') || 'gemini-3.5-flash'], ['openai', () => env('OPENAI_MODEL') || 'gpt-6-luna'], ['openrouter', () => 'x-ai/grok-4.5'], ['openrouter', () => 'x-ai/grok-4.3']],
   vision: [['gemini', () => env('GEMINI_STRONG_MODEL') || 'gemini-3.5-flash'], ['openai', () => 'gpt-4.1-mini'], ['anthropic', () => env('ANTHROPIC_STRONG_MODEL') || 'claude-sonnet-5'], ['openrouter', () => 'x-ai/grok-4.3']],
@@ -512,7 +512,7 @@ function errorMessage(error){return String(error?.message||error||'').toLowerCas
 function isModelSpecificFailure(error){const status=errorStatus(error),m=errorMessage(error);return status===404 || (/\b(model|engine|chat.completions|responses api)\b/.test(m)&&/(not found|unsupported|unavailable|not available|does not exist|unknown|not supported)/.test(m));}
 export function isTimeoutFailure(error){const name=String(error?.name||'');const m=errorMessage(error);return name==='TimeoutError'||name==='AbortError'||/aborted due to timeout|operation was aborted|timed out|timeout/.test(m);}
 function isTransientFailure(error){const status=errorStatus(error),m=errorMessage(error);return isTimeoutFailure(error) || status===408 || status>=500 || /empty response|fetch failed|econnreset|etimedout|connection reset|socket hang up|temporarily unavailable/.test(m);}
-function countsAsProviderFailure(error){const status=errorStatus(error),m=errorMessage(error);if(isModelSpecificFailure(error))return false;return [401,402,403,429].includes(status)||status>=500||/quota|billing|credit|unauthor|forbidden|rate limit|insufficient|fetch failed|econnreset|etimedout|connection reset|socket hang up/.test(m);}
+function countsAsProviderFailure(error){const status=errorStatus(error),m=errorMessage(error);if(String(error?.code||'').startsWith('EXECUTION_')||isModelSpecificFailure(error))return false;if(isTimeoutFailure(error))return true;return [408,401,402,403,429].includes(status)||status>=500||/quota|billing|credit|unauthor|forbidden|rate limit|insufficient|fetch failed|econnreset|etimedout|connection reset|socket hang up/.test(m);}
 export function shouldAdvanceOpenAIModel(error){const status=errorStatus(error),m=errorMessage(error);if([400,401,402,403,413,422,429].includes(status)&&!isModelSpecificFailure(error))return false;if(/quota|billing|credit|unauthor|forbidden|rate limit|content policy|context length|invalid image|invalid request/.test(m))return false;return isModelSpecificFailure(error)||isTransientFailure(error);}
 // User-input failures are not provider outages. Retrying an identical oversized/invalid payload
 // through paid fallback routes cannot fix it and can multiply charges.
@@ -753,7 +753,8 @@ export function summarizeProviderFailure(attempts = [], budget = null) {
     return { code: 'EXECUTION_DEADLINE', status: 503, message: `The AI models did not finish within Zeus's time limit. Retry, or ask for a smaller piece of the work at a time.${detail}` };
   if (statuses.length && statuses.every((s) => s === 404) || /model[^|]*(not found|does not exist|unsupported|not available)/.test(text))
     return { code: 'AI_MODEL_UNAVAILABLE', status: 502, message: `The configured AI models are not available to this site. Check the model settings (OPENAI_MODEL / OPENAI_STRONG_MODEL or the AI Gateway model list).${detail}` };
-  return { code: 'AI_PROVIDERS_FAILED', status: 503, message: `${base}${detail}` };
+  const attemptDetails=attempts.slice(0,5).map(a=>`${redactProviderText(String(a.model||'?')).slice(0,90)}: ${a.code==='PROVIDER_TIMEOUT'?'timeout':Number(a.status)||redactProviderText(String(a.code||a.error||'failed')).slice(0,60)}`).join('; ');
+  return { code: 'AI_PROVIDERS_FAILED', status: 503, message: `${base} Attempts: ${attemptDetails}${detail}` };
 }
 
 function codeLikeRequest(text=''){return /\b(code|bug|typescript|javascript|python|api|database|function|class|sql|deploy|implement|refactor|codigo|banco de dados|funcao|implementar|refatorar)\b/i.test(String(text||''));}

@@ -84,7 +84,8 @@ async function api(path, options={}){
     const ref=isJson&&data.requestId?` · ref ${String(data.requestId).slice(0,18)}`:'';
     const code=isJson?data.code:'HTTP_ERROR';
     const friendly={AI_PROVIDER_AUTH:'AI Gateway/provider authentication failed for this runtime.',AI_PROVIDER_QUOTA:'AI Gateway credits or provider quota are exhausted.',AI_PROVIDER_RATE_LIMIT:'The selected AI provider is rate-limiting the request right now.',AI_MODEL_UNAVAILABLE:'A configured model is unavailable; fallback could not complete safely.',EXECUTION_DEADLINE:'The AI request exceeded its execution budget before a provider completed it.',AI_PROVIDERS_FAILED:'No configured AI provider completed this request.',GITHUB_WRITE_NOT_CONFIGURED:'GitHub commit is not configured on the server yet.',GITHUB_AUTH_FAILED:'GitHub rejected the server credential. Update the GitHub token and try again.',GITHUB_WRITE_DENIED:'GitHub denied this commit. Check repository permission or branch protection.',GITHUB_SECRET_DETECTED:'The commit was blocked because a credential-like value was detected in the ZIP.',GITHUB_BRANCH_CONFLICT:'The target branch changed or rejected the safe non-force update.',GITHUB_CONFIRMATION_REQUIRED:'GitHub commit needs an explicit confirmation from this screen.',GITHUB_REPO_NOT_ALLOWED:'This repository is outside the configured allowlist.',TURBO_APPROVAL_REQUIRED:'Complex Turbo needs your approval before this higher-budget run starts.'}[code];
-    throw apiError(`${friendly||msg||`Request failed (HTTP ${r.status}).`}${ref}`,r.status,code,isJson?data:null);
+    const attemptDetail=String(msg).split(' Attempts: ')[1]?.split(' Last error')[0]||'';
+    throw apiError(`${friendly||msg||`Request failed (HTTP ${r.status}).`}${attemptDetail?` (${attemptDetail})`:''}${ref}`,r.status,code,isJson?data:null);
   }
   return data;
 }
@@ -897,7 +898,7 @@ function composer(){
   const composerMode=state.mode==='OLYMPUS'?'Olympus':'Poseidon';
   const chips=state.attachedFiles.map(f=>`<span class="file-chip">${icon('files')} ${esc(f.filename)}<button type="button" data-remove-file="${esc(f.id)}" aria-label="Remove ${esc(f.filename)}" title="Remove attachment">${icon('close')}</button></span>`).join('');
   const showMic=voiceSupported();
-  const canStartLiveTalk=state.tab==='Projects'&&Boolean(state.currentProject?.id)&&(state.projectSection||'CHAT')==='CHAT'&&!state.currentToolId;
+  const canStartLiveTalk=!state.currentToolId&&(state.tab==='Home'||(state.tab==='Projects'&&Boolean(state.currentProject?.id)&&(state.projectSection||'CHAT')==='CHAT'));
   // The compact Live Talk affordance uses the neutral OlyHub orb. Realm symbols
   // belong to the assistant identity, not to this navigation control.
   const miniOrb=VOICE_AVATARS.olyhub;
@@ -1546,7 +1547,7 @@ function bind(){
   $('#test-voice')?.addEventListener('click',()=>{testElevenLabsVoice();});
   $$('[data-tab]').forEach(b=>b.addEventListener('click',async()=>{
     const next=b.dataset.tab;state.drawer=false;
-    if(state.liveTalk&&next!=='Projects')finishLiveTalkSession();
+    if(state.liveTalk&&!['Home','Projects'].includes(next))finishLiveTalkSession();
     if(next==='Home' && state.currentProject){
       state.currentProject=null;state.currentConversation=null;state.messages=[];state.chatArtifacts=[];state.attachedFiles=[];state.activeMode=null;state.error='';
       history.replaceState({},'',location.pathname);
@@ -2502,7 +2503,7 @@ const liveVoiceSession=createLiveVoiceSessionBridge({
 });
 function toggleLiveTalk(){
   if(state.liveTalk){restoreLiveTalk();return;}
-  if(state.tab!=='Projects'||!state.currentProject?.id||(state.projectSection||'CHAT')!=='CHAT'||state.currentToolId){state.error='Live Talk is available inside a project chat. Open a project to start a session.';render();return;}
+  if(state.currentToolId||!(state.tab==='Home'||(state.tab==='Projects'&&state.currentProject?.id&&(state.projectSection||'CHAT')==='CHAT'))){state.error='Live Talk está disponível no chat principal e nos projetos.';render();return;}
   if(state.sending){state.error='Wait for Poseidon to finish the current reply before starting Live Talk.';render();return;}
   if(window.isSecureContext===false){state.error='Live Talk requires a secure HTTPS page. Open OlyHub using its HTTPS address and reconnect.';render();return;}
   if(!liveTalkSupported()){state.error='Live Talk requires microphone access, audio playback, and a supported browser.';render();return;}

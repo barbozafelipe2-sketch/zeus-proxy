@@ -20,8 +20,8 @@ try{
     text:'Hello',level:'SIMPLE',requirements:{items:[]},
     budget:createExecutionBudget({timeoutMs:30000,maxCalls:1,reserveMs:100})
   });
-  assert.equal(result.leadModel,'openrouter:x-ai/grok-4.3','Poseidon uses Grok 4.3 first');
-  assert.equal(calls[0].body.model,'x-ai/grok-4.3','the Gateway request selects the configured Grok 4.3 ID');
+  assert.equal(result.leadModel,'openrouter:deepseek/deepseek-v4.1-flash','simple chat uses the fast Gateway fallback');
+  assert.equal(calls[0].body.model,'deepseek/deepseek-v4.1-flash','the Gateway request selects the fast model ID');
   assert.deepEqual(priceFor('x-ai/grok-4.3'),{in:1.25,out:2.5},'usage has a known estimate');
 
   const toolRoles=models.roleCandidates('CREATOR','fix this code repository',{toolId:'code'});

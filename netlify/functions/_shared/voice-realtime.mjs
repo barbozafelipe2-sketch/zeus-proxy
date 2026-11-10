@@ -11,7 +11,6 @@ export async function voiceRealtimeHandler(req,context,kind,providerOverride=nul
  try{
   const body=await readJson(req);
   if(!body||typeof body!=='object'||Array.isArray(body))return errorJson('Invalid JSON.',400,'INVALID_JSON',requestId);
-  if(typeof body.projectId!=='string'||!body.projectId.trim())return errorJson('Live Talk is available only inside a project chat.',400,'VOICE_PROJECT_REQUIRED',requestId);
   const provider=resolveLiveVoiceProvider(providerOverride||body.provider);
   const agent=body.agent===undefined?'zeus':body.agent;
   if(agent!=='zeus'&&agent!=='athena')return errorJson('Invalid Live Talk agent.',400,'INVALID_AGENT',requestId);

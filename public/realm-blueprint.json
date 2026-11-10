@@ -162,7 +162,7 @@
     }
   },
   "conversationPolicy": {
-    "projectChat": "Chat de texto e Live Talk acontecem dentro de um projeto. Poseidon pode delegar a especialistas e devolver entregas ao chat persistente do mesmo projeto, quer o pedido tenha chegado por texto ou voz.",
+    "projectChat": "Live Talk está disponível no chat principal e nos chats dos projetos. Poseidon pode delegar a especialistas e devolver entregas à conversa ativa, pessoal ou de projeto, quer o pedido tenha chegado por texto ou voz.",
     "realmChat": "Os chats dos Realms são somente texto nesta fase. Não oferecem uma segunda sessão de Live Talk.",
     "futureRealmVoice": "Uma fase futura pode habilitar voz por Realm com voice ID próprio; a voz poderá atuar em qualquer projeto explicitamente escolhido, pelo mesmo pipeline seguro e com resultado associado ao chat do projeto."
   },

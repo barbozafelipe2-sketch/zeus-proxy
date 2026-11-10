@@ -8,9 +8,8 @@ assert.match(ui,/state\.liveProvider=localStorage\.getItem\('zeus-live-provider\
 assert.match(ui,/voiceId:'marin'/);assert.match(ui,/voiceAvatar:'ocean'/);assert.match(ui,/function speechLocale/);
 assert.match(ui,/discardLiveAudio/);assert.match(ui,/zeus-live-stage/);assert.match(ui,/id="voice-avatar"/);assert.match(ui,/id="live-language"/);
 assert.match(css,/prefers-reduced-motion/);assert.match(css,/width:108px;height:108px/);
+assert.ok(ui.includes("const canStartLiveTalk=!state.currentToolId&&(state.tab==='Home'||"),'main and project chat expose voice while Realm tool chats do not');
 assert.match(ui,/function toggleLiveTalk\(\)/);assert.match(ui,/function saveLiveAgentMessage/);
-assert.match(ui,/const canStartLiveTalk=state\.tab==='Projects'&&Boolean\(state\.currentProject\?\.id\)&&\(state\.projectSection\|\|'CHAT'\)==='CHAT'&&!state\.currentToolId/,'the Live Talk CTA is limited to the chat of an open project');
-assert.match(ui,/if\(state\.tab!=='Projects'\|\|!state\.currentProject\?\.id\|\|\(state\.projectSection\|\|'CHAT'\)!=='CHAT'\|\|state\.currentToolId\)/,'the Live Talk start handler independently enforces project-chat scope');
 assert.ok(ui.includes('(?:Athena|Zeus|Poseidon)'),'Live Talk strips legacy and current speaker tags');
 assert.match(ui,/A conexão Realtime com o ElevenLabs caiu\. O Safari não informou a causa exata\./,'Live Talk socket errors must be explained in Portuguese without inventing a root cause');
 const live=ui.slice(ui.indexOf('function finishLiveTalkSession(){'),ui.indexOf('\nasync function startVoice(){'));
@@ -112,12 +111,12 @@ assert.match(ui,/\$\('#live-talk-text-form'\)\?\.addEventListener\('submit',send
 assert.match(ui,/aria-label="End Live Talk"/,'Live Talk end action must be explicit and accessible');
 assert.match(transcribe,/createElevenLabsRealtimeConversationToken/,'server creates temporary ElevenLabs Realtime conversation credentials');
 const realtimeHandler=readFileSync('netlify/functions/_shared/voice-realtime.mjs','utf8');
-assert.match(realtimeHandler,/VOICE_PROJECT_REQUIRED/,'Realtime credentials cannot be issued without a project');
-assert.match(readFileSync('netlify/functions/voice-context.mjs','utf8'),/VOICE_PROJECT_REQUIRED/,'Realtime context refresh cannot fall back to personal chat');
+assert.doesNotMatch(realtimeHandler,/VOICE_PROJECT_REQUIRED/,'main chat must issue a voice session without a project');
+assert.doesNotMatch(readFileSync('netlify/functions/voice-context.mjs','utf8'),/VOICE_PROJECT_REQUIRED/,'main chat must refresh its personal voice context');
 assert.match(realtimeHandler,/voice_realtime_session/,'all Live Talk credential providers must pass the central rate limiter');
 assert.match(transcribe,/path: \['\/api\/transcribe','\/api\/voice\/realtime-token','\/api\/voice\/realtime-signed-url'\]/,'Netlify must route both Realtime credential endpoints');
 const log=readFileSync('netlify/functions/voice-log.mjs','utf8');
-assert.match(log,/VOICE_PROJECT_REQUIRED/,'Live Talk transcripts must be attached to a project');
+assert.doesNotMatch(log,/VOICE_PROJECT_REQUIRED/,'Live Talk transcripts may belong to the main chat');
 assert.match(log,/requireUser/,'transcript persistence must require authentication');
 assert.match(log,/resolveOwnedScope/,'transcript persistence must verify conversation or project ownership');
 assert.match(log,/metadata->>'eventId'/,'transcript events must be idempotent');

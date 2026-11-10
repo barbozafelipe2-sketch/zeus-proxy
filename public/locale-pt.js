@@ -223,6 +223,8 @@ translations.set('PROJECT','PROJETO'); translations.set('WORKSPACE','ESPAÇO DE 
 export function translateInterfaceText(value) {
   const reference=/^([\s\S]*?)( · ref .+)$/.exec(value);
   if(reference)return translateInterfaceText(reference[1])+reference[2];
+  const attemptsTail=/^(No configured AI provider completed this request\.) \((.+)\)$/.exec(value);
+  if(attemptsTail)return translations.get(attemptsTail[1])+' ('+attemptsTail[2]+')';
   if (translations.has(value)) return translations.get(value);
   const trimmed=value.trim();
   if (translations.has(trimmed)) return value.replace(trimmed,translations.get(trimmed));
