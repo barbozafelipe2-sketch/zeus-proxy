@@ -1,19 +1,13 @@
 const env=name=>globalThis.Netlify?.env?.get?.(name)||process.env?.[name]||'';
-export const DEFAULT_ELEVENLABS_AGENT_ID='agent_6601m5nwtedwe98bmed0f86zy586';
-
-export function elevenLabsRealtimeAgentConfigured(){
-  return Boolean((env('ELEVENLABS_API_KEY')||env('ELEVEN_LABS_API_KEY'))&&agentId());
-}
-
-export const ATHENA_ELEVENLABS_AGENT_ID='agent_6901m6je5434fhmbseer8bnjafdw';
 function agentId(selection='zeus'){
-  return selection==='athena'?ATHENA_ELEVENLABS_AGENT_ID:DEFAULT_ELEVENLABS_AGENT_ID;
+  return String(env(selection==='athena'?'ELEVENLABS_ATHENA_AGENT_ID':'ELEVENLABS_AGENT_ID')).trim();
 }
 
 export async function createElevenLabsRealtimeConversationToken({fetchImpl=globalThis.fetch,agent='zeus'}={}){
   const key=env('ELEVENLABS_API_KEY')||env('ELEVEN_LABS_API_KEY');
   const id=agentId(agent);
   if(!key){const error=new Error('ElevenLabs Realtime is not configured. Add ELEVENLABS_API_KEY to Netlify Functions.');error.status=501;error.code='ELEVENLABS_API_KEY_MISSING';throw error;}
+  if(!id){const error=new Error('ElevenLabs Realtime is not configured. Add the selected agent ID to Netlify Functions.');error.status=501;error.code='ELEVENLABS_AGENT_ID_MISSING';throw error;}
   if(!/^agent_[A-Za-z0-9]{8,80}$/.test(id)){const error=new Error('The ElevenLabs Agent ID is invalid.');error.status=500;error.code='ELEVENLABS_AGENT_ID_INVALID';throw error;}
   const response=await fetchImpl(`https://api.elevenlabs.io/v1/convai/conversation/token?agent_id=${encodeURIComponent(id)}`,{headers:{'xi-api-key':key,'Accept':'application/json'}});
   if(!response.ok){
@@ -30,6 +24,7 @@ export async function createElevenLabsRealtimeSignedUrl({fetchImpl=globalThis.fe
   const key=env('ELEVENLABS_API_KEY')||env('ELEVEN_LABS_API_KEY');
   const id=agentId(agent);
   if(!key){const error=new Error('ElevenLabs Realtime is not configured. Add ELEVENLABS_API_KEY to Netlify Functions.');error.status=501;error.code='ELEVENLABS_API_KEY_MISSING';throw error;}
+  if(!id){const error=new Error('ElevenLabs Realtime is not configured. Add the selected agent ID to Netlify Functions.');error.status=501;error.code='ELEVENLABS_AGENT_ID_MISSING';throw error;}
   if(!/^agent_[A-Za-z0-9]{8,80}$/.test(id)){const error=new Error('The ElevenLabs Agent ID is invalid.');error.status=500;error.code='ELEVENLABS_AGENT_ID_INVALID';throw error;}
   const response=await fetchImpl(`https://api.elevenlabs.io/v1/convai/conversation/get-signed-url?agent_id=${encodeURIComponent(id)}`,{headers:{'xi-api-key':key,'Accept':'application/json'}});
   if(!response.ok){
