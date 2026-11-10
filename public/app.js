@@ -342,12 +342,12 @@ function topbar(){
   const chatReady=Boolean(state.health?.capabilities?.chat);
   const status=state.offline?'OFFLINE':chatReady?'READY':(hasHealth||state.healthError)?'LIMITED':'SYNCING';
   const tone=state.offline?'offline':chatReady?'ready':(hasHealth||state.healthError)?'limited':'syncing';
-  const title=state.offline?'You are offline. Changes will fail until the connection returns.':state.healthError&&!hasHealth?'Runtime diagnostics did not load. Refresh to retry.':chatReady?'AI runtime and workspace services are available.':hasHealth?'Workspace loaded, but AI runtime is not fully available.':'Checking workspace runtime…';
+  const title=state.offline?'Você está offline. As alterações falharão até a conexão voltar.':state.healthError&&!hasHealth?'Os diagnósticos do runtime não carregaram. Atualize para tentar novamente.':chatReady?'O runtime de IA e os serviços do workspace estão disponíveis.':hasHealth?'Workspace carregado, mas o runtime de IA está parcialmente indisponível.':'Verificando os serviços do workspace…';
   return `<header class="topbar">
-    <button class="hamburger personal-more" aria-controls="app-sidebar" aria-expanded="${state.drawer}" id="hamburger" aria-label="Open navigation" title="Navigation">${icon('menu')}</button>
+    <button class="hamburger personal-more" aria-controls="app-sidebar" aria-expanded="${state.drawer}" id="hamburger" aria-label="Abrir navegação" title="Navegação">${icon('menu')}</button>
     <div class="topbar-context" aria-label="Current workspace"><span>${esc(state.currentProject?'PROJECT':'WORKSPACE')}</span><strong ${!state.currentProject&&!(state.tab==='Home'&&state.currentConversation)?'data-ui-label':''}>${esc(context)}</strong></div>
     <div class="brand-center">${olyhubBrandMark('topbar')}<div class="brand-copy"><span class="logo-word">Oly<span>Hub</span></span><span class="logo-sub">PRIVATE AI WORKSPACE</span></div></div>
-    <div class="topbar-actions"><span class="system-indicator ${tone}" title="${esc(title)}" role="status" aria-label="${esc(`${status}: ${title}`)}"><i aria-hidden="true"></i>${status}</span><button type="button" class="mobile-new-chat" data-new-chat="true" aria-label="Nova conversa" title="Nova conversa">${icon('chat')}<i>＋</i></button><button class="avatar ghost" id="profile-avatar" aria-label="Open account settings">${esc(initials())}</button></div>
+    <div class="topbar-actions"><span class="system-indicator ${tone}" title="${esc(title)}" role="status" aria-label="${esc(`${status==='READY'?'Pronto':status==='LIMITED'?'Limitado':status==='SYNCING'?'Sincronizando':'Offline'}: ${title}`)}"><i aria-hidden="true"></i>${status==='READY'?'PRONTO':status==='LIMITED'?'LIMITADO':status==='SYNCING'?'SINCRONIZANDO':'OFFLINE'}</span><button type="button" class="mobile-new-chat" data-new-chat="true" aria-label="Nova conversa" title="Nova conversa">${icon('chat')}<i>＋</i></button><button class="avatar ghost" id="profile-avatar" aria-label="Abrir configurações da conta">${esc(initials())}</button></div>
   </header>`;
 }
 function lastReply(messages=state.messages){return [...(messages||[])].reverse().find(m=>m.role==='assistant'&&(m.mode==='OLYMPUS'||m.mode==='ZEUS'))||null;}
@@ -714,6 +714,69 @@ function liveTalkOrbPicker(){
 function discardLiveAudio({keepElement=false}={}){try{state.voiceReplyAudio?.pause()}catch{}if(!keepElement)state.voiceReplyAudio=null;
  if(state.liveAudioUrl){URL.revokeObjectURL(state.liveAudioUrl);state.liveAudioUrl=null;}}
 let silentLiveAudioDataUrl='';
+let liveTalkMeterContext=null;
+function liveTalkAudioContext(){
+  const AudioContextCtor=window.AudioContext||window.webkitAudioContext;
+  if(!AudioContextCtor)return null;
+  if(!liveTalkMeterContext||liveTalkMeterContext.state==='closed')liveTalkMeterContext=new AudioContextCtor();
+  if(liveTalkMeterContext.state==='suspended')void liveTalkMeterContext.resume().catch(()=>{});
+  return liveTalkMeterContext;
+}
+function stopLiveTalkOutputMeter(transport){
+  const meter=transport?.audioMeter;if(!meter)return;
+  meter.stopped=true;
+  if(meter.rafId)cancelAnimationFrame(meter.rafId);
+  if(meter.idleTimer)clearTimeout(meter.idleTimer);
+  for(const source of meter.sources||[])try{source.disconnect()}catch{}
+  try{meter.analyser.disconnect()}catch{}
+  try{meter.silentGain.disconnect()}catch{}
+  document.querySelectorAll('.live-talk-waveform').forEach(wave=>wave.classList.remove('has-audio-meter'));
+  transport.audioMeter=null;
+}
+function connectLiveTalkMeterSource(source,transport,generation,{context=liveTalkMeterContext,audible=false}={}){
+  if(!source||!context||context.state==='closed'||transport.closed||generation!==state.liveGeneration)return null;
+  let meter=transport.audioMeter;
+  if(meter&&meter.context!==context){stopLiveTalkOutputMeter(transport);meter=null;}
+  if(!meter){
+    const analyser=context.createAnalyser(),silentGain=context.createGain();
+    analyser.fftSize=256;analyser.smoothingTimeConstant=.78;silentGain.gain.value=audible?1:0;
+    analyser.connect(silentGain);silentGain.connect(context.destination);
+    meter={context,analyser,silentGain,sources:[],rafId:0,idleTimer:0,stopped:false};transport.audioMeter=meter;
+    const bins=new Uint8Array(analyser.frequencyBinCount);let bars=[];
+    const draw=()=>{
+      if(meter.stopped||transport.closed||generation!==state.liveGeneration||!state.liveTalk){stopLiveTalkOutputMeter(transport);return;}
+      if(document.hidden||state.liveStage!=='speaking'){meter.rafId=0;meter.idleTimer=setTimeout(draw,200);return;}
+      meter.idleTimer=0;
+      if(!bars.length||!bars[0]?.isConnected){bars=Array.from(document.querySelectorAll('.live-talk-waveform i'));document.querySelectorAll('.live-talk-waveform').forEach(wave=>wave.classList.add('has-audio-meter'));}
+      if(bars.length){
+        analyser.getByteFrequencyData(bins);
+        const last=Math.max(1,bins.length-1),center=(bars.length-1)/2;
+        bars.forEach((bar,index)=>{
+          const bin=Math.min(last,Math.max(1,Math.round(Math.pow(index/Math.max(1,bars.length-1),1.35)*last)));
+          const energy=Math.max(0,(bins[bin]/255-.025)*1.5),height=4+Math.min(1,energy)*34;
+          const balance=.58+.42*(1-Math.abs(index-center)/Math.max(1,center));
+          bar.style.setProperty('--wave',`${(4+height*balance).toFixed(1)}px`);
+          bar.style.setProperty('--meter-opacity',String((.42+energy*.58).toFixed(2)));
+        });
+      }
+      meter.rafId=requestAnimationFrame(draw);
+    };
+    meter.rafId=requestAnimationFrame(draw);
+  }
+  try{
+    source.connect(meter.analyser);meter.sources.push(source);
+    if(typeof AudioBufferSourceNode!=='undefined'&&source instanceof AudioBufferSourceNode)source.onended=()=>{try{source.disconnect()}catch{}meter.sources=meter.sources.filter(item=>item!==source);};
+    return meter.analyser;
+  }catch{return null;}
+}
+function connectLiveTalkStreamMeter(stream,transport,generation){
+  const context=liveTalkAudioContext();if(!context||!stream)return;
+  try{connectLiveTalkMeterSource(context.createMediaStreamSource(stream),transport,generation,{context,audible:false});}catch{}
+}
+function closeLiveTalkMeterContext(){
+  const context=liveTalkMeterContext;liveTalkMeterContext=null;
+  if(context&&context.state!=='closed')void context.close().catch(()=>{});
+}
 function unlockLiveAudioFromGesture(){
   try{
     if(!state.voiceReplyAudio)state.voiceReplyAudio=new Audio();
@@ -834,10 +897,13 @@ function composer(){
   const composerMode=state.mode==='OLYMPUS'?'Olympus':'Poseidon';
   const chips=state.attachedFiles.map(f=>`<span class="file-chip">${icon('files')} ${esc(f.filename)}<button type="button" data-remove-file="${esc(f.id)}" aria-label="Remove ${esc(f.filename)}" title="Remove attachment">${icon('close')}</button></span>`).join('');
   const showMic=voiceSupported();
-  const liveOrb=VOICE_AVATARS[state.voiceAvatar]||VOICE_AVATARS.olyhub;
-  const liveOrbMarkup=liveOrb.image?'<img class="live-talk-cta-art" src="'+esc(liveOrb.image)+'" alt="" draggable="false">':'<span class="voice-orb-swatch '+esc(liveOrb.className)+'"></span>';
+  const canStartLiveTalk=state.tab==='Projects'&&Boolean(state.currentProject?.id)&&(state.projectSection||'CHAT')==='CHAT'&&!state.currentToolId;
+  // The compact Live Talk affordance uses the neutral OlyHub orb. Realm symbols
+  // belong to the assistant identity, not to this navigation control.
+  const miniOrb=VOICE_AVATARS.olyhub;
+  const miniOrbMarkup=miniOrb.image?'<img class="live-talk-cta-art" src="'+esc(miniOrb.image)+'" alt="" draggable="false">':'<span class="voice-orb-swatch '+esc(miniOrb.className)+'"></span>';
   const scope=state.currentProject?`Project: ${esc(state.currentProject.name)}`:'This conversation';
-  return `<div class="composer-shell">${state.liveTalk&&!state.liveTalkMinimized?`<div class="zeus-live-stage" role="status" aria-label="Live Talk ativo">${voiceAvatarMarkup()}<span class="${state.liveStage==='speaking'?'zeus-speaking-state':''}">${state.liveStage==='speaking'?'<span class="zeus-speaking-bolt" aria-hidden="true">⚡</span>':''}Live Talk · ${esc(state.liveTalkStopRequested?'Finalizando turno':state.liveStage==='speaking'?'Falando':state.liveStage==='processing'?'Processando':state.liveStage==='listening'?'Ouvindo':'Conectado')} · ${esc(state.liveLocale==='auto'?'Idioma do dispositivo':state.liveLocale.toUpperCase())}</span></div>`:''}${state.attachMenu?`<div class="attach-menu" role="menu" id="attach-menu" aria-label="Anexar arquivo"><button type="button" role="menuitem" id="attach-media">${icon('image')}<span>Foto ou vídeo</span></button><button type="button" role="menuitem" id="attach-camera">${icon('camera')}<span>Câmera</span></button><button type="button" role="menuitem" id="attach-file">${icon('files')}<span>Arquivo</span></button><button type="button" role="menuitem" id="attach-saved">${icon('folder')}<span>Entrega salva</span></button></div>`:''}${chips?`<div class="attachments pending">${chips}</div>`:''}${liveTalkSupported()?`<button type="button" class="live-talk-cta ${state.liveTalk?'active':''}" id="live-talk" aria-pressed="${state.liveTalk}" aria-label="${state.liveTalk?'Voltar ao Live Talk':'Iniciar Live Talk'}"><span class="live-talk-cta-orb" aria-hidden="true">${liveOrbMarkup}</span><span>${state.liveTalk?'Voltar ao Live Talk':'Live Talk'}</span></button>`:''}<form class="composer" id="composer"><button type="button" class="icon-btn composer-attach" id="attach" title="Anexar foto, vídeo ou arquivo" aria-label="Anexar foto, vídeo ou arquivo" aria-haspopup="menu" aria-expanded="${state.attachMenu}" ${state.attachMenu?'aria-controls="attach-menu"':''}>${icon('attach')}</button><span class="composer-divider" aria-hidden="true"></span><textarea id="composer-text" rows="1" aria-label="Mensagem para ${composerMode}" placeholder="Digite uma mensagem…" ${state.sending?'disabled':''}>${esc(state.draft)}</textarea>${showMic?`<span class="composer-divider" aria-hidden="true"></span><button type="button" class="icon-btn ${state.recording?'recording':''}" id="voice" title="${state.recording?'Parar e enviar áudio ao ElevenLabs Scribe':state.voiceBusy?'Transcrevendo com ElevenLabs Scribe…':'Gravar mensagem de voz'}" aria-label="${state.recording?'Parar e enviar áudio ao ElevenLabs Scribe':state.voiceBusy?'Transcrevendo mensagem de voz com ElevenLabs Scribe':'Gravar mensagem de voz'}" ${state.voiceBusy?'disabled':''}>${icon('mic')}</button>`:''}<button type="submit" class="icon-btn send-btn" title="Enviar mensagem (Ctrl/⌘+Enter)" aria-label="Enviar mensagem" ${state.sending?'disabled':''}>${icon('send')}</button></form><div class="composer-meta"><span>${state.currentProject?'Conversa permanente do projeto · memória e arquivos dedicados':'Histórico de conversas disponível · sem memória de projeto'}</span><span>Enter cria uma nova linha · use a seta para enviar</span></div></div>`;
+  return `<div class="composer-shell">${state.liveTalk&&!state.liveTalkMinimized?`<div class="zeus-live-stage" role="status" aria-label="Live Talk ativo">${voiceAvatarMarkup()}<span class="${state.liveStage==='speaking'?'zeus-speaking-state':''}">${state.liveStage==='speaking'?'<span class="zeus-speaking-bolt" aria-hidden="true">⚡</span>':''}Live Talk · ${esc(state.liveTalkStopRequested?'Finalizando turno':state.liveStage==='speaking'?'Falando':state.liveStage==='processing'?'Processando':state.liveStage==='listening'?'Ouvindo':'Conectado')} · ${esc(state.liveLocale==='auto'?'Idioma do dispositivo':state.liveLocale.toUpperCase())}</span></div>`:''}${state.attachMenu?`<div class="attach-menu" role="menu" id="attach-menu" aria-label="Anexar arquivo"><button type="button" role="menuitem" id="attach-media">${icon('image')}<span>Foto ou vídeo</span></button><button type="button" role="menuitem" id="attach-camera">${icon('camera')}<span>Câmera</span></button><button type="button" role="menuitem" id="attach-file">${icon('files')}<span>Arquivo</span></button><button type="button" role="menuitem" id="attach-saved">${icon('folder')}<span>Entrega salva</span></button></div>`:''}${chips?`<div class="attachments pending">${chips}</div>`:''}${canStartLiveTalk&&liveTalkSupported()?`<button type="button" class="live-talk-cta ${state.liveTalk?'active':''}" id="live-talk" aria-pressed="${state.liveTalk}" aria-label="${state.liveTalk?'Voltar ao Live Talk':'Iniciar Live Talk'}"><span class="live-talk-cta-orb" aria-hidden="true">${miniOrbMarkup}</span><span>${state.liveTalk?'Voltar ao Live Talk':'Live Talk'}</span></button>`:''}<form class="composer" id="composer"><button type="button" class="icon-btn composer-attach" id="attach" title="Anexar foto, vídeo ou arquivo" aria-label="Anexar foto, vídeo ou arquivo" aria-haspopup="menu" aria-expanded="${state.attachMenu}" ${state.attachMenu?'aria-controls="attach-menu"':''}>${icon('attach')}</button><span class="composer-divider" aria-hidden="true"></span><textarea id="composer-text" rows="1" aria-label="Mensagem para ${composerMode}" placeholder="Digite uma mensagem…" ${state.sending?'disabled':''}>${esc(state.draft)}</textarea>${showMic?`<span class="composer-divider" aria-hidden="true"></span><button type="button" class="icon-btn ${state.recording?'recording':''}" id="voice" title="${state.recording?'Parar e enviar áudio ao ElevenLabs Scribe':state.voiceBusy?'Transcrevendo com ElevenLabs Scribe…':'Gravar mensagem de voz'}" aria-label="${state.recording?'Parar e enviar áudio ao ElevenLabs Scribe':state.voiceBusy?'Transcrevendo mensagem de voz com ElevenLabs Scribe':'Gravar mensagem de voz'}" ${state.voiceBusy?'disabled':''}>${icon('mic')}</button>`:''}<button type="submit" class="icon-btn send-btn" title="Enviar mensagem (Ctrl/⌘+Enter)" aria-label="Enviar mensagem" ${state.sending?'disabled':''}>${icon('send')}</button></form><div class="composer-meta"><span>${state.currentProject?'Conversa permanente do projeto · memória e arquivos dedicados':'Histórico de conversas disponível · sem memória de projeto'}</span><span>Enter cria uma nova linha · use a seta para enviar</span></div></div>`;
 }
 
 function projectsView(){
@@ -978,7 +1044,7 @@ function projectMemoryView(){
   const policy=state.memoryPolicy;const policyText=policy?`At most ${Number(policy.maxItems||40)} approved memories are selected for each turn within a ${Math.round(Number(policy.maxChars||15000)/1000)}k-character memory budget. Explicit instructions and high-confidence items rank first, then recency.`:'Approved memory is selected deterministically by priority and recency within the AI context budget.';
   return `<div class="project-single-column"><div class="panel"><div class="panel-head"><div><h2>Permanent project memory</h2><p class="muted tiny">Saved here means durable project memory. ${esc(policyText)}</p></div><span class="eyebrow">${state.projectMemories.length} SAVED</span></div><form id="memory-form" class="memory-create"><textarea id="memory-content" rows="2" aria-label="New project memory" maxlength="5000" placeholder="Add a durable fact, preference, rule, or decision for this project…" required></textarea><button class="primary compact">Save memory</button></form><div class="memory-list">${state.projectMemories.length?state.projectMemories.map(memoryItem).join(''):`<div class="empty-mini">No permanent memories yet. You can add one here or tell Poseidon “remember this…” inside the project chat.</div>`}</div></div></div>`;
 }
-function memoryItem(m){const scope=m.project_id?'project':'personal';const label=scope==='personal'?'Personal memory':m.type==='manual_note'?'Project memory':String(m.type||'Memory').replaceAll('_',' ');return `<article class="memory-item"><div class="memory-icon">${icon('memory')}</div><div><strong>${esc(label)}</strong><p>${esc(m.content)}</p><small>${fmtDate(m.created_at)} · ${esc(m.source||'manual')}</small></div><button class="ghost danger memory-delete" data-memory-delete="${m.id}" data-memory-scope="${scope}" title="Delete memory" aria-label="Delete this memory">${icon('close')}</button></article>`}
+function memoryItem(m){const scope=m.project_id?'project':'personal';const label=scope==='personal'?'Memória pessoal':m.type==='manual_note'?'Memória do projeto':String(m.type||'Memória').replaceAll('_',' ');return `<article class="memory-item"><div class="memory-icon">${icon('memory')}</div><div><strong>${esc(label)}</strong><p>${esc(m.content)}</p><small>${fmtDate(m.created_at)} · ${esc(m.source||'manual')}</small></div><button class="ghost danger memory-delete" data-memory-delete="${m.id}" data-memory-scope="${scope}" title="Excluir memória" aria-label="Excluir esta memória">${icon('close')}</button></article>`}
 function taskHtml(t){const status=String(t.status||'TODO');const next=status==='TODO'?'IN_PROGRESS':status==='IN_PROGRESS'?'DONE':'TODO';const label=status==='TODO'?'Start task':status==='IN_PROGRESS'?'Mark task done':'Reopen task';const mark=status==='DONE'?icon('check'):status==='IN_PROGRESS'?'<span class="task-state-dot" aria-hidden="true"></span>':'';return `<div class="task-item"><button class="task-check ${status==='DONE'?'done':status==='IN_PROGRESS'?'in-progress':''}" data-task="${t.id}" data-status="${status}" data-next-status="${next}" aria-label="${label}: ${esc(t.title)}" title="${label}">${mark}</button><div><strong style="font-size:13px">${esc(t.title)}</strong><div class="muted tiny">${esc(status.replaceAll('_',' '))}${t.due_at?` · ${fmtDate(t.due_at)}`:''}</div></div><span class="priority ${esc(t.priority)}">${esc(t.priority)}</span></div>`}
 
 function capabilityState(key,fallbackReady=false){const raw=state.health?.capabilityReadiness?.[key];if(raw==='observed_healthy')return {enabled:true,label:'READY'};if(raw==='configured_unverified')return {enabled:true,label:'CONFIGURED'};if(raw==='degraded'||raw==='recent_failure')return {enabled:false,label:'DEGRADED'};return {enabled:Boolean(fallbackReady),label:fallbackReady?'READY':'UNAVAILABLE'};}
@@ -1048,11 +1114,11 @@ function automationView(){
   const grouped=connectors.reduce((result,connector)=>{const group=categories[connector.kind]||'Outros conectores';(result[group]||(result[group]=[])).push(connector);return result;},{});
   const connectorCards=Object.entries(grouped).map(([group,items])=>`<section class="automation-group"><h2>${esc(group)}</h2><div class="automation-grid">${items.map(connector=>{
     const status=connector.operational?'Operacional':connector.verified?'Verificado · ainda desligado':connector.configured?'Credencial no servidor · não verificada':'Planejado';
-    const tone=connector.operational?'active':connector.configured?'configured':'planned';
-    return `<article class="automation-card"><div class="automation-card-mark" aria-hidden="true">${icon(connector.kind==='paid_ads'||connector.kind==='analytics'?'chart':connector.kind==='video_render'?'image':connector.kind==='browser'?'search':'auto')}</div><div class="automation-card-copy"><h3>${esc(names[connector.id]||connector.id)}</h3><p>${esc(connector.kind.replaceAll('_',' '))}</p><span class="automation-status ${tone}"><i aria-hidden="true"></i>${status}</span></div><small class="automation-approval">${esc(approvals[connector.approval]||'Aprovação necessária')}</small></article>`;
+    const tone=connector.operational?'active':connector.verified?'verified':connector.configured?'configured':'planned';
+    return `<article class="automation-card"><div class="automation-card-mark" aria-hidden="true">${icon(connector.kind==='paid_ads'||connector.kind==='analytics'?'chart':connector.kind==='video_render'?'image':connector.kind==='browser'?'search':'auto')}</div><div class="automation-card-copy"><h3>${esc(names[connector.id]||connector.id)}</h3><p>${esc(group)}</p><span class="automation-status ${tone}"><i aria-hidden="true"></i>${status}</span></div><small class="automation-approval">${esc(approvals[connector.approval]||'Aprovação necessária')}</small></article>`;
   }).join('')}</div></section>`).join('');
-  const catalogState=state.automationInventoryError?'<div class="automation-empty">Não foi possível consultar o estado do catálogo. Atualize para tentar de novo.</div>':state.automationInventoryLoaded?(connectorCards||'<div class="automation-empty">Nenhum conector foi declarado no servidor.</div>'):'<div class="automation-empty">Carregando o estado dos conectores…</div>';
-  return `<section class="page automations-page"><header class="page-head"><div><div class="eyebrow">OLYHUB · AUTOMAÇÕES</div><h1>Automações</h1><p>Conectores e fluxos, com o estado de integração informado pelo servidor.</p></div><button type="button" class="secondary compact" id="automation-refresh" ${state.automationInventoryLoaded?'':'aria-busy="true"'}>Atualizar estado</button></header>${state.automationInventoryError?`<div class="chat-error page-alert" role="alert">${esc(state.automationInventoryError)}</div>`:''}<aside class="automation-truth-note" role="status"><span class="automation-truth-mark" aria-hidden="true">${icon('auto')}</span><div><strong>${inventory.executionAvailable?'Execução disponível':'Catálogo de integrações'}</strong><p>${inventory.executionAvailable?'Os conectores ainda exigem aprovação antes de ações externas.':'Nenhuma automação pode ser iniciada nesta versão. Os itens abaixo são conectores declarados; presença de credencial não significa que a integração foi autenticada, verificada ou está operacional.'}</p></div><span class="automation-count">${connectors.length} conectores</span></aside>${catalogState}<p class="automation-footnote">Publicação e gastos exigem aprovação explícita e limites próprios. Este painel não executa, publica nem altera integrações.</p></section>`;
+  const catalogState=state.automationInventoryError?'<div class="automation-empty">Não foi possível consultar o catálogo. Atualize para tentar novamente.</div>':state.automationInventoryLoaded?(connectorCards||'<div class="automation-empty">O servidor não declarou conectores.</div>'):'<div class="automation-empty">Carregando o estado dos conectores…</div>';
+  return `<section class="page automations-page"><header class="page-head"><div><div class="eyebrow">OLYHUB · AUTOMAÇÕES</div><h1>Automações</h1><p>Conectores e fluxos, com o estado de integração informado pelo servidor.</p></div><button type="button" class="secondary compact" id="automation-refresh" ${state.automationInventoryLoaded?'':'aria-busy="true"'}>Atualizar estado</button></header>${state.automationInventoryError?`<div class="chat-error page-alert" role="alert">${esc(state.automationInventoryError)}</div>`:''}<aside class="automation-truth-note" role="status"><span class="automation-truth-mark" aria-hidden="true">${icon('auto')}</span><div><strong>${inventory.executionAvailable?'Execução disponível':'Catálogo de integrações'}</strong><p>${inventory.executionAvailable?'Os conectores ainda exigem aprovação antes de ações externas.':'Nenhuma automação pode ser iniciada nesta versão. Os itens abaixo são conectores declarados; presença de credencial não significa que a integração foi autenticada, verificada ou está operacional.'}</p></div><span class="automation-count">${connectors.length} conectores</span></aside>${catalogState}<p class="automation-footnote">Publicações e gastos exigem aprovação explícita e limites próprios. Este painel não executa nem altera integrações.</p></section>`;
 }
 function zeusRealmView(){return `<section class="page zeus-realm-page" aria-labelledby="zeus-realm-title">
   <header class="zeus-realm-hero">
@@ -1071,8 +1137,8 @@ function zeusRealmView(){return `<section class="page zeus-realm-page" aria-labe
     <article><span class="zeus-planned-icon">${icon('auto')}</span><div><strong>Filas e custos</strong><p>Identificar trabalhos parados e uso registrado dos provedores.</p></div><span class="zeus-planned-state">Planejado</span></article>
   </div></section>
 </section>`}
-function outputsList(limit=12){let all=[...state.artifacts.map(a=>({...a,kind:'artifact'})),...state.files.map(f=>({...f,kind:'file',type:(f.mime_type||'file').split('/').pop()}))].sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));if(Number.isFinite(limit))all=all.slice(0,limit);return all.length?`<div class="output-list">${all.map(outputItem).join('')}</div>`:`<div class="card" style="padding:24px"><strong>Your library starts with the first source or deliverable.</strong><p class="muted">Upload a source for analysis, or ask Poseidon to create a document, image, spreadsheet, presentation or ZIP.</p></div>`}
-function outputItem(o){const tag=String(o.type||o.mime_type||'FILE').split('/').pop().toUpperCase().slice(0,4),kind=o.kind==='artifact'?'artifact':'file',download=esc(o.downloadUrl||''),rawOpen=(kind==='file'&&o.previewUrl)||o.downloadUrl||'',open=esc(rawOpen),name=esc(o.filename||'Output'),mime=esc(kind==='file'&&o.previewUrl?'text/plain':(o.mime_type||o.type||'application/octet-stream')),status=kind==='file'?(o.metadata?.extractionStatus||'stored_only'):'',isZip=o.type==='zip'||/zip/i.test(o.mime_type||'')||String(o.filename||'').toLowerCase().endsWith('.zip'),git=Boolean(state.health?.capabilities?.githubCommit),isImage=/^image\//i.test(String(o.mime_type||''))||/\.(png|jpe?g|gif|webp|avif)$/i.test(String(o.filename||'')),preview=isImage&&rawOpen?`<img class="out-preview-image" src="${esc(rawOpen)}" alt="" loading="lazy" decoding="async">`: `<span class="out-preview-icon">${icon(isImage?'image':'doc')}</span>`;return `<article class="out-row"><div class="out-preview">${preview}<span class="out-badge ${tag.toLowerCase()}">${esc(tag)}</span></div><div class="out-copy"><strong>${name}</strong><small>${fmtSize(o.size)}${status?` · ${esc(status.replaceAll('_',' '))}`:''}${fmtDateTime(o.created_at)?` · ${fmtDateTime(o.created_at)}`:''}</small></div><div class="out-actions"><button class="chev-link" type="button" data-open-output="${open}" data-output-name="${name}" data-output-mime="${mime}">Open</button><button class="chev-link" type="button" data-download-output="${download}" data-output-name="${name}">Download</button>${kind==='artifact'?`<button class="chev-link" type="button" data-use-artifact="${esc(o.id)}">Use in chat</button><button class="chev-link" type="button" data-compare-artifact="1">Compare</button>${o.type==='html'?`<button class="chev-link" type="button" data-edit-html="${esc(o.id)}">Edit preview</button>`:''}`:''}${isZip&&git?`<button class="chev-link" type="button" data-github-commit="${kind}" data-source-id="${esc(o.id)}" data-source-name="${name}">Commit</button>`:''}<button class="icon-danger" type="button" data-delete-output="${kind}" data-output-id="${esc(o.id)}" aria-label="Delete ${kind} ${name}" title="Delete ${kind}">${icon('close')}</button></div></article>`}
+function outputsList(limit=12){let all=[...state.artifacts.map(a=>({...a,kind:'artifact'})),...state.files.map(f=>({...f,kind:'file',type:(f.mime_type||'file').split('/').pop()}))].sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));if(Number.isFinite(limit))all=all.slice(0,limit);return all.length?`<div class="output-list">${all.map(outputItem).join('')}</div>`:`<div class="card" style="padding:24px"><strong>Sua biblioteca começa com a primeira fonte ou entrega.</strong><p class="muted">Envie uma fonte para análise ou peça ao Poseidon um documento, imagem, planilha, apresentação ou arquivo ZIP.</p></div>`}
+function outputItem(o){const tag=String(o.type||o.mime_type||'FILE').split('/').pop().toUpperCase().slice(0,4),kind=o.kind==='artifact'?'artifact':'file',download=esc(o.downloadUrl||''),rawOpen=(kind==='file'&&o.previewUrl)||o.downloadUrl||'',open=esc(rawOpen),name=esc(o.filename||'Arquivo'),mime=esc(kind==='file'&&o.previewUrl?'text/plain':(o.mime_type||o.type||'application/octet-stream')),status=kind==='file'?(o.metadata?.extractionStatus||'stored_only'):'',statusText=({analyzable:'pronto para análise',vision_only:'pronto para visão',failed:'extração falhou',stored_only:'armazenado'})[status]||String(status).replaceAll('_',' '),isZip=o.type==='zip'||/zip/i.test(o.mime_type||'')||String(o.filename||'').toLowerCase().endsWith('.zip'),git=Boolean(state.health?.capabilities?.githubCommit),isImage=/^image\//i.test(String(o.mime_type||''))||/\.(png|jpe?g|gif|webp|avif)$/i.test(String(o.filename||'')),preview=isImage&&rawOpen?`<img class="out-preview-image" src="${esc(rawOpen)}" alt="" loading="lazy" decoding="async">`: `<span class="out-preview-icon">${icon(isImage?'image':'doc')}</span>`;return `<article class="out-row"><div class="out-preview">${preview}<span class="out-badge ${tag.toLowerCase()}">${esc(tag)}</span></div><div class="out-copy"><strong>${name}</strong><small>${fmtSize(o.size)}${status?` · ${esc(statusText)}`:''}${fmtDateTime(o.created_at)?` · ${fmtDateTime(o.created_at)}`:''}</small></div><div class="out-actions"><button class="chev-link" type="button" data-open-output="${open}" data-output-name="${name}" data-output-mime="${mime}">Abrir</button><button class="chev-link" type="button" data-download-output="${download}" data-output-name="${name}">Baixar</button>${kind==='artifact'?`<button class="chev-link" type="button" data-use-artifact="${esc(o.id)}">Usar no chat</button><button class="chev-link" type="button" data-compare-artifact="1">Comparar</button>${o.type==='html'?`<button class="chev-link" type="button" data-edit-html="${esc(o.id)}">Editar prévia</button>`:''}`:''}${isZip&&git?`<button class="chev-link" type="button" data-github-commit="${kind}" data-source-id="${esc(o.id)}" data-source-name="${name}">Criar commit</button>`:''}<button class="icon-danger" type="button" data-delete-output="${kind}" data-output-id="${esc(o.id)}" aria-label="Excluir ${kind==='artifact'?'entrega':'arquivo'} ${name}" title="Excluir">${icon('close')}</button></div></article>`}
 function fileLibraryCategory(item){
   const mime=String(item?.mime_type||'').toLowerCase();
   const type=String(item?.type||'').toLowerCase();
@@ -1094,7 +1160,7 @@ function filesView(){
   });
   const filters=[['ALL','Todos'],['IMAGES','Imagens'],['DOCUMENTS','Documentos'],['AUDIO','Áudio'],['VIDEO','Vídeos'],['OTHER','Outros']];
   const list=visible.length?`<div class="output-list">${visible.map(outputItem).join('')}</div>`:all.length?`<div class="card library-empty"><strong>Nenhum arquivo corresponde aos filtros.</strong><p class="muted">Tente outra busca ou categoria.</p><button type="button" class="secondary compact" data-files-clear>Limpar busca e filtros</button></div>`:`<div class="card library-empty"><strong>Sua biblioteca começa com a primeira fonte ou entrega.</strong><p class="muted">Envie um arquivo para análise ou peça ao Poseidon para criar um documento, imagem, planilha, apresentação ou ZIP.</p><button type="button" class="secondary compact" id="upload-files-empty">${icon('plus')} Enviar arquivos</button></div>`;
-  return `<section class="page files-page"><div class="page-head"><div><div class="eyebrow">Arquivos</div><h1>Arquivos e biblioteca</h1><p>Fontes enviadas e entregas geradas, conectadas às conversas e aos projetos do Poseidon.</p></div><button class="primary" id="upload-files">${icon('plus')} Enviar arquivos</button></div><label class="file-library-search" role="search">${icon('search')}<input id="files-search" type="search" value="${esc(state.filesSearch||'')}" placeholder="Buscar arquivos e entregas..." aria-label="Buscar arquivos e entregas" autocomplete="off"></label><div class="file-library-filters" role="group" aria-label="Filtrar biblioteca">${filters.map(([key,label])=>`<button type="button" data-files-filter="${key}" class="${state.filesFilter===key?'active':''}" aria-pressed="${state.filesFilter===key}">${label}</button>`).join('')}</div><p class="library-search-note">A busca filtra os arquivos já carregados. Use “Carregar anteriores” para incluir mais itens.</p>${errorBanner('page-alert')}${list}${more?'<div class="history-more"><button class="secondary compact" id="load-older-outputs">Carregar anteriores</button></div>':''}</section>`;
+  return `<section class="page files-page"><div class="page-head"><div><div class="eyebrow">BIBLIOTECA</div><h1>Arquivos</h1><p>Fontes enviadas e entregas geradas, conectadas às conversas e aos projetos.</p></div><button class="primary" id="upload-files">${icon('plus')} Enviar arquivos</button></div><label class="file-library-search" role="search">${icon('search')}<input id="files-search" type="search" value="${esc(state.filesSearch||'')}" placeholder="Buscar arquivos e entregas…" aria-label="Buscar arquivos e entregas" autocomplete="off"></label><div class="file-library-filters" role="group" aria-label="Filtrar biblioteca">${filters.map(([key,label])=>`<button type="button" data-files-filter="${key}" class="${state.filesFilter===key?'active':''}" aria-pressed="${state.filesFilter===key}">${label}</button>`).join('')}</div><p class="library-search-note">A busca filtra os arquivos já carregados. Use “Carregar anteriores” para incluir mais itens.</p>${errorBanner('page-alert')}${list}${more?'<div class="history-more"><button class="secondary compact" id="load-older-outputs">Carregar anteriores</button></div>':''}</section>`;
 }
 function codeAgentView(){
   const active=new Set(['QUEUED','PLANNING','AWAITING_APPROVAL','RUNNING','COMMITTING']);
@@ -1137,21 +1203,21 @@ async function loadGoogleConnections(){
 }
 function googleIntegrationSettings(){
   const info=state.googleConnections||{},connections=info.connections||{};
-  return `<article class="card settings-card"><h3>Google integrations</h3>
-   <p class="muted tiny">Gmail, Calendar e Drive utilizam permissões de leitura separadas. A criação de documentos requer autorização drive.file e aprovação por operação. Search here or ask Poseidon to look up your connected Google data. No Google password or OAuth credentials are stored in your browser. Configure OAuth on the server first.</p>
+  return `<article class="card settings-card"><h3>Integrações do Google</h3>
+   <p class="muted tiny">Gmail, Agenda e Drive usam permissões de leitura separadas. A criação de documentos exige autorização drive.file e aprovação por operação. Pesquise aqui ou peça ao Poseidon para consultar seus dados conectados. Senhas e credenciais OAuth não ficam salvas no navegador; configure o OAuth no servidor.</p>
    <div class="diag-list">${[['gmail','Gmail'],['calendar','Google Calendar'],['drive','Google Drive (leitura)'],['drive_write','Google Drive (criação)']].map(([id,label])=>{
      const ok=Boolean(connections[id]?.connected);
      const result=state.googleSearchResults[id],query=esc(state.googleSearchQueries[id]||'');
-     const search=ok&&id!=='drive_write'?`<form class="google-search-form" data-google-search="${id}"><input name="q" value="${query}" maxlength="200" aria-label="Search ${label}" placeholder="${id==='calendar'?'Search events':'Search '+label}"><button type="submit" class="secondary compact" ${state.googleSearchBusy===id?'disabled':''}>${state.googleSearchBusy===id?'Searching…':'Search'}</button></form>`:'';
+     const search=ok&&id!=='drive_write'?`<form class="google-search-form" data-google-search="${id}"><input name="q" value="${query}" maxlength="200" aria-label="Buscar ${label}" placeholder="${id==='calendar'?'Buscar eventos':'Buscar '+label}"><button type="submit" class="secondary compact" ${state.googleSearchBusy===id?'disabled':''}>${state.googleSearchBusy===id?'Buscando…':'Buscar'}</button></form>`:'';
      const items=Array.isArray(result?.items)?result.items.map(item=>{
        if(id==='gmail')return `<article><strong>${esc(item.subject)}</strong><small>${esc(item.from)} · ${esc(item.date)}</small><p>${esc(item.snippet)}</p></article>`;
        if(id==='calendar')return `<article><strong>${item.htmlLink?`<a href="${esc(item.htmlLink)}" target="_blank" rel="noreferrer noopener">${esc(item.summary)}</a>`:esc(item.summary)}</strong><small>${esc(item.start)}${item.end?` – ${esc(item.end)}`:''}</small>${item.location?`<p>${esc(item.location)}</p>`:''}</article>`;
        return `<article><strong>${item.webViewLink?`<a href="${esc(item.webViewLink)}" target="_blank" rel="noreferrer noopener">${esc(item.name)}</a>`:esc(item.name)}</strong><small>${esc(item.mimeType)}${item.modifiedTime?` · ${esc(item.modifiedTime)}`:''}</small></article>`;
      }).join(''):'';
-     const resultView=result?`<div class="google-results" aria-live="polite">${items||'<p class="muted tiny">No matching items found.</p>'}${result.nextPageToken?`<button type="button" class="secondary compact" data-google-next="${id}">More results</button>`:''}</div>`:'';
+     const resultView=result?`<div class="google-results" aria-live="polite">${items||'<p class="muted tiny">Nenhum resultado encontrado.</p>'}${result.nextPageToken?`<button type="button" class="secondary compact" data-google-next="${id}">Mais resultados</button>`:''}</div>`:'';
      const reconnect=Boolean(connections[id]?.requiresReconnect);
-     return `<div class="diag-row"><span>${label}</span><span>${reconnect?'Reconnect required':ok?'Connected':'Not connected'}</span><button type="button" class="secondary compact" data-google-service="${id}" data-google-action="${reconnect?'start':ok?'disconnect':'start'}" ${!ok&&!info.configured?'disabled title="Google OAuth is not configured"':''}>${reconnect?'Reconnect':ok?'Disconnect':'Connect'}</button>${reconnect?`<button type="button" class="secondary compact" data-google-service="${id}" data-google-action="disconnect">Disconnect</button>`:''}</div>${search}${resultView}`;
-   }).join('')}</div><p class="muted tiny">${info.configured?'OAuth ready for authorization.':'Awaiting Google OAuth client ID, client secret, redirect URI and encryption key in Netlify.'}</p></article>`;
+     return `<div class="diag-row"><span>${label}</span><span>${reconnect?'Reconexão necessária':ok?'Conectado':'Não conectado'}</span><button type="button" class="secondary compact" data-google-service="${id}" data-google-action="${reconnect?'start':ok?'disconnect':'start'}" ${!ok&&!info.configured?'disabled title="O OAuth do Google não está configurado"':''}>${reconnect?'Reconectar':ok?'Desconectar':'Conectar'}</button>${reconnect?`<button type="button" class="secondary compact" data-google-service="${id}" data-google-action="disconnect">Desconectar</button>`:''}</div>${search}${resultView}`;
+   }).join('')}</div><p class="muted tiny">${info.configured?'OAuth pronto para autorização.':'Configure no Netlify o client ID, o client secret, a URI de redirecionamento e a chave de criptografia do Google OAuth.'}</p></article>`;
 }
 async function searchGoogle(service,query=state.googleSearchQueries[service]||'',pageToken=''){
   state.googleSearchBusy=service;state.googleSearchQueries[service]=String(query||'').trim().slice(0,200);state.error='';render();
@@ -1171,54 +1237,77 @@ async function loadPersonalMemories(){const d=await api('/api/memories?scope=per
 function preferencesSettings(){
   const prefs=state.preferences||{};
   return `<article class="card settings-card">
-    <h3>Personality &amp; Instructions</h3>
-    <p class="muted tiny">One personality for text, recorded voice messages and Live Talk. Project-specific memory remains separate.</p>
+    <h3>Estilo e instruções</h3>
+    <p class="muted tiny">Um mesmo estilo para texto, mensagens de voz e Live Talk. A memória de cada projeto continua separada.</p>
     <form id="preferences-form" class="form-grid">
-      <div class="field"><label for="zeus-personality">Personality</label>
+      <div class="field"><label for="zeus-personality">Estilo de resposta</label>
         <select id="zeus-personality" name="personality" required>
-          ${[['balanced','Balanced'],['direct','Direct'],['warm','Warm & conversational'],['creative','Creative & expressive'],['professional','Professional']].map(([key,label])=>`<option value="${key}" ${prefs.personality===key?'selected':''}>${label}</option>`).join('')}
+          ${[['balanced','Equilibrado'],['direct','Direto'],['warm','Acolhedor e conversacional'],['creative','Criativo e expressivo'],['professional','Profissional']].map(([key,label])=>`<option value="${key}" ${prefs.personality===key?'selected':''}>${label}</option>`).join('')}
         </select></div>
-      <div class="field"><label for="zeus-global-instructions">Custom instructions</label>
-        <textarea id="zeus-global-instructions" rows="6" maxlength="4000" placeholder="Tell Poseidon how to respond, what to prioritize, and how to speak to you…">${esc(prefs.instructions||'')}</textarea></div>
-      <p class="muted tiny">Preferences apply to future replies, including voice sessions. Your saved chats are not rewritten. System safety and factual accuracy always take priority.</p>
-      <div class="row"><button class="primary" type="submit" ${!state.preferencesLoaded?'disabled':''}>Save preferences</button><span id="preferences-saved" role="status" aria-live="polite"></span></div>
+      <div class="field"><label for="zeus-global-instructions">Instruções personalizadas</label>
+        <textarea id="zeus-global-instructions" rows="6" maxlength="4000" placeholder="Diga ao Poseidon como responder, o que priorizar e como falar com você…">${esc(prefs.instructions||'')}</textarea></div>
+      <p class="muted tiny">As preferências valem para respostas futuras, inclusive por voz. Conversas salvas não são reescritas. Segurança e precisão factual continuam prioritárias.</p>
+      <div class="row"><button class="primary" type="submit" ${!state.preferencesLoaded?'disabled':''}>Salvar preferências</button><span id="preferences-saved" role="status" aria-live="polite"></span></div>
     </form>
   </article>`;
 }
 function personalMemorySettings(){
   const memories=state.personalMemories||[];
-  return `<article class="card settings-card personal-memory-settings"><h3>Personal memory</h3><p class="muted tiny">Save durable facts or preferences for future chats and Live Talk. Poseidon saves them when you ask it to remember something, and you can review or delete them here.</p><form id="personal-memory-form" class="memory-create"><textarea id="personal-memory-content" rows="2" maxlength="2000" aria-label="Add personal memory" placeholder="A preference, fact, or standing instruction to remember…" required></textarea><button class="primary compact" type="submit">Save memory</button></form><div class="memory-list">${memories.length?memories.map(memoryItem).join(''):'<div class="empty-mini">No personal memories saved yet. You can say “remember that…” in chat or Live Talk.</div>'}</div></article>`;
+  return `<article class="card settings-card personal-memory-settings"><h3>Memória pessoal</h3><p class="muted tiny">Salve fatos e preferências duradouros para conversas futuras e Live Talk. O Poseidon salva quando você pede para lembrar, e você pode revisar ou apagar os itens aqui.</p><form id="personal-memory-form" class="memory-create"><textarea id="personal-memory-content" rows="2" maxlength="2000" aria-label="Adicionar memória pessoal" placeholder="Uma preferência, fato ou instrução permanente para lembrar…" required></textarea><button class="primary compact" type="submit">Salvar memória</button></form><div class="memory-list">${memories.length?memories.map(memoryItem).join(''):'<div class="empty-mini">Nenhuma memória pessoal salva. Você pode dizer “lembre-se de que…” no chat ou no Live Talk.</div>'}</div></article>`;
 }
 
-function settingsView(){const providers=state.health?.providerReadiness||{};const statusLabel=(v)=>String(v||'not_configured').toUpperCase().replaceAll('_',' ');const statusGood=(v)=>v==='observed_healthy';return `<section class="page settings-page"><div class="page-head"><div><div class="eyebrow">CONFIGURAÇÕES</div><h1>Configurações</h1><p>Conta e estado avançado dos serviços.</p></div></div>${errorBanner('page-alert')}<div class="settings-grid"><article class="card settings-card"><h3>Conta</h3><div class="user-chip"><div class="avatar">${esc(initials())}</div><div><strong>${esc(state.user?.user_metadata?.full_name||'Felipe')}</strong><div class="muted tiny">${esc(state.user?.email||'Personal owner')}</div></div></div><p class="muted tiny" style="margin-top:12px">Este app usa um workspace pessoal.</p></article><article class="card settings-card"><h3>Monitor de custos mensal</h3>
-  <p class="muted tiny">One shared $60 testing target for text, images, videos, audio and tools. This is an alert only; nothing is disabled when the target is reached.</p>
-  <div class="diag-list"><div class="diag-row"><span>Known text estimate</span><strong>${state.health?.monthlyBudget?.knownTextUsd==null?'Unknown':Number(state.health.monthlyBudget.knownTextUsd).toFixed(4)}</strong></div>
-  <div class="diag-row"><span>Combined monthly target</span><strong>${Number(state.health?.monthlyBudget?.targetUsd||60).toFixed(2)}</strong></div>
-  <div class="diag-row"><span>Tracked executions</span><strong>${state.health?.monthlyBudget?.executionCount??'Unavailable'}</strong></div><div class="diag-row"><span>Priced executions</span><strong>${state.health?.monthlyBudget?.pricedExecutionCount??'Unknown'} / ${state.health?.monthlyBudget?.executionCount??'Unknown'}</strong></div><div class="diag-row"><span>Unpriced executions</span><strong>${state.health?.monthlyBudget?.unpricedExecutionCount??'Unknown'}</strong></div><div class="diag-row"><span>Image executions</span><strong>${state.health?.monthlyBudget?.imageExecutionCount??"Unknown"}</strong></div><div class="diag-row"><span>Web executions</span><strong>${state.health?.monthlyBudget?.webExecutionCount??"Unknown"}</strong></div><div class="diag-row"><span>Tool executions</span><strong>${state.health?.monthlyBudget?.toolExecutionCount??"Unknown"}</strong></div><div class="diag-row"><span>Executions without a known price</span><strong>${state.health?.monthlyBudget?.unknownCostExecutionCount??"Unknown"}</strong></div><div class="diag-row"><span>Audio/video billing</span><strong>Not integrated</strong></div></div>
-  <p class="muted tiny">Known text estimates are not your actual bill. Unknown means no priced usage was recorded or the monitor query failed. Media, web fees, and provider billing are not yet fully metered.</p>
-  ${state.health?.monthlyBudget?.targetReached?'<p class="status-warn">Target reached in known estimates. Services remain available.</p>':''}
-</article>${preferencesSettings()}${personalMemorySettings()}${googleIntegrationSettings()}<article class="card settings-card"><h3>Live Talk Settings</h3><p class="muted tiny">Choose a Live Talk provider. Your selection is saved in this browser. End the current session before switching providers.</p><div class="field"><label for="live-provider">Live Talk provider</label><select id="live-provider" ${state.liveTalk?'disabled':''}><option value="openai" ${state.liveProvider==='openai'?'selected':''}>OpenAI Realtime</option><option value="elevenlabs" ${state.liveProvider==='elevenlabs'?'selected':''}>ElevenLabs Realtime</option></select></div>
-${state.liveProvider==='openai'?`<div class="field"><label for="openai-live-voice">OpenAI Live voice</label><select id="openai-live-voice" ${state.liveTalk?'disabled':''}>${OPENAI_VOICE_NAMES.map(v=>`<option value="${v}" ${state.openaiLiveVoice===v?'selected':''}>${v}</option>`).join('')}</select></div>`:''}
-${state.liveProvider==='elevenlabs'? `<p class="muted tiny">Realtime voice provider connected. Workspace context and authorized tools remain available during the session.</p>`:''}
-<div class="field"><label for="live-language">Live Talk language</label><select id="live-language">${[['auto','Automatic (agent detects language)'],['pt','Português (Brasil)'],['en','English (US)'],['es','Español']].map(([v,label])=>`<option value="${v}" ${state.liveLocale===v?'selected':''}>${label}</option>`).join('')}</select></div>${voiceAvatarPicker()}<p class="muted tiny">Choose an orb preview above. Only its inner energy moves; the frame and symbol stay fixed. Provider-specific voice choices change vocal timbre; authenticated tools and workspace context stay available in every session.</p></article><article class="card settings-card"><h3>Audio Settings</h3>
-<p class="muted tiny">Choose the provider and voice for read-aloud replies. Live Talk has separate settings.</p>
-<div class="field"><label for="zeus-speech-provider">Read-aloud provider</label><select id="zeus-speech-provider">${[['gemini','Google Gemini'],['elevenlabs','ElevenLabs'],['openai','OpenAI']].map(([v,l])=>`<option value="${v}" ${state.speechProvider===v?'selected':''}>${l}</option>`).join('')}</select></div>
-${state.speechProvider==='openai'?`<div class="field"><label for="zeus-openai-voice">OpenAI voice</label><select id="zeus-openai-voice">${OPENAI_VOICE_NAMES.map(v=>`<option value="${v}" ${state.voiceId===v?'selected':''}>${v}</option>`).join('')}</select></div>`:''}
-${state.speechProvider==='gemini'?`<div class="field"><label for="zeus-google-voice">Google voice</label><select id="zeus-google-voice">${GOOGLE_TTS_VOICES.map(v=>`<option value="${v}" ${state.googleVoice===v?'selected':''}>${v}</option>`).join('')}</select></div>`:''}
-${state.speechProvider==='elevenlabs'?`<div class="field"><label for="elevenlabs-voice-preset">ElevenLabs voice</label><select id="elevenlabs-voice-preset">
-<option value="">${state.elevenLabsVoicesLoading?'Loading voices…':'Choose a voice'}</option>
+function settingsView(){const providers=state.health?.providerReadiness||{};const statusLabel=(v)=>({observed_healthy:'OPERACIONAL',configured_unverified:'CONFIGURADO · NÃO TESTADO',not_configured:'NÃO CONFIGURADO',degraded:'DEGRADADO',unknown:'DESCONHECIDO',available:'DISPONÍVEL',unavailable:'INDISPONÍVEL',partial:'PARCIAL',planned:'PLANEJADO',disabled:'DESATIVADO'}[String(v||'').toLowerCase()]||String(v||'desconhecido').toUpperCase().replaceAll('_',' '));const statusGood=(v)=>v==='observed_healthy';return `<section class="page settings-page"><div class="page-head"><div><div class="eyebrow">CONFIGURAÇÕES</div><h1>Configurações</h1><p>Conta e estado avançado dos serviços.</p></div></div>${errorBanner('page-alert')}<div class="settings-grid"><article class="card settings-card"><h3>Conta</h3><div class="user-chip"><div class="avatar">${esc(initials())}</div><div><strong>${esc(state.user?.user_metadata?.full_name||'Felipe')}</strong><div class="muted tiny">${esc(state.user?.email||'Titular da conta')}</div></div></div><p class="muted tiny" style="margin-top:12px">Este app usa um workspace pessoal.</p></article><article class="card settings-card"><h3>Monitor de custos mensal</h3>
+  <p class="muted tiny">Meta mensal de US$ 60 para texto, imagens, vídeo, áudio e ferramentas. É apenas um alerta; nenhum serviço é desativado quando a meta é atingida.</p>
+  <div class="diag-list"><div class="diag-row"><span>Estimativa conhecida de texto</span><strong>${state.health?.monthlyBudget?.knownTextUsd==null?'Desconhecido':Number(state.health.monthlyBudget.knownTextUsd).toFixed(4)}</strong></div>
+  <div class="diag-row"><span>Meta mensal combinada</span><strong>${Number(state.health?.monthlyBudget?.targetUsd||60).toFixed(2)}</strong></div>
+  <div class="diag-row"><span>Execuções registradas</span><strong>${state.health?.monthlyBudget?.executionCount??'Indisponível'}</strong></div><div class="diag-row"><span>Execuções com preço</span><strong>${state.health?.monthlyBudget?.pricedExecutionCount??'Desconhecido'} / ${state.health?.monthlyBudget?.executionCount??'Desconhecido'}</strong></div><div class="diag-row"><span>Execuções sem preço</span><strong>${state.health?.monthlyBudget?.unpricedExecutionCount??'Desconhecido'}</strong></div><div class="diag-row"><span>Execuções de imagem</span><strong>${state.health?.monthlyBudget?.imageExecutionCount??"Desconhecido"}</strong></div><div class="diag-row"><span>Pesquisas na web</span><strong>${state.health?.monthlyBudget?.webExecutionCount??"Desconhecido"}</strong></div><div class="diag-row"><span>Execuções de ferramentas</span><strong>${state.health?.monthlyBudget?.toolExecutionCount??"Desconhecido"}</strong></div><div class="diag-row"><span>Execuções sem preço conhecido</span><strong>${state.health?.monthlyBudget?.unknownCostExecutionCount??"Desconhecido"}</strong></div><div class="diag-row"><span>Cobrança de áudio/vídeo</span><strong>Não integrada</strong></div></div>
+  <p class="muted tiny">As estimativas de texto não representam a fatura real. “Desconhecido” significa que não há uso precificado registrado ou que a consulta falhou. Mídia, tarifas de web e cobrança dos provedores ainda não são medidas por completo.</p>
+  ${state.health?.monthlyBudget?.targetReached?'<p class="status-warn">A meta foi atingida nas estimativas conhecidas. Os serviços continuam disponíveis.</p>':''}
+</article>${preferencesSettings()}${personalMemorySettings()}${googleIntegrationSettings()}<article class="card settings-card"><h3>Configurações do Live Talk</h3><p class="muted tiny">Escolha o provedor de voz. A seleção fica salva neste navegador. Encerre a sessão atual antes de trocar de provedor.</p><div class="field"><label for="live-provider">Provedor do Live Talk</label><select id="live-provider" ${state.liveTalk?'disabled':''}><option value="openai" ${state.liveProvider==='openai'?'selected':''}>OpenAI Realtime</option><option value="elevenlabs" ${state.liveProvider==='elevenlabs'?'selected':''}>ElevenLabs Realtime</option></select></div>
+${state.liveProvider==='openai'?`<div class="field"><label for="openai-live-voice">Voz do OpenAI Live</label><select id="openai-live-voice" ${state.liveTalk?'disabled':''}>${OPENAI_VOICE_NAMES.map(v=>`<option value="${v}" ${state.openaiLiveVoice===v?'selected':''}>${v}</option>`).join('')}</select></div>`:''}
+${state.liveProvider==='elevenlabs'? `<p class="muted tiny">Provedor de voz em tempo real conectado. O contexto do workspace e as ferramentas autorizadas continuam disponíveis durante a sessão.</p>`:''}
+<div class="field"><label for="live-language">Idioma do Live Talk</label><select id="live-language">${[['auto','Automático (o agente detecta o idioma)'],['pt','Português (Brasil)'],['en','Inglês (EUA)'],['es','Espanhol']].map(([v,label])=>`<option value="${v}" ${state.liveLocale===v?'selected':''}>${label}</option>`).join('')}</select></div>${voiceAvatarPicker()}<p class="muted tiny">Escolha uma esfera acima. Só a energia interna se move; aro e símbolo ficam fixos. O provedor altera o timbre da voz, enquanto ferramentas autorizadas e contexto do workspace permanecem disponíveis.</p></article><article class="card settings-card"><h3>Configurações de áudio</h3>
+<p class="muted tiny">Escolha o provedor e a voz para ouvir respostas. O Live Talk tem configurações próprias.</p>
+<div class="field"><label for="zeus-speech-provider">Provedor de leitura em voz alta</label><select id="zeus-speech-provider">${[['gemini','Google Gemini'],['elevenlabs','ElevenLabs'],['openai','OpenAI']].map(([v,l])=>`<option value="${v}" ${state.speechProvider===v?'selected':''}>${l}</option>`).join('')}</select></div>
+${state.speechProvider==='openai'?`<div class="field"><label for="zeus-openai-voice">Voz do OpenAI</label><select id="zeus-openai-voice">${OPENAI_VOICE_NAMES.map(v=>`<option value="${v}" ${state.voiceId===v?'selected':''}>${v}</option>`).join('')}</select></div>`:''}
+${state.speechProvider==='gemini'?`<div class="field"><label for="zeus-google-voice">Voz do Google</label><select id="zeus-google-voice">${GOOGLE_TTS_VOICES.map(v=>`<option value="${v}" ${state.googleVoice===v?'selected':''}>${v}</option>`).join('')}</select></div>`:''}
+${state.speechProvider==='elevenlabs'?`<div class="field"><label for="elevenlabs-voice-preset">Voz do ElevenLabs</label><select id="elevenlabs-voice-preset">
+<option value="">${state.elevenLabsVoicesLoading?'Carregando vozes…':'Escolha uma voz'}</option>
 ${state.elevenLabsVoices.map(v=>`<option value="${esc(v.voice_id)}" ${state.elevenLabsVoiceId===v.voice_id?'selected':''}>${esc(v.name)}${v.category?` · ${esc(v.category)}`:''}</option>`).join('')}</select></div>
 ${state.elevenLabsVoicesError?`<p class="status-warn" role="status">${esc(state.elevenLabsVoicesError)}</p>`:''}
-<div class="row"><button type="button" class="secondary compact" id="reload-elevenlabs-voices" ${state.elevenLabsVoicesLoading?'disabled':''}>Refresh voices</button>${state.elevenLabsVoiceHasMore?'<button type="button" class="secondary compact" id="load-more-elevenlabs-voices">Load more</button>':''}</div>`:''}
-<div class="row"><button type="button" class="secondary compact" id="save-voice-id">Save voice</button><button type="button" class="secondary compact" id="test-voice" ${state.voiceTesting?'disabled':''}>${state.voiceTesting?'Testing…':'Test voice'}</button></div>
+<div class="row"><button type="button" class="secondary compact" id="reload-elevenlabs-voices" ${state.elevenLabsVoicesLoading?'disabled':''}>Atualizar vozes</button>${state.elevenLabsVoiceHasMore?'<button type="button" class="secondary compact" id="load-more-elevenlabs-voices">Carregar mais</button>':''}</div>`:''}
+<div class="row"><button type="button" class="secondary compact" id="save-voice-id">Salvar voz</button><button type="button" class="secondary compact" id="test-voice" ${state.voiceTesting?'disabled':''}>${state.voiceTesting?'Testando…':'Testar voz'}</button></div>
 <p class="${state.voiceStatus?.kind==='error'?'status-warn':'status-good'}" id="voice-save-status" role="status" aria-live="polite">${state.voiceStatus?esc(state.voiceStatus.text):''}</p>
-</article><article class="card settings-card"><h3>Go-live checklist</h3>${(state.health?.warnings||[]).length?`<div class="diag-list health-warnings" role="status">${state.health.warnings.map(w=>`<p class="diag-warning"><strong>${esc(w.section)}</strong>: ${esc(w.message)}</p>`).join('')}</div>`:''}<div class="diag-list">${[['Netlify visitor access',null],['Database',state.health?.goLive?.database],['Blob maintenance',state.health?.goLive?.blobMaintenance],['Provider configured',Number(state.health?.goLive?.configuredProviders||0)>0],['Chat callable',['observed_healthy','configured_unverified'].includes(state.health?.goLive?.chatState)]].map(([label,ok])=>`<div class="diag-row"><span>${esc(label)}</span><strong class="${ok===null?'status-warn':ok?'status-good':'status-warn'}">${ok===null?'VERIFY IN NETLIFY':ok?'READY':'BLOCKED'}</strong></div>`).join('')}</div><p class="muted tiny" style="line-height:1.55;margin-top:14px">${state.health?.goLive?.ready?'Runtime checks passed. Verify Netlify visitor access for production, previews/branch deploys, and every alternate hostname.':'Runtime readiness is incomplete. Visitor access also requires a separate Netlify dashboard check.'}</p></article><article class="card settings-card"><h3>AI provider diagnostics</h3><div class="diag-list">${['openai','anthropic','gemini','openrouter'].map(p=>{const v=providers[p]?.status||'not_configured';return `<div class="diag-row"><span>${p}</span><strong class="${statusGood(v)?'status-good':'status-warn'}">${esc(statusLabel(v))}</strong></div>`}).join('')}</div><p class="muted tiny" style="line-height:1.55;margin-top:14px">Diagnostics are runtime-local evidence. CONFIGURED UNVERIFIED means credentials/models were detected but this warm Function runtime has not observed a successful call yet. DEGRADED means the temporary circuit breaker is open.</p></article><article class="card settings-card"><h3>Capabilities</h3><div class="diag-list">${Object.keys(state.health?.capabilityReadiness||{}).length?'':`<div class="muted tiny">${state.health?'No capability diagnostics reported.':'Diagnostics load when the workspace runtime responds.'}</div>`}${Object.entries(state.health?.capabilityReadiness||{}).map(([k,v])=>`<div class="diag-row"><span>${esc(k)}</span><strong class="${v==='observed_healthy'?'status-good':'status-warn'}">${esc(statusLabel(v))}</strong></div>`).join('')}</div></article></div></section>`}
+</article><article class="card settings-card"><h3>Verificação de publicação</h3>${(state.health?.warnings||[]).length?`<div class="diag-list health-warnings" role="status">${state.health.warnings.map(w=>`<p class="diag-warning"><strong>${esc(w.section)}</strong>: ${esc(w.message)}</p>`).join('')}</div>`:''}<div class="diag-list">${[['Acesso de visitantes no Netlify',null],['Banco de dados',state.health?.goLive?.database],['Manutenção do armazenamento',state.health?.goLive?.blobMaintenance],['Provedor configurado',Number(state.health?.goLive?.configuredProviders||0)>0],['Chat disponível',['observed_healthy','configured_unverified'].includes(state.health?.goLive?.chatState)]].map(([label,ok])=>`<div class="diag-row"><span>${esc(label)}</span><strong class="${ok===null?'status-warn':ok?'status-good':'status-warn'}">${ok===null?'VERIFICAR NO NETLIFY':ok?'PRONTO':'BLOQUEADO'}</strong></div>`).join('')}</div><p class="muted tiny" style="line-height:1.55;margin-top:14px">${state.health?.goLive?.ready?'As verificações do runtime passaram. Confira no Netlify o acesso de produção, prévias, deploys de branch e domínios alternativos.':'O runtime ainda não está pronto. O acesso de visitantes também precisa ser conferido no painel do Netlify.'}</p></article><article class="card settings-card"><h3>Diagnóstico dos provedores de IA</h3><div class="diag-list">${['openai','anthropic','gemini','openrouter'].map(p=>{const v=providers[p]?.status||'not_configured',providerName={openai:'OpenAI',anthropic:'Anthropic',gemini:'Google Gemini',openrouter:'OpenRouter'}[p]||p;return `<div class="diag-row"><span>${providerName}</span><strong class="${statusGood(v)?'status-good':'status-warn'}">${esc(statusLabel(v))}</strong></div>`}).join('')}</div><p class="muted tiny" style="line-height:1.55;margin-top:14px">Os diagnósticos refletem este runtime. CONFIGURADO, NÃO TESTADO significa que credenciais ou modelos foram detectados, mas nenhuma chamada bem-sucedida foi observada ainda. DEGRADADO significa que o bloqueio temporário de chamadas está ativo.</p></article><article class="card settings-card"><h3>Capacidades</h3><div class="diag-list">${Object.keys(state.health?.capabilityReadiness||{}).length?'':`<div class="muted tiny">${state.health?'Nenhum diagnóstico de capacidade foi informado.':'Os diagnósticos carregam quando o runtime responde.'}</div>`}${Object.entries(state.health?.capabilityReadiness||{}).map(([k,v])=>`<div class="diag-row"><span>${esc(k)}</span><strong class="${v==='observed_healthy'?'status-good':'status-warn'}">${esc(statusLabel(v))}</strong></div>`).join('')}</div></article></div></section>`}
 
 
 let modalKeydownHandler=null;
 let modalReturnFocus=null;
 let modalPreviousOverflow='';
 let modalCleanup=null;
+function syncResponsiveViewport(){
+  const viewport=window.visualViewport;
+  const height=viewport?.height||window.innerHeight;
+  const top=viewport?.offsetTop||0;
+  const keyboardInset=Math.max(0,window.innerHeight-(height+top));
+  const focusedText=document.activeElement?.matches?.('input,textarea,select,[contenteditable="true"]');
+  const keyboardOpen=keyboardInset>120&&focusedText;
+  const root=document.documentElement;
+  root.style.setProperty('--oly-visual-height',`${Math.round(height)}px`);
+  root.style.setProperty('--oly-visual-top',`${Math.round(top)}px`);
+  root.style.setProperty('--oly-keyboard-inset',`${Math.round(keyboardInset)}px`);
+  root.classList.toggle('oly-keyboard-open',Boolean(keyboardOpen));
+  if(keyboardOpen&&$('#modal-root .modal')){
+    const active=document.activeElement;
+    if(active&&$('#modal-root .modal').contains(active))requestAnimationFrame(()=>active.scrollIntoView?.({block:'nearest',inline:'nearest'}));
+  }
+}
+window.addEventListener('resize',syncResponsiveViewport,{passive:true});
+window.visualViewport?.addEventListener('resize',syncResponsiveViewport,{passive:true});
+window.visualViewport?.addEventListener('scroll',syncResponsiveViewport,{passive:true});
+document.addEventListener('focusin',syncResponsiveViewport);
+document.addEventListener('focusout',()=>setTimeout(syncResponsiveViewport,80));
+syncResponsiveViewport();
 function clearModalLifecycle(){
   if(modalKeydownHandler){document.removeEventListener('keydown',modalKeydownHandler,true);modalKeydownHandler=null;}
   if(modalCleanup){try{modalCleanup()}catch{}modalCleanup=null;}
@@ -1247,7 +1336,7 @@ function showModal(markup,{initialFocus,onClose}={}){
     else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}
   };
   document.addEventListener('keydown',modalKeydownHandler,true);
-  requestAnimationFrame(()=>{const target=initialFocus?$(initialFocus,dialog):null;(target||$$('input,textarea,select,button',dialog).find(el=>!el.disabled)||dialog).focus();});
+  requestAnimationFrame(()=>{const target=initialFocus?$(initialFocus,dialog):null;(target||$$('input,textarea,select,button',dialog).find(el=>!el.disabled)||dialog).focus();syncResponsiveViewport();});
   return dialog;
 }
 function setModalError(message){const el=$('#modal-notice');if(!el)return;el.textContent=translateInterfaceText(message||'');el.classList.toggle('hidden',!message);}
@@ -1457,6 +1546,7 @@ function bind(){
   $('#test-voice')?.addEventListener('click',()=>{testElevenLabsVoice();});
   $$('[data-tab]').forEach(b=>b.addEventListener('click',async()=>{
     const next=b.dataset.tab;state.drawer=false;
+    if(state.liveTalk&&next!=='Projects')finishLiveTalkSession();
     if(next==='Home' && state.currentProject){
       state.currentProject=null;state.currentConversation=null;state.messages=[];state.chatArtifacts=[];state.attachedFiles=[];state.activeMode=null;state.error='';
       history.replaceState({},'',location.pathname);
@@ -1597,9 +1687,9 @@ function bind(){
   $$('[data-files-clear]').forEach(b=>b.addEventListener('click',()=>{state.filesSearch='';state.filesFilter='ALL';render()}));
   $('#upload-files-empty')?.addEventListener('click',()=>$('#global-file-input')?.click());
   $$('[data-project]').forEach(b=>{b.addEventListener('click',()=>openProjectWorkspace(b.dataset.project));b.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();openProjectWorkspace(b.dataset.project);}});});
-  $$('[data-project-section]').forEach(b=>b.addEventListener('click',async()=>{state.projectSection=b.dataset.projectSection;try{if(state.projectSection==='MEMORY'&&state.currentProject)await loadMemories(state.currentProject.id);if(state.projectSection==='SOURCE'&&state.currentProject)await loadProjectSources();}catch(err){state.error=err?.message||'Could not load project memory.';}render();resetViewport()}));
+  $$('[data-project-section]').forEach(b=>b.addEventListener('click',async()=>{if(state.liveTalk&&b.dataset.projectSection!=='CHAT')finishLiveTalkSession();state.projectSection=b.dataset.projectSection;try{if(state.projectSection==='MEMORY'&&state.currentProject)await loadMemories(state.currentProject.id);if(state.projectSection==='SOURCE'&&state.currentProject)await loadProjectSources();}catch(err){state.error=err?.message||'Could not load project memory.';}render();resetViewport()}));
   $('#edit-project')?.addEventListener('click',()=>projectEditModal(state.currentProject?.id));
-  $('#back-projects')?.addEventListener('click',async()=>{state.currentProject=null;state.currentConversation=null;state.messages=[];state.chatArtifacts=[];state.attachedFiles=[];state.activeMode=null;state.projectMemories=[];state.memoryPolicy=null;state.projectSection='CHAT';state.messagePage={hasMore:false,nextCursor:null};state.tasks=[];state.error='';history.replaceState({},'',location.pathname);refreshLiveTalkContext();render()});
+  $('#back-projects')?.addEventListener('click',async()=>{if(state.liveTalk)finishLiveTalkSession();state.currentProject=null;state.currentConversation=null;state.messages=[];state.chatArtifacts=[];state.attachedFiles=[];state.activeMode=null;state.projectMemories=[];state.memoryPolicy=null;state.projectSection='CHAT';state.messagePage={hasMore:false,nextCursor:null};state.tasks=[];state.error='';history.replaceState({},'',location.pathname);refreshLiveTalkContext();render()});
   $('#task-form')?.addEventListener('submit',createTask); $$('[data-task]').forEach(b=>b.addEventListener('click',()=>{if(b.disabled)return;b.disabled=true;b.setAttribute('aria-busy','true');toggleTask(b.dataset.task,b.dataset.status);}));
   $('#memory-form')?.addEventListener('submit',createMemory); $('#personal-memory-form')?.addEventListener('submit',createPersonalMemory); $$('[data-memory-delete]').forEach(b=>b.addEventListener('click',()=>deleteMemory(b.dataset.memoryDelete,b.dataset.memoryScope)));
   $$('[data-delete-output]').forEach(b=>b.addEventListener('click',()=>deleteOutput(b.dataset.deleteOutput,b.dataset.outputId)));
@@ -2040,6 +2130,7 @@ function finishLiveTalkSession(){
   clearTimeout(state.liveRetryTimer);state.liveRetryTimer=null;
   releaseLiveAgentPermissionStream();
   void liveVoiceSession.closeAll();
+  closeLiveTalkMeterContext();
   state.liveAgentConversationId='';state.liveAgentPartial='';
   try{state.liveSpeechController?.abort()}catch{}
   state.liveSpeechController=null;discardLiveAudio();try{window.speechSynthesis?.cancel()}catch{}render();
@@ -2060,6 +2151,7 @@ function pauseLiveTalkOnError(message,kind='agent'){
   state.liveStage='error';state.liveFailureKind=kind;clearTimeout(state.liveRetryTimer);state.liveRetryTimer=null;
   releaseLiveAgentPermissionStream();
   void liveVoiceSession.closeAll();
+  closeLiveTalkMeterContext();
   state.liveAgentPartial='';
   try{state.liveSpeechController?.abort()}catch{}
   discardLiveAudio({keepElement:true});try{window.speechSynthesis?.cancel()}catch{}render();
@@ -2138,7 +2230,7 @@ async function handleGeminiLiveTools(calls,transport,generation){
   transport.socket.send(JSON.stringify({toolResponse:{functionResponses:responses}}));
 }
 
-function closeOpenAILive(){const t=state.openaiLiveTransport;state.openaiLiveTransport=null;if(!t)return;t.closed=true;clearTimeout(t.openTimer);try{t.channel.close()}catch{}try{t.pc.close()}catch{}try{t.audio.pause();t.audio.srcObject=null}catch{}try{t.stream.getTracks().forEach(x=>x.stop())}catch{}}
+function closeOpenAILive(){const t=state.openaiLiveTransport;state.openaiLiveTransport=null;if(!t)return;stopLiveTalkOutputMeter(t);t.closed=true;clearTimeout(t.openTimer);try{t.channel.close()}catch{}try{t.pc.close()}catch{}try{t.audio.pause();t.audio.srcObject=null}catch{}try{t.stream.getTracks().forEach(x=>x.stop())}catch{}}
 const OPENAI_LIVE_TOOLS=GEMINI_LIVE_TOOL_DECLARATIONS.map(t=>({type:'function',name:t.name,description:t.description,parameters:{type:'object',properties:Object.fromEntries(Object.entries(t.parameters?.properties||{}).map(([k,v])=>[k,{type:'string',description:v.description||''}])),required:t.parameters?.required||[]}}));
 async function connectOpenAILive(){
  if(!state.liveTalk||state.liveTalkStopRequested)return;closeOpenAILive();
@@ -2146,6 +2238,7 @@ async function connectOpenAILive(){
  try{
   stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true}});
   if(generation!==state.liveGeneration||!state.liveTalk){stream.getTracks().forEach(t=>t.stop());return;}
+  try{const meterContext=liveTalkAudioContext();if(meterContext?.state==='suspended')await meterContext.resume();}catch{}
   const issued=await api('/api/voice/openai-live-token',{method:'POST',body:JSON.stringify({projectId:state.currentProject?.id||null,conversationId:state.currentConversation||null,voice:state.openaiLiveVoice})});
   if(!issued.clientSecret)throw new Error('OpenAI Realtime session token unavailable');
   if(generation!==state.liveGeneration||!state.liveTalk){stream.getTracks().forEach(t=>t.stop());return;}
@@ -2153,7 +2246,7 @@ async function connectOpenAILive(){
   if(state.liveMuted)stream.getAudioTracks().forEach(track=>{track.enabled=false});
   pc=new RTCPeerConnection();const audio=new Audio();audio.autoplay=true;audio.playsInline=true;
   const channel=pc.createDataChannel('oai-events'),t={pc,stream,audio,channel,closed:false,calls:new Set(),openTimer:null};state.openaiLiveTransport=t;
-  pc.ontrack=e=>{audio.srcObject=e.streams[0];void audio.play().catch(()=>{if(!t.closed){state.error='Safari blocked OpenAI audio playback. Tap the screen, then reconnect Live Talk.';render();}});};
+  pc.ontrack=e=>{audio.srcObject=e.streams[0];connectLiveTalkStreamMeter(e.streams[0],t,generation);void audio.play().catch(()=>{if(!t.closed){state.error='Safari blocked OpenAI audio playback. Tap the screen, then reconnect Live Talk.';render();}});};
   pc.onconnectionstatechange=()=>{if(!t.closed&&generation===state.liveGeneration&&['failed','closed'].includes(pc.connectionState))pauseLiveTalkOnError('OpenAI Live connection failed. Tap retry.','agent');};
   stream.getTracks().forEach(track=>pc.addTrack(track,stream));
   channel.onopen=()=>{clearTimeout(t.openTimer);if(t.closed||generation!==state.liveGeneration)return;channel.send(JSON.stringify({type:'session.update',session:{type:'realtime',instructions:liveSessionContext().slice(0,14000),tools:OPENAI_LIVE_TOOLS,tool_choice:'auto',audio:{input:{transcription:{model:'gpt-4o-mini-transcribe'}}}}}));state.liveStage=state.liveMuted?'muted':'listening';render();};
@@ -2188,7 +2281,7 @@ async function connectOpenAILive(){
 function closeGeminiLive(){
   const g=state.geminiLiveTransport;state.geminiLiveTransport=null;
   if(state.liveTalk&&g&&!g.closed)g.transcripts?.flush();
-  if(g){g.closed=true;try{g.socket?.close()}catch{}try{g.processor?.disconnect()}catch{}try{g.source?.disconnect()}catch{}try{g.audio?.close()}catch{}try{g.output?.close()}catch{}}
+  if(g){stopLiveTalkOutputMeter(g);clearTimeout(g.stageTimer);g.closed=true;try{g.socket?.close()}catch{}try{g.processor?.disconnect()}catch{}try{g.source?.disconnect()}catch{}try{g.audio?.close()}catch{}try{g.output?.close()}catch{}}
   if(state.geminiLiveInput){for(const track of state.geminiLiveInput.getTracks())try{track.stop()}catch{}state.geminiLiveInput=null;}
 }
 function geminiPcmBase64(samples){
@@ -2236,13 +2329,16 @@ async function connectGeminiLive(){
     transport.socket=socket;
     const decodeAudio=async(encoded)=>{
       if(transport.closed)return;
+      clearTimeout(transport.stageTimer);
+      if(state.liveStage!=='speaking'){state.liveStage='speaking';render();}
       const raw=atob(encoded),bytes=new Uint8Array(raw.length);
       for(let i=0;i<raw.length;i++)bytes[i]=raw.charCodeAt(i);
       const pcm=new Int16Array(bytes.buffer,bytes.byteOffset,Math.floor(bytes.byteLength/2));
       const context=transport.output||(transport.output=new (window.AudioContext||window.webkitAudioContext)());
       const buffer=context.createBuffer(1,pcm.length,24000),samples=buffer.getChannelData(0);
       for(let i=0;i<pcm.length;i++)samples[i]=pcm[i]/32768;
-      const source=context.createBufferSource();source.buffer=buffer;source.connect(context.destination);
+      const source=context.createBufferSource();source.buffer=buffer;
+      if(!connectLiveTalkMeterSource(source,transport,generation,{context,audible:true}))source.connect(context.destination);
       const start=Math.max(context.currentTime,transport.playingAt);source.start(start);transport.playingAt=start+buffer.duration;
     };
     socket.onmessage=async event=>{
@@ -2252,8 +2348,9 @@ async function connectGeminiLive(){
       if(data.toolCall?.functionCalls?.length){void handleGeminiLiveTools(data.toolCall.functionCalls,transport,generation);return;}
       const turn=data.serverContent;
       transport.transcripts.accept(turn);
-      if(turn?.interrupted){transport.playingAt=0;try{await transport.output?.close()}catch{}transport.output=null;}
+      if(turn?.interrupted){stopLiveTalkOutputMeter(transport);clearTimeout(transport.stageTimer);transport.playingAt=0;state.liveStage=state.liveMuted?'muted':'listening';render();try{await transport.output?.close()}catch{}transport.output=null;}
       for(const part of turn?.modelTurn?.parts||[])if(part.inlineData?.data)await decodeAudio(part.inlineData.data);
+      if(turn?.turnComplete){const output=transport.output,wait=Math.max(0,((transport.playingAt||0)-(output?.currentTime||0))*1000);transport.stageTimer=setTimeout(()=>{if(!transport.closed&&generation===state.liveGeneration){state.liveStage=state.liveMuted?'muted':'listening';render();}},wait+40);}
     };
     socket.onclose=event=>{
       if(transport.closed||generation!==state.liveGeneration)return;
@@ -2405,6 +2502,7 @@ const liveVoiceSession=createLiveVoiceSessionBridge({
 });
 function toggleLiveTalk(){
   if(state.liveTalk){restoreLiveTalk();return;}
+  if(state.tab!=='Projects'||!state.currentProject?.id||(state.projectSection||'CHAT')!=='CHAT'||state.currentToolId){state.error='Live Talk is available inside a project chat. Open a project to start a session.';render();return;}
   if(state.sending){state.error='Wait for Poseidon to finish the current reply before starting Live Talk.';render();return;}
   if(window.isSecureContext===false){state.error='Live Talk requires a secure HTTPS page. Open OlyHub using its HTTPS address and reconnect.';render();return;}
   if(!liveTalkSupported()){state.error='Live Talk requires microphone access, audio playback, and a supported browser.';render();return;}

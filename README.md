@@ -9,7 +9,7 @@ The canonical Realm roles, order, model policy, skills and implementation status
 ## Current architecture
 
 - **Poseidon Text and Poseidon Voice** are the shared OlyHub Core coordinator. They use the same project context, approved memory, permissions and tool catalog, then delegate eligible work to the appropriate specialist.
-- The coordinator candidate defaults to **`x-ai/grok-4.3`** through the configured OpenRouter route, normally the Netlify AI Gateway. Backend routing may fall back when a provider is unavailable. The repository does not establish live credential availability, current provider pricing, or production behavior.
+- Text-model routing is task-aware: try a native provider through Netlify AI Gateway first (Anthropic, Gemini, or OpenAI), then OpenRouter through that same Gateway, then explicitly configured direct Google/OpenAI fallback keys. Anthropic and OpenRouter personal API keys are not required; OpenRouter direct transport is not used. Direct recovery is opt-in through `GEMINI_DIRECT_API_KEY` and/or `OPENAI_DIRECT_API_KEY`. The repository does not establish live credential availability, current provider pricing, or production behavior.
 - The specialist filter keeps xAI out of tool execution so the coordinator does not take over a task assigned to a dedicated tool.
 - Canonical specialist roles are Athena (research/knowledge), Hefesto (engineering/code), Apollo (visuals/images), Dionísio (audio/video), Peitho (marketing/acquisition), Deméter (commerce/business), Hermes (communications), and Hades (security). The current catalog connects Athena research/documents, Hefesto code, and Apollo images. Hermes exposes read-only Google integrations through Settings and Poseidon chat. The other dedicated Realms are planned, not active tools.
 - Héstia (review) and Mnemosine (memory) are internal capabilities, not separate user-facing Realms. Source analysis and memory features remain available through OlyHub Core where configured.
@@ -39,7 +39,7 @@ Poseidon uses the backend routing policy and the dedicated-tool catalog; users d
 
 ## Chat and voice behavior
 
-Text chat, voice messages and Live Talk share OlyHub context and personalization. Ordinary conversation does not trigger project inspection, tool calls or unsolicited work offers. Poseidon routes explicit work through the backend policy and eligible specialist tools. Live Talk restores a bounded recent transcript and relevant open-project context. OpenAI Realtime is the default voice transport; ElevenLabs Realtime is an alternative. Google lookups in chat are read-only; Drive document publishing requires the separate project review-and-confirm flow. GitHub changes require the dedicated explicit action flow.
+Text chat and voice messages share OlyHub context and personalization. Live Talk is available only inside a project's Chat section, and its requests and transcript stay with that project. Realm chats are text-only in this phase. Ordinary conversation does not trigger project inspection, tool calls or unsolicited work offers. Poseidon routes explicit work through the backend policy and eligible specialist tools. Live Talk restores a bounded recent transcript and relevant project context. OpenAI Realtime is the default voice transport; ElevenLabs Realtime is an alternative. Google lookups in chat are read-only; Drive document publishing requires the separate project review-and-confirm flow. GitHub changes require the dedicated explicit action flow.
 
 ## Google integrations
 

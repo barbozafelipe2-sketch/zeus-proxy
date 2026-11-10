@@ -4,7 +4,7 @@ import {recordProviderAttempt,snapshotProviderTelemetry,summarizeTransportEviden
 import * as models from '../netlify/functions/_shared/models.mjs';
 
 const budget=createExecutionBudget({timeoutMs:10000,maxCalls:2});
-recordProviderAttempt(budget,{model:{provider:'openrouter',id:'x-ai/grok-4.5',transport:'openrouter_direct'},stage:'critic',durationMs:20});
+recordProviderAttempt(budget,{model:{provider:'openrouter',id:'x-ai/grok-4.5',transport:'gateway'},stage:'critic',durationMs:20});
 let telemetry=snapshotProviderTelemetry(budget);
 assert.equal(telemetry.modelCalls,1);
 assert.deepEqual(telemetry.byTransport,{gateway:1});

@@ -14,19 +14,15 @@ async function handler(req,context){
     const content=cleanText(body?.content,8000),eventId=String(body?.eventId||'').slice(0,80);
     const {source}=resolveVoiceTranscriptProvider(body?.voiceProvider);
     const providerConversationId=String(body?.providerConversationId||'').slice(0,100);
+    if(typeof body?.projectId!=='string'||!body.projectId.trim())return errorJson('Live Talk transcripts must belong to a project.',400,'VOICE_PROJECT_REQUIRED',requestId);
     if(!role||!content||!eventId||!providerConversationId)return errorJson('A voice transcript event is incomplete.',400,'VOICE_TRANSCRIPT_INVALID',requestId);
     const scope=await resolveOwnedScope(db,user.id,{projectId:body?.projectId||null,conversationId:body?.conversationId||null});
     if(scope.error)return errorJson(scope.error.message,scope.error.status,scope.error.code,requestId);
     await consumeEndpointRate(db,user.id,'voice_realtime_log',requestId,600);
     let conversationId=scope.conversationId;
     if(!conversationId){
-      if(scope.projectId){
-        const rows=await db.sql`INSERT INTO conversations(owner_id,project_id,title) VALUES(${user.id},${scope.projectId},'Live Talk') ON CONFLICT (owner_id,project_id) WHERE project_id IS NOT NULL DO UPDATE SET updated_at=conversations.updated_at RETURNING id`;
-        conversationId=rows[0]?.id;
-      }else{
-        const rows=await db.sql`INSERT INTO conversations(owner_id,project_id,title) VALUES(${user.id},NULL,'Live Talk') RETURNING id`;
-        conversationId=rows[0]?.id;
-      }
+      const rows=await db.sql`INSERT INTO conversations(owner_id,project_id,title) VALUES(${user.id},${scope.projectId},'Live Talk') ON CONFLICT (owner_id,project_id) WHERE project_id IS NOT NULL DO UPDATE SET updated_at=conversations.updated_at RETURNING id`;
+      conversationId=rows[0]?.id;
     }
     const prior=await db.sql`SELECT id FROM messages WHERE owner_id=${user.id} AND conversation_id=${conversationId} AND role=${role} AND metadata->>'source'=${source} AND metadata->>'providerConversationId'=${providerConversationId} AND metadata->>'eventId'=${eventId} LIMIT 1`;
     let message;

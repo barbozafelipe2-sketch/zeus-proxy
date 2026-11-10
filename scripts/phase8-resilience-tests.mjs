@@ -5,19 +5,25 @@ import {snapshotProviderTelemetry} from '../netlify/functions/_shared/provider-o
 import * as models from '../netlify/functions/_shared/models.mjs';
 
 const prev=globalThis.Netlify;
-const env={OPENAI_DIRECT_API_KEY:'direct-openai',OPENROUTER_DIRECT_API_KEY:'direct-openrouter'};
+const env={OPENAI_DIRECT_API_KEY:'direct-openai',OPENROUTER_DIRECT_API_KEY:'must-not-route'};
 try{
   globalThis.Netlify={env:{get:key=>env[key]||''}};
   assert.deepEqual(models.providerTransportStatus(),{gateway:{openai:false,anthropic:false,gemini:false,openrouter:false}});
   const budget=createExecutionBudget({maxCalls:4,timeoutMs:30000});
   assert.equal(snapshotProviderTelemetry(budget).modelCalls,0);
-  const routes=buildTransportRoutes([
-    {provider:'openai',id:'gpt-5'},
-    {provider:'openrouter',id:'x-ai/grok-4.5'}
-  ],{limit:4,gatewayEnabled:()=>false,openrouterDirect:true,openaiDirect:true});
-  assert.deepEqual(routes,[],'direct credentials cannot recover a disabled Gateway');
+  const candidates=[
+    {provider:'anthropic',id:'claude',transport:'gateway'},
+    {provider:'openrouter',id:'x-ai/grok',transport:'gateway'},
+    {provider:'openai',id:'gpt-6-luna',transport:'openai_direct'}
+  ];
+  assert.deepEqual(buildTransportRoutes(candidates,{limit:4,gatewayEnabled:()=>false,directEnabled:(m,t)=>t==='openai_direct'&&Boolean(env.OPENAI_DIRECT_API_KEY)}).map(x=>x.transport),['openai_direct'],
+    'a direct OpenAI key may recover after Gateway routes are unavailable');
   assert.deepEqual(buildTransportRoutes([
-    {provider:'openai',id:'gpt-5'},{provider:'gemini',id:'gemini-3.5-flash'}
-  ],{limit:4,gatewayEnabled:()=>true,openrouterDirect:true,openaiDirect:true}).map(x=>x.transport),['gateway','gateway']);
+    {provider:'openrouter',id:'x-ai/grok',transport:'openrouter_direct'}
+  ],{limit:4,gatewayEnabled:()=>true,directEnabled:()=>true}),[],
+    'OpenRouter personal direct credentials are never a transport');
+  assert.deepEqual(buildTransportRoutes([
+    {provider:'openai',id:'gpt-5',transport:'gateway'},{provider:'gemini',id:'gemini-3.5-flash',transport:'gemini_direct'}
+  ],{limit:4,gatewayEnabled:()=>true,directEnabled:(m,t)=>t==='gemini_direct'}).map(x=>x.transport),['gateway','gemini_direct']);
 }finally{globalThis.Netlify=prev;models.__resetProviderHealthForTests();}
-console.log('Gateway-only recovery behavior: PASS');
+console.log('Gateway recovery with explicit Google/OpenAI direct fallback only: PASS');

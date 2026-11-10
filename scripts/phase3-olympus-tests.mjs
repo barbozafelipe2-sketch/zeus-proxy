@@ -4,8 +4,8 @@ import { createExecutionBudget } from '../netlify/functions/_shared/runtime.mjs'
 const envVars={
   OPENAI_API_KEY:'openai-test',
   OPENAI_BASE_URL:'https://openai.test/v1',
-  OPENAI_STRONG_MODEL:'gpt-5.6-sol',
-  OPENAI_MODEL:'gpt-5.6-luna',
+  OPENAI_STRONG_MODEL:'gpt-6.1-sol',
+  OPENAI_MODEL:'gpt-6-luna',
   ANTHROPIC_API_KEY:'anthropic-test',
   ANTHROPIC_BASE_URL:'https://anthropic.test',
 };
@@ -48,7 +48,7 @@ try{
   assert.notEqual(calls[0].provider,calls[1].provider,'author and critic must use independent provider families');
   assert.match(calls[0].system,/AUTHOR stage of Olympus Compound Plus/i);
   assert.match(calls[1].system,/independent CRITIC/i);
-  assert.equal(calls[2].model,'gpt-5.6-sol','strong GPT must deliver the final answer');
+  assert.equal(calls[2].model,'gpt-6.1-sol','strong GPT must deliver the final answer');
   assert.match(result.pipelineLabel,/author → independent critic → GPT final/);
 }finally{
   globalThis.fetch=originalFetch;

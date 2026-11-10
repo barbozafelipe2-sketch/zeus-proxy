@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 const ui=readFileSync('public/app.js','utf8');const css=readFileSync('public/ui-premium.css','utf8');const chat=readFileSync('netlify/functions/chat.mjs','utf8');const transcribe=readFileSync('netlify/functions/transcribe.mjs','utf8');const modelSource=readFileSync('netlify/functions/_shared/models.mjs','utf8');
-const voiceSettings=ui.slice(ui.indexOf('<h3>Live Talk Settings</h3>'),ui.indexOf('<h3>Audio Settings</h3>'));
+const voiceSettings=ui.slice(ui.indexOf('<h3>Configurações do Live Talk</h3>'),ui.indexOf('<h3>Configurações de áudio</h3>'));
 assert.match(voiceSettings,/<option value="openai"[^>]*>OpenAI Realtime<\/option><option value="elevenlabs"[^>]*>ElevenLabs Realtime<\/option>/,'Poseidon Voice exposes only its two canonical providers and defaults to OpenAI first');
 assert.ok(!voiceSettings.includes('Google Gemini Live')&&!voiceSettings.includes('gemini-live-voice'),'Gemini Live is not offered as a Poseidon Voice provider');
 assert.match(ui,/state\.liveProvider=localStorage\.getItem\('zeus-live-provider\.v1'\)==='elevenlabs'\?'elevenlabs':'openai'/,'saved unsupported Live Talk providers migrate safely to the OpenAI default');
@@ -9,6 +9,8 @@ assert.match(ui,/voiceId:'marin'/);assert.match(ui,/voiceAvatar:'ocean'/);assert
 assert.match(ui,/discardLiveAudio/);assert.match(ui,/zeus-live-stage/);assert.match(ui,/id="voice-avatar"/);assert.match(ui,/id="live-language"/);
 assert.match(css,/prefers-reduced-motion/);assert.match(css,/width:108px;height:108px/);
 assert.match(ui,/function toggleLiveTalk\(\)/);assert.match(ui,/function saveLiveAgentMessage/);
+assert.match(ui,/const canStartLiveTalk=state\.tab==='Projects'&&Boolean\(state\.currentProject\?\.id\)&&\(state\.projectSection\|\|'CHAT'\)==='CHAT'&&!state\.currentToolId/,'the Live Talk CTA is limited to the chat of an open project');
+assert.match(ui,/if\(state\.tab!=='Projects'\|\|!state\.currentProject\?\.id\|\|\(state\.projectSection\|\|'CHAT'\)!=='CHAT'\|\|state\.currentToolId\)/,'the Live Talk start handler independently enforces project-chat scope');
 assert.ok(ui.includes('(?:Athena|Zeus|Poseidon)'),'Live Talk strips legacy and current speaker tags');
 assert.match(ui,/A conexão Realtime com o ElevenLabs caiu\. O Safari não informou a causa exata\./,'Live Talk socket errors must be explained in Portuguese without inventing a root cause');
 const live=ui.slice(ui.indexOf('function finishLiveTalkSession(){'),ui.indexOf('\nasync function startVoice(){'));
@@ -67,7 +69,7 @@ assert.match(ui,/sendContextualUpdate\(context\)/,'opening a project during Live
 assert.match(ui,/clientTools:liveProjectClientTools\(\)/,'Live Talk must register scoped project tools with the ElevenLabs SDK');
 assert.match(ui,/send_olyhub_command:async/,'the voice agent must be able to route spoken work to the normal OlyHub engine');
 const voiceToolBody=ui.slice(ui.indexOf('send_olyhub_command:async'),ui.indexOf('list_olyhub_projects:async'));
-assert.ok(voiceToolBody.includes('sendText(command,[],crypto.randomUUID()'), 'direct Live Talk work commands must also work in the personal chat outside projects');
+assert.ok(voiceToolBody.includes('sendText(command,[],crypto.randomUUID()'), 'Live Talk work commands use the normal authenticated chat engine');
 assert.match(ui,/\{voiceCommand:true\}/,'spoken OlyHub work must avoid the fast Live Talk-only execution path');
 assert.match(ui,/olympusAuto:true/,'Poseidon-managed routing must remain automatic for spoken work');
 assert.match(ui,/function liveTalkPersona\(\)\{return 'ATHENA';\}/,'Realtime providers share the Athena voice identity');
@@ -110,9 +112,12 @@ assert.match(ui,/\$\('#live-talk-text-form'\)\?\.addEventListener\('submit',send
 assert.match(ui,/aria-label="End Live Talk"/,'Live Talk end action must be explicit and accessible');
 assert.match(transcribe,/createElevenLabsRealtimeConversationToken/,'server creates temporary ElevenLabs Realtime conversation credentials');
 const realtimeHandler=readFileSync('netlify/functions/_shared/voice-realtime.mjs','utf8');
+assert.match(realtimeHandler,/VOICE_PROJECT_REQUIRED/,'Realtime credentials cannot be issued without a project');
+assert.match(readFileSync('netlify/functions/voice-context.mjs','utf8'),/VOICE_PROJECT_REQUIRED/,'Realtime context refresh cannot fall back to personal chat');
 assert.match(realtimeHandler,/voice_realtime_session/,'all Live Talk credential providers must pass the central rate limiter');
 assert.match(transcribe,/path: \['\/api\/transcribe','\/api\/voice\/realtime-token','\/api\/voice\/realtime-signed-url'\]/,'Netlify must route both Realtime credential endpoints');
 const log=readFileSync('netlify/functions/voice-log.mjs','utf8');
+assert.match(log,/VOICE_PROJECT_REQUIRED/,'Live Talk transcripts must be attached to a project');
 assert.match(log,/requireUser/,'transcript persistence must require authentication');
 assert.match(log,/resolveOwnedScope/,'transcript persistence must verify conversation or project ownership');
 assert.match(log,/metadata->>'eventId'/,'transcript events must be idempotent');

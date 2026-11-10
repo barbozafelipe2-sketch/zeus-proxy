@@ -4,7 +4,7 @@ import { priceFor } from './model-prices.mjs';
 // Per-execution audit events: no prompt, response body, files, personal data, raw errors or secrets.
 const attemptsByBudget=new WeakMap();
 const safe=(x,n=96)=>String(x||'').replace(/[^A-Za-z0-9_./:-]/g,'').slice(0,n);
-const transports=new Set(['gateway']);
+const transports=new Set(['gateway','openai_direct','gemini_direct']);
 const clamp=(n,max)=>Math.min(max,Math.max(0,Number(n)||0));
 export function failureCategory(error){
   const code=safe(error?.code,48).toUpperCase();

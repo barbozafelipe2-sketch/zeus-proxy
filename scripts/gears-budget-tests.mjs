@@ -3,7 +3,7 @@ import { createExecutionBudget } from '../netlify/functions/_shared/runtime.mjs'
 import { GEAR_CALL_CAPS, decideExecutionLevel } from '../netlify/functions/_shared/intent.mjs';
 import { snapshotProviderTelemetry, summarizeRequestUsage } from '../netlify/functions/_shared/provider-observability.mjs';
 
-const envVars={OPENAI_API_KEY:'openai-test',OPENAI_BASE_URL:'https://openai.test/v1',OPENAI_STRONG_MODEL:'gpt-5.6-sol',OPENAI_MODEL:'gpt-5.6-luna',ANTHROPIC_API_KEY:'anthropic-test',ANTHROPIC_BASE_URL:'https://anthropic.test'};
+const envVars={OPENAI_API_KEY:'openai-test',OPENAI_BASE_URL:'https://openai.test/v1',OPENAI_STRONG_MODEL:'gpt-6.1-sol',OPENAI_MODEL:'gpt-6-luna',ANTHROPIC_API_KEY:'anthropic-test',ANTHROPIC_BASE_URL:'https://anthropic.test'};
 globalThis.Netlify={env:{get:(n)=>envVars[n]||''}};
 const originalFetch=globalThis.fetch;
 let calls=[],failAll=false;

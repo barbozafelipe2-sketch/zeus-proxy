@@ -2,7 +2,11 @@
 
 Poseidon Text and Poseidon Voice are the OlyHub Core coordinator. There is no user-facing Zeus/Olympus mode or L1/L2/L3 selector. Poseidon receives the shared context, identifies the task, and delegates eligible work to a dedicated specialist using the backend catalog and routing policy.
 
-The preferred coordinator model is `x-ai/grok-4.3` through the configured OpenRouter route, normally Netlify AI Gateway. The backend may select a fallback according to availability and policy. Production credentials, live model availability, and current price have not been verified by repository tests.
+Text-model routing follows a bounded transport order: a task-appropriate native provider through Netlify AI Gateway (Anthropic, Gemini, or OpenAI), then an OpenRouter model through Netlify AI Gateway, then direct Google/OpenAI only when the corresponding explicit `GEMINI_DIRECT_API_KEY` or `OPENAI_DIRECT_API_KEY` is configured. Anthropic and OpenRouter do not need personal provider keys, and no direct Anthropic or OpenRouter route is used. Direct recovery preserves task capability: Gemini Pro/OpenAI Sol for writing, research, and coding; Gemini Pro/OpenAI Astra for hard requests; multimodal Gemini Flash/OpenAI vision model for image input; Gemini Flash/OpenAI Luna for ordinary fast requests. Production credentials and live provider availability still require deployment-side verification.
+
+Routing uses quality/cost tiers. Simple turns use economical capable models; writing, research, and coding use stronger task-matched models; hard requests can escalate to GPT Astra, and only when classified hard. Fallback is triggered by transport/provider failure and keeps the route's capability class; it does not claim to detect subjective answer quality after a successful response.
+
+Live Talk is project-scoped. It can be started only from a project's Chat section; its voice requests, refreshed context, and persisted transcript use that project conversation. Realm pages are text-only for now. A future Realm-specific voice can use a separate voice identity while still delegating through the same backend policy and returning results to an explicitly selected project's chat.
 
 The specialist filter excludes the xAI family from tool execution. A specialist's actual response returns to Poseidon for delivery; the coordinator should not silently replace the dedicated tool workflow with its own execution.
 

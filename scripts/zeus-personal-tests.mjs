@@ -38,19 +38,19 @@ assert.equal(shouldSearchWeb('Search the web for the latest Netlify AI Gateway c
 assert.equal(shouldSearchWeb('What is the current price and release status?'),true,'time-sensitive web intent not detected');
 assert.equal(shouldSearchWeb('Write a short poem about rain'),false,'ordinary writing should not trigger paid web search');
 assert.ok(app.includes("$('#voice')?.addEventListener('click',startVoice)"),'voice input missing');
-assert.ok(models.includes("'gpt-5.6-sol'")&&models.includes("'gpt-5.6-luna'")&&models.includes("'gpt-5'")&&models.includes("'gpt-4.1-mini'"),'OpenAI model chain incomplete');
+assert.ok(models.includes("'gpt-6.1-sol'")&&models.includes("'gpt-6-luna'")&&models.includes("'gpt-6.1-terra'")&&models.includes("'gpt-4.1-mini'"),'OpenAI model chain incomplete');
 assert.ok(models.includes('shouldAdvanceOpenAIModel')&&models.includes('buildFallbackOrder')&&models.includes('blockedProviders'),'provider fallback missing');
 assert.ok(models.includes('applyFailureBlocks(providerBlocks,model,error);')&&models.includes('if(shouldAdvanceOpenAIModel(error))return blocked;'),'fatal errors must block the affected transport scope');
 const ranked=[
   {id:'claude-sonnet',provider:'anthropic'},
-  {id:'gpt-5.6-sol',provider:'openai'},
-  {id:'gpt-5.6-terra',provider:'openai'},
+  {id:'gpt-6.1-sol',provider:'openai'},
+  {id:'gpt-6.1-terra',provider:'openai'},
   {id:'gemini',provider:'gemini'},
-  {id:'gpt-5.6-luna',provider:'openai'},
+  {id:'gpt-6-luna',provider:'openai'},
 ];
-assert.deepEqual(buildFallbackOrder(ranked,4).map(x=>x.id),['claude-sonnet','gpt-5.6-sol','gpt-5.6-terra','gemini'],'fallback must keep route order instead of collapsing onto OpenAI');
+assert.deepEqual(buildFallbackOrder(ranked,4).map(x=>x.id),['claude-sonnet','gpt-6.1-sol','gpt-6.1-terra','gemini'],'fallback must keep route order instead of collapsing onto OpenAI');
 const openaiFirst=[ranked[1],ranked[2],ranked[0],ranked[4]];
-assert.deepEqual(buildFallbackOrder(openaiFirst,4).map(x=>x.id),['gpt-5.6-sol','gpt-5.6-terra','claude-sonnet','gpt-5.6-luna'],'a GPT lead must still be allowed to fall through to another provider');
+assert.deepEqual(buildFallbackOrder(openaiFirst,4).map(x=>x.id),['gpt-6.1-sol','gpt-6.1-terra','claude-sonnet','gpt-6-luna'],'a GPT lead must still be allowed to fall through to another provider');
 assert.equal(shouldAdvanceOpenAIModel(Object.assign(new Error('model unavailable'),{status:404})),true,'404 model availability should advance OpenAI model');
 assert.equal(shouldAdvanceOpenAIModel(Object.assign(new Error('temporary upstream'),{status:503})),true,'transient provider errors may advance OpenAI model');
 assert.equal(shouldAdvanceOpenAIModel(Object.assign(new Error('invalid request'),{status:400})),false,'invalid requests must not burn another model');

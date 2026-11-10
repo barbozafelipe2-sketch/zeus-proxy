@@ -11,7 +11,7 @@ const text='Pesquise as leis atuais de Miami e faça uma análise jurídica deta
 const env={
   OPENAI_API_KEY:'fake-gateway',OPENAI_BASE_URL:'https://gateway.test/v1',
   ANTHROPIC_API_KEY:'fake-gateway',ANTHROPIC_BASE_URL:'https://gateway.test',
-  OPENAI_STRONG_MODEL:'gpt-5.6-sol',OPENAI_MODEL:'gpt-5.6-luna',
+  OPENAI_STRONG_MODEL:'gpt-6.1-sol',OPENAI_MODEL:'gpt-6-luna',
   ANTHROPIC_STRONG_MODEL:'claude-sonnet-5'
 };
 const previousNetlify=globalThis.Netlify,previousFetch=globalThis.fetch;

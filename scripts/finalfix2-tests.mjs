@@ -29,8 +29,8 @@ assert.ok(chatSource.includes('pipelineLabel:result.pipelineLabel||null'));
 globalThis.Netlify={env:{get(name){return ({
   OPENAI_API_KEY:'openai-test',
   OPENAI_BASE_URL:'https://openai.test/v1',
-  OPENAI_STRONG_MODEL:'gpt-5.6-sol',
-  OPENAI_MODEL:'gpt-5.6-luna',
+  OPENAI_STRONG_MODEL:'gpt-6.1-sol',
+  OPENAI_MODEL:'gpt-6-luna',
 })[name]||'';}}};
 
 const originalFetch=globalThis.fetch;
@@ -53,12 +53,12 @@ try{
   assert.equal(simple.trace.strategy,'zeus_simple_single_model');
   assert.equal(simple.trace.executionLevel,'SIMPLE');
   assert.equal(calls.length,1,'Simple must make exactly one successful model call');
-  assert.equal(calls[0],'gpt-5.6-luna','Simple should use the fast/economy GPT fallback when only OpenAI is configured');
+  assert.equal(calls[0],'gpt-6-luna','Simple should use the fast/economy GPT fallback when only OpenAI is configured');
 
   calls=[];
   globalThis.fetch=async(url,options={})=>{
     const body=JSON.parse(String(options.body||'{}'));calls.push(body.model);
-    const content=body.model==='gpt-5.6-sol'?'FINAL GPT ANSWER':'BASE DRAFT';
+    const content=body.model==='gpt-6.1-sol'?'FINAL GPT ANSWER':'BASE DRAFT';
     return new Response(JSON.stringify({choices:[{message:{content}}]}),{status:200,headers:{'content-type':'application/json'}});
   };
   const compound=await models.runZeus({
@@ -72,10 +72,10 @@ try{
   assert.equal(compound.trace.executionLevel,'COMPOUND');
   assert.equal(compound.trace.gptFinished,true);
   assert.equal(calls.length,2,'Compound must make one successful base call and one successful GPT finalizer call');
-  assert.ok(['gpt-5.6-luna','gpt-4.1-mini'].includes(calls[0]),'Compound base must use an economy GPT when only OpenAI is configured');
-  assert.notEqual(calls[0],'gpt-5.6-sol','Compound must reserve the strong GPT for the finalizer');
-  assert.equal(calls[1],'gpt-5.6-sol','Compound final answer must come from the strong GPT finalizer');
-  assert.equal(compound.leadModel,'openai:gpt-5.6-sol');
+  assert.ok(['gpt-6-luna','gpt-4.1-mini'].includes(calls[0]),'Compound base must use an economy GPT when only OpenAI is configured');
+  assert.notEqual(calls[0],'gpt-6.1-sol','Compound must reserve the strong GPT for the finalizer');
+  assert.equal(calls[1],'gpt-6.1-sol','Compound final answer must come from the strong GPT finalizer');
+  assert.equal(compound.leadModel,'openai:gpt-6.1-sol');
 }finally{
   globalThis.fetch=originalFetch;
   delete globalThis.Netlify;
