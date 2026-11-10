@@ -680,7 +680,7 @@ body .project-chat-scroll .message.assistant .message-bolt.poseidon-trident .pos
   .poseidon-chat-emblem .poseidon-trident-art,.live-talk-cta-trident{filter:none}
 }
 
-/* Live Talk orb: keep every animated current clipped to the sphere interior. */
+/* Live Talk orb: animate a continuous S-current inside the clipped sphere. */
 .live-talk-orb-wrap.has-orb-art .zeus-voice-presence.orb-art{
   overflow:hidden!important;border-radius:50%!important;clip-path:circle(50%)!important;
 }
@@ -691,24 +691,25 @@ body .project-chat-scroll .message.assistant .message-bolt.poseidon-trident .pos
   left:8%!important;top:8%!important;width:84%!important;height:84%!important;
   transform:none!important;border-radius:50%!important;overflow:hidden!important;clip-path:circle(50%)!important;
   background:conic-gradient(from 0deg,transparent 0 18%,rgba(48,224,255,.32) 28%,transparent 43% 61%,rgba(169,71,255,.28) 73%,transparent 87% 100%)!important;
-  -webkit-mask:radial-gradient(circle,transparent 0 16%,#000 28% 72%,transparent 91%)!important;
-  mask:radial-gradient(circle,transparent 0 16%,#000 28% 72%,transparent 91%)!important;
+  -webkit-mask:radial-gradient(circle,#000 0 66%,rgba(0,0,0,.82) 79%,transparent 96%)!important;
+  mask:radial-gradient(circle,#000 0 66%,rgba(0,0,0,.82) 79%,transparent 96%)!important;
   opacity:.42!important;animation:poseidon-water-current 15s linear infinite!important;
 }
 .live-talk-orb-wrap .poseidon-water-motion:before{
-  content:""!important;position:absolute!important;display:block!important;left:4%!important;top:30%!important;
-  width:92%!important;height:42%!important;border-radius:58% 42% 54% 46% / 48% 52% 48% 52%!important;
-  background:radial-gradient(ellipse at 34% 52%,rgba(42,231,255,.42),transparent 56%),radial-gradient(ellipse at 72% 48%,rgba(158,67,255,.35),transparent 60%)!important;
-  filter:blur(7px)!important;opacity:.72!important;mix-blend-mode:screen!important;
+  content:""!important;position:absolute!important;display:block!important;left:-2%!important;top:35%!important;
+  width:104%!important;height:34%!important;border-radius:50%!important;
+  clip-path:polygon(0 44%,10% 36%,20% 38%,30% 47%,40% 58%,50% 63%,60% 58%,70% 47%,80% 40%,90% 41%,100% 48%,100% 67%,90% 63%,80% 61%,70% 66%,60% 76%,50% 80%,40% 73%,30% 62%,20% 54%,10% 53%,0 62%)!important;
+  background:linear-gradient(90deg,transparent 0%,rgba(42,231,255,.16) 15%,rgba(42,231,255,.68) 37%,rgba(129,158,255,.48) 58%,rgba(158,67,255,.62) 82%,transparent 100%)!important;
+  filter:blur(3px)!important;opacity:.78!important;mix-blend-mode:screen!important;
   animation:poseidon-internal-current 4.8s ease-in-out infinite alternate!important;
 }
 .live-talk-orb-wrap .poseidon-water-motion:after{display:none!important;content:none!important}
 .zeus-voice-presence.is-speaking .poseidon-water-motion:before{
-  opacity:1!important;filter:blur(5px)!important;animation-duration:2.6s!important;
+  opacity:1!important;filter:blur(2px)!important;animation-duration:2.6s!important;
 }
 @keyframes poseidon-internal-current{
-  from{transform:translate3d(-3%,2%,0) rotate(-4deg) scale(.96);opacity:.55}
-  to{transform:translate3d(3%,-2%,0) rotate(4deg) scale(1.04);opacity:.95}
+  from{transform:translate3d(-2%,1%,0) scaleY(.94);opacity:.58}
+  to{transform:translate3d(2%,-1%,0) scaleY(1.06);opacity:.98}
 }
 @media(prefers-reduced-motion:reduce){
   .live-talk-orb-wrap .poseidon-water-motion,.live-talk-orb-wrap .poseidon-water-motion:before{animation:none!important}
