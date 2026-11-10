@@ -714,3 +714,26 @@ body .project-chat-scroll .message.assistant .message-bolt.poseidon-trident .pos
 @media(prefers-reduced-motion:reduce){
   .live-talk-orb-wrap .poseidon-water-motion,.live-talk-orb-wrap .poseidon-water-motion:before{animation:none!important}
 }
+
+/* Match the inner current to the voice state without changing the sphere silhouette. */
+.live-talk-orb-wrap.has-orb-art .zeus-voice-presence.is-idle .poseidon-water-motion{
+  opacity:.3!important;animation-duration:24s!important;
+}
+.live-talk-orb-wrap.has-orb-art .zeus-voice-presence.is-listening .poseidon-water-motion{
+  opacity:.4!important;animation-duration:19s!important;
+}
+.live-talk-orb-wrap.has-orb-art .zeus-voice-presence.is-processing .poseidon-water-motion{
+  opacity:.56!important;animation-duration:13s!important;
+}
+.live-talk-orb-wrap.has-orb-art .zeus-voice-presence.is-processing .poseidon-water-motion:before{
+  animation-duration:4s!important;opacity:.84!important;
+}
+.live-talk-orb-wrap.has-orb-art .zeus-voice-presence.is-speaking{
+  animation-duration:1.45s!important;
+}
+.live-talk-orb-wrap.has-orb-art .zeus-voice-presence.is-speaking .poseidon-water-motion{
+  opacity:.86!important;animation-duration:8s!important;
+}
+.live-talk-orb-wrap.has-orb-art .zeus-voice-presence.is-speaking .poseidon-water-motion:before{
+  animation-duration:2.4s!important;filter:blur(2px)!important;opacity:1!important;
+}

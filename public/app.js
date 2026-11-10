@@ -699,9 +699,11 @@ function speechLocale(text=''){
 }
 
 function voiceAvatarMarkup(){
- const option=VOICE_AVATARS[state.voiceAvatar]||VOICE_AVATARS.olyhub,active=state.liveTalk?'active':'',speaking=state.liveStage==='speaking'?'is-speaking':'';
- if(option.image)return `<div class="zeus-voice-presence orb-art ${option.className} ${active} ${speaking}" aria-hidden="true"><img class="voice-orb-art" src="${option.image}" alt="" draggable="false"><span class="poseidon-water-motion ${option.className}"></span></div>`;
- return `<div class="zeus-voice-presence ${option.className} ${active} ${speaking}" aria-hidden="true"><div class="zeus-voice-core"><span class="voice-energy energy-one"></span><span class="voice-energy energy-two"></span><span class="voice-energy energy-three"></span><img class="voice-orb-trident-mark" src="/assets/poseidon-trident.webp" alt="" draggable="false"></div></div>`;
+ const option=VOICE_AVATARS[state.voiceAvatar]||VOICE_AVATARS.olyhub;
+ const active=state.liveTalk?'active':'';
+ const stageClass=({speaking:'is-speaking',processing:'is-processing',listening:'is-listening',muted:'is-muted',connecting:'is-connecting',error:'is-error'})[state.liveStage]||'is-idle';
+ if(option.image)return `<div class="zeus-voice-presence orb-art ${option.className} ${active} ${stageClass}" aria-hidden="true"><img class="voice-orb-art" src="${option.image}" alt="" draggable="false"><span class="poseidon-water-motion ${option.className}"></span></div>`;
+ return `<div class="zeus-voice-presence ${option.className} ${active} ${stageClass}" aria-hidden="true"><div class="zeus-voice-core"><span class="voice-energy energy-one"></span><span class="voice-energy energy-two"></span><span class="voice-energy energy-three"></span><img class="voice-orb-trident-mark" src="/assets/poseidon-trident.webp" alt="" draggable="false"></div></div>`;
 }
 function voiceAvatarPicker(){
  return `<div class="field"><span class="field-label">Live Talk orb</span><div id="voice-avatar" class="voice-orb-options" role="radiogroup" aria-label="Choose a Live Talk orb">${Object.entries(VOICE_AVATARS).map(([id,option])=>{const selected=state.voiceAvatar===id,preview=option.image?`<img src="${option.image}" alt="" loading="lazy">`:`<span class="voice-orb-swatch ${option.className}" aria-hidden="true"></span>`;return `<button type="button" class="voice-orb-option ${selected?'selected':''}" data-voice-avatar="${id}" role="radio" aria-checked="${selected}" aria-pressed="${selected}"><span class="voice-orb-preview ${option.image?'has-art':''}">${preview}</span><span>${option.label}</span></button>`}).join('')}</div></div>`;
