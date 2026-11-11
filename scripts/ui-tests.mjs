@@ -44,6 +44,14 @@ if(!app.includes("id=\"create-project\">${icon('plus')} New project"))throw new 
 for(const god of ['Athena','Hefesto','Apollo','Dionísio','Artemis','Deméter','Hermes','Hades'])if(!blueprint.realms.some(realm=>realm.name===god))throw new Error(`Canonical blueprint is missing deity ${god}`);
 if(!toolCatalog.includes("data-tool-start=\"${action.kind}\"")||!toolCatalog.includes("data-tab=\"${action.tab}\"")||!toolCatalog.includes('state.realmBlueprint?.internalCapabilities'))throw new Error('Canonical catalog actions or internal-capability labels are missing');
 if(toolCatalog.includes("id:'hestia'")||toolCatalog.includes("id:'mnemosine'"))throw new Error('Internal capabilities must not appear as independent deity Realms');
+
+// Regression contract: lost connections recover by request id, not a paid repost.
+const chatServer=readFileSync('netlify/functions/chat.mjs','utf8');
+if(!chatServer.includes("url.searchParams.has('requestId')")||!chatServer.includes('EXECUTION_NOT_FOUND')||!chatServer.includes('dispatchRequired:true,dispatchToken'))throw new Error('Durable request status and browser-dispatch fallback missing');
+if(chatServer.includes('const inlineClaim=await claimInlineFallback'))throw new Error('Long jobs may not fall back to a synchronous worker');
+if(!app.includes("PENDING_TURN_STORAGE_KEY='olyhub.pending-turn.v1'")||!app.includes("await api('/api/chat?requestId='+encodeURIComponent(requestId))")||!app.includes('Recuperar resultado'))throw new Error('Browser cannot resume the same execution');
+if(!app.includes("if(d.dispatchRequired)")||!app.includes("await api('/api/olympus-background'"))throw new Error('Authenticated browser dispatch missing');
+if(!css.includes('.project-chat-panel>.composer-shell{')||!css.includes('bottom:auto!important')||!css.includes('.project-chat-layout{display:grid!important;grid-template-columns:minmax(0,1fr)!important'))throw new Error('Mobile project composer overlap regression');
 console.log('OH-004.3.x UI regression tests: PASS');
 
 if(!app.includes("activeMode:null"))throw new Error('execution mode state must not pin old chats to Zeus');

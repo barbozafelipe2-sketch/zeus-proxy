@@ -18,7 +18,7 @@ import { stageArtifact, stageBinaryArtifact, discardStagedArtifact } from './_sh
 import { blobStore } from './_shared/blob.mjs';
 import { withTransaction } from './_shared/db.mjs';
 import { savePhaseCheckpoint } from './_shared/phase-checkpoint.mjs';
-import { executionLeaseExpired, claimOlympusWorker, queueOlympusExecution, claimInlineFallback, assertWorkerFence, markFailureIfOwner } from './_shared/worker-lease.mjs';
+import { executionLeaseExpired, claimOlympusWorker, queueOlympusExecution, assertWorkerFence, markFailureIfOwner } from './_shared/worker-lease.mjs';
 import { resolveOwnedScope } from './_shared/relations.mjs';
 import { classifyIntent, decideExecutionMode, decideExecutionLevel, explainExecutionLevel, normalizeRequestedMode, GEAR_CALL_CAPS } from './_shared/intent.mjs';
 import { redactSecrets, safeExtractedText } from './_shared/security.mjs';
@@ -399,6 +399,19 @@ async function chatHandler(req, context, startedAt){
   const requestIdFromHeader=getRequestId(req,context,null);
   const auth=await requireUser(req,requestIdFromHeader);if(auth.error)return auth.error;const{user,db}=auth;
   const url=new URL(req.url);
+  // Recover the exact owner-authorized execution by its idempotency key.
+  if(req.method==='GET'&&url.searchParams.has('requestId')){
+    const lookupId=url.searchParams.get('requestId');
+    if(!isUuid(lookupId))return errorJson('Valid request id required.',400,'INVALID_REQUEST_ID',requestIdFromHeader);
+    const runs=await db.sql`SELECT id,conversation_id,mode,state,error_code FROM executions WHERE owner_id=${user.id} AND request_id=${lookupId} LIMIT 1`;
+    if(!runs.length)return errorJson('This request was not registered.',404,'EXECUTION_NOT_FOUND',lookupId);
+    const run=runs[0];
+    const users=await db.sql`SELECT id,execution_id,role,mode,content,metadata,created_at FROM messages WHERE owner_id=${user.id} AND execution_id=${run.id} AND role='user' ORDER BY created_at ASC LIMIT 1`;
+    if(run.state==='COMPLETED'||run.state==='PARTIAL')return replayCompleted(db,user.id,run.conversation_id,run,users[0]||null,lookupId);
+    const details={conversationId:run.conversation_id,mode:run.mode,execution:{id:run.id,state:run.state},userMessage:users[0]||null,requestId:lookupId};
+    if(run.state==='FAILED'||run.state==='CANCELLED')return json({...details,failed:true,errorCode:run.error_code||'EXECUTION_FAILED'});
+    return json({...details,pending:true});
+  }
   if(req.method==='GET'){
     const id=url.searchParams.get('conversationId'); if(!isUuid(id))return errorJson('Valid conversation id required.',400,'INVALID_CONVERSATION_ID',requestIdFromHeader);
     const conv=await db.sql`SELECT id,title,project_id FROM conversations WHERE id=${id} AND owner_id=${user.id}`;if(!conv.length)return errorJson('Conversation not found.',404,'CONVERSATION_NOT_FOUND',requestIdFromHeader);
@@ -631,17 +644,13 @@ async function chatHandler(req, context, startedAt){
       // invocation. Retry the same fenced dispatch once before reporting trouble.
       const redispatched=await dispatchOlympus(req,{...body,content,conversationId,projectId,mode,requestId,fileIds,dispatchToken});
       if(redispatched)return json({pending:true,mode,level,modeExplanation,conversationId,userMessage:init.userMessage,tool:toolWorkflow?{id:toolWorkflow.id,god:toolWorkflow.god,title:toolWorkflow.title}:null,execution:{id:init.execution.id,state:'QUEUED'},requestId,replayed:false},202);
-      // A site-level access gate can reject the internal background POST (HTTP 401).
-      // Use the existing fenced inline fallback for Zeus as well as Olympus.
-      // A lost HTTP acknowledgement does NOT prove the background worker failed.
-      // Claim the queue atomically only if no worker started in the meantime.
-      const inlineClaim=await claimInlineFallback(db,{executionId:init.execution.id,ownerId:user.id,dispatchToken});
-      if(!inlineClaim)
-        return json({pending:true,mode,level,modeExplanation,conversationId,userMessage:init.userMessage,tool:toolWorkflow?{id:toolWorkflow.id,god:toolWorkflow.god,title:toolWorkflow.title}:null,execution:{id:init.execution.id,state:'QUEUED'},requestId,replayed:false},202);
-      init.execution.worker_token=inlineClaim.worker_token;
-      init.execution.lease_expires_at=inlineClaim.lease_expires_at;
-      olympusDispatchFallback=true;
-      modeExplanation='Background dispatch was unavailable; this execution was exclusively claimed for a Zeus fallback.';
+      // SSO may reject the internal dispatch. Do not run a long image job inside
+      // the 60s synchronous request. The logged-in browser dispatches the same
+      // one-time fenced nonce, so late duplicate workers cannot double-execute.
+      return json({pending:true,dispatchRequired:true,dispatchToken,mode,level,modeExplanation,
+        conversationId,userMessage:init.userMessage,
+        tool:toolWorkflow?{id:toolWorkflow.id,god:toolWorkflow.god,title:toolWorkflow.title}:null,
+        execution:{id:init.execution.id,state:'QUEUED'},requestId,replayed:false},202);
     }
     const execution=init.execution,userMessage=init.userMessage;
     const built=await buildContext({db,userId:user.id,projectId,conversationId,currentMessageId:userMessage.id,currentText:modelText,attachmentRows,...(compareHistoryBeforeAt?{historyBeforeAt:compareHistoryBeforeAt}:{})});

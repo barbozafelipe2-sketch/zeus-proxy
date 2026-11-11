@@ -25,7 +25,7 @@ const state = {
   googleSearchResults:{}, googleSearchQueries:{}, googleSearchBusy:null,
   draft:'', offline:typeof navigator!=='undefined'&&navigator.onLine===false,
   codeAgentJobs:[], codeAgentDetails:{}, codeAgentRepo:'', codeAgentBranch:'main', codeAgentSending:false, codeAgentError:'',
-  lastFailedText:'', lastFailedMessageId:null, lastFailedAttachments:[], lastFailedRequestId:null, lastFailedMode:null, lastFailedTurboApproval:null,lastFailedCompareType:null,compareType:null,imageCompareStartingId:null,
+  lastFailedText:'', lastFailedMessageId:null, lastFailedAttachments:[], lastFailedRequestId:null, lastFailedMode:null, lastFailedTurboApproval:null,lastFailedCompareType:null,compareType:null,imageCompareStartingId:null,pendingExecutionRequestId:null,
 };
 const privateBlobUrls=new Map();const PRIVATE_BLOB_CACHE_MAX=16;
 function revokePrivateBlobUrls(){for(const entry of privateBlobUrls.values())try{URL.revokeObjectURL(entry?.url||entry)}catch{}privateBlobUrls.clear();}
@@ -48,6 +48,36 @@ async function bootAuth(){
 }
 
 const LONG_REQUEST_DROP_MS=20000;
+const PENDING_TURN_STORAGE_KEY='olyhub.pending-turn.v1';
+function rememberPendingTurn(record){
+  if(!record?.requestId||!record?.conversationId)return;
+  try{localStorage.setItem(PENDING_TURN_STORAGE_KEY,JSON.stringify({
+    requestId:record.requestId,conversationId:record.conversationId,
+    executionId:record.executionId||null,projectId:record.projectId||null
+  }));}catch{}
+}
+function clearPendingTurn(requestId){
+  try{const value=JSON.parse(localStorage.getItem(PENDING_TURN_STORAGE_KEY)||'null');
+    if(!requestId||value?.requestId===requestId)localStorage.removeItem(PENDING_TURN_STORAGE_KEY);
+  }catch{}
+}
+async function restorePendingTurn(){
+  let record=null;try{record=JSON.parse(localStorage.getItem(PENDING_TURN_STORAGE_KEY)||'null');}catch{}
+  if(!record?.requestId||!record?.conversationId||record.conversationId!==state.currentConversation)return;
+  try{
+    const data=await api('/api/chat?requestId='+encodeURIComponent(record.requestId));
+    if(data.message){
+      clearPendingTurn(record.requestId);state.pendingExecutionRequestId=null;
+      await openConversation(record.conversationId,false);state.error='';render();return;
+    }
+    if(data.failed){clearPendingTurn(record.requestId);state.pendingExecutionRequestId=null;return;}
+    if(data.pending){
+      state.pendingExecutionRequestId=record.requestId;state.lastFailedRequestId=record.requestId;
+      state.error='Esta tarefa continua em andamento. Use “Recuperar resultado” para consultar a execução original, sem iniciar outra cobrança.';
+      render();
+    }
+  }catch(error){if(error?.status===404)clearPendingTurn(record.requestId);}
+}
 function apiError(message,status=0,code='',data=null){
   const error=new Error(message);error.status=status;error.code=code||'';error.data=data;return error;
 }
@@ -66,8 +96,8 @@ async function api(path, options={}){
     if(navigator.onLine===false)throw apiError('You are offline. Reconnect and try again.',0,'OFFLINE');
     const elapsed=Date.now()-startedAt;
     // A long request that drops is almost always the server's 60s function limit or iOS suspending the app, not the user's network.
-    if(elapsed>=LONG_REQUEST_DROP_MS)throw apiError(`The connection closed after ${Math.round(elapsed/1000)}s while Poseidon was still working — the request likely hit the server time limit, or the app went to the background. Tap Retry: a reply that finished will be recovered.`,0,'CONNECTION_INTERRUPTED');
-    throw apiError('Connection to Poseidon ended before the server returned an HTTP response. Your internet may still be fine; retry once, then check Runtime diagnostics if it repeats.',0,'NETWORK_ERROR');
+    if(elapsed>=LONG_REQUEST_DROP_MS)throw apiError(`A conexão caiu após ${Math.round(elapsed/1000)}s. O resultado será recuperado pela execução original.`,0,'CONNECTION_INTERRUPTED');
+    throw apiError('A conexão terminou sem resposta. Consulte a mesma execução antes de tentar novamente.',0,'NETWORK_ERROR');
   }finally{setBusy(-1);}
   const contentType=r.headers.get('content-type')||'';
   let data;
@@ -78,7 +108,7 @@ async function api(path, options={}){
     let msg=isJson?(data.error||data.message||''):'';
     if(!isJson){
       // Non-JSON error bodies come from the platform (gateway timeout / function crash), never from the assistant itself.
-      if([502,503,504].includes(r.status))msg=`Poseidon's server timed out or stopped before replying (HTTP ${r.status}). Tap Retry: a reply that finished will be recovered.`;
+      if([502,503,504].includes(r.status))msg=`O servidor interrompeu a resposta (HTTP ${r.status}). Consulte a execução original para recuperar o resultado.`;
       else if(typeof data==='string'&&data.trim()&&!/^\s*</.test(data))msg=data.slice(0,180);
     }
     const ref=isJson&&data.requestId?` · ref ${String(data.requestId).slice(0,18)}`:'';
@@ -142,7 +172,7 @@ function errorBanner(extraClass=''){
   const bootstrapNotice=state.bootstrapFailures.length>0;
   const message=bootstrapNotice?'Workspace services need to reconnect.':state.error;
   const details=bootstrapNotice?`<details class="service-failure-details"><summary>Show affected services</summary><ul>${state.bootstrapFailures.map(item=>`<li><strong>${esc(item.name)}</strong>${item.message?`: ${esc(item.message)}`:''}</li>`).join('')}</ul></details>`:'';
-  return `<div class="chat-error ${extraClass}"><div class="error-copy"><span>${esc(message)}</span>${details}</div><div class="error-actions">${bootstrapNotice?`<button type="button" id="retry-services">Retry services</button>`:''}${state.lastFailedBudgetExecutionId?`<button type="button" id="approve-olympus-five">Approve +$5</button>`:''}${state.lastFailedText?`<button type="button" id="retry-last">Try again</button>`:''}<button type="button" class="error-dismiss" data-dismiss-error aria-label="Dismiss message">${icon('close')}</button></div></div>`;
+  return `<div class="chat-error ${state.pendingExecutionRequestId?'chat-pending':''} ${extraClass}" role="status"><div class="error-copy"><span>${esc(message)}</span>${details}</div><div class="error-actions">${bootstrapNotice?`<button type="button" id="retry-services">Reconectar serviços</button>`:''}${state.lastFailedBudgetExecutionId?`<button type="button" id="approve-olympus-five">Aprovar +US$ 5</button>`:''}${state.lastFailedText||state.pendingExecutionRequestId?`<button type="button" id="retry-last">${state.pendingExecutionRequestId?'Recuperar resultado':'Tentar novamente'}</button>`:''}<button type="button" class="error-dismiss" data-dismiss-error aria-label="Fechar aviso">${icon('close')}</button></div></div>`;
 }
 async function bootstrapApp(){
   state.authReady=true;state.bootstrapFailures=[];state.error='';render();
@@ -160,9 +190,9 @@ async function bootstrapApp(){
   settled.forEach((result,index)=>{if(result.status==='rejected'){const name=jobs[index][0],message=String(result.reason?.message||'').slice(0,180);state.bootstrapFailures.push({name,message});console.warn(`OlyHub bootstrap ${name} failed`,result.reason);}});
   if(state.bootstrapFailures.length)state.error='Some workspace services did not load. Retry services to try again.';
   const params=new URLSearchParams(location.search); const pid=params.get('project'); const cid=params.get('conversation');
-  if(pid && state.projects.some(p=>p.id===pid)){ await openProjectWorkspace(pid); return; }
+  if(pid && state.projects.some(p=>p.id===pid)){ await openProjectWorkspace(pid); void restorePendingTurn(); return; }
   if(cid) await openConversation(cid,false);
-  render();
+  render();void restorePendingTurn();
 }
 async function loadRealmBlueprint(){
   const response=await fetch('/realm-blueprint.json',{cache:'no-store'});
@@ -1843,32 +1873,42 @@ async function sendVoiceTranscript(transcript){
   await sendText([typed,String(transcript||'').trim()].filter(Boolean).join('\n\n'),[...state.attachedFiles]);
 }
 function specialistLabel(toolId){const item=state.toolModels?.find(entry=>entry.id===toolId);return item?.god||({web:'Athena',code:'Hefesto',documents:'Athena',images:'Apollo',analysis:'Héstia · interna'}[toolId]||null);}
-async function pollForReply(conversationId, executionId, mode='ZEUS'){
+async function pollForReply(conversationId,executionId,mode='ZEUS',requestId=null){
   const deadline=Date.now()+180000;let waitMs=1800,lastStatusPaint=0;
   while(Date.now()<deadline){
     const pause=document.visibilityState==='hidden'?Math.max(waitMs,5500):waitMs;
-    await new Promise(r=>setTimeout(r,pause));
+    await new Promise(resolve=>setTimeout(resolve,pause));
     try{
-      const page=await api(`/api/chat?conversationId=${encodeURIComponent(conversationId)}&limit=30`);
-      const assistant=(page.messages||[]).find(m=>m.role==='assistant'&&m.execution_id===executionId);
+      // Query the exact execution instead of assuming it is in the most recent page.
+      const status=requestId
+        ?await api('/api/chat?requestId='+encodeURIComponent(requestId))
+        :await api('/api/chat?conversationId='+encodeURIComponent(conversationId)+'&limit=60');
+      const assistant=requestId?status.message:(status.messages||[]).find(m=>m.role==='assistant'&&m.execution_id===executionId);
       if(assistant){
         const ids=new Set(Array.isArray(assistant.metadata?.artifacts)?assistant.metadata.artifacts:[]);
-        const artifacts=(page.artifacts||[]).filter(a=>ids.has(a.id));
-        return {page,assistant:{...assistant,artifacts}};
+        const artifacts=requestId?(status.artifacts||[]):(status.artifacts||[]).filter(a=>ids.has(a.id));
+        return {page:status,assistant:{...assistant,artifacts}};
       }
-      const userRow=(page.messages||[]).find(m=>m.role==='user'&&m.execution_id===executionId);
-      const specialist=specialistLabel(userRow?.metadata?.toolId);
-      if(userRow?.metadata?.failed){const code=userRow.metadata.errorCode||'AI_EXECUTION_FAILED';throw apiError(code==='OLYMPUS_APPROVAL_REQUIRED'?'This request needs explicit approval for an additional $5.':'Poseidon could not finish. Tap Retry.',code==='OLYMPUS_APPROVAL_REQUIRED'?402:503,code,{executionId});}
-      if(specialist&&Date.now()-lastStatusPaint>4000){state.execTitle=`Poseidon · ${specialist}`;state.execStatus=`${specialist} está cuidando desta tarefa; Poseidon vai reunir o resultado.`;lastStatusPaint=Date.now();render();}
-      else if(Date.now()-lastStatusPaint>12000){state.execTitle='Poseidon está coordenando';state.execStatus='Selecionando e coordenando os especialistas para este pedido…';lastStatusPaint=Date.now();render();}
+      if(status.failed)throw apiError('A execução falhou. Outra tentativa pode consumir créditos.',503,status.errorCode||'AI_EXECUTION_FAILED',{terminal:true,executionId});
+      const userRow=requestId?status.userMessage:(status.messages||[]).find(m=>m.role==='user'&&m.execution_id===executionId);
+      if(userRow?.metadata?.failed)throw apiError('A execução terminou sem resposta.',503,userRow.metadata.errorCode||'AI_EXECUTION_FAILED',{terminal:true,executionId});
+      if(Date.now()-lastStatusPaint>7000){
+        const specialist=specialistLabel(userRow?.metadata?.toolId);
+        state.execTitle=specialist?'Poseidon · '+specialist:'Poseidon está coordenando';
+        state.execStatus=status.execution?.state==='QUEUED'?'Tarefa na fila de execução…':specialist?specialist+' está executando esta tarefa…':'Execução ativa no servidor · recuperando o resultado…';
+        lastStatusPaint=Date.now();render();
+      }
     }catch(error){
-      if(error?.code==='AI_EXECUTION_FAILED'||error?.status===401)throw error;
+      if(error?.data?.terminal||error?.status===401)throw error;
       if(!([0,502,503,504].includes(Number(error?.status||0))||error?.code==='CONNECTION_INTERRUPTED'))throw error;
-      if(Date.now()-lastStatusPaint>12000){state.execTitle='Poseidon está coordenando';state.execStatus='Ainda processando · reconectando ao resultado…';lastStatusPaint=Date.now();render();}
+      if(Date.now()-lastStatusPaint>10000){
+        state.execStatus='Conexão instável · a execução original continua sendo consultada…';
+        lastStatusPaint=Date.now();render();
+      }
     }
     waitMs=Math.min(5500,Math.round(waitMs*1.35));
   }
-  throw apiError('Poseidon is still working. Wait a moment, then tap Retry to collect the reply.',503,'REQUEST_IN_PROGRESS');
+  throw apiError('Esta tarefa continua no servidor. Toque em “Recuperar resultado” para consultar a mesma execução.',202,'REQUEST_IN_PROGRESS',{conversationId,executionId,requestId});
 }
 function explicitVisualAction(text,hasImage=false){
  const value=String(text||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
@@ -1928,7 +1968,7 @@ async function sendText(text,pendingAttachments=[],requestId=crypto.randomUUID()
         if(state.currentProject?.id!==matches[0].id)return;
         return await sendText(text,pending,requestId,requestedMode,turboApproval,resumeExecutionId,{...options,projectResolved:true});
       }
-      if(!matches.length){state.error='I could not match that project name to a project in your workspace. Check the project title and try again.';render();return;}
+      // Mentions of a project or Drive folder without a matching workspace title remain in the current chat.
     }catch(error){state.error=error.message||'Could not open the requested project.';render();return;}
   }
   const optimistic={id:crypto.randomUUID(),role:'user',mode,content:text,artifacts:[],attachments:pending};
@@ -1963,17 +2003,27 @@ async function sendText(text,pendingAttachments=[],requestId=crypto.randomUUID()
     try{
       d=await api('/api/chat',{method:'POST',body:JSON.stringify(payload),requestId});
     }catch(firstError){
-      if(firstError?.code!=='TURBO_APPROVAL_REQUIRED'||!firstError?.data?.approvalFingerprint)throw firstError;
-      const approved=await turboApprovalModal(firstError.data.quote||{});
-      if(!approved){
-        state.messages=state.messages.filter(m=>m.id!==optimistic.id);
-        state.attachedFiles=pending;state.draft=text;state.execStatus='';state.activeLevel=null;state.activeMode=mode;
-        return;
+      const recoverable=['CONNECTION_INTERRUPTED','NETWORK_ERROR','REQUEST_IN_PROGRESS','HTTP_ERROR'].includes(firstError?.code)||[502,503,504].includes(firstError?.status);
+      if(recoverable){
+        try{
+          const status=await api('/api/chat?requestId='+encodeURIComponent(requestId));
+          if(status.failed)throw apiError('A execução falhou. Consulte o diagnóstico antes de tentar novamente.',503,status.errorCode||'AI_EXECUTION_FAILED',{terminal:true,executionId:status.execution?.id});
+          d=status;
+        }catch(recoveryError){if(recoveryError?.status!==404)throw recoveryError;}
       }
-      turboApproval=firstError.data.approvalFingerprint;
-      payload.turboApproval=turboApproval;
-      state.execStatus='Complex Turbo approved · starting bounded execution…';render();
-      d=await api('/api/chat',{method:'POST',body:JSON.stringify(payload),requestId});
+      if(!d){
+        if(firstError?.code!=='TURBO_APPROVAL_REQUIRED'||!firstError?.data?.approvalFingerprint)throw firstError;
+        const approved=await turboApprovalModal(firstError.data.quote||{});
+        if(!approved){
+          state.messages=state.messages.filter(m=>m.id!==optimistic.id);
+          state.attachedFiles=pending;state.draft=text;state.execStatus='';state.activeLevel=null;state.activeMode=mode;
+          return;
+        }
+        turboApproval=firstError.data.approvalFingerprint;
+        payload.turboApproval=turboApproval;
+        state.execStatus='Turbo autorizado · iniciando execução delimitada…';render();
+        d=await api('/api/chat',{method:'POST',body:JSON.stringify(payload),requestId});
+      }
     }
     state.currentConversation=d.conversationId;
     if(d.mode)state.activeMode=d.mode;if(d.level)state.activeLevel=d.level;
@@ -1986,10 +2036,23 @@ async function sendText(text,pendingAttachments=[],requestId=crypto.randomUUID()
     }
     let assistant=d.message||null;
     if(d.pending){
+      state.pendingExecutionRequestId=requestId;
+      rememberPendingTurn({requestId,conversationId:d.conversationId,executionId:d.execution?.id,projectId:state.currentProject?.id});
       state.execTitle=d.tool?.god?`Poseidon · ${d.tool.god}`:'Poseidon está coordenando';
-      state.execStatus=d.tool?.god?`${d.tool.god} está cuidando desta tarefa; Poseidon vai reunir o resultado.`:'Poseidon está coordenando os especialistas selecionados…';
+      state.execStatus=d.tool?.god?`${d.tool.god} está executando esta tarefa…`:'Execução iniciada · acompanhando o resultado…';
       render();
-      const polled=await pollForReply(d.conversationId,d.execution?.id,d.mode||mode);
+      if(d.dispatchRequired){
+        // The internal server dispatch was blocked by a visitor gate. The
+        // authenticated browser invokes the same worker with a fenced nonce.
+        try{
+          await api('/api/olympus-background',{method:'POST',
+            body:JSON.stringify({...payload,conversationId:d.conversationId,projectId:state.currentProject?.id||null,dispatchToken:d.dispatchToken}),
+            requestId});
+        }catch(dispatchError){
+          throw apiError('O worker não pôde iniciar com esta sessão. O pedido continua registrado; confira o acesso ao site.',503,'BACKGROUND_DISPATCH_FAILED',{conversationId:d.conversationId,executionId:d.execution?.id});
+        }
+      }
+      const polled=await pollForReply(d.conversationId,d.execution?.id,d.mode||mode,requestId);
       assistant=polled.assistant;
       if(assistant?.mode)state.activeMode=assistant.mode;if(assistant?.metadata?.executionLevel)state.activeLevel=assistant.metadata.executionLevel;
     }
@@ -2016,16 +2079,19 @@ async function sendText(text,pendingAttachments=[],requestId=crypto.randomUUID()
       }
     }
     if(compareType)state.compareType=null;
-    state.execStatus='Completed';
+    state.pendingExecutionRequestId=null;clearPendingTurn(requestId);
+    state.execStatus='Concluído';
     await Promise.allSettled([loadConversations(),loadProjects()]);
     if(d.projectTaskAction&&state.currentProject?.id){await loadTasks(state.currentProject.id);state.currentProject=state.projects.find(project=>project.id===state.currentProject.id)||state.currentProject;}
-    setTimeout(()=>{if(state.execStatus==='Completed'&&!state.sending){state.execStatus='';state.execTitle='';render();}},900);
+    setTimeout(()=>{if(state.execStatus==='Concluído'&&!state.sending){state.execStatus='';state.execTitle='';render();}},900);
     if(voiceCommand)return assistant?JSON.stringify({ok:true,mode:assistant.mode||state.activeMode||mode,level:assistant.metadata?.executionLevel||state.activeLevel||null,memorySaved:Boolean(d.memorySaved),historySearched:Boolean(d.historySearched),reply:String(assistant.content||'')}):JSON.stringify({ok:false,error:'OlyHub finished without returning an answer.'});
   }catch(err){
     if(err?.code==='REQUEST_IN_PROGRESS'){
       if(err.data?.conversationId&&!state.currentConversation)state.currentConversation=err.data.conversationId;
-      state.error='Poseidon is still finishing this request. Wait a few seconds, then tap Retry to get the reply.';
-    }else state.error=err.message||'Request failed.';
+      state.pendingExecutionRequestId=requestId;
+      rememberPendingTurn({requestId,conversationId:state.currentConversation,executionId:err.data?.executionId,projectId:state.currentProject?.id});
+      state.error='A execução continua no servidor. Use “Recuperar resultado” para consultar a mesma resposta sem outra cobrança.';
+    }else state.error=err.message||'Não foi possível concluir o pedido.';
     state.execStatus='';state.activeMode=mode;state.activeLevel=null;
     state.lastFailedText=text;
     state.lastFailedMessageId=optimistic.id;
@@ -2084,8 +2150,30 @@ async function approveNextOlympusFive(){
  }catch(error){state.error=error.message||'Budget authorization failed.';render();}
 }
 async function retryLastMessage({liveTalk=false}={}){
-  if(!state.lastFailedText||state.sending)return;
-  if(!window.confirm('Try again? This may start another paid attempt. Saved completed stages will be reused when available.'))return;
+  if((!state.lastFailedText&&!state.pendingExecutionRequestId)||state.sending)return;
+  if(state.pendingExecutionRequestId){
+    const activeId=state.pendingExecutionRequestId;
+    state.sending=true;state.error='';state.execStatus='Consultando a execução original…';render();
+    try{
+      const status=await api('/api/chat?requestId='+encodeURIComponent(activeId));
+      if(status.failed){
+        clearPendingTurn(activeId);state.pendingExecutionRequestId=null;
+        state.error='A execução anterior falhou. Outra tentativa pode consumir créditos.';
+        return;
+      }
+      const recovered=status.message?status:await pollForReply(status.conversationId,status.execution?.id,status.mode||'ZEUS',activeId);
+      const conversationId=recovered.conversationId||recovered.page?.conversationId||status.conversationId;
+      clearPendingTurn(activeId);state.pendingExecutionRequestId=null;
+      state.lastFailedText='';state.lastFailedRequestId=null;state.lastFailedAttachments=[];state.lastFailedMessageId=null;
+      state.execStatus='';state.error='';
+      await openConversation(conversationId,false);
+      return;
+    }catch(error){
+      state.error=error?.code==='REQUEST_IN_PROGRESS'?'A execução segue ativa. Você pode voltar depois e recuperar a mesma resposta.':(error.message||'Não foi possível consultar o resultado.');
+      return;
+    }finally{state.sending=false;render();}
+  }
+  if(!window.confirm('Iniciar outra tentativa? Isso pode consumir créditos; etapas concluídas serão reutilizadas quando possível.'))return;
   const text=state.lastFailedText;
   const pending=[...state.lastFailedAttachments];
   let requestId=state.lastFailedRequestId||crypto.randomUUID();
