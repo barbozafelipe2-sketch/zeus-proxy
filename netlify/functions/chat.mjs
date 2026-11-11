@@ -1,3 +1,4 @@
+import {backgroundPayload,backgroundRecovery} from './_shared/background-recovery.mjs';
 import {authorizeOlympusModelCall} from './_shared/olympus-budget.mjs';
 import { requireUser } from './_shared/auth.mjs';
 import { json, readJson, cleanText, isUuid, getRequestId, errorJson } from './_shared/http.mjs';
@@ -401,9 +402,10 @@ async function dispatchOlympus(req, payload){
         ...(sessionCookie?{cookie:sessionCookie}:{}),
       },
       body:JSON.stringify(payload),
+      redirect:'error',
       signal:AbortSignal.timeout(4000),
     });
-    return res.status===202||res.ok;
+    return res.status===202;
   }catch{
     return false;
   }
@@ -417,7 +419,7 @@ async function chatHandler(req, context, startedAt){
   if(req.method==='GET'&&url.searchParams.has('requestId')){
     const lookupId=url.searchParams.get('requestId');
     if(!isUuid(lookupId))return errorJson('Valid request id required.',400,'INVALID_REQUEST_ID',requestIdFromHeader);
-    const runs=await db.sql`SELECT id,conversation_id,mode,state,error_code,lease_expires_at FROM executions WHERE owner_id=${user.id} AND request_id=${lookupId} LIMIT 1`;
+    const runs=await db.sql`SELECT id,conversation_id,mode,state,error_code,lease_expires_at,started_at,dispatch_token FROM executions WHERE owner_id=${user.id} AND request_id=${lookupId} LIMIT 1`;
     if(!runs.length)return errorJson('This request was not registered.',404,'EXECUTION_NOT_FOUND',lookupId);
     const run=runs[0];
     const users=await db.sql`SELECT id,execution_id,role,mode,content,metadata,created_at FROM messages WHERE owner_id=${user.id} AND execution_id=${run.id} AND role='user' ORDER BY created_at ASC LIMIT 1`;
@@ -429,7 +431,8 @@ async function chatHandler(req, context, startedAt){
     // generation from this GET endpoint. The existing request remains durable.
     if(run.state==='QUEUED'&&executionLeaseExpired(run))
       return json({...details,pending:false,stalled:true,errorCode:'QUEUE_LEASE_EXPIRED'});
-    return json({...details,pending:true});
+    if(executionLeaseExpired(run))return json({...details,pending:false,stalled:true,errorCode:'WORKER_LEASE_EXPIRED'});
+    return json({...details,pending:true,...(backgroundRecovery(run,users[0])||{})});
   }
   if(req.method==='GET'){
     const id=url.searchParams.get('conversationId'); if(!isUuid(id))return errorJson('Valid conversation id required.',400,'INVALID_CONVERSATION_ID',requestIdFromHeader);
@@ -656,17 +659,18 @@ async function chatHandler(req, context, startedAt){
     );
     if(backgroundEligible&&!worker){
       failureStage='background_queue';
-      const dispatchToken=await queueOlympusExecution(db,{executionId:init.execution.id,ownerId:user.id});
-      const dispatched=await dispatchOlympus(req,{...body,content,conversationId,projectId,mode,requestId,fileIds,dispatchToken});
+      const dispatchPayload=backgroundPayload(body,{content,conversationId,projectId,mode,requestId,fileIds});
+      const dispatchToken=await queueOlympusExecution(db,{executionId:init.execution.id,ownerId:user.id,payload:dispatchPayload});
+      const dispatched=await dispatchOlympus(req,{...dispatchPayload,dispatchToken});
       if(dispatched)return json({pending:true,mode,level,modeExplanation,conversationId,userMessage:init.userMessage,tool:toolWorkflow?{id:toolWorkflow.id,god:toolWorkflow.god,title:toolWorkflow.title}:null,execution:{id:init.execution.id,state:'QUEUED'},requestId,replayed:false},202);
       // A lost acknowledgement does not prove that Netlify rejected the background
       // invocation. Retry the same fenced dispatch once before reporting trouble.
-      const redispatched=await dispatchOlympus(req,{...body,content,conversationId,projectId,mode,requestId,fileIds,dispatchToken});
+      const redispatched=await dispatchOlympus(req,{...dispatchPayload,dispatchToken});
       if(redispatched)return json({pending:true,mode,level,modeExplanation,conversationId,userMessage:init.userMessage,tool:toolWorkflow?{id:toolWorkflow.id,god:toolWorkflow.god,title:toolWorkflow.title}:null,execution:{id:init.execution.id,state:'QUEUED'},requestId,replayed:false},202);
       // SSO may reject the internal dispatch. Do not run a long image job inside
       // the 60s synchronous request. The logged-in browser dispatches the same
       // one-time fenced nonce, so late duplicate workers cannot double-execute.
-      return json({pending:true,dispatchRequired:true,dispatchToken,mode,level,modeExplanation,
+      return json({pending:true,dispatchRequired:true,dispatchToken,dispatchPayload,mode,level,modeExplanation,
         conversationId,userMessage:init.userMessage,
         tool:toolWorkflow?{id:toolWorkflow.id,god:toolWorkflow.god,title:toolWorkflow.title}:null,
         execution:{id:init.execution.id,state:'QUEUED'},requestId,replayed:false},202);

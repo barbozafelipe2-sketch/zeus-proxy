@@ -12,8 +12,8 @@ assert.equal(executionLeaseExpired(liveWorker,now),false,'active worker must not
 
 const server=readFileSync('netlify/functions/chat.mjs','utf8');
 const app=readFileSync('public/app.js','utf8');
-assert.ok(server.includes('error_code,lease_expires_at FROM executions'),'request lookup must include lease');
-assert.ok(server.includes("run.state==='QUEUED'&&executionLeaseExpired(run)"),'only expired queued jobs are marked stalled');
+assert.ok(server.includes('error_code,lease_expires_at,started_at,dispatch_token FROM executions'),'request lookup must include lease');
+assert.ok(server.includes("run.state==='QUEUED'&&executionLeaseExpired(run)"),'expired queues must be marked stalled');
 assert.ok(server.includes("stalled:true,errorCode:'QUEUE_LEASE_EXPIRED'"),'expired jobs are not silently retried');
 assert.ok(!server.includes("if(run.state==='QUEUED')return json({...details,failed:true"),'queued jobs are not reported as a confirmed provider failure');
 assert.ok(app.includes('if(data.stalled)'),'restore must surface unclaimed queue');

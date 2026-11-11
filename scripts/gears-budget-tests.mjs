@@ -80,8 +80,9 @@ try{
   reset(models);
   const b=budget('COMPOUND');
   await models.runZeus({text:'Cria um PDF com um plano de negócios',requirements:req,level:'COMPOUND',budget:b});
-  const usage=summarizeRequestUsage(snapshotProviderTelemetry(b),{maxCalls:2,webUsage:{inputTokens:10,outputTokens:5}});
-  assert.equal(usage.callsUsed,2);assert.equal(usage.maxCalls,2);
+  // Two model calls plus a synthetic observed web request must count as three.
+  const usage=summarizeRequestUsage(snapshotProviderTelemetry(b),{maxCalls:3,webUsage:{inputTokens:10,outputTokens:5}});
+  assert.equal(usage.callsUsed,3);assert.equal(usage.maxCalls,3);
   assert.equal(usage.byRole.length,2);
   assert.ok(usage.inputTokens>=210&&usage.outputTokens>=85,'tokens summed incl. web search');
   assert.equal(usage.totalTokens,usage.inputTokens+usage.outputTokens);

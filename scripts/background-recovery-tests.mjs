@@ -1,0 +1,77 @@
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import vm from 'node:vm';
+import {backgroundPayload,backgroundRecovery} from '../netlify/functions/_shared/background-recovery.mjs';
+import {queueOlympusExecution} from '../netlify/functions/_shared/worker-lease.mjs';
+const token='11111111-1111-4111-8111-111111111111';
+const identity={content:'Generate workbook',conversationId:token,projectId:null,requestId:token,mode:'ZEUS',fileIds:[]};
+const payload=backgroundPayload({imageOptions:{resolution:'1K'},toolId:'images',turboApproval:'approved-fingerprint',headers:{cookie:'private'},apiKey:'private',dispatchToken:'old'},identity);
+assert.equal(payload.toolId,'images');
+assert.equal(payload.requestId,token);
+assert.equal(payload.turboApproval,'approved-fingerprint');
+assert.ok(!('headers' in payload)&&!('apiKey' in payload)&&!('dispatchToken' in payload));
+const now=Date.now();
+const run={state:'QUEUED',dispatch_token:token,lease_expires_at:new Date(now+30000).toISOString()};
+const message={metadata:{backgroundPayload:payload}};
+const recovered=backgroundRecovery(run,message,now);
+assert.equal(recovered.dispatchToken,token);
+assert.deepEqual(recovered.dispatchPayload,payload);
+for(const state of ['UNDERSTANDING','COMPLETED','PARTIAL','FAILED','CANCELLED'])
+  assert.equal(backgroundRecovery({...run,state},message,now),null);
+assert.equal(backgroundRecovery({...run,lease_expires_at:new Date(now-1).toISOString()},message,now),null);
+assert.equal(backgroundRecovery({...run,dispatch_token:'invalid'},message,now),null);
+assert.equal(backgroundRecovery(run,{metadata:{}},now),null,'legacy rows cannot invent an incomplete payload');
+let calls=0;
+await queueOlympusExecution({async sql(parts,...values){
+  calls++;
+  const sql=parts.join('?');
+  assert.match(sql,/WITH queued AS \(UPDATE executions/);
+  assert.match(sql,/UPDATE messages SET metadata/);
+  assert.match(sql,/execution_id IN \(SELECT id FROM queued\) AND owner_id=\? AND role='user'/);
+  assert.ok(values.includes(JSON.stringify(payload)),'nonce and original request persisted in one statement');
+  return [{dispatch_token:token}];
+}},{executionId:token,ownerId:'owner',payload});
+assert.equal(calls,1);
+const app=readFileSync('public/app.js','utf8');
+const helper=app.slice(app.indexOf('const dispatchedPendingTokens='),app.indexOf('async function restorePendingTurn('));
+const posts=[];
+const ctx=vm.createContext({api:async(path,options)=>{posts.push({path,...options});}});
+vm.runInContext(helper+'\nglobalThis.dispatchPendingTurn=dispatchPendingTurn;',ctx);
+await ctx.dispatchPendingTurn(recovered);
+await ctx.dispatchPendingTurn(recovered);
+assert.equal(posts.length,1,'one acknowledged dispatch per nonce in this tab');
+assert.equal(posts[0].path,'/api/olympus-background');
+assert.equal(posts[0].expectedStatus,202);
+assert.equal(posts[0].redirect,'error');
+assert.equal(JSON.parse(posts[0].body).dispatchToken,token);
+assert.equal(JSON.parse(posts[0].body).requestId,token,'recovery never generates a fresh paid request');
+await ctx.dispatchPendingTurn({...recovered,dispatchToken:'another',stalled:true});
+assert.equal(posts.length,1,'expired reservations cannot dispatch');
+const retryPosts=[];
+const failedCtx=vm.createContext({api:async()=>{retryPosts.push(1);if(retryPosts.length===1)throw new Error('lost ack');}});
+vm.runInContext(helper+'\nglobalThis.dispatchPendingTurn=dispatchPendingTurn;',failedCtx);
+await assert.rejects(()=>failedCtx.dispatchPendingTurn(recovered));
+await failedCtx.dispatchPendingTurn(recovered);
+assert.equal(retryPosts.length,2,'lost acknowledgement permits same-nonce recovery');
+const chat=readFileSync('netlify/functions/chat.mjs','utf8');
+const lookup=chat.slice(chat.indexOf("if(req.method==='GET'&&url.searchParams.has('requestId'))"),chat.indexOf("  if(req.method==='GET'){"));
+assert.match(lookup,/owner_id=\$\{user.id\} AND request_id=\$\{lookupId\}/);
+assert.match(lookup,/backgroundRecovery\(run,users\[0\]\)/);
+assert.ok(!/dispatchOlympus\(|queueOlympusExecution\(|claimOlympusWorker\(/.test(lookup),'lookup must remain read-only');
+assert.match(lookup,/WORKER_LEASE_EXPIRED/);
+for(const name of ['restorePendingTurn','pollForReply','retryLastMessage']){
+  const start=app.indexOf('async function '+name+'('),next=app.indexOf('\nasync function ',start+1);
+  assert.ok(app.slice(start,next===-1?undefined:next).includes('await dispatchPendingTurn('),name+' must support durable recovery');
+}
+console.log('Background recovery: original payload, same nonce, owner scope, expiry and browser retry PASS');
+
+assert.ok(chat.includes('return res.status===202;'), 'login HTML and generic 200 must not acknowledge a background dispatch');
+assert.ok(app.includes('r.status!==expectedStatus'), 'browser must verify the platform acknowledgement');
+// Exercise the real browser HTTP wrapper: a login page is not a worker ACK.
+let responseStatus=200;
+const apiCtx=vm.createContext({Headers,FormData,crypto,setBusy:()=>{},fetch:async()=>new Response('',{status:responseStatus})});
+vm.runInContext(app.slice(app.indexOf('function apiError('),app.indexOf('async function fetchPrivateBlob('))+'\nglobalThis.api=api;',apiCtx);
+await assert.rejects(()=>apiCtx.api('/api/olympus-background',{expectedStatus:202}),e=>e.code==='BACKGROUND_DISPATCH_FAILED');
+responseStatus=202;
+assert.equal(await apiCtx.api('/api/olympus-background',{expectedStatus:202}),'');
+console.log('Background HTTP acknowledgement: reject login 200, accept worker 202 PASS');

@@ -61,6 +61,14 @@ function clearPendingTurn(requestId){
     if(!requestId||value?.requestId===requestId)localStorage.removeItem(PENDING_TURN_STORAGE_KEY);
   }catch{}
 }
+const dispatchedPendingTokens=new Set();
+async function dispatchPendingTurn(status){
+  if(status?.stalled||status?.failed||status?.pending===false||!status?.dispatchRequired||!status.dispatchPayload||!status.dispatchToken||dispatchedPendingTokens.has(status.dispatchToken))return;
+  await api('/api/olympus-background',{method:'POST',
+    body:JSON.stringify({...status.dispatchPayload,dispatchToken:status.dispatchToken}),requestId:status.requestId,expectedStatus:202,redirect:'error'});
+  dispatchedPendingTokens.add(status.dispatchToken);
+  if(dispatchedPendingTokens.size>24)dispatchedPendingTokens.delete(dispatchedPendingTokens.values().next().value);
+}
 async function restorePendingTurn(){
   let record=null;try{record=JSON.parse(localStorage.getItem(PENDING_TURN_STORAGE_KEY)||'null');}catch{}
   if(!record?.requestId||!record?.conversationId||record.conversationId!==state.currentConversation)return;
@@ -72,22 +80,26 @@ async function restorePendingTurn(){
     }
     if(data.stalled){
       clearPendingTurn(record.requestId);state.pendingExecutionRequestId=null;
-      state.error='A tarefa ficou na fila sem um worker confirmado e a reserva expirou. Nenhuma nova tentativa foi iniciada. Confira o acesso à Netlify antes de reenviar.';
+      state.error='A reserva da execução expirou. Nenhuma nova tentativa foi iniciada. Confira o diagnóstico antes de reenviar.';
       render();return;
     }
     if(data.failed){clearPendingTurn(record.requestId);state.pendingExecutionRequestId=null;return;}
     if(data.pending){
+      await dispatchPendingTurn(data);
       state.pendingExecutionRequestId=record.requestId;state.lastFailedRequestId=record.requestId;
       state.error='Esta tarefa continua em andamento. Use “Recuperar resultado” para consultar a execução original, sem iniciar outra cobrança.';
       render();
     }
-  }catch(error){if(error?.status===404)clearPendingTurn(record.requestId);}
+  }catch(error){
+    if(error?.status===404)clearPendingTurn(record.requestId);
+    else{state.pendingExecutionRequestId=record.requestId;state.error='Não foi possível recuperar a tarefa. Use “Recuperar resultado” para consultar o pedido original.';render();}
+  }
 }
 function apiError(message,status=0,code='',data=null){
   const error=new Error(message);error.status=status;error.code=code||'';error.data=data;return error;
 }
 async function api(path, options={}){
-  const {requestId:optionRequestId,...fetchOptions}=options;
+  const {requestId:optionRequestId,expectedStatus=null,...fetchOptions}=options;
   const headers=new Headers(fetchOptions.headers||{});
   const apiRequestId=optionRequestId||crypto.randomUUID();
   headers.set('X-OlyHub-Request-ID',apiRequestId);
@@ -104,6 +116,7 @@ async function api(path, options={}){
     if(elapsed>=LONG_REQUEST_DROP_MS)throw apiError(`A conexão caiu após ${Math.round(elapsed/1000)}s. O resultado será recuperado pela execução original.`,0,'CONNECTION_INTERRUPTED');
     throw apiError('A conexão terminou sem resposta. Consulte a mesma execução antes de tentar novamente.',0,'NETWORK_ERROR');
   }finally{setBusy(-1);}
+  if(r.ok&&expectedStatus!==null&&r.status!==expectedStatus)throw apiError('O servidor não confirmou o início do worker. Consulte a execução original.',503,'BACKGROUND_DISPATCH_FAILED');
   const contentType=r.headers.get('content-type')||'';
   let data;
   try{data=contentType.includes('application/json')?await r.json():await r.text();}
@@ -1923,7 +1936,8 @@ async function pollForReply(conversationId,executionId,mode='ZEUS',requestId=nul
         const artifacts=requestId?(status.artifacts||[]):(status.artifacts||[]).filter(a=>ids.has(a.id));
         return {page:status,assistant:{...assistant,artifacts}};
       }
-      if(status.stalled)throw apiError('A tarefa permaneceu na fila até expirar. Nenhuma nova tentativa foi iniciada.',409,'QUEUE_LEASE_EXPIRED',{terminal:true,executionId});
+      if(status.stalled)throw apiError('A reserva da execução expirou. Nenhuma nova tentativa foi iniciada.',409,status.errorCode||'QUEUE_LEASE_EXPIRED',{terminal:true,executionId});
+      await dispatchPendingTurn(status);
       if(status.failed)throw apiError('A execução falhou. Outra tentativa pode consumir créditos.',503,status.errorCode||'AI_EXECUTION_FAILED',{terminal:true,executionId});
       const userRow=requestId?status.userMessage:(status.messages||[]).find(m=>m.role==='user'&&m.execution_id===executionId);
       if(userRow?.metadata?.failed)throw apiError('A execução terminou sem resposta.',503,userRow.metadata.errorCode||'AI_EXECUTION_FAILED',{terminal:true,executionId});
@@ -2042,6 +2056,7 @@ async function sendText(text,pendingAttachments=[],requestId=crypto.randomUUID()
       if(recoverable){
         try{
           const status=await api('/api/chat?requestId='+encodeURIComponent(requestId));
+          if(status.stalled)throw apiError('A reserva da execução expirou. Nenhuma nova tentativa foi iniciada.',409,status.errorCode||'WORKER_LEASE_EXPIRED',{terminal:true,executionId:status.execution?.id});
           if(status.failed)throw apiError('A execução falhou. Consulte o diagnóstico antes de tentar novamente.',503,status.errorCode||'AI_EXECUTION_FAILED',{terminal:true,executionId:status.execution?.id});
           d=status;
         }catch(recoveryError){if(recoveryError?.status!==404)throw recoveryError;}
@@ -2077,14 +2092,8 @@ async function sendText(text,pendingAttachments=[],requestId=crypto.randomUUID()
       state.execStatus=d.tool?.god?`${d.tool.god} está executando esta tarefa…`:'Execução iniciada · acompanhando o resultado…';
       render();
       if(d.dispatchRequired){
-        // The internal server dispatch was blocked by a visitor gate. The
-        // authenticated browser invokes the same worker with a fenced nonce.
-        try{
-          await api('/api/olympus-background',{method:'POST',
-            body:JSON.stringify({...payload,conversationId:d.conversationId,projectId:state.currentProject?.id||null,dispatchToken:d.dispatchToken}),
-            requestId});
-        }catch(dispatchError){
-          throw apiError('O worker não pôde iniciar com esta sessão. O pedido continua registrado; confira o acesso ao site.',503,'BACKGROUND_DISPATCH_FAILED',{conversationId:d.conversationId,executionId:d.execution?.id});
+        try{await dispatchPendingTurn(d);}catch(dispatchError){
+          throw apiError('O worker não pôde iniciar com esta sessão. O pedido continua registrado; use “Recuperar resultado”.',503,'BACKGROUND_DISPATCH_FAILED',{conversationId:d.conversationId,executionId:d.execution?.id});
         }
       }
       const polled=await pollForReply(d.conversationId,d.execution?.id,d.mode||mode,requestId);
@@ -2193,7 +2202,7 @@ async function retryLastMessage({liveTalk=false}={}){
       const status=await api('/api/chat?requestId='+encodeURIComponent(activeId));
       if(status.stalled){
         clearPendingTurn(activeId);state.pendingExecutionRequestId=null;
-        state.error='A reserva na fila expirou sem execução confirmada. Não foi iniciada outra chamada paga. Verifique a Netlify antes de enviar novamente.';
+        state.error='A reserva da execução expirou. Não foi iniciada outra chamada paga. Verifique a Netlify antes de enviar novamente.';
         return;
       }
       if(status.failed){
@@ -2201,6 +2210,7 @@ async function retryLastMessage({liveTalk=false}={}){
         state.error='A execução anterior falhou. Outra tentativa pode consumir créditos.';
         return;
       }
+      await dispatchPendingTurn(status);
       const recovered=status.message?status:await pollForReply(status.conversationId,status.execution?.id,status.mode||'ZEUS',activeId);
       const conversationId=recovered.conversationId||recovered.page?.conversationId||status.conversationId;
       clearPendingTurn(activeId);state.pendingExecutionRequestId=null;

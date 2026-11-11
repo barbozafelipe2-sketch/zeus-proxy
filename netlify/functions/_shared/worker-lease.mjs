@@ -28,13 +28,18 @@ export function validDispatchToken(value){
 }
 // The browser reserves/queues one generation; worker receives only this nonce.
 // On retry a new generation supersedes all late HTTP deliveries from the old one.
-export async function queueOlympusExecution(db,{executionId,ownerId}){
-  const rows=await db.sql`UPDATE executions
+export async function queueOlympusExecution(db,{executionId,ownerId,payload=null}){
+  const rows=await db.sql`WITH queued AS (UPDATE executions
     SET state='QUEUED',dispatch_token=gen_random_uuid(),worker_token=NULL,
         lease_expires_at=now()+interval '720 seconds',started_at=now()
     WHERE id=${executionId} AND owner_id=${ownerId}
       AND state='UNDERSTANDING' AND worker_token IS NULL AND dispatch_token IS NULL
-    RETURNING dispatch_token`;
+    RETURNING id,dispatch_token), saved AS (
+      UPDATE messages SET metadata=COALESCE(metadata,'{}'::jsonb)||
+        jsonb_build_object('backgroundPayload',${JSON.stringify(payload)}::jsonb)
+      WHERE execution_id IN (SELECT id FROM queued) AND owner_id=${ownerId} AND role='user'
+      RETURNING id
+    ) SELECT dispatch_token FROM queued`;
   if(rows.length!==1)throw Object.assign(new Error('Olympus queue ownership changed.'),{status:409,code:'WORKER_LEASE_CONFLICT'});
   return String(rows[0].dispatch_token);
 }

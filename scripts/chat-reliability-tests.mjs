@@ -184,7 +184,7 @@ assert.ok(chat.includes('runIndependentModelAnswer')&&chat.includes('compareSour
 const modelSource=read('netlify/functions/_shared/models.mjs');
 assert.ok(modelSource.includes('modelFamily(model)!==family')&&modelSource.includes('familyUsed===family')&&modelSource.includes("transport:'gateway'"),'comparison B must stay in a different model family through Gateway fallbacks');
 assert.ok(/@media\(max-width:600px\)[\s\S]*?\.chat-error\{display:grid;grid-template-columns:minmax\(0,1fr\)/.test(read('public/ui-premium.css')),'mobile errors must use a full-width text column');
-assert.ok(app.includes('You are offline. Reconnect and try again.') && app.includes('Connection to Poseidon ended before the server returned an HTTP response.'));
+assert.ok(app.includes('You are offline. Reconnect and try again.') && app.includes('A conexão terminou sem resposta. Consulte a mesma execução antes de tentar novamente.'));
 
 console.log('Chat reliability tests: PASS');
 
@@ -194,7 +194,7 @@ assert.ok(!appSource.includes('href="${esc(a.downloadUrl)}" target="_blank"'),'a
 assert.ok(appSource.includes('private-preview-close')&&appSource.includes('← Back'),'standalone PWA private preview needs an in-app back control');
 assert.ok(appSource.includes("state.sending=true;state.activeMode=mode"),'manual mode selection must be preserved into each request');
 
-assert.ok(chat.includes("olympusDispatchFallback=true"),'Olympus dispatch failure must degrade to verified Zeus instead of running the full team inline');
+assert.ok(chat.includes("pending:true,dispatchRequired:true,dispatchToken,dispatchPayload")&&!chat.includes("olympusDispatchFallback=true"),'dispatch failure must preserve the original fenced background task and architecture');
 assert.ok(chat.includes('loadSharedProviderBlocks'),'shared fatal provider health must influence routing');
 assert.ok(app.includes('PRIVATE_BLOB_CACHE_MAX=16'),'private preview Blob URLs need a bounded LRU');
 assert.ok(app.includes('sampleVideoFrames'),'video picker must produce honest sampled visual frames');
