@@ -2,14 +2,13 @@ import {getToolWorkflow} from './tool-workflows.mjs';
 import {verifiedCapabilityReceipt} from './tool-execution-evidence.mjs';
 export class ToolExecutionError extends Error{constructor(message,code='TOOL_PIPELINE_INCOMPLETE',details={}){super(message);this.name='ToolExecutionError';this.code=code;this.status=503;this.details=details;}}
 function isPoseidonCoordinatorModel(model){return String(model?.family||'').toLowerCase()==='xai'||(String(model?.provider||'').toLowerCase()==='openrouter'&&/^x-ai\//i.test(String(model?.id||'')));}
-export async function executeThreeModelTool({toolId,input,context='',budget,models,invoke,capability=null,onStage=null,modelStages=3}){
+export async function executeThreeModelTool({toolId,input,context='',budget,models,invoke,capability=null,onStage=null}){
  const tool=getToolWorkflow(toolId);
  if(!tool)throw new ToolExecutionError('Unknown tool.','TOOL_UNKNOWN');
  if(typeof models!=='function'||typeof invoke!=='function')throw new TypeError('Missing model selection or invocation.');
- const stages=Math.max(1,Math.min(3,Math.trunc(Number(modelStages)||3)));
  const completed=[],attempts=[],usedFamilies=new Set(),usedModels=new Set();
  let output=String(input||'');
- for(const role of ['CREATOR','DIRECTOR','CEO'].slice(0,stages)){
+ for(const role of ['CREATOR','DIRECTOR','CEO']){
   const choices=await models({tool,role,input,usedFamilies:[...usedFamilies],usedModels:[...usedModels]});
   const eligible=(Array.isArray(choices)?choices:[]).filter(m=>m?.provider&&m?.id&&m?.family&&!isPoseidonCoordinatorModel(m)&&!usedFamilies.has(m.family)&&!usedModels.has(m.provider+':'+m.id));
   if(!eligible.length)throw new ToolExecutionError('Independent model unavailable for '+role,'TOOL_MODEL_UNAVAILABLE',{completed,attempts});
@@ -46,7 +45,7 @@ export async function executeThreeModelTool({toolId,input,context='',budget,mode
  const receipt=candidate?.kind==='artifact_saved'?null:candidate;
  const artifact=capabilityResult&&typeof capabilityResult==='object'&&Object.hasOwn(capabilityResult,'artifact')
   ?capabilityResult.artifact:capabilityResult;
- return {content:output,artifact,leadModel:completed.at(-1).provider+':'+completed.at(-1).model,effectiveMode:'ZEUS',pipelineLabel:tool.god+' · '+stages+' model analysis '+(stages===1?'stage':'stages'),
-  trace:{strategy:stages===3?'tool_three_model_executor':'tool_specialist_executor',toolId,roles:completed,attempts,completedStages:completed.length,independentFamilies:completed.length>1,
+ return {content:output,artifact,leadModel:completed[2].provider+':'+completed[2].model,effectiveMode:'ZEUS',pipelineLabel:tool.god+' · three model analysis stages',
+  trace:{strategy:'tool_three_model_executor',toolId,roles:completed,attempts,completedStages:3,independentFamilies:true,
    capabilityAttempted:Boolean(capability),capabilityExecuted:Boolean(receipt),capabilityReceipt:receipt}};
 }

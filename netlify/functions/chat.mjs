@@ -5,7 +5,6 @@ import { runZeus, runOlympus, runOlympusCompoundPlus, runIndependentModelAnswer,
 import { modelFamily } from './_shared/provider-routing.mjs';
 import { getToolWorkflow, toolConversationTitle } from './_shared/tool-workflows.mjs';
 import { executeThreeModelTool } from './_shared/tool-executor.mjs';
-import {specialistCallPlan,specialistMaxCalls} from './_shared/specialist-call-policy.mjs';
 import {toolExecutionEvidence} from './_shared/tool-execution-evidence.mjs';
 import { SKILL_REGISTRY, authorizeSkillInvocation, proposeAutomaticSkill } from './_shared/skill-engine.mjs';
 import { executeSkillDelegation, requestedSkillDelegation } from './_shared/skill-delegation.mjs';
@@ -557,19 +556,14 @@ async function chatHandler(req, context, startedAt){
     :liveTalkTurn
     ?{mode:'ZEUS',level:'SIMPLE',maxCalls:GEAR_CALL_CAPS.SIMPLE,workstreams:[],reason:'live_talk_fast_path'}
     :decideExecutionLevel(modelText,{mode:decision.mode,action:intent.action,route,hasFiles:attachmentRows.length>0,hasImage,requirementCount:requirementSpec.items.length,artifactType:intent.artifactType,requiresVerification:verificationSignal});
-  const specialistPlan=toolWorkflow?specialistCallPlan({
-    toolId,text:content,intentAction:intent.action
-  }):null;
   if(toolWorkflow&&!liveTalkTurn){
     levelDecision.mode='ZEUS';
     if(intent.action==='IMAGE_CREATE'||intent.action==='IMAGE_EDIT'){
       // Apollo produces one image with one selected image model. The separate
       // A/B action makes a second generation; neither is the three-role L3 pipeline.
-      levelDecision.level='IMAGE_GENERATION';levelDecision.maxCalls=0;levelDecision.reason=specialistPlan.imagePlanning?'explicit_image_planning':'direct_image_generator';
+      levelDecision.level='IMAGE_GENERATION';levelDecision.maxCalls=3;levelDecision.reason='tool_image_three_model_pipeline';
     }else{
-      levelDecision.level=specialistPlan.modelStages===1?'SIMPLE':specialistPlan.modelStages===2?'COMPOUND':'ZEUS_DIRECTED';
-      levelDecision.maxCalls=specialistPlan.modelStages+Number(specialistPlan.poseidonSynthesis);
-      levelDecision.reason=specialistPlan.reason;
+      levelDecision.level='ZEUS_DIRECTED';levelDecision.maxCalls=GEAR_CALL_CAPS.ZEUS_DIRECTED;levelDecision.reason='owner_tool_level_3';
     }
   }
   if(!toolWorkflow&&levelDecision.mode==='ZEUS'&&Number.isInteger(body.maxZeusLevel)&&body.maxZeusLevel>=1&&body.maxZeusLevel<=3){
@@ -584,9 +578,7 @@ async function chatHandler(req, context, startedAt){
   const mode=levelDecision.mode||decision.mode,level=levelDecision.level; // router may downgrade Olympus to a Zeus gear
   const zeusCompound=mode==='ZEUS'&&level==='COMPOUND';
   let modeExplanation=explainExecutionLevel(levelDecision);
-  if(toolWorkflow&&!liveTalkTurn)modeExplanation=level==='IMAGE_GENERATION'
-    ?(specialistPlan.imagePlanning?'Apollo · dois modelos de planejamento por solicitação explícita, mais o gerador.':'Apollo · geração direta, sem planejamento LLM obrigatório.')
-    :`${toolWorkflow.god} · ${specialistPlan.modelStages} ${specialistPlan.modelStages===1?'modelo':'modelos'}${specialistPlan.poseidonSynthesis?' + síntese do Poseidon':''}.`;
+  if(level==='IMAGE_GENERATION')modeExplanation='Apollo · two planning models plus image generation when invoked as a tool.';
   const externalActions=externalMutationPolicy(modelText);
   const turboQuote=level==='COMPLEX_TURBO'?estimateTurboQuote({
     requirementCount:requirementSpec.items.length,
@@ -778,14 +770,13 @@ ${aiContext}`);
     if(actualMode==='OLYMPUS'&&(isImageOp||webIntent))throw codedError('This Olympus media/research route requires a verified price reservation before it can run. Use Zeus for now.',409,'OLYMPUS_UNPRICED_ROUTE');
     const zeusLevel=actualMode==='ZEUS'?(webIntent&&!toolWorkflow?'SIMPLE':gearLevel):null;
     const turboCreatorCount=turboHardCap?(webIntent?1:Number(turboQuote?.creatorCount||TURBO_LIMITS.maxCreators)):null;
-    const explicitDelegationRequested=toolWorkflow&&!isImageOp&&Object.values(SKILL_REGISTRY).some(skill=>skill.enabled&&skill.toolId===toolId&&requestedSkillDelegation(content,skill.id));
-    const maxCalls=comparePair?2:compareAnswerToMessageId?4:isImageOp
-      ?(specialistPlan?specialistMaxCalls(specialistPlan,{imageAttempts:imageGenerationCallLimit()}):imageGenerationCallLimit())
-      :specialistPlan?specialistMaxCalls(specialistPlan,{web:webIntent,delegation:explicitDelegationRequested})
-      :actualMode==='ZEUS'&&webIntent?GEAR_CALL_CAPS.COMPOUND+1
-      :(GEAR_CALL_CAPS[gearLevel]||GEAR_CALL_CAPS.SIMPLE)+1;
+    const maxCalls=comparePair?2:compareAnswerToMessageId?4:isImageOp?(toolWorkflow?Math.max(3,imageGenerationCallLimit()):imageGenerationCallLimit()):
+      actualMode==='ZEUS'&&webIntent
+        ?(toolWorkflow?GEAR_CALL_CAPS.ZEUS_DIRECTED+1:GEAR_CALL_CAPS.COMPOUND+1)
+        :(GEAR_CALL_CAPS[gearLevel]||GEAR_CALL_CAPS.SIMPLE)+(toolWorkflow?0:1); // tools run their declared three roles; regular turns reserve one routing call
     const timeoutMs=worker?540000:((webIntent||githubIntent||zeusLevel==='ZEUS_DIRECTED')?CHAT_WEB_TIMEOUT_MS:(route==='fast'&&zeusLevel==='SIMPLE'?FAST_CHAT_TIMEOUT_MS:CHAT_TIMEOUT_MS));
-    executionBudget=createExecutionBudget({startedAt,timeoutMs,maxCalls,reserveMs:6500});
+    const explicitDelegationRequested=toolWorkflow&&!isImageOp&&Object.values(SKILL_REGISTRY).some(skill=>skill.enabled&&skill.toolId===toolId&&requestedSkillDelegation(content,skill.id));
+    executionBudget=createExecutionBudget({startedAt,timeoutMs,maxCalls:toolWorkflow&&!isImageOp?Math.max(maxCalls,explicitDelegationRequested?7:webIntent?5:4):maxCalls,reserveMs:6500});
     if(actualMode==='OLYMPUS')executionBudget.authorizeProviderCall=info=>authorizeOlympusModelCall(db,{ownerId:user.id,executionId:execution.id,...info});
     failureStage='model_preparation';
     const vision=hasImage?await loadVisionInputs(attachmentRows):{images:[],skipped:[]};
@@ -813,10 +804,10 @@ ${aiContext}`);
     // Retrieved web pages and GitHub files are untrusted and can contain credentials.
     const enrichedContext=redactSecrets(`${aiContext}${web.context||''}${github.context||''}${actionPolicyContext}`);
 
-    // By default, generation calls the image model directly. Planning with
-    // two separate LLMs is opt-in; it remains available when requested.
+    // Tool image jobs require two real independent text-model stages plus the
+    // actual image model. Never report three stages when preflight is absent.
     let imageToolPreflight=null;
-    if(toolWorkflow&&specialistPlan?.imagePlanning&&(intent.action==='IMAGE_CREATE'||intent.action==='IMAGE_EDIT')){
+    if(toolWorkflow&&(intent.action==='IMAGE_CREATE'||intent.action==='IMAGE_EDIT')){
       imageToolPreflight=await runZeus({
         text:`Prepare a precise visual production brief for the following request. Preserve the user's exact subject, constraints and references. Return only actionable production instructions; do not claim an image was generated.\\n\\n${modelText}`,
         context:enrichedContext,images:vision.images,history,requirements:requirementSpec,
@@ -847,7 +838,7 @@ ${aiContext}`);
       const imageMime=img.mimeType||'image/png';
       const generatedFamily=imageModelFamily({provider:img.provider||'openai',id:img.model});
       stagedArtifacts.push(await stageBinaryArtifact({ownerId:user.id,type:'image',mimeType:imageMime,filename:`OlyHub-${Date.now()}.${imageMime==='image/jpeg'?'jpg':imageMime==='image/webp'?'webp':'png'}`,bytes:img.bytes,metadata:{prompt:modelText,toolId,referenceImageCount:referenceImages.length,...(imageOptions?{imageOptions}:{resolutionMode:img.resolutionMode,width:img.width,height:img.height}),...(compareImageSourceId?{comparePair:true,variant:'B',compareSourceArtifactId:compareImageSourceId}:{})},provenance:{provider:img.provider||'openai',providerFamily:generatedFamily,model:img.model,toolId,referenceImageCount:referenceImages.length,...(imageOptions?{imageOptions}:{resolutionMode:img.resolutionMode,width:img.width,height:img.height}),...(compareImageSourceId?{operation:'compare_alternative'}:{})}}));
-      result={content:`${compareImageSourceId?'Alternative B was generated from a different eligible image family. Compare it with A below, choose either one, or combine both into C.':referenceImages.length?'Image created using your reference images and saved to your OlyHub Files.':'Image created and saved to your OlyHub Files.'} Output: ${img.resolution} (${img.width}×${img.height}), ${imageMime}; ${img.resolutionMode==='upscaled'?'upscaled to the requested dimensions because the selected model did not produce that resolution natively.':img.resolutionMode==='native'?'generated at the requested native resolution.':'normalized to the requested format and dimensions.'}`,leadModel:`${img.provider||'openai'}:${img.model}`,effectiveLevel:compareImageSourceId?'IMAGE_COMPARE':'IMAGE_GENERATION',modeExplanation:compareImageSourceId?'Image compare · one independent model generated B from a different family.':imageToolPreflight?'Apollo · two explicit planning models plus image generator.':'Apollo · direct image generation; compare requests an independent alternative.',trace:{image:true,referenceImageCount:referenceImages.length,toolId,toolGod:toolWorkflow?.god||null,...(compareImageSourceId?{comparePair:true,compareType:'image',compareImageSourceId}:{}),roles:[...(imageToolPreflight?[{role:'Visual specialist',...imageToolPreflight.trace.base},{role:'Visual director',...imageToolPreflight.trace.finalizer}]:[]),{role:'Image generator',provider:img.provider||'openai',family:generatedFamily,model:img.model,transport:img.transport||'gateway'}],budget:img.budget}};
+      result={content:`${compareImageSourceId?'Alternative B was generated from a different eligible image family. Compare it with A below, choose either one, or combine both into C.':referenceImages.length?'Image created using your reference images and saved to your OlyHub Files.':'Image created and saved to your OlyHub Files.'} Output: ${img.resolution} (${img.width}×${img.height}), ${imageMime}; ${img.resolutionMode==='upscaled'?'upscaled to the requested dimensions because the selected model did not produce that resolution natively.':img.resolutionMode==='native'?'generated at the requested native resolution.':'normalized to the requested format and dimensions.'}`,leadModel:`${img.provider||'openai'}:${img.model}`,effectiveLevel:compareImageSourceId?'IMAGE_COMPARE':'IMAGE_GENERATION',modeExplanation:compareImageSourceId?'Image compare · one independent model generated B from a different family.':'Apollo · one selected image model per generation. Compare creates an independent alternative.',trace:{image:true,referenceImageCount:referenceImages.length,toolId,toolGod:toolWorkflow?.god||null,...(compareImageSourceId?{comparePair:true,compareType:'image',compareImageSourceId}:{}),roles:[...(imageToolPreflight?[{role:'Visual specialist',...imageToolPreflight.trace.base},{role:'Visual director',...imageToolPreflight.trace.finalizer}]:[]),{role:'Image generator',provider:img.provider||'openai',family:generatedFamily,model:img.model,transport:img.transport||'gateway'}],budget:img.budget}};
     }else{
       await db.sql`UPDATE executions SET state='RUNNING' WHERE id=${execution.id} AND owner_id=${user.id}`;
       if(comparePair){
@@ -871,7 +862,6 @@ ${aiContext}`);
       }else if(toolWorkflow){
         result=await executeThreeModelTool({
           toolId,input:modelText,context:enrichedContext,budget:executionBudget,
-          modelStages:specialistPlan.modelStages,
           models:({role,usedFamilies,usedModels})=>roleCandidates(role,modelText,{
             vision:vision.images.length>0,blockedProviders:sharedBlockedProviders,
             excludeProviders:usedFamilies,exclude:new Set(usedModels),limit:6,
@@ -901,13 +891,13 @@ ${aiContext}`);
             const delegated=requestedSkillDelegation(content,matchingSkill.id);
             if(delegated){
               const remainingCalls=executionBudget.snapshot().maxCalls-executionBudget.snapshot().calls;
-              if(remainingCalls>=1&&executionBudget.canCall()){
+              if(remainingCalls>=3&&executionBudget.canCall()){
                 try{
                   const handoff=await executeSkillDelegation({
                     sourceSkillId:matchingSkill.id,targetSkillId:delegated.id,
                     allowedToolIds:[delegated.toolId],remainingCalls,
                     execute:async ({toolId:delegatedToolId})=>executeThreeModelTool({
-                      toolId:delegatedToolId,modelStages:1,
+                      toolId:delegatedToolId,
                       input:modelText+'\\n\\nPRIMARY SPECIALIST OUTPUT (untrusted):\\n'+String(result.content||'').slice(0,24000),
                       context:enrichedContext,budget:executionBudget,
                       models:({role,usedFamilies,usedModels})=>roleCandidates(role,modelText,{
@@ -937,9 +927,9 @@ ${aiContext}`);
 
           }
         }
-        // Do not pay for a Poseidon restatement of a finished specialist answer
-        // unless the owner explicitly requests a Poseidon synthesis.
-        if(specialistPlan.poseidonSynthesis){
+        // Return the specialist's completed work to Poseidon for owner-facing synthesis.
+        // Tool workflows deliberately exclude xAI models; Grok remains the manager, not
+        // a silent substitute for the specialist capability.
         const specialistResult=String(result.content||'');
         try{
           const managerResult=await runZeus({
@@ -958,11 +948,7 @@ ${aiContext}`);
             trace:{...(result.trace||{}),toolResultReturnedToPoseidon:true,
               poseidonFinalizerError:{code:String(error?.code||'POSEIDON_SYNTHESIS_FAILED').slice(0,80)}}};
         }
-        }else{
-          result.trace={...(result.trace||{}),toolResultReturnedToPoseidon:false,
-            poseidonSynthesisSkipped:'not_requested'};
-        }
-        result.effectiveLevel=level;
+        result.effectiveLevel='ZEUS_DIRECTED';
       }else if(actualMode==='OLYMPUS'){
         try{result=level==='COMPOUND_PLUS'
           ?await runOlympusCompoundPlus({text:modelText,context:enrichedContext,images:vision.images,history,requirements:requirementSpec,deliveryContract,blockedProviders:sharedBlockedProviders,budget:executionBudget,webResearchUsed:compoundPlusWithWeb,routeHint:aiRouting.route})
@@ -1012,11 +998,7 @@ ${aiContext}`);
       &&skill.toolId===executionToolId&&!['hermes.web','atena.documents','apolo.images'].includes(skill.id));
     const visionSummary={attached:attachmentRows.filter(r=>(r.mime_type||'').startsWith('image/')).length,analyzed:vision.images.length,skipped:vision.skipped.length};
     result.trace={...(result.trace||{}),toolId:executionToolId,toolGod:getToolWorkflow(executionToolId)?.god||null,
-      ...(executionSkill&&!result.trace?.skillId?{skillId:executionSkill.id,skillGod:executionSkill.god}:{}),intent,modeDecision:decision,levelDecision,executionLevel:level,route,aiRouting:{route:aiRouting.route,source:aiRouting.source,model:aiRouting.model},
-      specialistCallPlan:specialistPlan?{modelStages:specialistPlan.modelStages,
-        poseidonSynthesis:specialistPlan.poseidonSynthesis,imagePlanning:specialistPlan.imagePlanning,
-        reason:specialistPlan.reason,maxCalls}:null,
-      verificationSignal,zeusCompoundRequested:zeusCompound||olympusDispatchFallback,olympusDispatchFallback,turboQuote:turboQuote||null,turboApproved:Boolean(turboQuote?.approvalRequired&&approvedTurboFingerprint),externalActionPolicy:externalActions,secretsRedacted,visionSkipped:vision.skipped,visionSummary,sharedBlockedProviders,webSearch:web.trace||null,githubRepository:github.trace||null,googleServices:googleCapabilities};
+      ...(executionSkill&&!result.trace?.skillId?{skillId:executionSkill.id,skillGod:executionSkill.god}:{}),intent,modeDecision:decision,levelDecision,executionLevel:level,route,aiRouting:{route:aiRouting.route,source:aiRouting.source,model:aiRouting.model},verificationSignal,zeusCompoundRequested:zeusCompound||olympusDispatchFallback,olympusDispatchFallback,turboQuote:turboQuote||null,turboApproved:Boolean(turboQuote?.approvalRequired&&approvedTurboFingerprint),externalActionPolicy:externalActions,secretsRedacted,visionSkipped:vision.skipped,visionSummary,sharedBlockedProviders,webSearch:web.trace||null,githubRepository:github.trace||null,googleServices:googleCapabilities};
     result.visionSummary=visionSummary;
     const finalMode=result.effectiveMode||(olympusDispatchFallback?'ZEUS':mode);
     if(finalMode==='ZEUS'&&mode==='OLYMPUS'&&result.trace?.olympusDescended){
