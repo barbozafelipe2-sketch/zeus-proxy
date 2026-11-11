@@ -417,13 +417,18 @@ async function chatHandler(req, context, startedAt){
   if(req.method==='GET'&&url.searchParams.has('requestId')){
     const lookupId=url.searchParams.get('requestId');
     if(!isUuid(lookupId))return errorJson('Valid request id required.',400,'INVALID_REQUEST_ID',requestIdFromHeader);
-    const runs=await db.sql`SELECT id,conversation_id,mode,state,error_code FROM executions WHERE owner_id=${user.id} AND request_id=${lookupId} LIMIT 1`;
+    const runs=await db.sql`SELECT id,conversation_id,mode,state,error_code,lease_expires_at FROM executions WHERE owner_id=${user.id} AND request_id=${lookupId} LIMIT 1`;
     if(!runs.length)return errorJson('This request was not registered.',404,'EXECUTION_NOT_FOUND',lookupId);
     const run=runs[0];
     const users=await db.sql`SELECT id,execution_id,role,mode,content,metadata,created_at FROM messages WHERE owner_id=${user.id} AND execution_id=${run.id} AND role='user' ORDER BY created_at ASC LIMIT 1`;
     if(run.state==='COMPLETED'||run.state==='PARTIAL')return replayCompleted(db,user.id,run.conversation_id,run,users[0]||null,lookupId);
     const details={conversationId:run.conversation_id,mode:run.mode,execution:{id:run.id,state:run.state},userMessage:users[0]||null,requestId:lookupId};
     if(run.state==='FAILED'||run.state==='CANCELLED')return json({...details,failed:true,errorCode:run.error_code||'EXECUTION_FAILED'});
+    // A queued, expired nonce cannot be claimed by a worker. Do not tell the
+    // owner that the server is still processing, and never start a new billable
+    // generation from this GET endpoint. The existing request remains durable.
+    if(run.state==='QUEUED'&&executionLeaseExpired(run))
+      return json({...details,pending:false,stalled:true,errorCode:'QUEUE_LEASE_EXPIRED'});
     return json({...details,pending:true});
   }
   if(req.method==='GET'){

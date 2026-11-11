@@ -70,6 +70,11 @@ async function restorePendingTurn(){
       clearPendingTurn(record.requestId);state.pendingExecutionRequestId=null;
       await openConversation(record.conversationId,false);state.error='';render();return;
     }
+    if(data.stalled){
+      clearPendingTurn(record.requestId);state.pendingExecutionRequestId=null;
+      state.error='A tarefa ficou na fila sem um worker confirmado e a reserva expirou. Nenhuma nova tentativa foi iniciada. Confira o acesso à Netlify antes de reenviar.';
+      render();return;
+    }
     if(data.failed){clearPendingTurn(record.requestId);state.pendingExecutionRequestId=null;return;}
     if(data.pending){
       state.pendingExecutionRequestId=record.requestId;state.lastFailedRequestId=record.requestId;
@@ -1918,6 +1923,7 @@ async function pollForReply(conversationId,executionId,mode='ZEUS',requestId=nul
         const artifacts=requestId?(status.artifacts||[]):(status.artifacts||[]).filter(a=>ids.has(a.id));
         return {page:status,assistant:{...assistant,artifacts}};
       }
+      if(status.stalled)throw apiError('A tarefa permaneceu na fila até expirar. Nenhuma nova tentativa foi iniciada.',409,'QUEUE_LEASE_EXPIRED',{terminal:true,executionId});
       if(status.failed)throw apiError('A execução falhou. Outra tentativa pode consumir créditos.',503,status.errorCode||'AI_EXECUTION_FAILED',{terminal:true,executionId});
       const userRow=requestId?status.userMessage:(status.messages||[]).find(m=>m.role==='user'&&m.execution_id===executionId);
       if(userRow?.metadata?.failed)throw apiError('A execução terminou sem resposta.',503,userRow.metadata.errorCode||'AI_EXECUTION_FAILED',{terminal:true,executionId});
@@ -2185,6 +2191,11 @@ async function retryLastMessage({liveTalk=false}={}){
     state.sending=true;state.error='';state.execStatus='Consultando a execução original…';render();
     try{
       const status=await api('/api/chat?requestId='+encodeURIComponent(activeId));
+      if(status.stalled){
+        clearPendingTurn(activeId);state.pendingExecutionRequestId=null;
+        state.error='A reserva na fila expirou sem execução confirmada. Não foi iniciada outra chamada paga. Verifique a Netlify antes de enviar novamente.';
+        return;
+      }
       if(status.failed){
         clearPendingTurn(activeId);state.pendingExecutionRequestId=null;
         state.error='A execução anterior falhou. Outra tentativa pode consumir créditos.';
