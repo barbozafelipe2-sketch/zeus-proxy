@@ -31,7 +31,10 @@ export async function runDirectedPipeline(args, deps) {
     const options={
       budget,images,history:includeHistory?history:[],reserveAfterMs:reserve,
       callTimeoutMs:Math.min(24000,Math.max(2500,budget.remaining()-budget.reserveMs-reserve-1000)),
-      maxOutputTokens:tokens
+      maxOutputTokens:tokens,
+      // Only the owner-facing Poseidon CEO receives preferred-model precedence.
+      // Specialist roles retain their independent task-selected model ordering.
+      preferFirstModel:role==='CEO'&&!toolId
     };
     const outcome=execute
       ?await execute(ordered,guide,input,options)

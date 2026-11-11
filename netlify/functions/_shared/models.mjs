@@ -254,10 +254,26 @@ export function rankModels(text, exclude = new Set(), options = {}) {
   return orderForRoute(AI_ROUTES_OVERRIDE(options.routeHint) || routeFor(text, options), exclude, options);
 }
 
+// The Poseidon identity has a preferred engine, not a silently interchangeable
+// model. Other families remain explicit recovery options when Grok is absent,
+// unavailable or rejected by the Gateway.
+function poseidonPreferredModelId(){
+  const configured=String(env('OLYHUB_POSEIDON_MODEL')||'').trim();
+  return /^x-ai\/grok-[a-z0-9][a-z0-9._-]*$/i.test(configured)?configured:'x-ai/grok-4.3';
+}
+function prioritizePoseidonCoordinator(candidates=[]){
+  const preferredId=poseidonPreferredModelId();
+  const primary=candidates.find(model=>model.provider==='openrouter'
+    &&model.id===preferredId&&modelTransport(model)==='gateway'
+    &&modelFamily(model)==='xai'&&!isKnownInvalidModel(model));
+  return primary?uniqueModelOrder([primary,...candidates]):uniqueModelOrder(candidates);
+}
 function poseidonCoordinatorCandidates(text='',{vision=false,blockedProviders=[]}={}){
   const blocked=new Set(blockedProviders||[]);
   const ranked=rankModels(text,new Set(),{vision});
-  return uniqueModelOrder(ranked.filter(model=>modelTransport(model)!=='gateway'||!blocked.has(model.provider)));
+  const eligible=ranked.filter(model=>(modelTransport(model)!=='gateway'||!blocked.has(model.provider))
+    &&!blocked.has(modelCircuitScope(model))&&!isKnownInvalidModel(model));
+  return prioritizePoseidonCoordinator(eligible);
 }
 
 function clip(text) {
@@ -546,8 +562,16 @@ export function buildFallbackOrder(ranked,maxAttempts=4){
   const ordered=uniqueModelOrder([...native.slice(0,1),...router.slice(0,1),...direct.slice(0,2),...native.slice(1),...router.slice(1)]);
   return ordered.slice(0,limit);
 }
+function fallbackOrderForStage(ranked,maxAttempts,preferFirstModel=false){
+  if(!preferFirstModel||!ranked?.length)return buildFallbackOrder(ranked,maxAttempts);
+  const limit=Math.max(1,Math.min(5,Math.trunc(Number(maxAttempts)||4)));
+  // Preserve the intentionally chosen manager before applying the usual
+  // cross-transport fallback order. Previously native Gateway routing moved
+  // Gemini/Claude ahead of Grok despite the coordinator's candidate order.
+  return uniqueModelOrder([ranked[0],...buildFallbackOrder(ranked.slice(1),Math.max(1,limit-1))]).slice(0,limit);
+}
 
-export async function executeWithFallback(text, system, prompt, { exclude = new Set(), maxAttempts = 5, budget, images = [], history = [], reserveAfterMs = 0, callTimeoutMs = null, maxOutputTokens = 5000, blockedProviders = [], routeHint = null, candidateModels = null } = {}) {
+export async function executeWithFallback(text, system, prompt, { exclude = new Set(), maxAttempts = 5, budget, images = [], history = [], reserveAfterMs = 0, callTimeoutMs = null, maxOutputTokens = 5000, blockedProviders = [], routeHint = null, candidateModels = null, preferFirstModel = false } = {}) {
   const localBudget = budget || createExecutionBudget({ maxCalls: Math.max(4, maxAttempts) });
   const providerBlocks=new Set(Array.isArray(blockedProviders)?blockedProviders:[]);
   const route=AI_ROUTES_OVERRIDE(routeHint)||routeFor(text,{vision:images.length>0});
@@ -555,7 +579,7 @@ export async function executeWithFallback(text, system, prompt, { exclude = new 
   const first = ranked[0];
   if (!first) { const error = new Error('No configured AI provider is currently available.'); error.code='AI_NOT_CONFIGURED'; throw error; }
   const native=providerStatus();
-  const ordered=buildTransportRoutes(buildFallbackOrder(ranked,maxAttempts),{
+  const ordered=buildTransportRoutes(fallbackOrderForStage(ranked,maxAttempts,preferFirstModel),{
     limit:Math.max(1,Math.min(maxAttempts,5)),
     gatewayEnabled:m=>Boolean(native[m.provider])&&!providerBlocks.has(m.provider)&&!circuitOpen(m.provider,m.id),
     directEnabled:(m,transport)=>Boolean(directProviderStatus()[m.provider])&&!circuitOpen(modelCircuitScope({...m,transport}),m.id)
@@ -644,12 +668,12 @@ export function zeusIndependentFinisherCandidates(text='',starter=null,{vision=f
   // skip professional review when an installation only has one provider.
   const independent=all.filter(m=>modelFamily(m)!==excluded);
   const pool=independent.length?independent:all;
-  return uniqueModelOrder(pool.sort((a,b)=>{
+  return prioritizePoseidonCoordinator(uniqueModelOrder(pool.sort((a,b)=>{
     const qa=Number(a.quality||0),qb=Number(b.quality||0);
     const pa=preferred.indexOf(modelFamily(a)),pb=preferred.indexOf(modelFamily(b));
     const ra=pa<0?preferred.length:pa,rb=pb<0?preferred.length:pb;
     return Number(a.provider==='openrouter')-Number(b.provider==='openrouter')||qb-qa||roleScore('DIRECTOR',b,text)-roleScore('DIRECTOR',a,text)||ra-rb||Number(a.cost||99)-Number(b.cost||99);
-  }));
+  })));
 }
 
 export function poseidonFinisherCandidates({vision=false,routeHint=null,blockedProviders=[],exclude=new Set()}={}){
@@ -657,16 +681,16 @@ export function poseidonFinisherCandidates({vision=false,routeHint=null,blockedP
   const route=AI_ROUTES_OVERRIDE(routeHint)|| (vision?'vision':'fast');
   const pool=[...availableModels({vision}),...directFallbackModels({vision,route})].filter(model=>routeEligibleWhenGatewayBlocked(model,blocked)&&!skip.has(`${model.provider}:${model.id}`));
   const ordered=pool.sort((a,b)=>Number(modelTransport(a)!=='gateway')-Number(modelTransport(b)!=='gateway')||Number(a.provider==='openrouter')-Number(b.provider==='openrouter')||Number(b.quality||0)-Number(a.quality||0)||Number(a.cost||99)-Number(b.cost||99));
-  return uniqueModelOrder(ordered);
+  return prioritizePoseidonCoordinator(uniqueModelOrder(ordered));
 }
 
 async function executeCandidateOrder(candidates, system, prompt, {
-  maxAttempts=5,budget,images=[],history=[],reserveAfterMs=0,callTimeoutMs=null,maxOutputTokens=5000,blockedProviders=[],routeHint=null
+  maxAttempts=5,budget,images=[],history=[],reserveAfterMs=0,callTimeoutMs=null,maxOutputTokens=5000,blockedProviders=[],routeHint=null,preferFirstModel=false
 }={}){
   const localBudget=budget||createExecutionBudget({maxCalls:maxAttempts}),providerBlocks=new Set(blockedProviders||[]);
   const native=providerStatus();
   const route=AI_ROUTES_OVERRIDE(routeHint)||routeFor(prompt,{vision:images.length>0});
-  const candidatesWithFallbacks=buildFallbackOrder(uniqueModelOrder([...(candidates||[]),...directFallbackModels({vision:images.length>0,route})]),maxAttempts);
+  const candidatesWithFallbacks=fallbackOrderForStage(uniqueModelOrder([...(candidates||[]),...directFallbackModels({vision:images.length>0,route})]),maxAttempts,preferFirstModel);
   const ordered=buildTransportRoutes(candidatesWithFallbacks,{
     limit:Math.max(1,Math.min(maxAttempts,5)),
     gatewayEnabled:m=>Boolean(native[m.provider])&&!providerBlocks.has(m.provider)&&!circuitOpen(m.provider,m.id),
@@ -800,9 +824,10 @@ export async function runZeus({ text, context = '', images = [], history = [], r
   const leadRoute=AI_ROUTES_OVERRIDE(routeHint)||routeFor(text,{vision:images.length>0}),answerTokens=deliveryContract?12000:(leadRoute==='coding'||leadRoute==='hard'?8000:5000);
 
   if(requestedLevel==='SIMPLE'){
+    const coordinatorCandidates=poseidonCoordinatorCandidates(text,{vision:images.length>0,blockedProviders});
     const single=await executeWithFallback(text,zeusCoreSystem(deliveryContract),prompt,{
       maxAttempts:leadRoute==='fast'?4:5,budget:localBudget,images,history,maxOutputTokens:answerTokens,blockedProviders,routeHint,
-      candidateModels:poseidonCoordinatorCandidates(text,{vision:images.length>0,blockedProviders}),
+      candidateModels:coordinatorCandidates,preferFirstModel:true,
       callTimeoutMs:(b,attempt)=>leadRoute==='fast'
         ?Math.min(6500+attempt*750,Math.max(2200,b.remaining()-b.reserveMs-1200))
         :answerCallTimeout(b,0,attempt===0?0.72:0.86)
@@ -811,7 +836,12 @@ export async function runZeus({ text, context = '', images = [], history = [], r
       content:single.content,
       leadModel:`${single.model.provider}:${single.model.id}`,
       pipelineLabel:'Simple · one model',
-      trace:{strategy:'zeus_simple_single_model',executionLevel:'SIMPLE',requirements:checklist,author:{provider:single.model.provider,model:single.model.id},fallbacks:single.attempts,visionInputs:images.length,budget:localBudget.snapshot()}
+      trace:{strategy:'zeus_simple_single_model',executionLevel:'SIMPLE',requirements:checklist,author:{provider:single.model.provider,model:single.model.id},
+        coordinator:{role:'POSEIDON',preferredModel:'openrouter:'+poseidonPreferredModelId(),
+          actualModel:single.model.provider+':'+single.model.id,actualFamily:modelFamily(single.model),
+          fallbackUsed:single.model.provider!=='openrouter'||single.model.id!==poseidonPreferredModelId(),
+          failureAttempts:single.attempts.length},
+        fallbacks:single.attempts,visionInputs:images.length,budget:localBudget.snapshot()}
     };
   }
 
@@ -837,7 +867,7 @@ export async function runZeus({ text, context = '', images = [], history = [], r
   if(finishers.length&&localBudget.canCall(3000)){
     try{
       const final=await executeCandidateOrder(finishers,zeusCompoundFinalizerSystem(deliveryContract),finalPrompt,{
-        maxAttempts:3,budget:localBudget,images,history,maxOutputTokens:answerTokens,blockedProviders,
+        maxAttempts:3,budget:localBudget,images,history,maxOutputTokens:answerTokens,blockedProviders,preferFirstModel:true,
         callTimeoutMs:(b,attempt)=>answerCallTimeout(b,0,attempt===0?0.74:0.9)
       });
       const fallbacks=[...(base?.attempts||[]),...(final.attempts||[])];
@@ -971,7 +1001,7 @@ export async function runOlympusCompoundPlus({
   if(finishers.length&&localBudget.canCall(3500)){
     try{
       const final=await executeCandidateOrder(finishers,olympusCompoundPlusFinalizerSystem(deliveryContract),finalPrompt,{
-        maxAttempts:webResearchUsed?1:3,budget:localBudget,images,history,maxOutputTokens:deliveryContract?12000:9000,blockedProviders,
+        maxAttempts:webResearchUsed?1:3,budget:localBudget,images,history,maxOutputTokens:deliveryContract?12000:9000,blockedProviders,preferFirstModel:true,
         callTimeoutMs:(b,attempt)=>answerCallTimeout(b,0,attempt===0?0.76:0.9)
       });
       return {
@@ -1083,7 +1113,8 @@ export function roleCandidates(role,text='',{
   const pool=availableTextModels({vision,routeHint:routeHint||getToolWorkflow(toolId)?.route||routeFor(text,{vision})}).filter(m=>routeEligibleWhenGatewayBlocked(m,blocked)&&!excludedProviders.has(modelFamily(m))&&!skip.has(`${m.provider}:${m.id}`)&&!(specialistRole&&modelFamily(m)==='xai'));
   const tool=getToolWorkflow(toolId),route=tool?.route||routeHint,preference=toolPreferences?.[toolId]||null;
   const ranked=uniqueModelOrder(pool.sort((a,b)=>Number(a.provider==='openrouter')-Number(b.provider==='openrouter')||(roleScore(role,b,text,route)+toolPreferenceScore(b,preference))-(roleScore(role,a,text,route)+toolPreferenceScore(a,preference))));
-  return ranked.slice(0,Math.max(1,Math.min(Number(limit)||4,6)));
+  const manager=(!toolId&&(role==='CEO'||role==='FINISHER'))?prioritizePoseidonCoordinator(ranked):ranked;
+  return manager.slice(0,Math.max(1,Math.min(Number(limit)||4,6)));
 }
 
 const FIXED_TOOL_MODEL_FAMILIES=new Set(['openai','anthropic','gemini','deepseek','qwen']);
@@ -1286,7 +1317,7 @@ export async function runOlympusComplexTurbo({
   let ceo;
   try{
     ceo=await executeCandidateOrder(ceoCandidates,turboCeoSystem(deliveryContract),ceoPrompt,{
-      maxAttempts:TURBO_LIMITS.maxCeoAttempts,budget:localBudget,images,history,
+      maxAttempts:TURBO_LIMITS.maxCeoAttempts,budget:localBudget,images,history,preferFirstModel:true,
       maxOutputTokens:deliveryContract?14000:TURBO_LIMITS.maxCeoTokens,blockedProviders,
       callTimeoutMs:(b,attempt)=>answerCallTimeout(b,0,attempt===0?.78:.92)
     });
