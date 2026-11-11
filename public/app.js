@@ -389,12 +389,17 @@ function modeStrip(){
   const tool=state.toolModels?.find(item=>item.id===state.currentToolId);
   return tool?`<div class="poseidon-tool-context" role="note"><span class="tool-context-mark">${esc(tool.god||'Poseidon')}</span><span>${esc(tool.title||'Ferramenta especializada')} · fluxo dedicado</span></div>`:'';
 }
+function executionNotice(projectName=''){
+  if(!state.execStatus)return '';
+  const title=projectName?`Trabalhando em ${esc(projectName)}`:esc(state.execTitle||'Poseidon está trabalhando');
+  return `<div class="exec-card live" role="status" aria-live="polite"><span class="exec-pulse" aria-hidden="true"></span><div class="exec-copy"><strong>${title}</strong><div class="exec-status-copy">${esc(state.execStatus)}</div></div><span class="exec-progress-dots" aria-hidden="true"><i></i><i></i><i></i></span></div>`;
+}
 function homeView(){
   const isEmpty=!state.messages.length;
   const tool=state.toolModels?.find(item=>item.id===state.currentToolId);
   const chatIdentity=currentChatIdentity();
   const msgs=state.messages.map(m=>messageHtml(m)).join('');
-  const exec=state.execStatus?`<div class="exec-card live" role="status" aria-live="polite"><span class="sr-only">Live execution status — no simulated timings.</span><span class="exec-pulse" aria-hidden="true"></span><div class="exec-copy"><strong>${esc(state.execTitle||'Poseidon está trabalhando')}</strong><div class="exec-status-copy">${esc(state.execStatus)}</div></div><span class="exec-progress-dots" aria-hidden="true"><i></i><i></i><i></i></span></div>`:'';
+  const exec=executionNotice();
   return `<section class="page chat-page home-workspace ${isEmpty?'is-empty':'has-messages'}">
     <div class="home-chat-column">
     ${modeStrip()}
@@ -952,30 +957,31 @@ function projectsView(){
   const tasksSection=upcoming.length?`<h2 class="section-title">Upcoming tasks</h2><div class="card" style="padding:14px"><div class="task-list">${upcoming.map(taskHtml).join('')}</div></div>`:'';
   return `<section class="page projects-page"><div class="page-head"><div><div class="eyebrow">PROJECTS</div><h1>Projects</h1><p>Each project keeps its own permanent chat, tasks, files, artifacts and memory.</p></div><button class="primary" id="create-project">${icon('plus')} New project</button></div><label class="project-search-box" role="search">${icon('search')}<input id="projects-search" type="search" value="${esc(state.projectSearch||'')}" placeholder="Buscar projetos..." aria-label="Buscar projetos" autocomplete="off"></label><div class="project-tabs" role="group" aria-label="Filter projects">${[['ALL','All Projects'],['IN_PROGRESS','In Progress'],['COMPLETED','Completed']].map(([key,label])=>`<button type="button" data-filter="${key}" class="${state.projectFilter===key?'active':''}" aria-pressed="${state.projectFilter===key}">${label}</button>`).join('')}</div>${errorBanner('page-alert')}${projectSection}${tasksSection}</section>`;
 }
-function projectCard(p){const status=String(p.status||'IN_PROGRESS').replaceAll('_',' ');return `<article class="proj-row project-card-shell"><details class="project-card-menu"><summary aria-label="Opções de ${esc(p.name)}" title="Opções do projeto">···</summary><div class="nav-context-popover" role="menu"><button type="button" role="menuitem" data-project-settings="${esc(p.id)}">Configurações do projeto</button><button type="button" role="menuitem" class="danger-item" data-project-delete="${esc(p.id)}">Excluir projeto</button></div></details><button type="button" class="proj-card-main" data-project="${esc(p.id)}" aria-label="Abrir projeto ${esc(p.name)}"><span class="proj-card-top"><span class="proj-thumb">${icon('folder')}</span><span class="proj-status ${esc(String(p.status||'IN_PROGRESS').toLowerCase())}">${esc(status)}</span></span><span class="proj-body"><strong>${esc(p.name)}</strong><span>${esc(p.description||p.goal||'Projeto OlyHub')}</span><span class="progress"><span style="width:${Math.max(0,Math.min(100,Number(p.progress||0)))}%"></span></span><span class="proj-meta"><span>${Number(p.task_count||0)} tarefas</span><span>${Number(p.file_count||0)} arquivos</span><span>${Number(p.memory_count||0)} memórias</span></span></span><span class="proj-foot"><em>${Number(p.progress||0)}%</em><span class="proj-open">Abrir espaço ›</span></span></button></article>`}
+function projectStatusLabel(status){const value=String(status||'IN_PROGRESS');return ({IN_PROGRESS:'Em andamento',COMPLETED:'Concluído',PLANNED:'Planejado',PAUSED:'Pausado',TODO:'A fazer'})[value]||value.replaceAll('_',' ')}
+function projectCard(p){const status=projectStatusLabel(p.status);return `<article class="proj-row project-card-shell"><details class="project-card-menu"><summary aria-label="Opções de ${esc(p.name)}" title="Opções do projeto">···</summary><div class="nav-context-popover" role="menu"><button type="button" role="menuitem" data-project-settings="${esc(p.id)}">Configurações do projeto</button><button type="button" role="menuitem" class="danger-item" data-project-delete="${esc(p.id)}">Excluir projeto</button></div></details><button type="button" class="proj-card-main" data-project="${esc(p.id)}" aria-label="Abrir projeto ${esc(p.name)}"><span class="proj-card-top"><span class="proj-thumb">${icon('folder')}</span><span class="proj-status ${esc(String(p.status||'IN_PROGRESS').toLowerCase())}">${esc(status)}</span></span><span class="proj-body"><strong>${esc(p.name)}</strong><span>${esc(p.description||p.goal||'Projeto OlyHub')}</span><span class="progress"><span style="width:${Math.max(0,Math.min(100,Number(p.progress||0)))}%"></span></span><span class="proj-meta"><span>${Number(p.task_count||0)} tarefas</span><span>${Number(p.file_count||0)} arquivos</span><span>${Number(p.memory_count||0)} memórias</span></span></span><span class="proj-foot"><em>${Number(p.progress||0)}%</em><span class="proj-open">Abrir espaço ›</span></span></button></article>`}
 function projectWorkspace(){
   const p=state.currentProject;
   const section=state.projectSection||'CHAT';
-  const tabs=[['CHAT','Chat'],['OVERVIEW','Overview'],['TASKS','Tasks'],['FILES','Files'],['SOURCE','Source of Truth'],['MEMORY','Memory']];
+  const tabs=[['CHAT','Conversa'],['OVERVIEW','Visão geral'],['TASKS','Tarefas'],['FILES','Arquivos'],['SOURCE','Documento canônico'],['MEMORY','Memória']];
   return `<section class="page project-workspace-page">
     <div class="project-workspace-head">
-      <button type="button" class="ghost project-back" id="back-projects">← All projects</button>
+      <button type="button" class="ghost project-back" id="back-projects">← Todos os projetos</button>
       <div class="project-title-row">
         <div>
-          <div class="eyebrow">PROJECT WORKSPACE</div>
+          <div class="eyebrow">ESPAÇO DO PROJETO</div>
           <h1>${esc(p.name)}</h1>
-          <p>${esc(p.description||p.goal||'Persistent Olympus project workspace')}</p>
+          <p>${esc(p.description||p.goal||'Espaço permanente do projeto')}</p>
         </div>
         <div class="project-head-actions">
           <div class="project-stats-mini">
-            <span><strong>${Number(p.progress||0)}%</strong> progress</span>
-            <span><strong>${Number(p.file_count||0)}</strong> files</span>
-            <span><strong>${Number(p.memory_count||0)}</strong> memories</span>
+            <span><strong>${Number(p.progress||0)}%</strong> de progresso</span>
+            <span><strong>${Number(p.file_count||0)}</strong> arquivos</span>
+            <span><strong>${Number(p.memory_count||0)}</strong> memórias</span>
           </div>
-          <button class="secondary compact" id="edit-project">Edit project</button>
+          <button class="secondary compact" id="edit-project">Editar projeto</button>
         </div>
       </div>
-      <nav class="workspace-tabs" aria-label="Project sections">${tabs.map(([key,label])=>`<button type="button" data-project-section="${key}" class="${section===key?'active':''}" ${section===key?'aria-current="page"':''}>${label}</button>`).join('')}</nav>
+      <nav class="workspace-tabs" aria-label="Seções do projeto">${tabs.map(([key,label])=>`<button type="button" data-project-section="${key}" class="${section===key?'active':''}" ${section===key?'aria-current="page"':''}>${label}</button>`).join('')}</nav>
     </div>
     ${state.error&&section!=='CHAT'?`<div class="project-alert">${errorBanner()}</div>`:''}
     ${projectSectionView(section)}
@@ -993,24 +999,23 @@ function projectChatView(){
   const p=state.currentProject;
   const isEmpty=!state.messages.length;
   const msgs=state.messages.map(m=>messageHtml(m)).join('');
-  const exec=state.execStatus?`<div class="exec-card live" aria-hidden="true"><div class="exec-head"><span class="exec-pulse"></span><div><strong>Working inside ${esc(p.name)}</strong><div class="muted tiny">${esc(state.execStatus)}</div></div></div><div class="exec-foot">Project context remains attached to this conversation.</div></div>`:'';
+  const exec=executionNotice(p.name);
   return `<div class="project-chat-layout">
     <div class="project-chat-panel">
       <div class="project-chat-toolbar">
-        <div><div class="eyebrow">PERMANENT PROJECT CHAT</div><strong>Everything here stays attached to ${esc(p.name)}</strong></div>
+        <div><div class="eyebrow">CONVERSA DO PROJETO</div><strong>O trabalho desta conversa fica salvo em ${esc(p.name)}</strong></div>
       </div>
       ${modeStrip()}
-      <div class="project-context-ribbon">${icon('memory')} <span>Goal, tasks, project files, approved memory and conversation history are injected into every turn.</span></div>
+      <div class="project-context-ribbon">${icon('memory')} <span>Objetivo, tarefas, arquivos e memórias aprovadas compõem o contexto do projeto.</span></div>
       <div class="chat-scroll project-chat-scroll" id="chat-scroll">
-        ${isEmpty?`<div class="project-chat-empty"><div class="seal">${icon('chat')}</div><h2>Start working inside ${esc(p.name)}</h2><p>This is the permanent conversation for this project. Leaving and returning keeps its history and context.</p><div class="quick-prompts"><button data-prompt="Review this project and tell me the next highest-impact step">Next step</button><button data-prompt="Summarize where this project stands using its tasks, files and conversation history">Project status</button><button data-prompt="Create the next deliverable for this project">Create deliverable</button></div></div>`:`${state.messagePage?.hasMore?'<div class="history-more"><button class="secondary compact" id="load-older-messages">Load older messages</button></div>':''}<div class="message-list">${msgs}</div>`}
-        ${exec}
-        ${errorBanner()}
+        ${isEmpty?`<div class="project-chat-empty"><div class="seal">${icon('chat')}</div><h2>Comece a trabalhar em ${esc(p.name)}</h2><p>Esta conversa é permanente. Você pode sair e voltar sem perder o histórico salvo.</p><div class="quick-prompts"><button data-prompt="Analise este projeto e indique o próximo passo de maior impacto">Próximo passo</button><button data-prompt="Resuma o andamento deste projeto com base nas tarefas, arquivos e histórico">Situação do projeto</button><button data-prompt="Crie a próxima entrega deste projeto">Criar entrega</button></div></div>`:`${state.messagePage?.hasMore?'<div class="history-more"><button class="secondary compact" id="load-older-messages">Carregar mensagens anteriores</button></div>':''}<div class="message-list">${msgs}</div>`}
       </div>
+      ${(exec||state.error)?`<div class="project-chat-feedback" aria-live="polite">${exec}${errorBanner()}</div>`:''}
       ${composer()}
     </div>
     <aside class="project-side-stack">
-      <div class="panel project-context-card"><div class="eyebrow">PROJECT CONTEXT</div><h3>Goal</h3><p>${esc(p.goal||'No goal added yet.')}</p><div class="context-meta"><span>${icon('memory')} Permanent memory</span><strong>${Number(p.memory_count||0)}</strong></div><div class="context-meta"><span>${icon('files')} Project files</span><strong>${Number(p.file_count||0)}</strong></div><div class="context-meta"><span>${icon('doc')} Artifacts</span><strong>${Number(p.artifact_count||0)}</strong></div></div>
-      <div class="panel project-task-card"><div class="panel-head"><h3>Next tasks</h3><button class="text-gold" data-project-section="TASKS">View all ›</button></div><div class="task-list">${state.tasks.length?state.tasks.filter(t=>t.status!=='DONE').slice(0,5).map(taskHtml).join(''):`<div class="muted tiny" style="padding:12px">No open tasks.</div>`}</div></div>
+      <div class="panel project-context-card"><div class="eyebrow">CONTEXTO DO PROJETO</div><h3>Objetivo</h3><p>${esc(p.goal||'Nenhum objetivo adicionado.')}</p><div class="context-meta"><span>${icon('memory')} Memória do projeto</span><strong>${Number(p.memory_count||0)}</strong></div><div class="context-meta"><span>${icon('files')} Arquivos do projeto</span><strong>${Number(p.file_count||0)}</strong></div><div class="context-meta"><span>${icon('doc')} Resultados</span><strong>${Number(p.artifact_count||0)}</strong></div></div>
+      <div class="panel project-task-card"><div class="panel-head"><h3>Próximas tarefas</h3><button class="text-gold" data-project-section="TASKS">Ver todas ›</button></div><div class="task-list">${state.tasks.length?state.tasks.filter(t=>t.status!=='DONE').slice(0,5).map(taskHtml).join(''):`<div class="muted tiny" style="padding:12px">Nenhuma tarefa pendente.</div>`}</div></div>
     </aside>
   </div>`;
 }
@@ -1020,7 +1025,7 @@ function projectContinuityPanel(){
  const current=(drive.actions||[]).find(a=>a.summaryRevision===Number(s.revision||0));
  const link=String(current?.driveUrl||'').startsWith('https://docs.google.com/document/d/')?current.driveUrl:'';
  return `<div class="panel project-continuity-panel"><div class="panel-head">
-  <div><h2>Resumo vivo</h2><p class="muted tiny">Síntese incremental e versionada do histórico. Memórias aprovadas e Source of Truth continuam prioritárias.</p></div>
+  <div><h2>Resumo vivo</h2><p class="muted tiny">Síntese incremental e versionada do histórico. Memórias aprovadas e o documento canônico continuam prioritários.</p></div>
   <button type="button" class="secondary compact" id="refresh-project-continuity" ${state.continuityBusy?'disabled':''}>${state.continuityBusy?'Atualizando…':'Atualizar lote'}</button></div>
   ${state.continuityError?`<p class="status-warn">${esc(state.continuityError)}</p>`:''}
   ${s.hasSummary?`<p class="muted tiny">Revisão ${Number(s.revision||0)} · ${Number(s.messageCount||0)} mensagens · ${esc(fmtDateTime(s.updatedAt))}</p><div class="card" style="white-space:pre-wrap;overflow-wrap:anywhere;max-height:340px;overflow-y:auto">${esc(s.summary)}</div>`:'<div class="empty-mini">Ainda não há resumo. Cada atualização usa no máximo uma chamada de IA e consolida até 30 mensagens novas.</div>'}
@@ -1037,16 +1042,16 @@ function projectOverviewView(){
   const projectArtifacts=state.artifacts.filter(a=>a.project_id===p.id).slice(0,5);
   return `<div class="project-section-grid">
     <div class="project-main-column">
-      <div class="stat-grid project-stat-grid"><div class="card stat-card"><strong>${Number(p.progress||0)}%</strong><span>Progress</span></div><div class="card stat-card"><strong>${Number(p.task_count||0)}</strong><span>Tasks</span></div><div class="card stat-card"><strong>${Number(p.file_count||0)+Number(p.artifact_count||0)}</strong><span>Files + outputs</span></div><div class="card stat-card"><strong>${Number(p.memory_count||0)}</strong><span>Memories</span></div></div>
+      <div class="stat-grid project-stat-grid"><div class="card stat-card"><strong>${Number(p.progress||0)}%</strong><span>Progresso</span></div><div class="card stat-card"><strong>${Number(p.task_count||0)}</strong><span>Tarefas</span></div><div class="card stat-card"><strong>${Number(p.file_count||0)+Number(p.artifact_count||0)}</strong><span>Arquivos e entregas</span></div><div class="card stat-card"><strong>${Number(p.memory_count||0)}</strong><span>Memórias</span></div></div>
       ${projectContinuityPanel()}
-      <div class="panel"><div class="panel-head"><h2>Next tasks</h2><button class="text-gold" data-project-section="TASKS">Manage ›</button></div><div class="task-list">${open.length?open.map(taskHtml).join(''):`<div class="empty-mini">No open tasks.</div>`}</div></div>
-      <div class="panel"><div class="panel-head"><h2>Recent project material</h2><button class="text-gold" data-project-section="FILES">Open files ›</button></div>${projectFiles.length||projectArtifacts.length?`<div class="output-list">${[...projectArtifacts.map(a=>({...a,kind:'artifact'})),...projectFiles.map(f=>({...f,kind:'file'}))].sort((a,b)=>new Date(b.created_at)-new Date(a.created_at)).slice(0,6).map(outputItem).join('')}</div>`:`<div class="empty-mini">No project files or outputs yet.</div>`}</div>
+      <div class="panel"><div class="panel-head"><h2>Next tasks</h2><button class="text-gold" data-project-section="TASKS">Gerenciar ›</button></div><div class="task-list">${open.length?open.map(taskHtml).join(''):`<div class="empty-mini">Nenhuma tarefa pendente.</div>`}</div></div>
+      <div class="panel"><div class="panel-head"><h2>Materiais recentes</h2><button class="text-gold" data-project-section="FILES">Abrir arquivos ›</button></div>${projectFiles.length||projectArtifacts.length?`<div class="output-list">${[...projectArtifacts.map(a=>({...a,kind:'artifact'})),...projectFiles.map(f=>({...f,kind:'file'}))].sort((a,b)=>new Date(b.created_at)-new Date(a.created_at)).slice(0,6).map(outputItem).join('')}</div>`:`<div class="empty-mini">Nenhum arquivo ou resultado no projeto.</div>`}</div>
     </div>
-    <aside class="project-side-stack"><div class="panel project-context-card"><div class="eyebrow">GOAL</div><p class="overview-goal">${esc(p.goal||'Add a clear goal so Poseidon and Olympus know what success means.')}</p><div class="context-meta"><span>Status</span><strong>${esc(String(p.status||'IN_PROGRESS').replaceAll('_',' '))}</strong></div></div></aside>
+    <aside class="project-side-stack"><div class="panel project-context-card"><div class="eyebrow">OBJETIVO</div><p class="overview-goal">${esc(p.goal||'Adicione um objetivo para orientar as entregas do projeto.')}</p><div class="context-meta"><span>Situação</span><strong>${esc(projectStatusLabel(p.status))}</strong></div></div></aside>
   </div>`;
 }
 function projectTasksView(){
-  return `<div class="project-single-column"><div class="panel"><div class="panel-head"><div><h2>Project tasks</h2><p class="muted tiny">Completing tasks updates project progress automatically.</p></div><span class="eyebrow">${state.tasks.length} TOTAL</span></div><form id="task-form" class="task-create-rich"><input id="task-title" placeholder="Add a task…" aria-label="Task title" maxlength="200" required><select id="task-priority" aria-label="Priority"><option value="MEDIUM">Medium</option><option value="HIGH">High</option><option value="LOW">Low</option></select><input id="task-due" type="date" aria-label="Due date (optional)"><button class="primary compact">Add task</button></form><div class="task-list full">${state.tasks.length?state.tasks.map(taskHtml).join(''):`<div class="empty-mini">No tasks yet. Add the first one.</div>`}</div></div></div>`;
+  return `<div class="project-single-column"><div class="panel"><div class="panel-head"><div><h2>Tarefas do projeto</h2><p class="muted tiny">Concluir tarefas atualiza o progresso do projeto.</p></div><span class="eyebrow">${state.tasks.length} NO TOTAL</span></div><form id="task-form" class="task-create-rich"><input id="task-title" placeholder="Adicionar tarefa…" aria-label="Título da tarefa" maxlength="200" required><select id="task-priority" aria-label="Prioridade"><option value="MEDIUM">Média</option><option value="HIGH">Alta</option><option value="LOW">Baixa</option></select><input id="task-due" type="date" aria-label="Prazo (opcional)"><button class="primary compact">Adicionar tarefa</button></form><div class="task-list full">${state.tasks.length?state.tasks.map(taskHtml).join(''):`<div class="empty-mini">Nenhuma tarefa ainda. Adicione a primeira.</div>`}</div></div></div>`;
 }
 function projectFilesView(){
   const p=state.currentProject;
@@ -1054,29 +1059,29 @@ function projectFilesView(){
   const projectArtifacts=state.artifacts.filter(a=>a.project_id===p.id);
   const all=[...projectArtifacts.map(a=>({...a,kind:'artifact'})),...projectFiles.map(f=>({...f,kind:'file',type:(f.mime_type||'file').split('/').pop()}))].sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
   const more=Boolean(state.filesPage?.hasMore||state.artifactsPage?.hasMore);
-  return `<div class="project-single-column"><div class="panel"><div class="panel-head"><div><h2>Files & outputs</h2><p class="muted tiny">Anything uploaded here is automatically attached to this project's context.</p></div><button class="primary compact" id="upload-project-file">${icon('plus')} Upload</button></div>${all.length?`<div class="output-list">${all.map(outputItem).join('')}</div>`:`<div class="empty-mini">No files or generated outputs yet.</div>`}${more?'<div class="history-more"><button class="secondary compact" id="load-older-outputs">Load older</button></div>':''}</div></div>`;
+  return `<div class="project-single-column"><div class="panel"><div class="panel-head"><div><h2>Arquivos e resultados</h2><p class="muted tiny">Os arquivos enviados ficam associados ao contexto deste projeto.</p></div><button class="primary compact" id="upload-project-file">${icon('plus')} Upload</button></div>${all.length?`<div class="output-list">${all.map(outputItem).join('')}</div>`:`<div class="empty-mini">Nenhum arquivo ou resultado gerado ainda.</div>`}${more?'<div class="history-more"><button class="secondary compact" id="load-older-outputs">Carregar anteriores</button></div>':''}</div></div>`;
 }
 function projectSourceView(){
   const items=state.projectSources||[];
   const files=state.files.filter(f=>f.project_id===state.currentProject?.id);
-  return `<div class="project-single-column"><div class="panel"><div class="panel-head"><div><h2>Project Source of Truth</h2><p class="muted tiny">Approved instructions and reference content. Newer revisions take priority over old drafts; security rules still apply.</p></div></div>
+  return `<div class="project-single-column"><div class="panel"><div class="panel-head"><div><h2>Documento canônico</h2><p class="muted tiny">Instruções e referências aprovadas. Revisões recentes prevalecem sobre rascunhos antigos, respeitando as regras de segurança.</p></div></div>
     <form id="project-source-form" class="memory-create">
       <input id="project-source-id" type="hidden" value="">
-      <input id="project-source-title" maxlength="140" placeholder="Document title (e.g. Design requirements)" required>
-      <label for="project-source-file">Link a file from this project (optional)</label>
-      <select id="project-source-file"><option value="">Paste text below</option>${files.map(f=>`<option value="${esc(f.id)}">${esc(f.filename)}${f.metadata?.extractable?' · text available':' · no extracted text'}</option>`).join('')}</select>
-      <textarea id="project-source-content" rows="6" maxlength="20000" placeholder="Paste permanent requirements and specifications, or leave blank to use extracted text from the linked file…"></textarea>
-      <button class="primary compact" type="submit">Save Source of Truth</button>
+      <input id="project-source-title" maxlength="140" placeholder="Título do documento (ex.: Diretrizes visuais)" required>
+      <label for="project-source-file">Vincular arquivo do projeto (opcional)</label>
+      <select id="project-source-file"><option value="">Cole o texto abaixo</option>${files.map(f=>`<option value="${esc(f.id)}">${esc(f.filename)}${f.metadata?.extractable?' · texto disponível':' · sem texto extraído'}</option>`).join('')}</select>
+      <textarea id="project-source-content" rows="6" maxlength="20000" placeholder="Cole os requisitos permanentes ou deixe em branco para usar o texto extraído do arquivo vinculado…"></textarea>
+      <button class="primary compact" type="submit">Salvar documento canônico</button>
     </form>
-    <div class="memory-list">${items.map(s=>`<article class="memory-item"><div class="memory-icon">${icon('files')}</div><div><strong>${esc(s.title)} · v${Number(s.revision||1)}</strong>${s.source_file_name?`<p class="muted tiny">Linked file: ${esc(s.source_file_name)}</p>`:''}<p>${esc(String(s.content||'').slice(0,1600))}</p>${s.versions?.length>1?`<details class="source-history"><summary>Revision history · ${s.versions.length}</summary><ol>${s.versions.slice(1).map(v=>`<li><strong>v${Number(v.revision||1)} · ${esc(fmtDate(v.created_at))}</strong><p>${esc(String(v.content||'').slice(0,900))}</p></li>`).join('')}</ol></details>`:''}<button class="secondary compact" type="button" data-source-edit="${esc(s.id)}">Create new revision</button> <button class="secondary compact" type="button" data-source-remove="${esc(s.id)}">Remove source</button></div></article>`).join('')||'<div class="empty-mini">No sources yet. Add a document or project instructions here.</div>'}</div>
+    <div class="memory-list">${items.map(s=>`<article class="memory-item"><div class="memory-icon">${icon('files')}</div><div><strong>${esc(s.title)} · v${Number(s.revision||1)}</strong>${s.source_file_name?`<p class="muted tiny">Arquivo vinculado: ${esc(s.source_file_name)}</p>`:''}<p>${esc(String(s.content||'').slice(0,1600))}</p>${s.versions?.length>1?`<details class="source-history"><summary>Histórico de revisões · ${s.versions.length}</summary><ol>${s.versions.slice(1).map(v=>`<li><strong>v${Number(v.revision||1)} · ${esc(fmtDate(v.created_at))}</strong><p>${esc(String(v.content||'').slice(0,900))}</p></li>`).join('')}</ol></details>`:''}<button class="secondary compact" type="button" data-source-edit="${esc(s.id)}">Criar nova revisão</button> <button class="secondary compact" type="button" data-source-remove="${esc(s.id)}">Remover fonte</button></div></article>`).join('')||'<div class="empty-mini">Nenhuma fonte aprovada. Adicione aqui as diretrizes do projeto.</div>'}</div>
   </div></div>`;
 }
 function projectMemoryView(){
-  const policy=state.memoryPolicy;const policyText=policy?`At most ${Number(policy.maxItems||40)} approved memories are selected for each turn within a ${Math.round(Number(policy.maxChars||15000)/1000)}k-character memory budget. Explicit instructions and high-confidence items rank first, then recency.`:'Approved memory is selected deterministically by priority and recency within the AI context budget.';
-  return `<div class="project-single-column"><div class="panel"><div class="panel-head"><div><h2>Permanent project memory</h2><p class="muted tiny">Saved here means durable project memory. ${esc(policyText)}</p></div><span class="eyebrow">${state.projectMemories.length} SAVED</span></div><form id="memory-form" class="memory-create"><textarea id="memory-content" rows="2" aria-label="New project memory" maxlength="5000" placeholder="Add a durable fact, preference, rule, or decision for this project…" required></textarea><button class="primary compact">Save memory</button></form><div class="memory-list">${state.projectMemories.length?state.projectMemories.map(memoryItem).join(''):`<div class="empty-mini">No permanent memories yet. You can add one here or tell Poseidon “remember this…” inside the project chat.</div>`}</div></div></div>`;
+  const policy=state.memoryPolicy;const policyText=policy?`No máximo ${Number(policy.maxItems||40)} memórias aprovadas são selecionadas por interação, dentro de um limite de ${Math.round(Number(policy.maxChars||15000)/1000)} mil caracteres. Instruções explícitas e itens de alta confiança têm prioridade.`:'As memórias aprovadas são selecionadas conforme prioridade e relevância para o contexto.';
+  return `<div class="project-single-column"><div class="panel"><div class="panel-head"><div><h2>Memória permanente do projeto</h2><p class="muted tiny">O conteúdo salvo aqui integra a memória durável do projeto. ${esc(policyText)}</p></div><span class="eyebrow">${state.projectMemories.length} SALVAS</span></div><form id="memory-form" class="memory-create"><textarea id="memory-content" rows="2" aria-label="Nova memória do projeto" maxlength="5000" placeholder="Adicione um fato, preferência, regra ou decisão durável para o projeto…" required></textarea><button class="primary compact">Salvar memória</button></form><div class="memory-list">${state.projectMemories.length?state.projectMemories.map(memoryItem).join(''):`<div class="empty-mini">Nenhuma memória permanente ainda. Adicione uma aqui ou peça ao Poseidon para memorizar uma decisão na conversa.</div>`}</div></div></div>`;
 }
 function memoryItem(m){const scope=m.project_id?'project':'personal';const label=scope==='personal'?'Memória pessoal':m.type==='manual_note'?'Memória do projeto':String(m.type||'Memória').replaceAll('_',' ');return `<article class="memory-item"><div class="memory-icon">${icon('memory')}</div><div><strong>${esc(label)}</strong><p>${esc(m.content)}</p><small>${fmtDate(m.created_at)} · ${esc(m.source||'manual')}</small></div><button class="ghost danger memory-delete" data-memory-delete="${m.id}" data-memory-scope="${scope}" title="Excluir memória" aria-label="Excluir esta memória">${icon('close')}</button></article>`}
-function taskHtml(t){const status=String(t.status||'TODO');const next=status==='TODO'?'IN_PROGRESS':status==='IN_PROGRESS'?'DONE':'TODO';const label=status==='TODO'?'Start task':status==='IN_PROGRESS'?'Mark task done':'Reopen task';const mark=status==='DONE'?icon('check'):status==='IN_PROGRESS'?'<span class="task-state-dot" aria-hidden="true"></span>':'';return `<div class="task-item"><button class="task-check ${status==='DONE'?'done':status==='IN_PROGRESS'?'in-progress':''}" data-task="${t.id}" data-status="${status}" data-next-status="${next}" aria-label="${label}: ${esc(t.title)}" title="${label}">${mark}</button><div><strong style="font-size:13px">${esc(t.title)}</strong><div class="muted tiny">${esc(status.replaceAll('_',' '))}${t.due_at?` · ${fmtDate(t.due_at)}`:''}</div></div><span class="priority ${esc(t.priority)}">${esc(t.priority)}</span></div>`}
+function taskHtml(t){const status=String(t.status||'TODO');const next=status==='TODO'?'IN_PROGRESS':status==='IN_PROGRESS'?'DONE':'TODO';const label=status==='TODO'?'Iniciar tarefa':status==='IN_PROGRESS'?'Concluir tarefa':'Reabrir tarefa';const statusText=({TODO:'A fazer',IN_PROGRESS:'Em andamento',DONE:'Concluída'})[status]||status.replaceAll('_',' ');const priority=String(t.priority||'MEDIUM');const priorityText=({HIGH:'Alta',MEDIUM:'Média',LOW:'Baixa'})[priority]||priority;const mark=status==='DONE'?icon('check'):status==='IN_PROGRESS'?'<span class="task-state-dot" aria-hidden="true"></span>':'';return `<div class="task-item"><button class="task-check ${status==='DONE'?'done':status==='IN_PROGRESS'?'in-progress':''}" data-task="${t.id}" data-status="${status}" data-next-status="${next}" aria-label="${label}: ${esc(t.title)}" title="${label}">${mark}</button><div><strong style="font-size:13px">${esc(t.title)}</strong><div class="muted tiny">${esc(statusText)}${t.due_at?` · ${fmtDate(t.due_at)}`:''}</div></div><span class="priority ${esc(priority)}">${esc(priorityText)}</span></div>`}
 
 function capabilityState(key,fallbackReady=false){const raw=state.health?.capabilityReadiness?.[key];if(raw==='observed_healthy')return {enabled:true,label:'READY'};if(raw==='configured_unverified')return {enabled:true,label:'CONFIGURED'};if(raw==='degraded'||raw==='recent_failure')return {enabled:false,label:'DEGRADED'};return {enabled:Boolean(fallbackReady),label:fallbackReady?'READY':'UNAVAILABLE'};}
 // Compare & Evolve entry points. These are requests, not a claim that every

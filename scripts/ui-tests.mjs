@@ -52,6 +52,32 @@ if(chatServer.includes('const inlineClaim=await claimInlineFallback'))throw new 
 if(!app.includes("PENDING_TURN_STORAGE_KEY='olyhub.pending-turn.v1'")||!app.includes("await api('/api/chat?requestId='+encodeURIComponent(requestId))")||!app.includes('Recuperar resultado'))throw new Error('Browser cannot resume the same execution');
 if(!app.includes("if(d.dispatchRequired)")||!app.includes("await api('/api/olympus-background'"))throw new Error('Authenticated browser dispatch missing');
 if(!css.includes('.project-chat-panel>.composer-shell{')||!css.includes('bottom:auto!important')||!css.includes('.project-chat-layout{display:grid!important;grid-template-columns:minmax(0,1fr)!important'))throw new Error('Mobile project composer overlap regression');
+
+const baseStyles=readFileSync('public/styles.css','utf8');
+const unifiedStyles=readFileSync('public/olyhub-reference.css','utf8');
+const projectRender=app.slice(app.indexOf('function projectWorkspace(){'),app.indexOf('function capabilityState('));
+const projectChatRender=app.slice(app.indexOf('function projectChatView(){'),app.indexOf('function projectContinuityPanel(){'));
+for(const section of ['Conversa','Visão geral','Tarefas','Arquivos','Documento canônico','Memória'])
+  if(!projectRender.includes(section))throw new Error('Project workspace lost a localized section: '+section);
+for(const old of ['PROJECT WORKSPACE','PERMANENT PROJECT CHAT','<h2>Project tasks</h2>','<h2>Project Source of Truth</h2>'])
+  if(projectRender.includes(old))throw new Error('Legacy project UI remains: '+old);
+if(!app.includes('function executionNotice(')||!app.includes('const exec=executionNotice(p.name)'))
+  throw new Error('Home and Project must share the same execution renderer');
+if(!projectChatRender.includes('class="project-chat-feedback"')||
+  !projectChatRender.includes('aria-live="polite"')||
+  !projectChatRender.includes('const exec=executionNotice(p.name)'))
+  throw new Error('Project execution feedback is not accessible and independent');
+if(!(projectChatRender.indexOf('project-chat-feedback')>projectChatRender.indexOf('class="chat-scroll project-chat-scroll"')&&
+  projectChatRender.indexOf('project-chat-feedback')<projectChatRender.indexOf('composer()')))
+  throw new Error('Project status must remain between scroll and composer');
+for(const token of ['--oly-bg:#05091f','--oly-pending:#ffd38a','--gold:#40dfff'])
+  if(!baseStyles.includes(token))throw new Error('Unified color foundation missing '+token);
+for(const selector of ['body .page .panel,','body .workspace-tabs button.active,','body .project-chat-panel>.project-chat-feedback','body .project-chat-panel>.composer-shell','body .exec-card.live','body .project-context-card'])
+  if(!unifiedStyles.includes(selector))throw new Error('Canonical cross-page style missing: '+selector);
+if(!unifiedStyles.includes('position:relative!important;left:auto!important;right:auto!important;'))
+  throw new Error('Project composer must remain in flow on iPhone');
+if(css.includes('color:#e3c268;box-shadow:inset 0 0 0 1px rgba(205,168,81,.24)'))
+  throw new Error('Legacy gold navigation reintroduced');
 console.log('OH-004.3.x UI regression tests: PASS');
 
 if(!app.includes("activeMode:null"))throw new Error('execution mode state must not pin old chats to Zeus');
