@@ -89,6 +89,14 @@ for(const old of ['<h2>Next tasks</h2>',' Upload</button>'])
 if(!app.includes('tabs.scrollLeft=Math.max(0,offset-'))throw new Error('Selected mobile project tab must scroll into view');
 for(const selector of ['body .sidebar .side-nav button.active','body .message-compare.selected','body .page .memory-create textarea:focus','body .auth-proof .ico','body .zeus-planned-icon'])
   if(!unifiedStyles.includes(selector))throw new Error('A legacy accent escaped the second visual audit: '+selector);
+
+// No stale iOS browser assets after project UI corrections.
+const html=readFileSync('public/index.html','utf8');
+const netlify=readFileSync('netlify.toml','utf8');
+if(html.includes('20261111-ui-convergence-v2')||!html.includes('20261111-ui-audit2-v3'))
+  throw new Error('Project UI assets must be versioned for Safari deployment');
+if(!netlify.includes('for = "/"')||!netlify.includes('Cache-Control = "no-cache, no-store, must-revalidate"'))
+  throw new Error('Root document needs explicit no-store cache behavior');
 console.log('OH-004.3.x UI regression tests: PASS');
 
 if(!app.includes("activeMode:null"))throw new Error('execution mode state must not pin old chats to Zeus');
