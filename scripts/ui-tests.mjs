@@ -78,6 +78,10 @@ if(!unifiedStyles.includes('position:relative!important;left:auto!important;righ
   throw new Error('Project composer must remain in flow on iPhone');
 if(css.includes('color:#e3c268;box-shadow:inset 0 0 0 1px rgba(205,168,81,.24)'))
   throw new Error('Legacy gold navigation reintroduced');
+
+if(!css.includes('--gold:#40dfff')||css.includes('--gold:#cda851'))throw new Error('Premium stylesheet must not reset the canonical theme to gold');
+for(const oldColor of ['rgba(205,168,81,','rgba(213,173,86,','#d4af37','#d5ad56','#cda851'])
+  if(css.toLowerCase().includes(oldColor.toLowerCase()))throw new Error('Decorative gold leaked from premium.css: '+oldColor);
 console.log('OH-004.3.x UI regression tests: PASS');
 
 if(!app.includes("activeMode:null"))throw new Error('execution mode state must not pin old chats to Zeus');
