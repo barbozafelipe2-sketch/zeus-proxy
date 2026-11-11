@@ -24,7 +24,7 @@ const must=[
 for(const [haystack,needle,label] of must){if(typeof haystack==='boolean'){if(haystack!==needle)throw new Error(`Missing ${label}`)}else if(!String(haystack).includes(needle))throw new Error(`Missing ${label}`)}
 if(app.includes('id="zeus-level-cap"')||app.includes('id="olympus-auto"')||app.includes('data-routing-mode=')||app.includes('data-mode='))throw new Error('Legacy mode or level selectors must not appear in the Poseidon chat');
 if(!app.includes('olympusAuto:true')||!app.includes('specialistLabel(userRow?.metadata?.toolId)')||!app.includes('Trace Lab ·'))throw new Error('Poseidon-managed dispatch, live specialist status or per-message Trace Lab is missing');
-if(!app.includes('PRIVATE AI WORKSPACE')||!app.includes("'Poseidon is still working."))throw new Error('OlyHub identity or Poseidon Text status is missing');
+if(!app.includes('PRIVATE AI WORKSPACE')||!app.includes('Poseidon está trabalhando'))throw new Error('OlyHub identity or Poseidon Text status is missing');
 const homeView=app.slice(app.indexOf('function homeView()'),app.indexOf('function safeSources'));
 if(/homeAgentPanel|homeContextPanel|homeMobileArtifacts|managerAgentStrip/.test(homeView))throw new Error('Poseidon Home must open directly into chat without legacy dashboard panels');
 if(!app.includes("liveAgentSelection:'athena'")||!app.includes("mode:'ZEUS'")||!app.includes("X-Zeus-Voice-Fallback"))throw new Error('Athena voice identity and legacy execution identifiers must remain compatible');
@@ -82,6 +82,13 @@ if(css.includes('color:#e3c268;box-shadow:inset 0 0 0 1px rgba(205,168,81,.24)')
 if(!css.includes('--gold:#40dfff')||css.includes('--gold:#cda851'))throw new Error('Premium stylesheet must not reset the canonical theme to gold');
 for(const oldColor of ['rgba(205,168,81,','rgba(213,173,86,','#d4af37','#d5ad56','#cda851'])
   if(css.toLowerCase().includes(oldColor.toLowerCase()))throw new Error('Decorative gold leaked from premium.css: '+oldColor);
+
+// Second audit: verify project pages, horizontal navigation, and desktop visual state.
+for(const old of ['<h2>Next tasks</h2>',' Upload</button>'])
+  if(projectRender.includes(old))throw new Error('Legacy project UI copy: '+old);
+if(!app.includes('tabs.scrollLeft=Math.max(0,offset-'))throw new Error('Selected mobile project tab must scroll into view');
+for(const selector of ['body .sidebar .side-nav button.active','body .message-compare.selected','body .page .memory-create textarea:focus','body .auth-proof .ico','body .zeus-planned-icon'])
+  if(!unifiedStyles.includes(selector))throw new Error('A legacy accent escaped the second visual audit: '+selector);
 console.log('OH-004.3.x UI regression tests: PASS');
 
 if(!app.includes("activeMode:null"))throw new Error('execution mode state must not pin old chats to Zeus');

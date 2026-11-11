@@ -1044,7 +1044,7 @@ function projectOverviewView(){
     <div class="project-main-column">
       <div class="stat-grid project-stat-grid"><div class="card stat-card"><strong>${Number(p.progress||0)}%</strong><span>Progresso</span></div><div class="card stat-card"><strong>${Number(p.task_count||0)}</strong><span>Tarefas</span></div><div class="card stat-card"><strong>${Number(p.file_count||0)+Number(p.artifact_count||0)}</strong><span>Arquivos e entregas</span></div><div class="card stat-card"><strong>${Number(p.memory_count||0)}</strong><span>Memórias</span></div></div>
       ${projectContinuityPanel()}
-      <div class="panel"><div class="panel-head"><h2>Next tasks</h2><button class="text-gold" data-project-section="TASKS">Gerenciar ›</button></div><div class="task-list">${open.length?open.map(taskHtml).join(''):`<div class="empty-mini">Nenhuma tarefa pendente.</div>`}</div></div>
+      <div class="panel"><div class="panel-head"><h2>Próximas tarefas</h2><button class="text-gold" data-project-section="TASKS">Gerenciar ›</button></div><div class="task-list">${open.length?open.map(taskHtml).join(''):`<div class="empty-mini">Nenhuma tarefa pendente.</div>`}</div></div>
       <div class="panel"><div class="panel-head"><h2>Materiais recentes</h2><button class="text-gold" data-project-section="FILES">Abrir arquivos ›</button></div>${projectFiles.length||projectArtifacts.length?`<div class="output-list">${[...projectArtifacts.map(a=>({...a,kind:'artifact'})),...projectFiles.map(f=>({...f,kind:'file'}))].sort((a,b)=>new Date(b.created_at)-new Date(a.created_at)).slice(0,6).map(outputItem).join('')}</div>`:`<div class="empty-mini">Nenhum arquivo ou resultado no projeto.</div>`}</div>
     </div>
     <aside class="project-side-stack"><div class="panel project-context-card"><div class="eyebrow">OBJETIVO</div><p class="overview-goal">${esc(p.goal||'Adicione um objetivo para orientar as entregas do projeto.')}</p><div class="context-meta"><span>Situação</span><strong>${esc(projectStatusLabel(p.status))}</strong></div></div></aside>
@@ -1059,7 +1059,7 @@ function projectFilesView(){
   const projectArtifacts=state.artifacts.filter(a=>a.project_id===p.id);
   const all=[...projectArtifacts.map(a=>({...a,kind:'artifact'})),...projectFiles.map(f=>({...f,kind:'file',type:(f.mime_type||'file').split('/').pop()}))].sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
   const more=Boolean(state.filesPage?.hasMore||state.artifactsPage?.hasMore);
-  return `<div class="project-single-column"><div class="panel"><div class="panel-head"><div><h2>Arquivos e resultados</h2><p class="muted tiny">Os arquivos enviados ficam associados ao contexto deste projeto.</p></div><button class="primary compact" id="upload-project-file">${icon('plus')} Upload</button></div>${all.length?`<div class="output-list">${all.map(outputItem).join('')}</div>`:`<div class="empty-mini">Nenhum arquivo ou resultado gerado ainda.</div>`}${more?'<div class="history-more"><button class="secondary compact" id="load-older-outputs">Carregar anteriores</button></div>':''}</div></div>`;
+  return `<div class="project-single-column"><div class="panel"><div class="panel-head"><div><h2>Arquivos e resultados</h2><p class="muted tiny">Os arquivos enviados ficam associados ao contexto deste projeto.</p></div><button class="primary compact" id="upload-project-file">${icon('plus')} Enviar</button></div>${all.length?`<div class="output-list">${all.map(outputItem).join('')}</div>`:`<div class="empty-mini">Nenhum arquivo ou resultado gerado ainda.</div>`}${more?'<div class="history-more"><button class="secondary compact" id="load-older-outputs">Carregar anteriores</button></div>':''}</div></div>`;
 }
 function projectSourceView(){
   const items=state.projectSources||[];
@@ -1724,7 +1724,16 @@ function bind(){
   $$('[data-files-clear]').forEach(b=>b.addEventListener('click',()=>{state.filesSearch='';state.filesFilter='ALL';render()}));
   $('#upload-files-empty')?.addEventListener('click',()=>$('#global-file-input')?.click());
   $$('[data-project]').forEach(b=>{b.addEventListener('click',()=>openProjectWorkspace(b.dataset.project));b.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();openProjectWorkspace(b.dataset.project);}});});
-  $$('[data-project-section]').forEach(b=>b.addEventListener('click',async()=>{if(state.liveTalk&&b.dataset.projectSection!=='CHAT')finishLiveTalkSession();state.projectSection=b.dataset.projectSection;try{if(state.projectSection==='MEMORY'&&state.currentProject)await loadMemories(state.currentProject.id);if(state.projectSection==='SOURCE'&&state.currentProject)await loadProjectSources();}catch(err){state.error=err?.message||'Could not load project memory.';}render();resetViewport()}));
+  $$('[data-project-section]').forEach(b=>b.addEventListener('click',async()=>{if(state.liveTalk&&b.dataset.projectSection!=='CHAT')finishLiveTalkSession();state.projectSection=b.dataset.projectSection;try{if(state.projectSection==='MEMORY'&&state.currentProject)await loadMemories(state.currentProject.id);if(state.projectSection==='SOURCE'&&state.currentProject)await loadProjectSources();}catch(err){state.error=err?.message||'Não foi possível carregar o conteúdo do projeto.';}render();resetViewport();
+    requestAnimationFrame(()=>{
+      const tabs=$('.project-workspace-page .workspace-tabs');
+      const active=tabs?.querySelector('button.active');
+      if(tabs&&active&&tabs.scrollWidth>tabs.clientWidth){
+        const offset=active.offsetLeft-tabs.offsetLeft;
+        tabs.scrollLeft=Math.max(0,offset-(tabs.clientWidth-active.offsetWidth)/2);
+      }
+    });
+  }));
   $('#edit-project')?.addEventListener('click',()=>projectEditModal(state.currentProject?.id));
   $('#back-projects')?.addEventListener('click',async()=>{if(state.liveTalk)finishLiveTalkSession();state.currentProject=null;state.currentConversation=null;state.messages=[];state.chatArtifacts=[];state.attachedFiles=[];state.activeMode=null;state.projectMemories=[];state.memoryPolicy=null;state.projectSection='CHAT';state.messagePage={hasMore:false,nextCursor:null};state.tasks=[];state.error='';history.replaceState({},'',location.pathname);refreshLiveTalkContext();render()});
   $('#task-form')?.addEventListener('submit',createTask); $$('[data-task]').forEach(b=>b.addEventListener('click',()=>{if(b.disabled)return;b.disabled=true;b.setAttribute('aria-busy','true');toggleTask(b.dataset.task,b.dataset.status);}));

@@ -1226,3 +1226,26 @@ body .mobile-bottom-nav button.active{background:linear-gradient(130deg,rgba(0,1
  body .home-workspace .poseidon-chat-intro{padding-top:36px!important;margin-bottom:24px!important}
  body .home-chat-column{max-width:1120px;margin-inline:auto;width:100%}
 }
+
+
+/* Audit pass 2: retire the remaining gold interaction accents. */
+body .sidebar .side-nav button.active,
+body .sidebar .side-nav button[aria-current="page"]{
+  background:linear-gradient(90deg,rgba(10,186,249,.22),rgba(99,57,239,.13),transparent)!important;
+  color:#e6faff!important;border-color:rgba(60,202,255,.3)!important
+}
+body .sidebar .side-nav button.active .ico,
+body .sidebar .side-nav button[aria-current="page"] .ico{color:#65eaff!important}
+body .message-compare.selected{
+  background:linear-gradient(115deg,rgba(10,145,245,.2),rgba(111,57,228,.16))!important;
+  color:#a3f3ff!important;border-color:rgba(55,216,255,.46)!important
+}
+body .page .memory-create textarea:focus{
+  border-color:#40e2ff!important;box-shadow:0 0 0 3px rgba(29,196,255,.13)!important
+}
+body .auth-proof .ico{color:#72eaff!important}
+body .zeus-planned-icon{
+  background:rgba(12,35,91,.65)!important;border-color:rgba(77,140,245,.37)!important;color:#91edff!important
+}
+body .field label{color:#b9c8e4;font-size:12px}
+body .project-workspace-page .workspace-tabs button.active{scroll-margin-inline:15px}
