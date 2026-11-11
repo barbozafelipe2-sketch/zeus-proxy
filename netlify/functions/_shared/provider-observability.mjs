@@ -82,7 +82,7 @@ export function summarizeTransportEvidence(rows=[],configuration={},runtime={}){
 // and web search tool fees MUST NOT be reported as $0 or as complete coverage.
 // Prices are estimates only; the provider/gateway invoice is authoritative.
 function tokenCount(value){
-  if(value===null||value===undefined||value==='')return null;
+  if(value===null||value===undefined||typeof value==='boolean'||typeof value==='string'&&value.trim()==='')return null;
   const n=Number(value);
   return Number.isFinite(n)&&n>=0?n:null;
 }
@@ -94,11 +94,11 @@ function totals(items,key){
 export function summarizeRequestUsage(telemetry={},{maxCalls=null,webUsage=null,webTrace=null}={}){
   const attempts=Array.isArray(telemetry?.attempts)?telemetry.attempts:[];
   const countedCalls=tokenCount(telemetry?.budgetCalls);
-  const callsUsed=countedCalls??attempts.length;
   const webAttempted=Boolean(
     webTrace&&(webTrace.attempted===true||webTrace.status==='completed') ||
     (!webTrace&&webUsage&&typeof webUsage==='object')
   );
+  const callsUsed=Math.max(countedCalls??0,attempts.length+(webAttempted?1:0));
   // Status from the web tool, not invented from token metrics alone.
   const webStatus=webTrace?.status||null;
   const webData=webUsage&&typeof webUsage==='object'?webUsage:
@@ -123,17 +123,20 @@ export function summarizeRequestUsage(telemetry={},{maxCalls=null,webUsage=null,
     return {
       role:String(e.stage||'unspecified'),provider:e.provider||null,
       model:e.model||null,outcome:e.outcome,
+      transport:e.transport||null,durationMs:tokenCount(e.durationMs),
       inputTokens,outputTokens,
       estimatedUsd:estimatedUsd===null?null:Number(estimatedUsd.toFixed(6)),
       costKnown:priceKnown
     };
   });
-  const tokenItems=[...byRole,...(webAttempted?[web]:[])];
+  const untrackedCalls=Math.max(0,callsUsed-attempts.length-(webAttempted?1:0));
+  // Calls omitted from the bounded telemetry buffer still have unknown usage.
+  const tokenItems=[...byRole,...(webAttempted?[web]:[]),...(untrackedCalls?[{inputTokens:null,outputTokens:null}]:[])];
   const input=totals(tokenItems,'inputTokens');
   const output=totals(tokenItems,'outputTokens');
   const totalKnown=input.known+output.known;
-  const totalMissing=input.missing+output.missing;
-  const untrackedCalls=Math.max(0,callsUsed-attempts.length-(webAttempted?1:0));
+  const totalMissing=input.missing+output.missing+Math.max(0,untrackedCalls-1)*2;
+  const tokenItemCount=byRole.length+(webAttempted?1:0)+untrackedCalls;
   // Web inference tokens and search tool calls have separate billable components.
   // Until a complete authoritative web price breakdown is available they stay unknown.
   const unknownCostCalls=unpriced+(webAttempted?1:0)+untrackedCalls;
@@ -145,7 +148,7 @@ export function summarizeRequestUsage(telemetry={},{maxCalls=null,webUsage=null,
     totalTokens:totalMissing?null:totalKnown,
     reportedInputTokens:input.known,reportedOutputTokens:output.known,
     reportedTotalTokens:totalKnown,
-    tokenCoverage:tokenItems.length===0?'none':totalMissing===0?'full':totalMissing===tokenItems.length*2?'none':'partial',
+    tokenCoverage:tokenItemCount===0?'none':totalMissing===0?'full':totalMissing===tokenItemCount*2?'none':'partial',
     missingTokenFields:totalMissing,
     byRole,webSearch:web,
     estimatedUsd:priced?Number(usd.toFixed(6)):null,

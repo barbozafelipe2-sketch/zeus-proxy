@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
+import {priceFor} from '../netlify/functions/_shared/model-prices.mjs';
 
 // Protective invariants from the current OlyHub governance blueprint.
 // The blueprint contains historical call-count proposals that conflict;
@@ -12,7 +13,6 @@ const chat=read('netlify/functions/chat.mjs');
 const tool=read('netlify/functions/_shared/tool-executor.mjs');
 const receipts=read('netlify/functions/_shared/tool-execution-evidence.mjs');
 const billing=read('netlify/functions/_shared/provider-observability.mjs');
-const prices=read('netlify/functions/_shared/model-prices.mjs');
 const worker=read('netlify/functions/_shared/worker-lease.mjs');
 const ui=read('public/app.js');
 const invariant=(condition,message)=>assert.ok(condition,'Blueprint compatibility: '+message);
@@ -39,7 +39,7 @@ invariant(ui.includes("state.currentToolId==='code'"),'explicit code mutations m
 // silently count as US$0. Do not disable worker fences or scope controls.
 invariant(billing.includes('unknownCostCalls'),'cost telemetry must preserve unknown charges');
 invariant(billing.includes("estimateCoverage"),'cost coverage must be explicit');
-invariant(prices.includes('return p&&Number.isFinite'),'unknown model prices must not be fabricated');
+invariant(priceFor('unknown-blueprint-test-model')===null,'unknown model prices must not be fabricated');
 invariant(worker.includes('dispatch_token')&&worker.includes('worker_token')&&worker.includes('assertWorkerFence'),
   'worker dispatch and fencing cannot be bypassed');
 invariant(chat.includes('queueOlympusExecution')&&chat.includes('claimOlympusWorker'),'background queue must stay fenced');

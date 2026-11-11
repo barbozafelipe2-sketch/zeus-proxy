@@ -2,6 +2,7 @@
 // Pure local tests. No provider/network/database calls.
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
+import {priceFor} from '../netlify/functions/_shared/model-prices.mjs';
 import {recordProviderAttempt,snapshotProviderTelemetry,summarizeRequestUsage} from '../netlify/functions/_shared/provider-observability.mjs';
 
 const known={stage:'answer',provider:'openai',model:'gpt-4.1-mini',outcome:'success',inputTokens:1_000_000,outputTokens:1_000_000};
@@ -100,3 +101,38 @@ assert.ok(webSource.includes('status:\'failed\',attempted'),'failed web search m
 assert.ok(webSource.includes("if(value===undefined||value===null||value==='')return null;"),'web usage omissions must remain null');
 assert.ok(!JSON.stringify(mixed).includes('some secret prompt'),'usage must not contain message text');
 console.log('Phase 7/7: tokens null, unpriced model, web fee, failed attempts, and UI unknown: PASS');
+
+// Missing trace entries must not leave apparently complete token totals.
+assert.equal(unseen.inputTokens,null);
+assert.equal(unseen.outputTokens,null);
+assert.equal(unseen.totalTokens,null);
+assert.equal(unseen.tokenCoverage,'partial');
+assert.equal(unseen.reportedTotalTokens,2_000_000);
+const entirelyUnseen=summarizeRequestUsage(telemetry([],2));
+assert.equal(entirelyUnseen.tokenCoverage,'none');
+assert.equal(entirelyUnseen.totalTokens,null);
+assert.equal(entirelyUnseen.unknownCostCalls,2);
+assert.equal(summarizeRequestUsage(telemetry([known],0)).callsUsed,1,'observed calls cannot disappear behind stale budget counters');
+const bounded={snapshot:()=>({calls:26})};
+for(let i=0;i<26;i++)recordProviderAttempt(bounded,{model:{provider:'openai',id:'gpt-4.1-mini'},usage:{inputTokens:1,outputTokens:2}});
+const clipped=summarizeRequestUsage(snapshotProviderTelemetry(bounded));
+assert.equal(clipped.byRole.length,24);
+assert.equal(clipped.untrackedCalls,2);
+assert.equal(clipped.totalTokens,null);
+assert.equal(clipped.reportedTotalTokens,72);
+assert.equal(clipped.estimateCoverage,'partial');
+const priorPrices=process.env.OLYHUB_MODEL_PRICES_JSON;
+try{
+  for(const bad of [null,'',true,-1,'NaN']){
+    process.env.OLYHUB_MODEL_PRICES_JSON=JSON.stringify({'test-price':{in:bad,out:2}});
+    assert.equal(priceFor('test-price'),null,'invalid prices cannot create a zero or negative estimate');
+  }
+  process.env.OLYHUB_MODEL_PRICES_JSON=JSON.stringify({'test-price':{in:0,out:'2'}});
+  assert.deepEqual(priceFor('test-price'),{in:0,out:2});
+}finally{
+  if(priorPrices===undefined)delete process.env.OLYHUB_MODEL_PRICES_JSON;else process.env.OLYHUB_MODEL_PRICES_JSON=priorPrices;
+}
+console.log('Untracked/truncated usage and invalid pricing regressions: PASS');
+
+assert.equal(summarizeRequestUsage(telemetry([],0),{webTrace:{status:'completed',attempted:true}}).callsUsed,1);
+assert.equal(summarizeRequestUsage(telemetry([{...known,inputTokens:true}])).inputTokens,null);

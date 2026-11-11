@@ -19,5 +19,6 @@ export function priceFor(modelId=''){
   const id=String(modelId||'').replace(/^[a-z-]+\//,'').toLowerCase();
   const table={...BUILTIN,...overrides()};
   const p=table[modelId]||table[id];
-  return p&&Number.isFinite(Number(p.in))&&Number.isFinite(Number(p.out))?{in:Number(p.in),out:Number(p.out)}:null;
+  const valid=value=>(typeof value==='number'||typeof value==='string'&&value.trim()!=='')&&Number.isFinite(Number(value))&&Number(value)>=0;
+  return p&&valid(p.in)&&valid(p.out)?{in:Number(p.in),out:Number(p.out)}:null;
 }
