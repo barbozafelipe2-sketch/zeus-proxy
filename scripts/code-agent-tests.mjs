@@ -12,6 +12,17 @@ const blobs={async set(key,value){store.set(key,value);},async get(key){return s
 const chatUi=readFileSync(new URL('../public/app.js',import.meta.url),'utf8');
 const codeApi=readFileSync(new URL('../netlify/functions/code-agent.mjs',import.meta.url),'utf8');
 assert.ok(chatUi.includes('if(codeAgentRequestIntent(text))return queueChatCodeJob(text,requestId);'),'typed chat must route coding work to the background workspace');
+assert.ok(chatUi.includes("state.currentToolId==='code'"),'Hefesto dedicated chat must route mutations to real Code Agent');
+const begin=chatUi.indexOf('function codeAgentRequestIntent('),end=chatUi.indexOf('function codeAgentApprovalIntent(',begin);
+assert.ok(begin>0&&end>begin,'Code Agent intent classifier must remain available');
+const intent=new Function('state',chatUi.slice(begin,end)+';return codeAgentRequestIntent;')({messages:[]});
+assert.equal(intent('Corrige o bug no código JavaScript'),true);
+assert.equal(intent('Refatora o backend do aplicativo'),true);
+assert.equal(intent('Fix the repository API bug'),true);
+assert.equal(intent('Audite o código e explique o problema'),false,'read-only audit must not silently create a mutation job');
+assert.equal(intent('Como construir um aplicativo?'),false,'informational question is not an execution request');
+assert.equal(intent('Corrige tudo',[{role:'user',content:'Ajustar o código do app'}]),true,'explicit code continuity routes to worker');
+
 assert.ok(chatUi.includes('if(codeAgentRequestIntent(command)){')&&chatUi.includes("workspace:'background'"),'Live Talk must use the same coding queue');
 assert.ok(chatUi.includes('Continuação do pedido: ${text}')&&chatUi.includes('state.messages||[]'),'short coding follow-ups must carry recent chat context');
 assert.ok(chatUi.includes('codeAgentJobCard(codeJob)')&&chatUi.includes('state.tab===\'Home\''),'chat must render and poll background job state');

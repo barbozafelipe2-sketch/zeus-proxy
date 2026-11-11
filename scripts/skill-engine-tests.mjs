@@ -9,7 +9,7 @@ assert.equal(authorizeSkillInvocation({skillId:'apollo.images',allowedToolIds:['
 assert.equal(authorizeSkillInvocation({skillId:'apollo.images',allowedToolIds:['images'],remainingCalls:1,depth:3}).reason,'delegation_limit');
 assert.equal(authorizeSkillInvocation({skillId:'apollo.images',allowedToolIds:['images'],remainingCalls:1}).allowed,true);
 assert.equal(authorizeSkillInvocation({skillId:'ares.defense',allowedToolIds:['images'],remainingCalls:1}).allowed,false);
-assert.equal(skillExecutionLabel('apollo.images'),'Executado por Apollo');
+assert.equal(skillExecutionLabel('apollo.images'),'Especialista: Apollo');
 assert.equal(SKILL_REGISTRY['dionisio.media'].enabled,false);
 assert.equal(SKILL_REGISTRY['hestia.review'].internal,true);
 assert.equal(SKILL_REGISTRY['mnemosine.memory'].internal,true);
@@ -19,8 +19,11 @@ const chatSource=readFileSync(new URL('../netlify/functions/chat.mjs',import.met
 assert.match(chatSource,/authorizeSkillInvocation\(/);
 assert.match(chatSource,/skill\.enabled&&skill\.toolId===toolId/);
 assert.match(chatSource,/result\.trace=\{\.\.\.\(result\.trace\|\|\{\}\),skillId:matchingSkill\.id/);
-assert.match(chatSource,/skillExecuted:true/);
-assert.ok(chatSource.indexOf('result=await executeThreeModelTool({')<chatSource.indexOf('skillExecuted:true'),'execution must precede skill attribution');
+assert.match(chatSource,/skillInvoked:true,skillExecuted:false/);
+assert.ok(chatSource.includes('const outcome=toolExecutionEvidence('),'tool proof must be computed at DB finalization');
+assert.match(chatSource,/skillExecutionStatus:outcome.status/);
+assert.ok(chatSource.indexOf('result=await executeThreeModelTool({')<chatSource.indexOf('skillInvoked:true,skillExecuted:false'),'model stages must precede skill attribution');
+assert.ok(!chatSource.includes('skillExecuted:true'), 'a three-model draft cannot set execution success');
 
 assert.equal(proposeAutomaticSkill({message:'Corrige o bug no código JavaScript'})?.toolId,'code');
 assert.equal(proposeAutomaticSkill({message:'Search the web for news'})?.toolId,'web');

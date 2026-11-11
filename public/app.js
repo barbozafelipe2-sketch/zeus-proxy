@@ -470,8 +470,21 @@ function messageHtml(m){
       :'Cost unknown (missing price, token usage or tool charges)';
   const usageNote=u?[`Calls ${fmt(u.callsUsed)}${u.maxCalls!=null?`/${fmt(u.maxCalls)}`:''}`,`Tokens in ${fmt(u.inputTokens)} · out ${fmt(u.outputTokens)} · total ${fmt(u.totalTokens)}`,...(Array.isArray(u.byRole)?u.byRole.slice(0,8).map(r=>`${String(r.role||'').replaceAll('_',' ')}: ${fmt(r.inputTokens)}/${fmt(r.outputTokens)}${r.outcome==='failure'?' (failed)':''}`):[]),costNote].join(' · '):'';
   const note=[level,m.metadata?.modeExplanation,m.metadata?.pipelineLabel,phaseNote,lead,m.metadata?.fallback?'fallback':'',m.metadata?.verificationLabel,visionNote,...capabilityNotes,usageNote].filter(Boolean).join(' · ');
-  const skillTrace=m.role==='assistant'&&m.metadata?.skillExecuted===true&&typeof m.metadata?.skillGod==='string'
-    ?`<details class="trace-lab"><summary>Especialista · ${esc(m.metadata.skillGod)}</summary><div>${esc(m.metadata.skillId||'')} · ${Math.max(0,Math.min(3,Number(m.metadata.skillStagesCompleted)||0))} etapas concluídas · ${m.metadata.skillCapabilityExecuted===true?'Ação externa confirmada':'Sem ação externa confirmada'}${m.metadata.delegatedSkillId?` · Delegação: ${esc(m.metadata.delegatedSkillId)} (${Math.min(3,Number(m.metadata.delegatedModelStages)||0)} etapas; ${Array.isArray(m.metadata.delegatedModelRoles)?m.metadata.delegatedModelRoles.map(r=>esc(r.provider+':'+r.model)).join(', '):''})`:''}${m.metadata.delegationSkipped?` · Delegação não realizada: ${esc(m.metadata.delegationSkipped)}`:''}</div></details>`:'';
+  const executionState=String(m.metadata?.skillExecutionStatus||'legacy_unverified');
+  const executionEvidence=m.metadata?.skillExecutionEvidence||null;
+  const skillStateLabel=executionState==='artifact_saved'?'Arquivo gerado e persistido'
+    :executionState==='read_verified'?'Consulta externa confirmada (somente leitura)'
+    :executionState==='model_only'?'Somente análise de IA; nenhuma ação externa confirmada'
+    :'Registro anterior sem prova de operação';
+  const evidenceLabel=executionEvidence?.kind==='artifact_saved'
+    ?' · '+Number(executionEvidence.count||0)+' artefato(s) persistido(s)'
+    :executionEvidence?.kind==='github_read'
+      ?' · GitHub: '+esc(executionEvidence.repository||'')+' ('+Number(executionEvidence.fileCount||0)+' arquivos lidos)'
+      :executionEvidence?.kind==='web_search'
+        ?' · Web: '+Number(executionEvidence.sourceCount||0)+' fontes'
+        :'';
+  const skillTrace=m.role==='assistant'&&typeof m.metadata?.skillGod==='string'&&typeof m.metadata?.skillId==='string'
+    ?`<details class="trace-lab"><summary>Especialista · ${esc(m.metadata.skillGod)}</summary><div>${esc(m.metadata.skillId)} · ${Math.max(0,Math.min(3,Number(m.metadata.skillStagesCompleted)||0))} etapas de IA · ${esc(skillStateLabel)}${evidenceLabel}${m.metadata.delegatedSkillId?` · Delegação: ${esc(m.metadata.delegatedSkillId)} (${Math.min(3,Number(m.metadata.delegatedModelStages)||0)} etapas; ${Array.isArray(m.metadata.delegatedModelRoles)?m.metadata.delegatedModelRoles.map(r=>esc(r.provider+':'+r.model)).join(', '):''})`:''}${m.metadata.delegationSkipped?` · Delegação não realizada: ${esc(m.metadata.delegationSkipped)}`:''}</div></details>`:'';
   const traceCalls=m.role==='assistant'&&Array.isArray(m.metadata?.traceCalls)?m.metadata.traceCalls.slice(0,24):[];
   const traceHtml=traceCalls.length?`<details class="trace-lab"><summary>Trace Lab · ${traceCalls.filter(call=>call.outcome==='success').length} concluídas / ${traceCalls.length} chamadas</summary><ol>${traceCalls.map(call=>`<li class="trace-call ${call.outcome==='success'?'success':'failure'}"><span class="trace-call-state">${call.outcome==='success'?'OK':'Falhou'}</span><span class="trace-call-model">${esc([call.family&&call.family!==call.provider?call.family:null,call.provider,call.model].filter(Boolean).join(' · ')||'Modelo não informado')}</span><span class="trace-call-stage">${esc(call.stage||'etapa')} · ${esc(call.transport||'rota')}${Number.isFinite(Number(call.durationMs))?` · ${Math.round(Number(call.durationMs))} ms`:''}${call.status?` · HTTP ${esc(call.status)}`:''}</span></li>`).join('')}</ol></details>`:'';
    const r=m.role==='assistant'&&m.metadata?.contextReceipt&&typeof m.metadata.contextReceipt==='object'?m.metadata.contextReceipt:null;
@@ -1417,10 +1430,12 @@ function codeAgentRepositoryModal(initialUrl='',initialBranch='main'){
 function codeAgentRequestIntent(text,messages=state.messages){
   const value=String(text||'').trim();
   if(/^(?:como\s+(?:eu\s+)?(?:fa[cç]o|fazer|construir|criar)|how\s+(?:do\s+i|to)\b)/i.test(value)&&!/(?:fa[cç]a|faz|construa|cria|implemente)\s+(?:pra\s+mim|para\s+mim|isso|agora)/i.test(value))return false;
-  const object=/\b(?:jogo|game|xadrez|chess|aplicativo|app|site|website|software|sistema|funcionalidade|feature|c[oó]digo|code|programa|program)\b/i;
+  const object=/\b(?:jogo|game|xadrez|chess|aplicativo|app|webapp|site|website|software|sistema|funcionalidade|feature|c[oó]digo|code|programa|program|reposit[oó]rio|repository|repo|github|script|frontend|backend|api|javascript|typescript)\b/i;
+  const mutate=/\b(?:corrig(?:ir|e|a)|corrija|consert(?:a|e|ar)|arrum(?:a|e|ar)|refator(?:a|e|ar)|refactor|fix|repair|patch|modifi(?:que|car)|modify|atualiz(?:a|e|ar)|update|ajust(?:a|e|ar)|debug)\b/i;
+  if(mutate.test(value)&&object.test(value))return true;
   const create=/\b(?:cria|crie|criar|faz|fa[cç]a|fazer|construa|construir|desenvolva|desenvolver|implemente|implementar|implementa|build|create|make|develop|implement|start\s+building|come[cç]a|comece|inicie|iniciar)\b/i;
   if(create.test(value)&&object.test(value))return true;
-  const followup=/\b(?:come[cç]a|comece|inicie|iniciar|faz|fa[cç]a|execute|implemente|build\s+it|start\s+(?:building|making)|go\s+ahead|do\s+it|comece\s+a\s+fazer)\b/i.test(value);
+  const followup=/\b(?:come[cç]a|comece|inicie|iniciar|faz|fa[cç]a|execute|implemente|corrige|corrija|conserta|refatora|arruma|fix|repair|patch|build\s+it|start\s+(?:building|making)|go\s+ahead|do\s+it|comece\s+a\s+fazer)\b/i.test(value);
   return followup&&(messages||[]).slice(-12).some(message=>object.test(String(message?.content||'')));
 }
 function codeAgentApprovalIntent(text){return /\b(?:sim|ok|okay|pode|manda\s+ver|vai|come[cç]a|comece|fa[zç]|fa[cç]a|execute|executa|implemente|implementa|prossiga|aprovo|aprovado|go\s+ahead|do\s+it|build\s+it|start|proceed|approved|faz\s+tudo|fa[cç]a\s+tudo)\b/i.test(String(text||''));}
@@ -1958,7 +1973,7 @@ function imageOptionsModal(){
 async function sendText(text,pendingAttachments=[],requestId=crypto.randomUUID(),requestedMode=state.mode,turboApproval=null,resumeExecutionId=null,options={}){
   const voiceCommand=options?.voiceCommand===true;
   if(!text||state.sending)return voiceCommand?JSON.stringify({ok:false,error:'Another OlyHub request is already running.'}):undefined;
-  if(!options?.liveTalk&&!voiceCommand&&!state.currentToolId&&!pendingAttachments?.length){
+  if(!options?.liveTalk&&!voiceCommand&&(!state.currentToolId||state.currentToolId==='code')&&!pendingAttachments?.length){
     const approvalJob=(state.codeAgentJobs||[]).find(job=>job.conversation_id===state.currentConversation&&job.status==='AWAITING_APPROVAL');
     if(approvalJob&&codeAgentApprovalIntent(text))return approveChatCodeJob(approvalJob,text);
     if(codeAgentRequestIntent(text))return queueChatCodeJob(text,requestId);

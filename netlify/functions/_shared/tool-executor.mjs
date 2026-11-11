@@ -1,4 +1,5 @@
 import {getToolWorkflow} from './tool-workflows.mjs';
+import {verifiedCapabilityReceipt} from './tool-execution-evidence.mjs';
 export class ToolExecutionError extends Error{constructor(message,code='TOOL_PIPELINE_INCOMPLETE',details={}){super(message);this.name='ToolExecutionError';this.code=code;this.status=503;this.details=details;}}
 function isPoseidonCoordinatorModel(model){return String(model?.family||'').toLowerCase()==='xai'||(String(model?.provider||'').toLowerCase()==='openrouter'&&/^x-ai\//i.test(String(model?.id||'')));}
 export async function executeThreeModelTool({toolId,input,context='',budget,models,invoke,capability=null,onStage=null}){
@@ -37,6 +38,14 @@ export async function executeThreeModelTool({toolId,input,context='',budget,mode
   }
   if(!success)throw new ToolExecutionError('Stage failed: '+role,'TOOL_PIPELINE_INCOMPLETE',{completed,attempts});
  }
- const artifact=capability?await capability({tool,input,context,brief:output,roles:completed,budget}):null;
- return {content:output,artifact,leadModel:completed[2].provider+':'+completed[2].model,effectiveMode:'ZEUS',pipelineLabel:tool.god+' · three independent model stages',trace:{strategy:'tool_three_model_executor',toolId,roles:completed,attempts,completedStages:3,independentFamilies:true,capabilityExecuted:Boolean(capability)}};
+ const capabilityResult=capability?await capability({tool,input,context,brief:output,roles:completed,budget}):null;
+ // A callback being supplied is NOT evidence. Artifact persistence can only
+ // be confirmed later by finalizeTurn after the DB insert succeeds.
+ const candidate=verifiedCapabilityReceipt(toolId,capabilityResult?.receipt);
+ const receipt=candidate?.kind==='artifact_saved'?null:candidate;
+ const artifact=capabilityResult&&typeof capabilityResult==='object'&&Object.hasOwn(capabilityResult,'artifact')
+  ?capabilityResult.artifact:capabilityResult;
+ return {content:output,artifact,leadModel:completed[2].provider+':'+completed[2].model,effectiveMode:'ZEUS',pipelineLabel:tool.god+' · three model analysis stages',
+  trace:{strategy:'tool_three_model_executor',toolId,roles:completed,attempts,completedStages:3,independentFamilies:true,
+   capabilityAttempted:Boolean(capability),capabilityExecuted:Boolean(receipt),capabilityReceipt:receipt}};
 }

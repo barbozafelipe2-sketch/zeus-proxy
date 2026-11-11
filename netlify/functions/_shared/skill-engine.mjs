@@ -52,7 +52,7 @@ export function authorizeSkillInvocation({skillId,allowedToolIds=[],remainingCal
 }
 export function skillExecutionLabel(skillId){
  const skill=SKILL_REGISTRY[skillId];
- return skill?.enabled?'Executado por '+skill.god:null;
+ return skill?.enabled?'Especialista: '+skill.god:null;
 }
 
 /**
