@@ -38,7 +38,7 @@
   "devDependencies": {
     "@alexanderolsen/libsamplerate-js": "2.1.2",
     "@elevenlabs/client": "1.30.0",
-    "@playwright/test": "1.57.0",
+    "@playwright/test": "1.65.0",
     "esbuild": "0.28.2"
   }
 }
