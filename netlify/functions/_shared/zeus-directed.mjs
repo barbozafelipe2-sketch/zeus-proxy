@@ -25,7 +25,10 @@ export async function runDirectedPipeline(args, deps) {
     let ranked=candidates(role,text,{vision:needsVision,blockedProviders,exclude:new Set(used),excludeProviders:usedFamilies,limit:6,toolId,toolPreferences,routeHint});
     if(!ranked.length)throw Object.assign(new Error(`Level 3 cannot complete ${role}: no unused model family is available.`),{code:'AI_LEVEL3_FAMILY_UNAVAILABLE',status:503});
     for(const candidate of ranked)eligibleModels.add(`${candidate.provider}:${candidate.id}`);
-    const selected=deps.pickCandidate?deps.pickCandidate(ranked,toolId,toolPreferences):ranked[0];
+    // The owner-facing coordinator must honor its already configured priority.
+    // Exploration belongs to specialist stages, not to the Poseidon CEO.
+    const selected=role==='CEO'&&!toolId?ranked[0]
+      :deps.pickCandidate?deps.pickCandidate(ranked,toolId,toolPreferences):ranked[0];
     if(!selected||usedFamilies.includes(family(selected)))throw Object.assign(new Error(`Level 3 cannot complete ${role} without reusing a model family.`),{code:'AI_LEVEL3_FAMILY_UNAVAILABLE',status:503});
     const ordered=[selected,...ranked.filter(model=>model!==selected)];
     const options={

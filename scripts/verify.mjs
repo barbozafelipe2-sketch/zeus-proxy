@@ -102,12 +102,12 @@ const mustContain = [
   [chat,'tool:toolWorkflow?{id:toolWorkflow.id,god:toolWorkflow.god,title:toolWorkflow.title}:null','specialist identity in queued response'],
   [intent,'decideExecutionLevel','deterministic internal level router'],
   [intent,'deterministic_zero_token','zero-token router contract'],
-  [app,'PERMANENT PROJECT CHAT','embedded project chat'],
+  [app,'project-chat-scroll','embedded project chat'],
   [app,'workspace-tabs','project workspace tabs'],
-  [app,'Permanent project memory','visible project memory manager'],
+  [app,'memory-form','visible project memory manager'],
   [app,'projectEditModal','project editing UI'],
   [app,'projectFilesView','project files/output view'],
-  [app,'Live execution status — no simulated timings.','truthful execution status'],
+  [app,'${esc(state.execStatus)}','truthful execution status'],
   [app,'openProjectWorkspace','project workspace loader'],
   [app,"state.tab=state.currentProject?'Projects':'Home'",'project conversations route back to Projects'],
   [app,'resetViewport','mobile tab scroll reset'],
@@ -363,11 +363,11 @@ if (!githubContext.includes('loadGitHubContext')) throw new Error('GitHub reposi
 
 if (!filePreview.includes("Content-Type':'text/plain; charset=utf-8")) throw new Error('Safe extracted-text file preview missing.');
 if (!chat.includes('FAST_CHAT_TIMEOUT_MS')) throw new Error('Fast chat route lacks a dedicated bounded runtime.');
-if (!chat.includes('olympusDispatchFallback=true')) throw new Error('Olympus dispatch failure can still fall into heavy synchronous execution.');
+if (!chat.includes('pending:true,dispatchRequired:true,dispatchToken,dispatchPayload')||chat.includes('olympusDispatchFallback=true')) throw new Error('Dispatch failure must preserve the fenced background task instead of running it synchronously.');
 if (!app.includes('sampleVideoFrames') || !app.includes('normalizeMediaImage')) throw new Error('Media analysis preprocessing missing.');
 
 if (!limits.includes("'16 minutes'")) throw new Error('Olympus background concurrency window is too short.');
-if(!chat.includes('claimOlympusWorker(client,')||!chat.includes('executionLeaseExpired(existing)')||!chat.includes('claimInlineFallback(db,'))
+if(!chat.includes('claimOlympusWorker(client,')||!chat.includes('executionLeaseExpired(existing)')||!chat.includes('assertWorkerFence(client,')||!chat.includes('backgroundRecovery(run,users[0])'))
   throw new Error('Background dispatch lacks exclusive lease and deadline-safe recovery.');
 if (!security.includes('REDACTED NETLIFY TOKEN')) throw new Error('Netlify token redaction missing.');
 if (!tasks.includes('syncProjectProgressClient')) throw new Error('Task/project progress updates are not transactional.');

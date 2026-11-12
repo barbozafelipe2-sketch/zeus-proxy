@@ -20,10 +20,24 @@ assert.match(result.content,/ceo generated/);
 const app=readFileSync('public/app.js','utf8');
 const chat=readFileSync('netlify/functions/chat.mjs','utf8');
 const model=readFileSync('netlify/functions/_shared/models.mjs','utf8');
-assert.match(app,/Approve \+\$5/);
+assert.match(app,/id="approve-olympus-five">Aprovar \+US\$ 5/);
 assert.match(app,/expectedAuthorizedCents/);
 assert.match(app,/resumeExecutionId/);
 assert.match(chat,/original_metadata\?\.attachments/);
 assert.match(chat,/OLYMPUS_UNPRICED_ROUTE/);
 assert.match(model,/authorizeProviderCall/);
 console.log('Production safety: unpriced model block, stage resume, explicit approval PASS');
+
+// Force exploration to the last candidate: it must never displace the
+// configured owner-facing coordinator. Dedicated tool exploration stays intact.
+for(const toolId of [null,'code']){
+  const chosen=[];
+  await runDirectedPipeline({text:'Build backend',toolId,budget:b},{
+    candidates:role=>[1,2].map(n=>({id:role+'-'+n,provider:role+'-'+n})),
+    pickCandidate:ranked=>ranked.at(-1),
+    call:async model=>{chosen.push(model.id);return 'output';},
+    family:model=>model.provider
+  });
+  assert.deepEqual(chosen,['CREATOR-2','DIRECTOR-2',toolId?'CEO-2':'CEO-1']);
+}
+console.log('Coordinator priority survives forced specialist exploration: PASS');

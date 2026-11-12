@@ -32,7 +32,7 @@ assert.ok(app.includes('aria-haspopup="menu" aria-expanded="${state.attachMenu}"
 assert.ok(app.includes('role="menuitem" id="attach-media"')&&app.includes('role="menuitem" id="attach-camera"'),'attachment menu items need menuitem role');
 assert.ok(!app.includes('auth-key')&&!app.includes('auth-form'),'obsolete access-key form must be removed');
 assert.ok(app.includes('aria-label="Buscar conversas"'),'chat search needs a localized label');
-assert.ok(app.includes('aria-label="Task title"')&&app.includes('aria-label="New project memory"'),'task/memory inputs need labels');
+assert.ok(app.includes('aria-label="Título da tarefa"')&&app.includes('aria-label="Nova memória do projeto"'),'task/memory inputs need labels');
 assert.ok(app.includes('aria-label="Remove ${esc(f.filename)}"'),'attachment remove button needs a label');
 
 // Keyboard + focus.
@@ -45,7 +45,7 @@ assert.ok(css.includes('prefers-reduced-motion:reduce'),'reduced-motion support 
 
 // Resilience.
 assert.ok(app.includes('state.draft=composerText.value')&&app.includes('${esc(state.draft)}</textarea>'),'composer draft must survive re-render');
-assert.ok(app.includes("You are offline. Reconnect and try again.")&&app.includes('Connection to Poseidon ended before the server returned an HTTP response.'),'friendly network errors missing');
+assert.ok(app.includes("You are offline. Reconnect and try again.")&&app.includes('A conexão terminou sem resposta. Consulte a mesma execução antes de tentar novamente.'),'friendly network errors missing');
 assert.ok(app.includes("document.documentElement.classList.toggle('is-busy',busy)"),'busy indicator missing');
 assert.ok(app.includes("window.addEventListener('offline'"),'offline detection missing');
 assert.ok(app.includes('function errorBanner(')&&app.includes('data-dismiss-error'),'dismissible error banner missing');

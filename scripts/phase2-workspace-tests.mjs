@@ -31,8 +31,8 @@ assert.doesNotMatch(ui,/\['Code Agent','code','Code Agent'\]/,'Hefesto is not ex
 assert.match(ui,/Source of Truth/);
 assert.match(ui,/id="project-source-file"/);
 assert.match(ui,/sourceFileId:\$\('#project-source-file'\)\?\.value\|\|null/);
-assert.match(ui,/Linked file:/);
-assert.match(ui,/Revision history/);
+assert.match(ui,/Arquivo vinculado:/);
+assert.match(ui,/Histórico de revisões/);
 assert.match(ui,/method:id\?'PUT':'POST'/);
 assert.match(ui,/data-source-edit/);
 console.log('Phase 2 workspace structural tests PASS');
