@@ -93,7 +93,8 @@ for(const selector of ['body .sidebar .side-nav button.active','body .message-co
 // No stale iOS browser assets after project UI corrections.
 const html=readFileSync('public/index.html','utf8');
 const netlify=readFileSync('netlify.toml','utf8');
-if(html.includes('20261111-ui-convergence-v2')||!html.includes('20261111-ui-audit2-v3'))
+const assetRevisions=[...html.matchAll(/(?:app\.js|styles\.css|ui-premium\.css|olyhub-reference\.css)\?rev=([^"']+)/g)].map(m=>m[1]);
+if(assetRevisions.length!==5||new Set(assetRevisions).size!==1||assetRevisions.some(rev=>!/^\d{8}-[a-z0-9-]+$/.test(rev)))
   throw new Error('Project UI assets must be versioned for Safari deployment');
 if(!netlify.includes('for = "/"')||!netlify.includes('Cache-Control = "no-cache, no-store, must-revalidate"'))
   throw new Error('Root document needs explicit no-store cache behavior');

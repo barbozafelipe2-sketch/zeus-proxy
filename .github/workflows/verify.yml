@@ -23,3 +23,16 @@ jobs:
         run: node scripts/audit-failing-tests.mjs
       - run: npm run release:check
       # npm test already builds and verifies the client; avoid a duplicate production build.
+
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: npm run build
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:browser

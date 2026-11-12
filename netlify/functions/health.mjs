@@ -1,3 +1,5 @@
+import { systemDoctor } from './_shared/system-doctor.mjs';
+import { executionLeaseExpired } from './_shared/worker-lease.mjs';
 import { requireUser } from './_shared/auth.mjs';
 import { providerStatus, providerRuntimeHealth, providerTransportStatus, availableTextModels, serverTranscriptionConfigured } from './_shared/models.mjs';
 import { summarizeTransportEvidence } from './_shared/provider-observability.mjs';
@@ -127,7 +129,15 @@ async function handler(req,context){
   `;
   const spendRowsSafe=await withTimeout(spendRows,5000,'monthlyBudget').catch(error=>degrade('monthlyBudget',error,null));
   const pricedCount=Number(spendRowsSafe?.[0]?.priced_count||0),executionCount=Number(spendRowsSafe?.[0]?.execution_count||0),usd=pricedCount?Number(spendRowsSafe?.[0]?.known_usd||0):null,monthlyTarget=Math.max(1,Number(globalThis.Netlify?.env?.get?.('ZEUS_MONTHLY_TOTAL_USD')||process.env?.ZEUS_MONTHLY_TOTAL_USD)||60);
-  return json({
+  const queueRows=await withTimeout(db.sql`SELECT state,mode,started_at,lease_expires_at FROM executions
+    WHERE owner_id=${user.id} AND started_at > now() - interval '24 hours'
+    AND state NOT IN ('COMPLETED','PARTIAL','FAILED','CANCELLED')
+    ORDER BY started_at DESC LIMIT 101`,5000,'queueDiagnostics').catch(error=>degrade('queueDiagnostics',error,null));
+  const queueDiagnostics=queueRows?{inspected:Math.min(queueRows.length,100),truncated:queueRows.length>100,
+    active:queueRows.slice(0,100).filter(row=>!executionLeaseExpired(row)).length,
+    expired:queueRows.slice(0,100).filter(row=>executionLeaseExpired(row)).length}:null;
+  const payload={
+    queueDiagnostics,
     degraded:warnings.length>0,
     warnings,
     monthlyBudget:{targetUsd:monthlyTarget,knownTextUsd:usd===null?null:Number(usd.toFixed(4)),unpricedExecutionCount:spendRowsSafe?Number(spendRowsSafe[0]?.incomplete_count||0):null,pricedExecutionCount:spendRowsSafe?pricedCount:null,executionCount:spendRowsSafe?executionCount:null,imageExecutionCount:spendRowsSafe?Number(spendRowsSafe[0]?.image_execution_count||0):null,webExecutionCount:spendRowsSafe?Number(spendRowsSafe[0]?.web_execution_count||0):null,toolExecutionCount:spendRowsSafe?Number(spendRowsSafe[0]?.tool_execution_count||0):null,unknownCostExecutionCount:spendRowsSafe?Number(spendRowsSafe[0]?.unknown_cost_count||0):null,available:Boolean(spendRowsSafe),targetReached:usd!==null&&usd>=monthlyTarget,policy:'advisory_only',coverage:'partial_text_only',mediaIncluded:false},
@@ -177,7 +187,9 @@ async function handler(req,context){
     goLive:{workspaceAccess:'deployment_unverified',database:true,blobMaintenance:!storageMaintenance?.failed,configuredProviders:configuredRoutes,chatState,ready:Boolean(configuredRoutes>0&&['observed_healthy','configured_unverified'].includes(chatState))},
     storageMaintenance,
     note:'Provider readiness uses recent execution evidence stored in OlyHub plus the current Function runtime circuit state. Transport readiness uses sanitized per-model attempts from the past 24 hours; the circuit breaker shown here applies only to the current Function instance. CONFIGURED UNVERIFIED means credentials/models are present but no recent successful execution is recorded. OBSERVED HEALTHY means OlyHub recorded a successful use in the last 24 hours. RECENT FAILURE means the latest stored evidence is a failure. Image/audio endpoint readiness remains configuration-based unless that capability is actually exercised. GitHub public repository retrieval is built in; private repository retrieval and GitHub commits require a server-side GITHUB_TOKEN with access to the target repositories. GitHub writes are atomic, non-force branch updates from validated ZIP project packages. Web search uses the OpenAI Responses web_search capability through the configured OpenAI gateway and is invoked only for explicit/current-information intent. Deployment visitor access is configured outside this Function runtime and cannot be verified by this endpoint; this personal workspace requires protection on production, preview/branch deploys, and alternate hostnames.'
-  });
+  };
+  payload.doctor=systemDoctor(payload);
+  return json(payload);
 }
 
 export default async(req,context)=>{

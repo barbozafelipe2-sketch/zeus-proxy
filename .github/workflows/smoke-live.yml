@@ -33,7 +33,9 @@ jobs:
             echo "ready=true" >> "$GITHUB_OUTPUT"
           else
             echo "ready=false" >> "$GITHUB_OUTPUT"
-            echo "Smoke base URL is not configured; skipping live production probe."
+            echo "::error::Smoke base URL is not configured; production is NOT verified."
+            echo "## Production NOT verified: missing ZEUS_PROXY_SMOKE_BASE_URL" >> "$GITHUB_STEP_SUMMARY"
+            exit 1
           fi
       - name: Live production smoke
         if: steps.gate.outputs.ready == 'true'

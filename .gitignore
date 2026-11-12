@@ -29,3 +29,7 @@ client_secret*.json
 secrets/
 *.tfstate
 *.tfstate.backup
+
+# Browser test output
+/test-results/
+/playwright-report/
