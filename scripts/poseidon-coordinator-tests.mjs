@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import {createExecutionBudget} from '../netlify/functions/_shared/runtime.mjs';
+import {shouldSearchWeb} from '../netlify/functions/_shared/web-search.mjs';
+import {isModelIdentityQuestion,actualModelAnswer,addUnverifiedWebNotice} from '../netlify/functions/_shared/response-integrity.mjs';
 import {modelFamily} from '../netlify/functions/_shared/provider-routing.mjs';
 import {priceFor} from '../netlify/functions/_shared/model-prices.mjs';
 import {proposeAutomaticSkill} from '../netlify/functions/_shared/skill-engine.mjs';
@@ -18,7 +20,7 @@ globalThis.fetch=async(url,options={})=>{
   calls.push({url:target,body});
   if(rejectGrok&&body.model==='x-ai/grok-4.3')return new Response(JSON.stringify({error:{message:'Model not found'}}),{status:404});
   if(target.includes('gemini-gateway.example'))return new Response(JSON.stringify({candidates:[{content:{parts:[{text:'Gemini recovery answer'}]}}]}),{status:200});
-  return new Response(JSON.stringify({choices:[{message:{content:'Poseidon answer'}}],usage:{prompt_tokens:12,completion_tokens:3}}),{status:200});
+  return new Response(JSON.stringify({choices:[{message:{content:'Poseidon answer'}}],usage:{prompt_tokens:12,completion_tokens:3},...(body.tools?{citations:['https://docs.x.ai/developers/models/grok-4.3']}: {})}),{status:200});
 };
 
 try{
@@ -31,6 +33,24 @@ try{
   assert.equal(calls[0].body.model,'x-ai/grok-4.3','the coordinator must not silently substitute a cheaper model');
   assert.equal(result.trace.coordinator.preferredModel,result.leadModel);
   assert.equal(result.trace.coordinator.fallbackUsed,false);
+  assert.equal(calls[0].body.tools,undefined,'Ordinary calls without the search flag must stay unchanged');
+  assert.equal(shouldSearchWeb('Quais versões do Grok existem?'),true);
+  assert.equal(shouldSearchWeb('Olá tudo bem?'),false);
+  assert.equal(isModelIdentityQuestion('Oi qual modelo vc tá usando'),true);
+  assert.equal(isModelIdentityQuestion('Compare os modelos de IA'),false);
+  assert.match(actualModelAnswer('openrouter:x-ai/grok-4.3'),/Grok|grok-4.3/);
+  assert.equal(actualModelAnswer('invalid'),'\u006e\u0075\u006c\u006c'==='null'?null:null);
+  assert.equal(addUnverifiedWebNotice('Texto',{needsCurrentEvidence:true,hasSources:false}).includes('Verificação pendente'),true);
+  assert.equal(addUnverifiedWebNotice('Texto',{needsCurrentEvidence:true,hasSources:true}),'Texto');
+  calls.length=0;
+  const webReply=await models.runZeus({text:'Quais versões do Grok existem?',level:'SIMPLE',openRouterWebSearch:true,requirements:{items:[]},
+    budget:createExecutionBudget({timeoutMs:30000,maxCalls:1,reserveMs:100})});
+  assert.equal(webReply.leadModel,'openrouter:x-ai/grok-4.3');
+  assert.equal(calls[0].body.tools?.[0]?.type,'openrouter:web_search','Search must be made available to Poseidon directly');
+  assert.equal(calls[0].body.max_tool_calls,2,'Search must be bounded');
+  assert.equal(webReply.sources.length,1,'Only API-returned citations are treated as web evidence');
+  assert.equal(webReply.trace.openRouterWebSearch.status,'sources_returned');
+  calls.length=0;
   assert.deepEqual(priceFor('x-ai/grok-4.3'),{in:1.25,out:2.5},'usage has a known estimate');
 
   const toolRoles=models.roleCandidates('CREATOR','fix this code repository',{toolId:'code'});

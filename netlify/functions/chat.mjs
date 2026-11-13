@@ -34,6 +34,7 @@ import { queueBlobGc } from './_shared/storage.mjs';
 import { MEMORY_POLICY } from './_shared/memory.mjs';
 import { retrieveConversationMemory } from './_shared/olympus-memory-retrieval.mjs';
 import { runWebSearch, shouldSearchWeb } from './_shared/web-search.mjs';
+import { isModelIdentityQuestion, actualModelAnswer, addUnverifiedWebNotice } from './_shared/response-integrity.mjs';
 import { extractRequirementChecklist, formatChecklist, isWhatMissingIntent, shouldVerifyDelivery } from './_shared/reliability.mjs';
 import { resolveGitHubRequestText, loadGitHubContext } from './_shared/github-context.mjs';
 import { stripStructuredZipManifest } from './_shared/zip-output.mjs';
@@ -795,7 +796,9 @@ ${aiContext}`);
     // Do not spend a hidden model call to classify the request before the manager runs.
     const aiRouting=liveTalkTurn?{route:'fast',source:'live_talk_fast_path',model:null}:toolWorkflow?{route:toolWorkflow.route,source:'tool_workflow',model:null}:comparePair?{route,source:'owner_requested_compare',model:null}:{route:routeFor(modelText,{vision:hasImage}),source:'rules_fallback',model:null};
     failureStage='model_execution';
-    const web=webIntent?await runWebSearch(modelText,{budget:executionBudget,reserveAfterMs:actualMode==='OLYMPUS'?17000:12000}):{requested:false,context:'',sources:[],trace:null};
+    // Poseidon SIMPLE can use its own OpenRouter search tool, with no extra LLM research call.
+    const poseidonOwnSearch=actualMode==='ZEUS'&&zeusLevel==='SIMPLE'&&!toolWorkflow&&!comparePair&&!compareAnswerToMessageId;
+    const web=webIntent&&!poseidonOwnSearch?await runWebSearch(modelText,{budget:executionBudget,reserveAfterMs:actualMode==='OLYMPUS'?17000:12000}):{requested:webIntent,context:'',sources:[],trace:null};
     webUsageTrace=web.trace||null;
     const compoundPlusWithWeb=actualMode==='OLYMPUS'&&level==='COMPOUND_PLUS'&&webIntent;
     if(compoundPlusWithWeb){
@@ -970,7 +973,7 @@ ${aiContext}`);
           fallback.trace={...(fallback.trace||{}),olympusFallback:String(olympusError?.message||olympusError).slice(0,220)};
           result=fallback;
         }
-      }else result=await runZeus({text:modelText,context:enrichedContext,images:vision.images,history,requirements:requirementSpec,level:zeusLevel||'COMPOUND',deliveryContract,blockedProviders:sharedBlockedProviders,budget:executionBudget,routeHint:aiRouting.route,toolId,toolPreferences:prefRows?.[0]?.family_preferences||{},onStage:zeusLevel==='ZEUS_DIRECTED'?data=>savePhaseCheckpoint(db,{ownerId:user.id,executionId:execution.id,conversationId,projectId,...data}):null,resumeStages});
+      }else result=await runZeus({text:modelText,context:enrichedContext,images:vision.images,history,requirements:requirementSpec,level:zeusLevel||'COMPOUND',deliveryContract,blockedProviders:sharedBlockedProviders,budget:executionBudget,routeHint:aiRouting.route,toolId,openRouterWebSearch:poseidonOwnSearch,toolPreferences:prefRows?.[0]?.family_preferences||{},onStage:zeusLevel==='ZEUS_DIRECTED'?data=>savePhaseCheckpoint(db,{ownerId:user.id,executionId:execution.id,conversationId,projectId,...data}):null,resumeStages});
       if(intent.action==='ARTIFACT_CREATE'&&intent.artifactType&&!comparePair){
         if(intent.artifactType==='zip'){
           // Preserve the existing structured ZIP package contract, with bounded structural validation.
@@ -997,8 +1000,17 @@ ${aiContext}`);
       }
     }
 
-    result.sources=[...(web.sources||[]),...(github.sources||[]),...googleSources].slice(0,12);
-    result.capabilities=[web.trace,github.trace,...googleCapabilities].filter(Boolean);
+    // The model cannot reliably identify itself. Ground this narrow question in backend evidence.
+    if(poseidonOwnSearch&&intent.action==='CHAT'&&isModelIdentityQuestion(modelText)){
+      const verifiedModel=actualModelAnswer(result.leadModel);
+      if(verifiedModel)result.content=verifiedModel;
+    }
+    const verifiedSources=[...(result.sources||[]),...(web.sources||[])];
+    if(poseidonOwnSearch&&['CHAT','ANALYZE'].includes(intent.action)&&!isModelIdentityQuestion(modelText)){
+      result.content=addUnverifiedWebNotice(result.content,{needsCurrentEvidence:webIntent,hasSources:verifiedSources.length>0});
+    }
+    result.sources=[...verifiedSources,...(github.sources||[]),...googleSources].slice(0,12);
+    result.capabilities=[web.trace,result.trace?.openRouterWebSearch?{name:'openrouter_web_search',...result.trace.openRouterWebSearch}:null,github.trace,...googleCapabilities].filter(Boolean);
     // Image and document operations have an existing real executor. Attribution
     // is based on the actual requested operation, not a static deity/model card.
     const executionToolId=(intent.action==='IMAGE_CREATE'||intent.action==='IMAGE_EDIT')?'images'

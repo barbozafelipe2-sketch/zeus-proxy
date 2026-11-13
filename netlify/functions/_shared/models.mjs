@@ -411,7 +411,7 @@ async function callGemini(model, system, user, { images = [], history = [], budg
   return content;
 }
 
-async function callOpenRouter(model, system, user, { images = [], history = [], budget, reserveAfterMs = 0, callTimeoutMs = DEFAULT_CALL_TIMEOUT_MS, maxOutputTokens = 5000, }) {
+async function callOpenRouter(model, system, user, { images = [], history = [], budget, reserveAfterMs = 0, callTimeoutMs = DEFAULT_CALL_TIMEOUT_MS, maxOutputTokens = 5000, openRouterWebSearch=false }) {
   const base = openrouterBase().replace(/\/$/, '');
   const key = openRouterGatewayConfig()?.key;
   if (!base || !key) throw providerError('OpenRouter is not configured.');
@@ -420,14 +420,47 @@ async function callOpenRouter(model, system, user, { images = [], history = [], 
     method: 'POST',
     signal: budget.signal(callTimeoutMs, 1000, reserveAfterMs),
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
-    body: JSON.stringify({ model, messages, max_tokens:maxOutputTokens }),
+    body: JSON.stringify({ model, messages, max_tokens:maxOutputTokens,
+      ...(openRouterWebSearch?{tools:[{type:'openrouter:web_search',parameters:{max_uses:2,max_results:3,max_total_results:6}}],max_tool_calls:2}:{}) }),
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw providerError(data.error?.message || `OpenRouter ${res.status}`, res.status);
+  if(openRouterWebSearch)openRouterWebEvidenceByBudget.set(budget,{offered:true,sources:openRouterWebSources(data)});
   noteUsage(budget,data.usage);
   const content = data.choices?.[0]?.message?.content || '';
   if (!String(content).trim()) throw providerError('OpenRouter returned an empty response.');
   return content;
+}
+
+// Only server-returned URL citations count as research evidence; generated prose does not.
+const openRouterWebEvidenceByBudget=new WeakMap();
+function openRouterWebSources(payload){
+ const msg=payload?.choices?.[0]?.message||{};
+ const entries=[
+  ...(Array.isArray(payload?.citations)?payload.citations:[]),
+  ...(Array.isArray(msg.annotations)?msg.annotations:[]),
+  ...(Array.isArray(msg.citations)?msg.citations:[]),
+  ...(Array.isArray(msg.content)?msg.content.flatMap(item=>Array.isArray(item?.annotations)?item.annotations:[]):[])
+ ];
+ const seen=new Set(),sources=[];
+ for(const entry of entries){
+  const url=typeof entry==='string'?entry:entry?.url_citation?.url||entry?.url||'';
+  if(typeof url!=='string'||url.length>2000)continue;
+  try{
+   const parsed=new URL(url);
+   if(!['https:','http:'].includes(parsed.protocol)||seen.has(url))continue;
+   seen.add(url);
+   const title=typeof entry==='object'&&(entry?.title||entry?.url_citation?.title)||parsed.hostname;
+   sources.push({url,title:String(title).slice(0,160)});
+   if(sources.length>=8)break;
+  }catch{}
+ }
+ return sources;
+}
+function takeOpenRouterWebEvidence(budget){
+ const evidence=openRouterWebEvidenceByBudget.get(budget)||null;
+ openRouterWebEvidenceByBudget.delete(budget);
+ return evidence;
 }
 
 // No request text, response body or credentials are stored with token usage.
@@ -478,7 +511,7 @@ function inferModelStage(system=''){
   if(s.includes('base stage'))return 'zeus_base';
   return 'zeus_simple';
 }
-export async function callModel(model, system, user, { images = [], history = [], budget = createExecutionBudget({ maxCalls: 1 }), reserveAfterMs = 0, callTimeoutMs = DEFAULT_CALL_TIMEOUT_MS, maxOutputTokens = 5000 } = {}) {
+export async function callModel(model, system, user, { images = [], history = [], budget = createExecutionBudget({ maxCalls: 1 }), reserveAfterMs = 0, callTimeoutMs = DEFAULT_CALL_TIMEOUT_MS, maxOutputTokens = 5000, openRouterWebSearch=false } = {}) {
   const scope=modelCircuitScope(model);
   if (circuitOpen(scope, model.id)) {
     const state = circuitState(circuitOpen(scope) ? scope : `${scope}:${model.id}`);
@@ -503,7 +536,7 @@ export async function callModel(model, system, user, { images = [], history = []
     // Do not alter stored conversation records or the owner's locally displayed messages.
     const safeSystem=redactSecrets(system),safeUser=redactSecrets(user);
     const safeHistory=Array.isArray(history)?history.map(turn=>({...turn,content:redactSecrets(turn?.content||'')})):[];
-    const call = { images, history:safeHistory, budget, reserveAfterMs, callTimeoutMs, maxOutputTokens, transport:modelTransport(model) };
+    const call = { images, history:safeHistory, budget, reserveAfterMs, callTimeoutMs, maxOutputTokens, transport:modelTransport(model), openRouterWebSearch };
     if (model.provider === 'openai') content = await callOpenAI(model.id, safeSystem, safeUser, call);
     else if (model.provider === 'anthropic') content = await callAnthropic(model.id, safeSystem, safeUser, call);
     else if (model.provider === 'gemini') content = await callGemini(model.id, safeSystem, safeUser, call);
@@ -515,6 +548,7 @@ export async function callModel(model, system, user, { images = [], history = []
     return content;
   } catch (error) {
     takeUsage(budget);
+    takeOpenRouterWebEvidence(budget);
     recordProviderAttempt(budget,{model,stage:inferModelStage(system),durationMs:Date.now()-callStartedAt,error});
     if(isModelSpecificFailure(error)&&error.code!=='PROVIDER_MODEL_INVALID_CACHED'&&errorStatus(error)!==0)markModelInvalid(model);
     if (countsAsProviderFailure(error)) {
@@ -571,7 +605,7 @@ function fallbackOrderForStage(ranked,maxAttempts,preferFirstModel=false){
   return uniqueModelOrder([ranked[0],...buildFallbackOrder(ranked.slice(1),Math.max(1,limit-1))]).slice(0,limit);
 }
 
-export async function executeWithFallback(text, system, prompt, { exclude = new Set(), maxAttempts = 5, budget, images = [], history = [], reserveAfterMs = 0, callTimeoutMs = null, maxOutputTokens = 5000, blockedProviders = [], routeHint = null, candidateModels = null, preferFirstModel = false } = {}) {
+export async function executeWithFallback(text, system, prompt, { exclude = new Set(), maxAttempts = 5, budget, images = [], history = [], reserveAfterMs = 0, callTimeoutMs = null, maxOutputTokens = 5000, blockedProviders = [], routeHint = null, candidateModels = null, preferFirstModel = false, openRouterWebSearch = false } = {}) {
   const localBudget = budget || createExecutionBudget({ maxCalls: Math.max(4, maxAttempts) });
   const providerBlocks=new Set(Array.isArray(blockedProviders)?blockedProviders:[]);
   const route=AI_ROUTES_OVERRIDE(routeHint)||routeFor(text,{vision:images.length>0});
@@ -591,8 +625,8 @@ export async function executeWithFallback(text, system, prompt, { exclude = new 
     if (!localBudget.canCall(1200, reserveAfterMs)) break;
     try {
       const timeout = typeof callTimeoutMs === 'function' ? callTimeoutMs(localBudget, attempts.length) : (callTimeoutMs || DEFAULT_CALL_TIMEOUT_MS);
-      const content = await callModel(model, system, prompt, { images, history, budget: localBudget, reserveAfterMs, callTimeoutMs: timeout, maxOutputTokens });
-      return { content, model, attempts };
+      const content = await callModel(model, system, prompt, { images, history, budget: localBudget, reserveAfterMs, callTimeoutMs: timeout, maxOutputTokens, openRouterWebSearch:openRouterWebSearch&&model.provider==='openrouter' });
+      return { content, model, attempts, webEvidence:takeOpenRouterWebEvidence(localBudget) };
     } catch (error) {
       attempts.push({ provider:model.provider, model:model.id, transport:modelTransport(model), family:modelFamily(model), error:failureCategory(error), code:error?.code||(isTimeoutFailure(error)?'PROVIDER_TIMEOUT':null), status:errorStatus(error)||null });
       if(String(error?.code||'').startsWith('OLYMPUS_'))throw error;
@@ -804,7 +838,7 @@ function patchPrompt(text,answer,checklist,findings,deliveryContract=''){return 
 function verificationLabel(text,reviewed=true){if(codeLikeRequest(text))return reviewed?'Static review only · not executed':'Static review unavailable · not executed';return reviewed?'Adversarial review completed':'Independent review unavailable';}
 function repairFailureLabel(text){return codeLikeRequest(text)?'Static review found a defect · repair failed · original draft returned · not executed':'Adversarial review found a defect · repair failed · original draft returned';}
 
-export async function runZeus({ text, context = '', images = [], history = [], requirements = { items: [], ambiguous: false }, level = 'SIMPLE', verify = false, deliveryContract = '', blockedProviders = [], budget = null, onStage = null, resumeStages = [], routeHint = null, toolId=null,toolPreferences=null }) {
+export async function runZeus({ text, context = '', images = [], history = [], requirements = { items: [], ambiguous: false }, level = 'SIMPLE', verify = false, deliveryContract = '', blockedProviders = [], budget = null, onStage = null, resumeStages = [], routeHint = null, toolId=null,toolPreferences=null,openRouterWebSearch=false }) {
   if(String(level||'').toUpperCase()==='ZEUS_DIRECTED'){
     const localBudget=budget||createExecutionBudget({timeoutMs:120000,maxCalls:3,reserveMs:6500});
     return runDirectedPipeline({text,context,images,history,requirements,deliveryContract,blockedProviders,budget:localBudget,onStage,resumeStages,routeHint,toolId,toolPreferences},{
@@ -827,16 +861,17 @@ export async function runZeus({ text, context = '', images = [], history = [], r
     const coordinatorCandidates=poseidonCoordinatorCandidates(text,{vision:images.length>0,blockedProviders});
     const single=await executeWithFallback(text,zeusCoreSystem(deliveryContract),prompt,{
       maxAttempts:leadRoute==='fast'?4:5,budget:localBudget,images,history,maxOutputTokens:answerTokens,blockedProviders,routeHint,
-      candidateModels:coordinatorCandidates,preferFirstModel:true,
+      candidateModels:coordinatorCandidates,preferFirstModel:true,openRouterWebSearch,
       callTimeoutMs:(b,attempt)=>leadRoute==='fast'
-        ?Math.min(6500+attempt*750,Math.max(2200,b.remaining()-b.reserveMs-1200))
+        ?Math.min(12000+attempt*750,Math.max(2200,b.remaining()-b.reserveMs-1200))
         :answerCallTimeout(b,0,attempt===0?0.72:0.86)
     });
     return {
       content:single.content,
       leadModel:`${single.model.provider}:${single.model.id}`,
       pipelineLabel:'Simple · one model',
-      trace:{strategy:'zeus_simple_single_model',executionLevel:'SIMPLE',requirements:checklist,author:{provider:single.model.provider,model:single.model.id},
+      sources:single.webEvidence?.sources||[],
+      trace:{openRouterWebSearch:single.webEvidence?{status:single.webEvidence.sources.length?'sources_returned':'offered_no_source_evidence',sourceCount:single.webEvidence.sources.length,searchCost:'not_in_token_estimate'}:null,strategy:'zeus_simple_single_model',executionLevel:'SIMPLE',requirements:checklist,author:{provider:single.model.provider,model:single.model.id},
         coordinator:{role:'POSEIDON',preferredModel:'openrouter:'+poseidonPreferredModelId(),
           actualModel:single.model.provider+':'+single.model.id,actualFamily:modelFamily(single.model),
           fallbackUsed:single.model.provider!=='openrouter'||single.model.id!==poseidonPreferredModelId(),
