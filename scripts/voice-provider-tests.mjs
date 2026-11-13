@@ -1,3 +1,4 @@
+import {classifyVoiceStartupError} from '../netlify/functions/_shared/voice-realtime.mjs';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {DEFAULT_LIVE_VOICE_PROVIDER,LIVE_VOICE_PROVIDERS,resolveLiveVoiceProvider,issueLiveVoiceCredentials} from '../netlify/functions/_shared/voice-provider.mjs';
@@ -63,3 +64,16 @@ assert.ok(!browser.includes('<option value="gemini"'),'Gemini Live must not be s
 assert.ok(browser.includes("liveProvider:'openai'"),'OpenAI Realtime must be the default voice provider');
 assert.ok(!browser.includes('<option value="muse"'),'Muse must not appear as an enabled Live Talk option');
 console.log('Voice provider contract tests passed');
+
+const quota=classifyVoiceStartupError(Object.assign(new Error('OpenAI quota or rate limit reached'),{status:429,code:'OPENAI_LIVE_TOKEN_FAILED'}),'credentials');
+assert.deepEqual(quota,{status:429,code:'OPENAI_LIVE_TOKEN_FAILED',message:'OpenAI quota or rate limit reached'});
+const dbFailure=classifyVoiceStartupError(Object.assign(new Error('private database SQL error'),{code:'42P01'}),'rate');
+assert.deepEqual(dbFailure,{status:503,code:'VOICE_RATE_STORAGE_UNAVAILABLE',message:'Live Talk request protection is unavailable. Check database migrations and the server log.'});
+assert.ok(!JSON.stringify(dbFailure).includes('private database'));
+const scopeFailure=classifyVoiceStartupError(new Error('sensitive scope failure'),'memory');
+assert.equal(scopeFailure.code,'VOICE_SCOPE_UNAVAILABLE');
+const memorySource=readFileSync('netlify/functions/_shared/voice-memory-context.mjs','utf8');
+assert.ok(memorySource.indexOf('if(scope.error)return {error:scope.error};')<memorySource.indexOf(' try{'),'Scope authorization must precede optional memory recovery');
+assert.match(memorySource,/memoryDegraded:true/);
+assert.match(handler,/memoryDegraded:memory.memoryDegraded===true/);
+assert.match(handler,/requestId,phase,status,code,detailCode/);
