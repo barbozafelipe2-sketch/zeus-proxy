@@ -361,8 +361,8 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,
 .panel{border-radius:18px}
 .panel-head{gap:18px}
 .panel-head h2{font-size:15px;letter-spacing:-.018em;font-weight:680}
-.primary{border-radius:11px;background:linear-gradient(145deg,#e7c36d,#b78d3e);box-shadow:0 9px 22px rgba(154,116,42,.12),inset 0 1px rgba(255,255,255,.24);transition:transform .16s ease,filter .16s ease,box-shadow .16s ease}
-.primary:hover{filter:brightness(1.055);transform:translateY(-1px);box-shadow:0 13px 27px rgba(154,116,42,.16)}
+.primary{display:inline-flex;align-items:center;justify-content:center;gap:8px;color:#fff;border-radius:11px;background:var(--oly-action,linear-gradient(115deg,#05c9ee,#4368fa 55%,#a735f7));box-shadow:0 9px 22px rgba(41,118,255,.12),inset 0 1px rgba(255,255,255,.24);transition:transform .16s ease,filter .16s ease,box-shadow .16s ease}
+.primary:hover{filter:brightness(1.055);transform:translateY(-1px);box-shadow:0 13px 27px rgba(41,118,255,.16)}
 .primary:active{transform:translateY(0)}
 .secondary{background:#0b1016;border-color:#2b3541;color:#c9cfd7;transition:border-color .16s ease,background .16s ease,color .16s ease}
 .secondary:hover{background:#10161e;border-color:#3a4654;color:#fff}
@@ -432,7 +432,7 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,
 .composer textarea::placeholder{color:#7f8894}
 .icon-btn{width:35px;height:35px;border-radius:10px;color:#7f8996}
 .icon-btn:hover{background:#171d25;color:#d9dee5}
-.send-btn{background:linear-gradient(145deg,#e7c36d,#b78d3e)!important;color:#11100c!important;border-radius:10px!important;box-shadow:0 8px 18px rgba(167,126,45,.15)}
+.send-btn{background:var(--oly-action,linear-gradient(115deg,#05c9ee,#4368fa 55%,#a735f7))!important;color:#11100c!important;border-radius:10px!important;box-shadow:0 8px 18px rgba(167,126,45,.15)}
 .send-btn:hover{filter:brightness(1.06)}
 .attachments.pending{max-width:880px;margin:0 auto 7px}
 .file-chip{border-color:#2a3440;background:#0d131a;color:#aeb6c0}
