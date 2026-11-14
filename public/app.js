@@ -341,6 +341,7 @@ function icon(name){
     globe:svg('<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3.5 3 14.5 0 18M12 3c-3 3.5-3 14.5 0 18"/>'),
     code:svg('<path d="m8 8-4 4 4 4M16 8l4 4-4 4M13 5l-2 14"/>'),
     auto:svg('<path d="M12 8v4l2.5 1.5"/><circle cx="12" cy="12" r="8"/>'),
+    investments:svg('<path d="M3 20h18M5 17V9m5 8V5m5 12v-6m5 6V3"/><path d="m4 7 5-3 5 3 5-4"/>'),
     close:svg('<path d="M6 6l12 12M18 6 6 18"/>'),
     back:svg('<path d="m15 18-6-6 6-6M9 12h12"/>'),
     check:svg('<path d="m5 12 5 5 9-10"/>'),
@@ -373,7 +374,7 @@ function sidebar(){
   </aside>${state.drawer?'<button class="scrim" id="scrim" aria-label="Fechar menu"></button>':''}`;
 }
 function navButtons(){
-  const items=[['Home','chat','Conversas','bottom'],['Tools','tools','Realms','bottom'],['Automations','auto','Automações','drawer'],['Projects','projects','Projetos','bottom'],['Files','files','Arquivos','bottom'],['Settings','settings','Configurações','drawer']];
+  const items=[['Home','chat','Conversas','bottom'],['Tools','tools','Realms','bottom'],['Automations','auto','Automações','drawer'],['Investments','investments','Investimentos','drawer'],['Projects','projects','Projetos','bottom'],['Files','files','Arquivos','bottom'],['Settings','settings','Configurações','drawer']];
   return items.map(([tab,ico,label,group])=>`<button data-tab="${tab}" data-nav-group="${group}" class="${state.tab===tab?'active':''}" ${state.tab===tab?'aria-current="page"':''}>${icon(ico)}<span>${label}</span></button>`).join('');
 }
 function mobileBottomNav(){
@@ -385,7 +386,7 @@ function projectChats(){ return (state.conversations||[]).filter(c=>c.project_id
 function topbar(){
   const tool=state.toolModels?.find(item=>item.id===state.currentToolId);
   const conversationTitle=state.conversations.find(c=>c.id===state.currentConversation)?.title;
-  const tabTitle={Projects:'Projetos',Tools:'Realms',Files:'Arquivos',Automations:'Automações',Settings:'Configurações',Zeus:'Zeus'};
+  const tabTitle={Projects:'Projetos',Tools:'Realms',Files:'Arquivos',Automations:'Automações',Investments:'Investimentos',Settings:'Configurações',Zeus:'Zeus'};
   const context=state.currentProject?.name||(state.tab==='Home'?(tool?`${tool.god} · ${tool.title}`:state.currentConversation?conversationTitle||'Conversa':'Início'):(tabTitle[state.tab]||state.tab));
   const hasHealth=Boolean(state.health);
   const chatReady=Boolean(state.health?.capabilities?.chat);
@@ -1509,7 +1510,29 @@ function liveTalkDock(){
   const status=state.liveTalkStopRequested?'Finishing turn':state.liveMuted?'Mic muted · session audio on':state.liveStage==='speaking'?'Speaking':state.liveStage==='processing'?'Processing':state.liveStage==='error'?'Paused':state.liveStage==='connecting'?'Connecting':'Listening';
   return `<aside class="live-talk-dock" role="region" aria-label="Live Talk controls"><button type="button" class="live-dock-open" id="live-talk-dock-open" aria-label="Open Live Talk"><span class="live-dock-light ${state.liveStage==='error'?'is-error':''}"></span><span class="live-dock-copy"><strong>LIVE TALK</strong><small>${esc(status)}</small></span><span class="live-dock-expand" aria-hidden="true">↗</span></button><button type="button" class="live-dock-action ${state.liveMuted?'is-muted':''}" id="live-talk-dock-mute" aria-pressed="${state.liveMuted}" aria-label="${state.liveMuted?'Unmute your microphone; session audio continues':'Mute your microphone; session audio continues'}" title="${state.liveMuted?'Unmute your microphone':'Mute your microphone'}">${icon(state.liveMuted?'mic-off':'mic')}</button><button type="button" class="live-dock-action live-dock-end" id="live-talk-dock-end" aria-label="End Live Talk" title="End Live Talk">${icon('close')}</button></aside>`;
 }
-function appView(){const page=state.tab==='Home'?homeView():state.tab==='Projects'?projectsView():state.tab==='Tools'?toolsView():state.tab==='Automations'?automationView():state.tab==='Zeus'?zeusRealmView():state.tab==='Files'?filesView():settingsView();return `<div class="app-shell ${state.liveTalkMinimized&&state.liveTalk?'has-live-talk-dock':''}">${sidebar()}<main class="main" id="main-content" tabindex="-1">${topbar()}${page}</main>${mobileBottomNav()}<div id="modal-root"></div>${state.liveTalkMinimized&&state.liveTalk?liveTalkDock():''}${state.liveTalk&&!state.liveTalkMinimized?liveTalkExperience():''}</div>`}
+function investmentsView(){
+  // Navigation-only shell. Do not connect brokerage accounts, trading APIs or background tasks here.
+  return `<section class="page zeus-realm-page investments-shell-page" aria-labelledby="investments-shell-title">
+    <header class="zeus-realm-hero">
+      <div class="zeus-realm-identity"><div class="zeus-realm-emblem" aria-hidden="true">${icon('investments')}</div><div><span class="eyebrow">OLYHUB · MÓDULO FUTURO</span><h1 id="investments-shell-title">Investimentos</h1><p>Espaço reservado para acompanhar investimentos e integrar seu app de paper trading no futuro.</p></div></div>
+      <span class="zeus-realm-state"><i aria-hidden="true"></i>Em preparação</span>
+    </header>
+    <section class="zeus-realm-notice" role="status"><div class="zeus-notice-mark" aria-hidden="true">${icon('investments')}</div><div><span class="eyebrow">SOMENTE ESTRUTURA VISUAL</span><h2>Operações desativadas nesta fase</h2><p>Não há contas de corretora conectadas, saldos financeiros sincronizados, ordens, recomendações de investimento ou automações de negociação ativas nesta aba. Nada aqui movimenta dinheiro.</p></div></section>
+    <div class="zeus-realm-status-grid" aria-label="Estado das funcionalidades futuras de investimentos">
+      <article class="zeus-status-card"><span class="eyebrow">CARTEIRA</span><strong>Não conectada</strong><small>Saldos e posições reais não são consultados.</small></article>
+      <article class="zeus-status-card"><span class="eyebrow">PAPER TRADING</span><strong>Integração futura</strong><small>Seu aplicativo de simulação permanece separado.</small></article>
+      <article class="zeus-status-card"><span class="eyebrow">OPERAÇÕES</span><strong>Desativadas</strong><small>Nenhuma ordem pode ser criada ou enviada.</small></article>
+    </div>
+    <section class="zeus-planned-panel" aria-labelledby="investments-planned-title"><div class="zeus-planned-head"><div><span class="eyebrow">ROADMAP · NÃO IMPLEMENTADO</span><h2 id="investments-planned-title">Capacidades reservadas</h2></div><span class="zeus-planned-badge">FUTURO</span></div>
+      <div class="zeus-planned-grid">
+        <article><span class="zeus-planned-icon">${icon('chart')}</span><div><strong>Visão de carteira</strong><p>Posições, histórico e resultados após integração autorizada.</p></div><span class="zeus-planned-state">Planejado</span></article>
+        <article><span class="zeus-planned-icon">${icon('auto')}</span><div><strong>Estratégias simuladas</strong><p>Conexão futura com paper trading, sem dinheiro real.</p></div><span class="zeus-planned-state">Planejado</span></article>
+        <article><span class="zeus-planned-icon">${icon('settings')}</span><div><strong>Controles de risco</strong><p>Limites e aprovações serão definidos antes de qualquer execução financeira.</p></div><span class="zeus-planned-state">Planejado</span></article>
+      </div>
+    </section>
+  </section>`;
+}
+function appView(){const page=state.tab==='Home'?homeView():state.tab==='Projects'?projectsView():state.tab==='Tools'?toolsView():state.tab==='Automations'?automationView():state.tab==='Zeus'?zeusRealmView():state.tab==='Investments'?investmentsView():state.tab==='Files'?filesView():settingsView();return `<div class="app-shell ${state.liveTalkMinimized&&state.liveTalk?'has-live-talk-dock':''}">${sidebar()}<main class="main" id="main-content" tabindex="-1">${topbar()}${page}</main>${mobileBottomNav()}<div id="modal-root"></div>${state.liveTalkMinimized&&state.liveTalk?liveTalkDock():''}${state.liveTalk&&!state.liveTalkMinimized?liveTalkExperience():''}</div>`}
 function focusKey(el){
   if(!el||el===document.body||!app.contains(el))return null;
   if(el.id)return `#${CSS.escape(el.id)}`;
